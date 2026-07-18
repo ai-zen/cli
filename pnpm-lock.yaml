@@ -9,10 +9,10 @@ importers:
   .:
     dependencies:
       '@ai-zen/agents-core':
-        specifier: ^3.0.0-alpha.1
-        version: 3.0.0-alpha.1
+        specifier: ^3.0.0-alpha.2
+        version: 3.0.0-alpha.2
       '@ai-zen/agents-sdk':
-        specifier: ^0.2.0
+        specifier: ^0.2.0-alpha.2
         version: 0.2.0(zod@4.4.3)
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
@@ -53,6 +53,9 @@ packages:
 
   '@ai-zen/agents-core@3.0.0-alpha.1':
     resolution: {integrity: sha512-VGbXd1MPOZAT8+XelrD9YaI7drPNrY0cvXPynBuGLSZ0D0OZ7R3P4lODZVh6V0OPECdrTi3ZtFpemGBAWuUHKw==}
+
+  '@ai-zen/agents-core@3.0.0-alpha.2':
+    resolution: {integrity: sha512-KByN+fLwGPU47tQeL4MJB96+czLDr6GRgtdJJeSZg/oDuvU4N0AA5f6sQjfQehRiIE+ELUrsqUOMkZLmnYGouw==}
 
   '@ai-zen/agents-sdk@0.2.0':
     resolution: {integrity: sha512-BeqvGfOxGNRJ28wiuGE6DJqyum/rzdMiZIZhqK550Au6ZGez0xvREL9T6QGuMS+qN+yW5m9GcrcAiiwhspMInQ==}
@@ -1112,6 +1115,15 @@ packages:
 snapshots:
 
   '@ai-zen/agents-core@3.0.0-alpha.1':
+    dependencies:
+      '@ai-zen/async-queue': 1.4.0
+      '@ai-zen/event-bus': 1.1.0
+      '@ai-zen/node-fetch-event-source': 2.1.4
+      jose: 5.10.0
+    transitivePeerDependencies:
+      - encoding
+
+  '@ai-zen/agents-core@3.0.0-alpha.2':
     dependencies:
       '@ai-zen/async-queue': 1.4.0
       '@ai-zen/event-bus': 1.1.0
