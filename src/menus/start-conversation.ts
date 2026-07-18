@@ -1,59 +1,47 @@
+/**
+ * 对话启动菜单
+ */
+
 import chalk from "chalk";
 import inquirer from "inquirer";
 import { AgentNS } from "@ai-zen/agents-core";
-import { createAgent } from "../agent-creator.js";
+import type { AgentDefinition } from "@ai-zen/agents-sdk";
+import {
+  listAgents,
+  readAgent,
+  readConversation,
+  writeConversation,
+  readDraft,
+  deleteDraft,
+} from "@ai-zen/agents-sdk";
 import { runConversation } from "../conversation-runner.js";
-import { ensureEndpointConfig } from "../config-wizard.js";
-import { getAgents, getDefaultAgent, getAgent } from "../agents.js";
-import { getModels, getDefaultModel } from "../models.js";
-import { loadConversation, saveConversation } from "../conversations.js";
-import { getConversationsList } from "../conversations.js";
-import { readDraft, clearDraft } from "../draft.js";
+import { readConfig, AGENTS_DIR, CONVERSATIONS_DIR, DRAFTS_DIR } from "../config.js";
 import { formatRelativeTime, formatShortTime, formatFileSize, formatMessageTime } from "../format-time.js";
+import { getConversationsList } from "./conversations.js";
 
 /**
- * 开始新对话：选择 Agent（可选）→ 选择模型 → 进入对话
- * 如果存在草稿，会自动将草稿保存为对话存档，再开始新对话
+ * 开始新对话
  */
-export async function startNewConversation(initialMessage?: string): Promise<void> {
-  // 有草稿时自动保存为对话存档，避免数据丢失
-  const draft = readDraft();
-  if (draft) {
-    try {
-      const draftName = `草稿-${formatShortTime(draft.updatedAt)}`;
-      saveConversation(draftName, draft.messages, draft.modelId, undefined, draft.agentId);
-      console.log(chalk.green(`📦 草稿已自动保存为对话存档: "${draftName}" (${formatMessageTime(draft.messageCount, draft.updatedAt)})\n`));
-      // 保存成功后清除草稿
-      clearDraft();
-    } catch (error) {
-      console.error(chalk.red(`❌ 草稿自动存档失败: ${error}\n`));
-      console.log(chalk.yellow("⚠️  草稿保留在文件中，下次启动仍可恢复\n"));
-    }
-  } else {
-    clearDraft();
-  }
+export async function startNewConversation(query?: string): Promise<void> {
   try {
-    const agents = getAgents();
-    let messages: AgentNS.Message[] | undefined;
+    const config = readConfig();
+    const agents = listAgents(AGENTS_DIR);
     let agentId: string | undefined;
     let modelId: string | undefined;
 
-    // 有 Agent 时直接弹出选择列表
     if (agents.length === 1) {
-      // 只有一个 Agent，直接使用
       const agent = agents[0];
-      messages = agent.messages;
       agentId = agent.id;
       if (agent.modelId) modelId = agent.modelId;
     } else if (agents.length > 1) {
-      const defaultAgent = getDefaultAgent();
+      const defaultAgent = config.defaultAgent ? readAgent(AGENTS_DIR, config.defaultAgent) : undefined;
       const { selectedAgentId } = await inquirer.prompt([
         {
           type: "list",
           name: "selectedAgentId",
           message: "选择 Agent (或选「不使用」或「取消」):",
           choices: [
-            ...agents.map((a) => ({
+            ...agents.map((a: AgentDefinition) => ({
               name: `${a.name}${defaultAgent?.id === a.id ? " (默认)" : ""}`,
               value: a.id,
             })),
@@ -62,32 +50,29 @@ export async function startNewConversation(initialMessage?: string): Promise<voi
           ],
         },
       ]);
-      if (selectedAgentId === "__cancel__") return; // 取消返回主菜单
+      if (selectedAgentId === "__cancel__") return;
       if (selectedAgentId !== "__none__") {
-        const agent = getAgent(selectedAgentId);
+        const agent = readAgent(AGENTS_DIR, selectedAgentId);
         if (agent) {
-          messages = agent.messages;
           agentId = agent.id;
           if (agent.modelId) modelId = agent.modelId;
         }
       }
     }
 
-    // 优先使用默认模型，没有配置默认模型时才要求用户选择
     if (!modelId) {
-      const defaultModel = getDefaultModel();
-      if (defaultModel) {
-        modelId = defaultModel.id;
-        console.log(chalk.gray(`使用默认模型: ${defaultModel.name} (${defaultModel.id})`));
+      if (config.defaultModel) {
+        modelId = config.defaultModel;
+        const defaultModel = config.models.find((m) => m.id === modelId);
+        console.log(chalk.gray(`使用默认模型: ${defaultModel?.name} (${modelId})`));
       } else {
-        const models = getModels();
         const { selectedModelId } = await inquirer.prompt([
           {
             type: "list",
             name: "selectedModelId",
             message: "选择模型（未配置默认模型）:",
             choices: [
-              ...models.map((m) => ({
+              ...config.models.map((m) => ({
                 name: `${m.name} (${m.id})`,
                 value: m.id,
               })),
@@ -95,25 +80,44 @@ export async function startNewConversation(initialMessage?: string): Promise<voi
             ],
           },
         ]);
-        if (selectedModelId === "__cancel__") return; // 取消返回主菜单
+        if (selectedModelId === "__cancel__") return;
         modelId = selectedModelId;
       }
     }
 
-    const model = await ensureEndpointConfig(modelId);
-    const agent = await createAgent(model.id, messages);
+    // 选完 Agent/模型后，进入对话前，将草稿归档
+    const draft = readDraft(DRAFTS_DIR);
+    if (draft) {
+      try {
+        const draftName = `草稿-${formatShortTime(draft.updatedAt)}`;
+        const conv = {
+          id: draftName.replace(/[\\/:*?"<>|]/g, "_"),
+          agentId: draft.agentId || "default",
+          modelId: draft.modelId,
+          messages: draft.messages,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        writeConversation(CONVERSATIONS_DIR, conv);
+        console.log(chalk.green(`📦 草稿已自动保存为对话存档: "${draftName}" (${formatMessageTime(draft.messages.length, draft.updatedAt)})\n`));
+        deleteDraft(DRAFTS_DIR);
+      } catch (error) {
+        console.error(chalk.red(`❌ 草稿自动存档失败: ${error}\n`));
+        console.log(chalk.yellow("⚠️  草稿保留在文件中，下次启动仍可恢复\n"));
+      }
+    }
 
-    await runConversation(agent, model.id, undefined, undefined, agentId, initialMessage);
+    await runConversation({ modelId: modelId!, agentId, query });
   } catch (error: any) {
     console.error(chalk.red(`\n❌ 错误: ${error.message}\n`));
   }
 }
 
 /**
- * 继续上次未完成的对话（从草稿恢复）
+ * 继续草稿对话
  */
 export async function continueDraft(): Promise<void> {
-  const draft = readDraft();
+  const draft = readDraft(DRAFTS_DIR);
   if (!draft) {
     console.log(chalk.yellow("\n📭 没有未完成的对话\n"));
     return;
@@ -122,21 +126,22 @@ export async function continueDraft(): Promise<void> {
   try {
     console.log(
       chalk.green(
-        `\n✅ 已恢复上次未完成的对话 (${formatMessageTime(draft.messageCount, draft.updatedAt)})\n`,
+        `\n✅ 已恢复上次未完成的对话 (${formatMessageTime(draft.messages.length, draft.updatedAt)})\n`,
       ),
     );
 
-    const model = await ensureEndpointConfig(draft.modelId);
-    const agent = await createAgent(model.id, draft.messages);
-
-    await runConversation(agent, model.id, undefined, undefined, draft.agentId);
+    await runConversation({
+      modelId: draft.modelId,
+      agentId: draft.agentId,
+      messages: draft.messages as AgentNS.Message[],
+    });
   } catch (error: any) {
     console.error(chalk.red(`\n❌ 错误: ${error.message}\n`));
   }
 }
 
 /**
- * 继续已保存的对话：列出对话 → 选择 → 进入对话
+ * 继续已保存的对话
  */
 export async function continueConversation(): Promise<void> {
   const conversations = getConversationsList();
@@ -160,22 +165,23 @@ export async function continueConversation(): Promise<void> {
     },
   ]);
 
-  if (convId === "__cancel__") return; // 取消返回主菜单
+  if (convId === "__cancel__") return;
 
   try {
-    const conversation = loadConversation(convId);
-    console.log(chalk.green(`\n✅ 已加载对话: ${conversation.name}\n`));
+    const conversation = readConversation(CONVERSATIONS_DIR, convId);
+    if (!conversation) {
+      console.log(chalk.red(`\n❌ 对话 "${convId}" 不存在\n`));
+      return;
+    }
+    console.log(chalk.green(`\n✅ 已加载对话: ${conversation.id}\n`));
 
-    const model = await ensureEndpointConfig(conversation.modelId);
-    const agent = await createAgent(model.id, conversation.messages);
-
-    await runConversation(
-      agent,
-      model.id,
-      conversation.id,
-      conversation.name,
-      conversation.agentId,
-    );
+    await runConversation({
+      modelId: conversation.modelId,
+      agentId: conversation.agentId,
+      messages: conversation.messages as AgentNS.Message[],
+      conversationId: conversation.id,
+      conversationName: conversation.id,
+    });
   } catch (error: any) {
     console.error(chalk.red(`\n❌ 错误: ${error.message}\n`));
   }

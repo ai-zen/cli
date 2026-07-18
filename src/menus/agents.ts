@@ -1,15 +1,15 @@
 import chalk from "chalk";
 import inquirer from "inquirer";
 import { AgentNS } from "@ai-zen/agents-core";
+import type { AgentDefinition } from "@ai-zen/agents-sdk";
 import {
-  getAgents,
-  getDefaultAgent,
+  listAgents,
+  readAgent,
+  writeAgent,
   deleteAgent,
-  getAgent,
-  upsertAgent,
-  setDefaultAgent,
-} from "../agents.js";
-import { getModels } from "../models.js";
+} from "@ai-zen/agents-sdk";
+import type { Model } from "@ai-zen/agents-sdk";
+import { AGENTS_DIR, readConfig, saveConfig } from "../config.js";
 import { formatFullTime } from "../format-time.js";
 import {
   selectItemAndAction,
@@ -20,7 +20,7 @@ import {
 /**
  * 获取消息列表中的文本摘要
  */
-function getMessagesSummary(messages: AgentNS.Message[]): string {
+function getMessagesSummary(messages: AgentDefinition["messages"]): string {
   const systemMsg = messages.find((m) => m.role === AgentNS.Role.System);
   if (systemMsg && typeof systemMsg.content === "string") {
     return systemMsg.content.substring(0, 80);
@@ -36,7 +36,7 @@ function getMessagesSummary(messages: AgentNS.Message[]): string {
  * 展现 Agent 详情
  */
 function formatAgentDetails(
-  agent: ReturnType<typeof getAgent>,
+  agent: AgentDefinition | undefined,
   isDefault: boolean,
 ): string[] {
   if (!agent) return [];
@@ -48,22 +48,27 @@ function formatAgentDetails(
     agent.description ? chalk.gray(`     描述: ${agent.description}`) : "",
     chalk.gray(`     消息数: ${agent.messages.length} 条`),
     chalk.gray(`     摘要: ${getMessagesSummary(agent.messages)}`),
-    chalk.gray(
-      `     创建时间: ${formatFullTime(agent.createdAt)}`,
-    ),
+    chalk.gray(`     创建时间: ${formatFullTime(agent.createdAt)}`),
     SEPARATOR_LONG,
   ].filter(Boolean);
 }
 
 /**
- * Agent 管理：先选 Agent，然后选择操作
+ * 获取默认 Agent
+ */
+function getDefaultAgent(): AgentDefinition | undefined {
+  const config = readConfig();
+  return config.defaultAgent ? readAgent(AGENTS_DIR, config.defaultAgent) ?? undefined : undefined;
+}
+
+/**
+ * Agent 管理
  */
 export async function manageAgentsInteractive(): Promise<void> {
   while (true) {
     console.log(chalk.blue.bold("\n🤖 Agent 管理\n"));
 
-    // 先列出所有 Agent 让用户选
-    const agents = getAgents();
+    const agents = listAgents(AGENTS_DIR);
     if (agents.length === 0) {
       console.log(chalk.yellow("📭 没有可用的 Agent\n"));
       const { create } = await inquirer.prompt([
@@ -82,7 +87,7 @@ export async function manageAgentsInteractive(): Promise<void> {
     }
 
     const defaultAgent = getDefaultAgent();
-    const result = await selectItemAndAction(agents, {
+    const result = await selectItemAndAction<AgentDefinition>(agents, {
       getName: (a) =>
         `${a.name}${defaultAgent?.id === a.id ? " ⭐(默认)" : ""}`,
       getValue: (a) => a.id,
@@ -95,7 +100,7 @@ export async function manageAgentsInteractive(): Promise<void> {
       emptyMessage: "📭 没有可用的 Agent",
     });
 
-    if (!result) continue; // 返回（选择列表中的"返回"）
+    if (!result) continue;
 
     const { item: agent, action } = result;
 
@@ -106,18 +111,22 @@ export async function manageAgentsInteractive(): Promise<void> {
       case "delete":
         await deleteAgentInteractive(agent.id);
         break;
-      case "set-default":
-        setDefaultAgent(agent.id);
+      case "set-default": {
+        const config = readConfig();
+        config.defaultAgent = agent.id;
+        saveConfig(config);
         console.log(chalk.green(`\n✅ 默认 Agent 已设置为 "${agent.name}"\n`));
         break;
+      }
       case "__exit__":
-        return; // 用户选择退出管理，回到主菜单
+        return;
     }
   }
 }
 
 /** 创建 Agent */
 async function createAgentInteractive(): Promise<void> {
+  const config = readConfig();
   const { name, description, systemContent, modelId } = await inquirer.prompt([
     {
       type: "input",
@@ -137,7 +146,7 @@ async function createAgentInteractive(): Promise<void> {
       name: "modelId",
       message: "默认模型:",
       choices: [
-        ...getModels().map((m) => ({
+        ...config.models.map((m: Model) => ({
           name: `${m.name} (${m.id})`,
           value: m.id,
         })),
@@ -148,15 +157,14 @@ async function createAgentInteractive(): Promise<void> {
 
   let id = name.toLowerCase().replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, "_");
 
-  // 检查 ID 是否已存在，冲突时追加随机后缀
-  if (getAgent(id)) {
+  if (readAgent(AGENTS_DIR, id)) {
     const suffix = Math.random().toString(36).substring(2, 6);
     id = `${id}_${suffix}`;
     console.log(chalk.yellow(`⚠️  名称生成的 ID 已存在，已调整为: ${id}\n`));
   }
 
   const now = new Date().toISOString();
-  upsertAgent({
+  writeAgent(AGENTS_DIR, {
     id,
     name,
     description,
@@ -170,10 +178,9 @@ async function createAgentInteractive(): Promise<void> {
 
 /** 编辑 Agent */
 async function editAgentInteractive(agentId: string): Promise<void> {
-  const agent = getAgent(agentId);
+  const agent = readAgent(AGENTS_DIR, agentId);
   if (!agent) return;
 
-  // 获取当前 system 消息内容
   const currentSystem = agent.messages.find(
     (m) => m.role === AgentNS.Role.System && typeof m.content === "string",
   );
@@ -182,6 +189,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
       ? currentSystem.content
       : "";
 
+  const config = readConfig();
   const { name, description, systemContent, modelId } = await inquirer.prompt([
     {
       type: "input",
@@ -206,7 +214,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
       name: "modelId",
       message: "默认模型:",
       choices: [
-        ...getModels().map((m) => ({
+        ...config.models.map((m: Model) => ({
           name: `${m.name} (${m.id})`,
           value: m.id,
         })),
@@ -215,7 +223,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
     },
   ]);
 
-  upsertAgent({
+  writeAgent(AGENTS_DIR, {
     ...agent,
     name,
     description,
@@ -228,7 +236,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
 
 /** 删除 Agent */
 async function deleteAgentInteractive(agentId: string): Promise<void> {
-  const agent = getAgent(agentId);
+  const agent = readAgent(AGENTS_DIR, agentId);
   if (!agent) return;
 
   const confirmed = await confirmAction(
@@ -236,7 +244,12 @@ async function deleteAgentInteractive(agentId: string): Promise<void> {
     false,
   );
   if (confirmed) {
-    deleteAgent(agentId);
+    deleteAgent(AGENTS_DIR, agentId);
+    const config = readConfig();
+    if (config.defaultAgent === agentId) {
+      config.defaultAgent = "";
+      saveConfig(config);
+    }
     console.log(chalk.green(`\n✅ Agent "${agent.name}" 已删除\n`));
   }
 }

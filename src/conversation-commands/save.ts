@@ -1,7 +1,8 @@
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { saveConversation } from "../conversations.js";
-import { ConversationContext } from "../types.js";
+import { writeConversation } from "@ai-zen/agents-sdk";
+import { CONVERSATIONS_DIR } from "../config.js";
+import type { ConversationContext } from "../types.js";
 
 export async function handleSave(ctx: ConversationContext): Promise<void> {
   const agent = ctx.agent;
@@ -15,13 +16,15 @@ export async function handleSave(ctx: ConversationContext): Promise<void> {
   ]);
 
   try {
-    const id = saveConversation(
-      name,
-      agent.messages,
-      ctx.modelId,
-      ctx.currentId,
-      ctx.agentId,
-    );
+    const id = ctx.currentId || name.replace(/[\\/:*?"<>|]/g, "_");
+    writeConversation(CONVERSATIONS_DIR, {
+      id,
+      agentId: ctx.agentId || "default",
+      modelId: ctx.modelId,
+      messages: agent.messages,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     console.log(chalk.green(`\n✅ 对话已保存: ${name} (ID: ${id})\n`));
     ctx.currentName = name;
     ctx.currentId = id;

@@ -82,12 +82,16 @@ function makeTestDir(): string {
 
 /** 在测试目录中预设完整的配置文件 */
 function setupConfigDir(aizDir: string, apiKey = "sk-test-fake-key"): void {
-  mkdirSync(join(aizDir, "conversations"), { recursive: true });
+  // CLI 运行时目录
+  mkdirSync(join(aizDir, "cli", "conversations"), { recursive: true });
+
+  // 共享目录
   mkdirSync(join(aizDir, "agents"), { recursive: true });
   mkdirSync(join(aizDir, "sub-agents"), { recursive: true });
 
+  // config.json 在 cli/ 下
   writeFileSync(
-    join(aizDir, "config.json"),
+    join(aizDir, "cli", "config.json"),
     JSON.stringify(
       {
         endpoints: [
@@ -169,15 +173,20 @@ describe("E2E: CLI 基本功能", () => {
     const aizDir = makeTestDir();
     const result = await runCli(["hook", "install"], undefined, {
       AI_ZEN_DIR: aizDir,
+      SHELL: "/bin/bash",
     });
     expect(result.stdout).toContain("✅ aiz hook 已安装");
   });
 
   it("aiz hook uninstall 卸载钩子", async () => {
     const aizDir = makeTestDir();
-    await runCli(["hook", "install"], undefined, { AI_ZEN_DIR: aizDir });
+    await runCli(["hook", "install"], undefined, {
+      AI_ZEN_DIR: aizDir,
+      SHELL: "/bin/bash",
+    });
     const result = await runCli(["hook", "uninstall"], undefined, {
       AI_ZEN_DIR: aizDir,
+      SHELL: "/bin/bash",
     });
     expect(result.stdout).toContain("✅ aiz hook 已从");
   });
@@ -198,6 +207,8 @@ describe("E2E: 对话命令（快速模式）", () => {
     const result = await runCli(["hello"], "/help\n/exit\n", {
       AI_ZEN_DIR: aizDir,
     });
+    console.log("STDOUT:", result.stdout);
+    console.log("STDERR:", result.stderr);
     expect(result.stdout).toContain("/exit");
     expect(result.stdout).toContain("/save");
   });
@@ -209,6 +220,8 @@ describe("E2E: 对话命令（快速模式）", () => {
     const result = await runCli(["hello"], "/new\n/exit\n", {
       AI_ZEN_DIR: aizDir,
     });
+    console.log("STDOUT:", result.stdout);
+    console.log("STDERR:", result.stderr);
     expect(result.stdout).toContain("确定要开始新对话吗");
   });
 });
@@ -231,21 +244,17 @@ describe("E2E: 真实 API 对话", () => {
       { AI_ZEN_DIR: aizDir },
     );
 
+    console.log("STDOUT:", result.stdout);
+    console.log("STDERR:", result.stderr);
+
     // 检查是否有 AI 回复的标记
     const hasAIResponse =
       result.stdout.includes("🤖 AI:") ||
       result.stdout.includes("💭 思考中") ||
       result.stdout.includes("💭 回答中");
 
-    if (!hasAIResponse) {
-      // 如果没有 AI 回复，可能是因为 stdin 发送太快，
-      // "你好"被当作快速模式的参数处理了？
-      // 检查 stdout 内容帮助调试
-      console.log("STDOUT:", result.stdout.substring(0, 300));
-    }
-
     // 验证草稿被保存（只要有消息发送就会保存）
-    const draftFile = join(aizDir, "draft.json");
+    const draftFile = join(aizDir, "cli", "drafts", "_current.json");
     if (existsSync(draftFile)) {
       const draft = JSON.parse(readFileSync(draftFile, "utf-8"));
       expect(draft.messages.length).toBeGreaterThanOrEqual(2);

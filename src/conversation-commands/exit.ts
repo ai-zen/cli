@@ -1,8 +1,8 @@
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { saveConversation } from "../conversations.js";
-import { clearDraft } from "../draft.js";
-import { ConversationContext } from "../types.js";
+import { writeConversation, deleteDraft } from "@ai-zen/agents-sdk";
+import { CONVERSATIONS_DIR, DRAFTS_DIR } from "../config.js";
+import type { ConversationContext } from "../types.js";
 
 export async function handleExit(ctx: ConversationContext): Promise<void> {
   const agent = ctx.agent;
@@ -18,17 +18,17 @@ export async function handleExit(ctx: ConversationContext): Promise<void> {
 
     if (saveBeforeExit) {
       try {
-        const id = saveConversation(
-          ctx.currentName,
-          agent.messages,
-          ctx.modelId,
-          ctx.currentId,
-          ctx.agentId,
-        );
-        console.log(
-          chalk.green(`\n✅ 对话已保存: ${ctx.currentName} (ID: ${id})\n`),
-        );
-        clearDraft();
+        const id = ctx.currentId || ctx.currentName.replace(/[\\/:*?"<>|]/g, "_");
+        writeConversation(CONVERSATIONS_DIR, {
+          id,
+          agentId: ctx.agentId || "default",
+          modelId: ctx.modelId,
+          messages: agent.messages,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        console.log(chalk.green(`\n✅ 对话已保存: ${ctx.currentName} (ID: ${id})\n`));
+        deleteDraft(DRAFTS_DIR);
       } catch (error) {
         console.error(chalk.red(`\n❌ 保存失败: ${error}\n`));
       }

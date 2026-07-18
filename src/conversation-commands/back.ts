@@ -26,6 +26,9 @@ interface BackTarget {
 export async function handleBack(ctx: ConversationContext): Promise<void> {
   const agent = ctx.agent;
   // 收集可撤回的目标消息：用户消息 和 工具/函数调用结果消息
+  //
+  // - 用户消息：选中后可修改内容重新发送
+  // - 工具/函数结果：选中后保留该结果，在其后追加新消息继续追问
   const targets: BackTarget[] = [];
   for (let i = 0; i < agent.messages.length; i++) {
     const msg = agent.messages[i];
@@ -56,7 +59,7 @@ export async function handleBack(ctx: ConversationContext): Promise<void> {
   }
 
   console.log(chalk.yellow.bold("\n📋 选择要撤回到哪条消息:"));
-  console.log(chalk.gray("将删除所选消息及其之后的所有内容\n"));
+  console.log(chalk.gray("选中用户消息可修改重发，选中工具结果可继续追问\n"));
 
   const choices = [...targets].reverse().map((target) => ({
     name: `${target.label} ${chalk.gray(target.preview)}`,
@@ -83,7 +86,9 @@ export async function handleBack(ctx: ConversationContext): Promise<void> {
   const isUserMsg = selectedMsg.role === AgentNS.Role.User;
   const originalText = getMessageText(selectedMsg);
 
-  // 截断消息
+  // 截断消息：
+  // - 用户消息：删掉该消息（sliceEnd = selectedIndex），让用户修改重发
+  // - 工具/函数结果：保留该结果（sliceEnd = selectedIndex + 1），让用户继续追问
   const sliceEnd = isUserMsg ? selectedIndex : selectedIndex + 1;
   agent.messages = agent.messages.slice(0, sliceEnd);
 

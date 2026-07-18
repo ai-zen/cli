@@ -1,23 +1,21 @@
-# @ai-zen/agents-cli
+# @ai-zen/cli
 
-A command-line interface for AI agents, built on `@ai-zen/agents-core`. Provides an interactive conversation terminal with 15 built-in tools (file system operations, command execution, image generation, etc.) and MCP protocol integration.
+A command-line interface for AI agents, built on `@ai-zen/agents-sdk` and `@ai-zen/agents-core`. Provides an interactive conversation terminal with built-in file system tools, sub-agent orchestration, and skill management.
 
 ## Installation
 
 ### Global Install
 
 ```bash
-npm install -g @ai-zen/agents-cli
+npm install -g @ai-zen/cli
 ```
 
 ### Build from Source
 
 ```bash
-git clone <your-repo-url>
-cd agents
+git clone git@github.com:ai-zen/cli.git
+cd cli
 pnpm install
-pnpm build-core
-cd packages/cli
 pnpm build
 npm install -g .
 ```
@@ -26,15 +24,15 @@ npm install -g .
 
 ```bash
 # Interactive main menu
-aiz
+zen
 
 # Quick chat (pass message as argument)
-aiz Hello, introduce yourself.
+zen Hello, introduce yourself.
 ```
 
 ## Main Menu
 
-Run `aiz` to enter the main menu:
+Run `zen` to enter the main menu:
 
 ```
 🤖 Welcome to AI-Zen CLI
@@ -49,9 +47,9 @@ Run `aiz` to enter the main menu:
   ❌  Exit
 ```
 
-### Draft Recovery (New in v0.7.0)
+### Draft Recovery
 
-If you exit a conversation without saving (or the process is killed), the conversation is **automatically saved as a draft**. Next time you start `aiz`, you'll see:
+If you exit a conversation without saving (or the process is killed), the conversation is **automatically saved as a draft**. Next time you start `zen`, you'll see:
 
 ```
 ▶️  Continue last unfinished conversation (12 messages, 2025/1/1 12:00:00)
@@ -74,7 +72,7 @@ While in a conversation, all commands start with `/`:
 
 ### Conversation Migration
 
-When the context approaches the token limit, the system automatically generates a **handover document** summarizing completed tasks, pending items, and key decisions. A new conversation session is created with this document as context, ensuring seamless continuation.
+When the API response's `usage.prompt_tokens` exceeds the model's `maxContextTokens`, the system automatically generates a **handover document** summarizing completed tasks, pending items, and key decisions. A new conversation session is created with this document as context, ensuring seamless continuation.
 
 The migration prompt template includes:
 - **Conversation Breakpoint** — Last user/AI exchange verbatim
@@ -90,19 +88,19 @@ When you type an unrecognized command in your terminal, it can be automatically 
 
 ```bash
 # Install the hook
-aiz hook install
+zen hook install
 
 # After that, try typing something random:
 > what's the weather today?
 # This will be forwarded to AI instead of showing "command not found"
 
 # Uninstall
-aiz hook uninstall
+zen hook uninstall
 ```
 
 ## Configuration
 
-Configuration is stored in `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json` if set).
+Configuration is stored in `~/.ai-zen/cli/config.json` (or `$AI_ZEN_DIR/cli/config.json` if set). The `maxContextTokens` field on each model sets the migration threshold (typically ~25% of the model's actual context window, e.g. 250,000 for a 1M-token model).
 
 ```jsonc
 {
@@ -119,52 +117,87 @@ Configuration is stored in `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json`
       "id": "gpt-5.5",
       "name": "GPT-5.5",
       "endpointId": "openai",
-      "modelName": "gpt-5.5"
+      "modelName": "gpt-5.5",
+      "maxContextTokens": 250000
+    }
+  ],
+  "imageModels": [
+    {
+      "id": "cogview-3",
+      "name": "CogView-3",
+      "endpointId": "bigmodelcn",
+      "modelName": "cogview-3",
+      "defaultSize": "1024x1024"
     }
   ],
   "defaultModel": "deepseek-v4-flash",
+  "defaultImageModel": "cogview-3",
   "defaultAgent": "default",
-  "mcpServers": []
+  "defaultMigrationModel": "deepseek-v4-flash"
 }
 ```
 
 ### Environment Variable
 
-- `AI_ZEN_DIR` — Override the config directory (useful for testing and sandboxing)
+- `AI_ZEN_DIR` — Override the shared root directory (default: `~/.ai-zen`). CLI runtime data goes to `$AI_ZEN_DIR/cli/`, and shared resources (agents, skills, tools, MCP, etc.) go to `$AI_ZEN_DIR/`.
 
-## Filesystem Auto-Discovery
-
-All user resources are automatically discovered from the filesystem:
+## Filesystem Layout
 
 ```
-~/.ai-zen/                    ← Global (shared across projects)
-├── config.json               ← Endpoints, models, MCP config
-├── agents/                   ← Conversation agents
-│   └── default.json
-├── sub-agents/               ← Sub-agents (callable as tools)
-│   └── general-assistant.json
-├── skills/                   ← Skill prompts (.md)
-│   └── git-operations.md
-├── tools/                    ← Custom tools (.js)
+~/.ai-zen/                    ← Shared root (AI_ZEN_DIR)
+├── cli/                      ← CLI runtime data
+│   ├── config.json           ← CLI endpoints, models
+│   ├── conversations/        ← CLI conversations
+│   └── drafts/               ← CLI drafts
+├── agents/                   ← Agent definitions (shared)
+│   ├── default.json          ← Default agent (created on first run)
+│   └── my-custom-agent.json
+├── sub-agents/               ← SubAgent definitions (shared)
+│   ├── general-assistant.json ← Default sub-agent (created on first run)
+│   └── my-coder.json
+├── skills/                   ← Skill directory (shared)
+│   └── my-skill/
+│       └── SKILL.md
+├── tools/                    ← User-defined tools (shared)
 │   └── my-tool.js
-├── conversations/            ← Saved conversations
-└── draft.json                ← Auto-saved draft (for crash recovery)
+├── mcp.json                  ← MCP config (shared)
+└── mcp-oauth/                ← MCP OAuth tokens (shared)
 
 /path/to/project/
-└── .ai-zen/                  ← Project-level (overrides global)
-    ├── agents/
-    ├── sub-agents/
-    ├── skills/
-    └── tools/
+├── .mcp.json                 ← Project-shared MCP config (committable)
+└── .ai-zen/
+    ├── mcp.json              ← Project-personal MCP config (not committed)
+    ├── skills/               ← Project Skill directory
+    │   └── my-skill/
+    │       └── SKILL.md
+    ├── tools/                ← Project tool directory
+    │   └── my-tool.js
+    ├── sub-agents/           ← Project SubAgent directory
+    │   └── project-helper.json
+    └── agents/               ← Project Agent directory (overrides user-level)
+        └── project-agent.json
 ```
 
-## Built-in Tools (15)
+### MCP Config Merge Priority
+
+MCP server configurations are merged from multiple sources (high to low priority):
+
+1. Project personal `.ai-zen/mcp.json` (collected from cwd up to git root)
+2. Project shared `.mcp.json` (same)
+3. User-level `~/.ai-zen/mcp.json`
+
+Same-named servers in higher priority override lower ones.
+
+## Built-in Tools
+
+The CLI provides 16 built-in file system tools, implemented by `@ai-zen/agents-sdk`:
 
 | Tool | Description |
 |------|-------------|
 | `cwd` | Get current working directory |
 | `readFile` | Read file contents |
 | `writeFile` | Write content to file |
+| `edit` | Replace text in files (single replacement) |
 | `batchEdit` | Batch replace text in files |
 | `mkdir` | Create directories |
 | `rm` | Delete files or directories |
@@ -178,24 +211,68 @@ All user resources are automatically discovered from the filesystem:
 | `rename` | Rename or move files |
 | `copy` | Copy files or directories |
 
+### Dynamic Tools
+
+In addition to built-in tools, the SDK provides 5 dynamic loading tools that are registered based on available resources and permissions:
+
+| Tool | Purpose |
+|------|---------|
+| `load_skill` | Load a Skill document into context (idempotent, repeated calls skip re-injection) |
+| `call_skill_sub_agent` | Delegate a task to a Skill sub-agent (only works for Skills with `sub-agent: true` in frontmatter) |
+| `load_mcp` | Connect to an MCP server and list its tools (idempotent, repeated calls skip reconnection) |
+| `call_mcp_tool` | Call a tool on a connected MCP server |
+| `read_mcp_resource` | Read a resource from a connected MCP server |
+
+## Tool Assembly Pipeline
+
+Tools are assembled in three phases by the SDK's `Capabilities` class:
+
+1. **Discovery** — Scan filesystem for built-in tools, user tools, SubAgents, Skills, and MCP servers
+2. **Filtering** — Apply permissions (`allow`/`deny`) and security exclusions (recursion protection)
+3. **Instantiation** — Map filtered names to `Tool` instances and register dynamic loaders
+
+Each Agent has independent permissions — no inheritance between parent Agent and SubAgent. The only exception is the temporary Skill sub-agent (created by `call_skill_sub_agent`), which inherits the caller's permissions as a transient conversation proxy rather than an independent entity.
+
+## Permission Model
+
+```typescript
+interface AgentPermissions {
+  tools?: { allow: string[] } | { deny: string[] };
+  skills?: { allow: string[] } | { deny: string[] };
+  mcps?: { allow: string[] } | { deny: string[] };
+  subagents?: { allow: string[] } | { deny: string[] };
+}
+```
+
+- Missing `permissions` field = all dimensions denied (`deny: ["*"]`)
+- Each dimension uses either `allow` (whitelist) or `deny` (blacklist), mutually exclusive
+- `"*"` wildcard matches any name
+- Denied resources are fully invisible to the LLM (not just blocked)
+
 ## MCP Server Support
 
-Supports MCP (Model Context Protocol) for integrating external tools:
+MCP servers are configured in `mcp.json` files:
 
 ```json
 {
-  "mcpServers": [
-    {
-      "id": "my-server",
-      "name": "My MCP Server",
+  "servers": {
+    "my-server": {
       "transport": "stdio",
       "command": "node",
       "args": ["server.js"],
-      "enabled": true
+      "env": {
+        "API_KEY": "xxx"
+      }
     }
-  ]
+  }
 }
 ```
+
+Connection lifecycle (connect, reconnect with exponential backoff, idle timeout) is fully managed by the SDK's `McpConnectionManager`.
+
+### OAuth (HTTP transport only) — 暂不支持
+
+OAuth 2.0 授权流程（`mcp.json` 中的 `oauth` 字段）已定义类型和预留 `mcp-oauth/` 存储目录，但尚未实现。目前配置了 `oauth` 的 HTTP MCP 服务器将因缺少 token 而连接失败。
 
 ## Preset Endpoints
 
@@ -222,31 +299,19 @@ Supports MCP (Model Context Protocol) for integrating external tools:
 ## Development
 
 ```bash
-# In project root
 pnpm install
-
-# Build core dependency
-pnpm build-core
-
-# Build CLI
-pnpm --filter @ai-zen/agents-cli build
-
-# Run tests
-pnpm --filter @ai-zen/agents-cli test
-
-# Dev mode (build + run)
-pnpm --filter @ai-zen/agents-cli start
+pnpm build
+pnpm start
 ```
 
 ## Testing
 
 ```bash
 # Unit tests
-pnpm --filter @ai-zen/agents-cli test
+pnpm test
 
 # E2E tests (requires API key in .env.local)
-# Edit packages/cli/.env.local with your key, then:
-pnpm --filter @ai-zen/agents-cli test -- src/__tests__/e2e.test.ts
+pnpm test -- src/__tests__/e2e.test.ts
 ```
 
 ## License

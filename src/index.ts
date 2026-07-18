@@ -1,13 +1,9 @@
 #!/usr/bin/env node
 
-import { createRequire } from "module";
 import chalk from "chalk";
 import { showMainMenu } from "./menus/index.js";
 import { startNewConversation } from "./menus/start-conversation.js";
 import { installHook, uninstallHook } from "./hook.js";
-
-const require = createRequire(import.meta.url);
-const { version } = require("../package.json");
 
 /**
  * CLI 入口
@@ -19,8 +15,6 @@ const { version } = require("../package.json");
  */
 
 async function main(): Promise<void> {
-  console.log(chalk.green.bold(`🧠 AI Agents CLI v${version}`));
-
   const args = process.argv.slice(2);
 
   if (args.length === 0) {

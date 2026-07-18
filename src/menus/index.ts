@@ -1,28 +1,32 @@
+/**
+ * 主菜单
+ */
+
+import { createRequire } from "module";
 import chalk from "chalk";
 import inquirer from "inquirer";
+import { readDraft } from "@ai-zen/agents-sdk";
 import { startNewConversation, continueConversation, continueDraft } from "./start-conversation.js";
 import { manageConversations } from "./conversations.js";
 import { manageAgentsInteractive } from "./agents.js";
 import { showInteractiveConfig } from "./config.js";
-import { readDraft } from "../draft.js";
+import { DRAFTS_DIR } from "../config.js";
 import { formatMessageTime } from "../format-time.js";
 
-/**
- * 主菜单
- */
-export async function showMainMenu(): Promise<void> {
-  console.log(chalk.blue.bold("\n🤖 欢迎使用 AI-Zen CLI\n"));
+const require = createRequire(import.meta.url);
+const { version } = require("../../package.json");
 
-  // 检测是否有未完成的草稿对话
-  const draft = readDraft();
+export async function showMainMenu(): Promise<void> {
+  console.log(chalk.blue.bold(`\n🤖 AI-Zen CLI v${version}\n`));
+
+  const draft = readDraft(DRAFTS_DIR);
 
   const choices: { name: string; value: string }[] = [];
 
-  // 如果有草稿，放在最前面作为首选
   if (draft) {
     choices.push(
       {
-        name: `▶️  继续上次未完成的对话 (${formatMessageTime(draft.messageCount, draft.updatedAt)})`,
+        name: `▶️  继续上次未完成的对话 (${formatMessageTime(draft.messages.length, draft.updatedAt)})`,
         value: "continue-draft",
       },
       { name: "💬 开始新对话（未完成的对话将被存档）", value: "chat" },

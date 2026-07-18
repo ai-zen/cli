@@ -1,26 +1,24 @@
+/**
+ * 配置管理菜单
+ *
+ * 所有配置读写委托给 SDK 的 readConfig / saveConfig。
+ * 菜单 UI 通过 config 对象的类型化字段直接操作，无需中间包装函数。
+ */
+
 import chalk from "chalk";
 import inquirer from "inquirer";
-import {
-  getModels,
-  getDefaultModel,
-  setDefaultModel,
-  getDefaultImageModel,
-  setDefaultImageModel,
-  getImageModels,
-} from "../models.js";
-import { getEndpoints, getEndpoint, upsertEndpoint } from "../endpoints.js";
-import { readConfig, saveConfig } from "../config.js";
+import { readConfig, saveConfig, readMcpConfig, writeMcpConfig } from "../config.js";
+import type { Endpoint, Model, ImageModel } from "@ai-zen/agents-sdk";
+import type { McpServersMap } from "../config.js";
 import { showConfig } from "./config-display.js";
-import { McpServerConfig } from "../types.js";
 import { maskApiKey, selectFromList, SEPARATOR } from "./common.js";
 
-// ==================== 单步操作函数 ====================
+// ==================== 端点相关 ====================
 
-/** 查看所有端点 */
 function showEndpoints(): void {
-  const endpoints = getEndpoints();
+  const config = readConfig();
   console.log(chalk.blue.bold("\n🌐 端点列表:\n"));
-  for (const ep of endpoints) {
+  for (const ep of config.endpoints) {
     console.log(chalk.white(`  ${ep.name} (${ep.id})`));
     console.log(chalk.gray(`     API Key: ${maskApiKey(ep.apiKey)}`));
     console.log(chalk.gray(`     Base URL: ${ep.baseUrl}`));
@@ -28,19 +26,18 @@ function showEndpoints(): void {
   }
 }
 
-/** 编辑端点 */
 async function editEndpoint(): Promise<void> {
-  const endpoints = getEndpoints();
-  const endpointId = await selectFromList(endpoints, {
+  const config = readConfig();
+  const endpointId = await selectFromList(config.endpoints, {
     message: "选择要编辑的端点:",
-    getName: (e) => `${e.name} (${e.id}) ${e.apiKey ? "✅" : "❌"}`,
-    getValue: (e) => e.id,
+    getName: (e: Endpoint) => `${e.name} (${e.id}) ${e.apiKey ? "✅" : "❌"}`,
+    getValue: (e: Endpoint) => e.id,
     emptyMessage: "⚠️  没有端点",
     backLabel: "🔙 取消",
   });
   if (!endpointId) return;
 
-  const endpoint = getEndpoint(endpointId);
+  const endpoint = config.endpoints.find((e) => e.id === endpointId);
   if (!endpoint) return;
 
   const { field } = await inquirer.prompt([
@@ -51,14 +48,8 @@ async function editEndpoint(): Promise<void> {
       choices: [
         { name: `名称 (当前: ${endpoint.name})`, value: "name" },
         { name: `Base URL (当前: ${endpoint.baseUrl})`, value: "baseUrl" },
-        {
-          name: `API Key (当前: ${endpoint.apiKey ? "已设置" : "未设置"})`,
-          value: "apiKey",
-        },
-        {
-          name: `描述 (当前: ${endpoint.description || "无"})`,
-          value: "description",
-        },
+        { name: `API Key (当前: ${endpoint.apiKey ? "已设置" : "未设置"})`, value: "apiKey" },
+        { name: `描述 (当前: ${endpoint.description || "无"})`, value: "description" },
         { name: "🔙 取消", value: "back" },
       ],
     },
@@ -70,27 +61,28 @@ async function editEndpoint(): Promise<void> {
       type: field === "apiKey" ? "password" : "input",
       name: "value",
       message: `请输入新的${field === "name" ? "名称" : field === "baseUrl" ? "Base URL" : field === "apiKey" ? "API Key" : "描述"}:`,
-      default: (endpoint as any)[field] || "",
+      default: String((endpoint as unknown as Record<string, unknown>)[field] ?? ""),
       mask: field === "apiKey" ? "*" : undefined,
     },
   ]);
-  upsertEndpoint({ ...endpoint, [field]: value });
+
+  (endpoint as unknown as Record<string, unknown>)[field] = value;
+  saveConfig(config);
   console.log(chalk.green(`\n✅ 端点已更新\n`));
 }
 
-/** 设置 API Key */
 async function setApiKeyInteractive(): Promise<void> {
-  const endpoints = getEndpoints();
-  const endpointId = await selectFromList(endpoints, {
+  const config = readConfig();
+  const endpointId = await selectFromList(config.endpoints, {
     message: "选择要设置 API Key 的端点:",
-    getName: (e) => `${e.name} (${e.id}) ${e.apiKey ? "✅" : "❌"}`,
-    getValue: (e) => e.id,
+    getName: (e: Endpoint) => `${e.name} (${e.id}) ${e.apiKey ? "✅" : "❌"}`,
+    getValue: (e: Endpoint) => e.id,
     emptyMessage: "⚠️  没有端点",
     backLabel: "🔙 取消",
   });
   if (!endpointId) return;
 
-  const endpoint = getEndpoint(endpointId);
+  const endpoint = config.endpoints.find((e) => e.id === endpointId);
   if (!endpoint) return;
 
   const { apiKey } = await inquirer.prompt([
@@ -103,106 +95,97 @@ async function setApiKeyInteractive(): Promise<void> {
     },
   ]);
 
-  upsertEndpoint({ ...endpoint, apiKey });
+  endpoint.apiKey = apiKey;
+  saveConfig(config);
   console.log(chalk.green(`\n✅ ${endpoint.name} API Key 已设置\n`));
 }
 
-/** 设置默认对话模型 */
+// ==================== 模型相关 ====================
+
 async function setDefaultModelInteractive(): Promise<void> {
-  const models = getModels();
-  const currentDefault = getDefaultModel();
-  const modelId = await selectFromList(models, {
+  const config = readConfig();
+  const modelId = await selectFromList(config.models, {
     message: "选择默认对话模型:",
-    getName: (m) => `${m.name} (${m.id})${currentDefault?.id === m.id ? " ⭐ 当前" : ""}`,
-    getValue: (m) => m.id,
+    getName: (m: Model) => `${m.name} (${m.id})${config.defaultModel === m.id ? " ⭐ 当前" : ""}`,
+    getValue: (m: Model) => m.id,
     emptyMessage: "⚠️  没有可用的对话模型",
     backLabel: "🔙 取消",
   });
   if (!modelId) return;
-  setDefaultModel(modelId);
-  const model = getDefaultModel();
+  config.defaultModel = modelId;
+  saveConfig(config);
+  const model = config.models.find((m) => m.id === modelId);
   console.log(chalk.green(`\n✅ 默认对话模型已设置为 "${model?.name}"\n`));
 }
 
-/** 设置默认图片生成模型 */
 async function setDefaultImageModelInteractive(): Promise<void> {
-  const imageModels = getImageModels();
-  const currentDefault = getDefaultImageModel();
+  const config = readConfig();
+  const imageModels = config.imageModels || [];
   const modelId = await selectFromList(imageModels, {
     message: "选择默认图片生成模型:",
-    getName: (m) => `${m.name} (${m.id})${currentDefault?.id === m.id ? " ⭐ 当前" : ""}`,
-    getValue: (m) => m.id,
+    getName: (m: ImageModel) => `${m.name} (${m.id})${config.defaultImageModel === m.id ? " ⭐ 当前" : ""}`,
+    getValue: (m: ImageModel) => m.id,
     emptyMessage: "⚠️  没有可用的图片生成模型",
     backLabel: "🔙 取消",
   });
   if (!modelId) return;
-  setDefaultImageModel(modelId);
-  const model = getDefaultImageModel();
+  config.defaultImageModel = modelId;
+  saveConfig(config);
+  const model = imageModels.find((m) => m.id === modelId);
   console.log(chalk.green(`\n✅ 默认图片生成模型已设置为 "${model?.name}"\n`));
 }
 
-/** 查看所有对话模型 */
 function showModels(): void {
-  const models = getModels();
-  const defaultModel = getDefaultModel();
+  const config = readConfig();
   console.log(chalk.blue.bold("\n🔧 对话模型列表:\n"));
-  if (models.length === 0) {
+  if (config.models.length === 0) {
     console.log(chalk.yellow("  (无)\n"));
     return;
   }
-  for (const model of models) {
-    const ep = getEndpoint(model.endpointId);
-    const isDefault = defaultModel?.id === model.id;
-    console.log(
-      chalk.white(`  ${isDefault ? "⭐ " : "  "}${model.name} (${model.id})`),
-    );
+  for (const model of config.models) {
+    const ep = config.endpoints.find((e) => e.id === model.endpointId);
+    const isDefault = config.defaultModel === model.id;
+    console.log(chalk.white(`  ${isDefault ? "⭐ " : "  "}${model.name} (${model.id})`));
     console.log(chalk.gray(`     端点: ${ep ? ep.name : "未知"}`));
-    console.log(chalk.gray(`     模型名: ${model.modelName}`));
-    if (model.description)
-      console.log(chalk.gray(`     描述: ${model.description}`));
+    console.log(chalk.gray(`     模型名: ${model.modelName || model.id}`));
+    if (model.description) console.log(chalk.gray(`     描述: ${model.description}`));
     console.log(SEPARATOR);
   }
 }
 
-/** 查看所有图片生成模型 */
 function showImageModels(): void {
-  const imageModels = getImageModels();
-  const defaultImageModel = getDefaultImageModel();
+  const config = readConfig();
+  const imageModels = config.imageModels || [];
   console.log(chalk.blue.bold("\n🎨 图片生成模型列表:\n"));
   if (imageModels.length === 0) {
     console.log(chalk.yellow("  (无)\n"));
     return;
   }
   for (const model of imageModels) {
-    const ep = getEndpoint(model.endpointId);
-    const isDefault = defaultImageModel?.id === model.id;
-    console.log(
-      chalk.white(`  ${isDefault ? "⭐ " : "  "}${model.name} (${model.id})`),
-    );
+    const ep = config.endpoints.find((e) => e.id === model.endpointId);
+    const isDefault = config.defaultImageModel === model.id;
+    console.log(chalk.white(`  ${isDefault ? "⭐ " : "  "}${model.name} (${model.id})`));
     console.log(chalk.gray(`     端点: ${ep ? ep.name : "未知"}`));
-    console.log(chalk.gray(`     模型名: ${model.modelName}`));
-    if (model.defaultSize)
-      console.log(chalk.gray(`     默认尺寸: ${model.defaultSize}`));
-    if (model.defaultQuality)
-      console.log(chalk.gray(`     默认质量: ${model.defaultQuality}`));
+    console.log(chalk.gray(`     模型名: ${model.modelName || model.id}`));
+    if (model.defaultSize) console.log(chalk.gray(`     默认尺寸: ${model.defaultSize}`));
+    if (model.defaultQuality) console.log(chalk.gray(`     默认质量: ${model.defaultQuality}`));
     console.log(SEPARATOR);
   }
 }
 
-// ==================== MCP 服务器管理 ====================
+// ==================== MCP 服务器管理（操作 mcp.json）====================
 
-/** 查看所有 MCP 服务器 */
 function showMcpServers(): void {
-  const config = readConfig();
-  const servers = config.mcpServers || [];
+  const mcp = readMcpConfig();
+  const names = Object.keys(mcp.servers);
   console.log(chalk.blue.bold("\n🔌 MCP 服务器列表:\n"));
-  if (servers.length === 0) {
+  if (names.length === 0) {
     console.log(chalk.yellow("  (未配置 MCP 服务器)\n"));
     return;
   }
-  for (const srv of servers) {
-    const status = srv.enabled === false ? "❌ 已禁用" : "✅ 已启用";
-    console.log(chalk.white(`  ${srv.name} (${srv.id}) ${status}`));
+  for (const name of names) {
+    const srv = mcp.servers[name];
+    console.log(chalk.white(`  ${name}`));
     console.log(chalk.gray(`     传输方式: ${srv.transport}`));
     if (srv.transport === "stdio") {
       console.log(chalk.gray(`     命令: ${srv.command}`));
@@ -214,20 +197,13 @@ function showMcpServers(): void {
   }
 }
 
-/** 新增 MCP 服务器 */
 async function addMcpServer(): Promise<void> {
-  const { id, name, transport } = await inquirer.prompt([
-    {
-      type: "input",
-      name: "id",
-      message: "服务器 ID（唯一标识）:",
-      validate: (input: string) => input.trim() !== "" || "ID 不能为空",
-    },
+  const { name, transport } = await inquirer.prompt([
     {
       type: "input",
       name: "name",
-      message: "显示名称:",
-      default: (answers: any) => answers.id,
+      message: "服务器名称（唯一标识）:",
+      validate: (input: string) => input.trim() !== "" || "名称不能为空",
     },
     {
       type: "list",
@@ -235,17 +211,12 @@ async function addMcpServer(): Promise<void> {
       message: "传输方式:",
       choices: [
         { name: "stdio（本地子进程）", value: "stdio" },
-        { name: "SSE（远程 HTTP）", value: "sse" },
+        { name: "HTTP/SSE（远程）", value: "http" },
       ],
     },
   ]);
 
-  let serverConfig: McpServerConfig = {
-    id,
-    name,
-    transport,
-    enabled: true,
-  };
+  const server: Record<string, unknown> = { transport };
 
   if (transport === "stdio") {
     const { command, args } = await inquirer.prompt([
@@ -261,63 +232,57 @@ async function addMcpServer(): Promise<void> {
         message: "命令参数（空格分隔，可选）:",
       },
     ]);
-    serverConfig.command = command;
-    serverConfig.args = args.trim() ? args.trim().split(/\s+/) : undefined;
+    server.command = command;
+    server.args = args.trim() ? args.trim().split(/\s+/) : undefined;
   } else {
     const { url } = await inquirer.prompt([
       {
         type: "input",
         name: "url",
-        message: "SSE URL:",
+        message: "URL:",
         validate: (input: string) => input.trim() !== "" || "URL 不能为空",
       },
     ]);
-    serverConfig.url = url;
+    server.url = url;
   }
 
-  const config = readConfig();
-  if (!config.mcpServers) config.mcpServers = [];
-  if (config.mcpServers.find((s) => s.id === id)) {
-    console.log(chalk.red(`\n❌ ID "${id}" 已存在\n`));
+  const mcp = readMcpConfig();
+  if (mcp.servers[name]) {
+    console.log(chalk.red(`\n❌ 服务器 "${name}" 已存在\n`));
     return;
   }
-  config.mcpServers.push(serverConfig);
-  saveConfig(config);
+  mcp.servers[name] = server as McpServersMap[string];
+  writeMcpConfig(mcp);
   console.log(chalk.green(`\n✅ MCP 服务器 "${name}" 已添加\n`));
 }
 
-/** 编辑 MCP 服务器 */
 async function editMcpServer(): Promise<void> {
-  const config = readConfig();
-  const servers = config.mcpServers || [];
+  const mcp = readMcpConfig();
+  const names = Object.keys(mcp.servers);
 
-  const serverId = await selectFromList(servers, {
+  const serverName = await selectFromList(names.map((n) => ({ name: n })), {
     message: "选择要编辑的 MCP 服务器:",
-    getName: (s) => `${s.name} (${s.id}) ${s.enabled === false ? "❌" : "✅"}`,
-    getValue: (s) => s.id,
+    getName: (item: { name: string }) => item.name,
+    getValue: (item: { name: string }) => item.name,
     emptyMessage: "⚠️  没有 MCP 服务器",
     backLabel: "🔙 取消",
   });
-  if (!serverId) return;
+  if (!serverName) return;
 
-  const server = servers.find((s) => s.id === serverId);
+  const server = mcp.servers[serverName];
   if (!server) return;
 
   const { field } = await inquirer.prompt([
     {
       type: "list",
       name: "field",
-      message: "选择要修改的字段:",
+      message: "选择操作:",
       choices: [
-        { name: `名称 (当前: ${server.name})`, value: "name" },
-        { name: "启用/禁用", value: "enabled" },
+        { name: `名称 (当前: ${serverName})`, value: "name" },
         ...(server.transport === "stdio"
           ? [
               { name: `命令 (当前: ${server.command})`, value: "command" },
-              {
-                name: `参数 (当前: ${(server.args || []).join(" ") || "无"})`,
-                value: "args",
-              },
+              { name: `参数 (当前: ${(server.args || []).join(" ") || "无"})`, value: "args" },
             ]
           : [{ name: `URL (当前: ${server.url})`, value: "url" }]),
         { name: "🗑️  删除此服务器", value: "delete" },
@@ -329,20 +294,28 @@ async function editMcpServer(): Promise<void> {
   if (field === "back") return;
 
   if (field === "delete") {
-    config.mcpServers = servers.filter((s) => s.id !== serverId);
-    saveConfig(config);
-    console.log(chalk.green(`\n✅ MCP 服务器 "${server.name}" 已删除\n`));
+    delete mcp.servers[serverName];
+    writeMcpConfig(mcp);
+    console.log(chalk.green(`\n✅ MCP 服务器 "${serverName}" 已删除\n`));
     return;
   }
 
-  if (field === "enabled") {
-    server.enabled = server.enabled === false ? true : false;
-    saveConfig(config);
-    console.log(
-      chalk.green(
-        `\n✅ MCP 服务器 "${server.name}" 已${server.enabled ? "启用" : "禁用"}\n`,
-      ),
-    );
+  if (field === "name") {
+    const { newName } = await inquirer.prompt([
+      {
+        type: "input",
+        name: "newName",
+        message: "新名称:",
+        default: serverName,
+        validate: (input: string) => input.trim() !== "" || "名称不能为空",
+      },
+    ]);
+    if (newName !== serverName) {
+      mcp.servers[newName] = server;
+      delete mcp.servers[serverName];
+    }
+    writeMcpConfig(mcp);
+    console.log(chalk.green(`\n✅ MCP 服务器已重命名\n`));
     return;
   }
 
@@ -350,23 +323,21 @@ async function editMcpServer(): Promise<void> {
     {
       type: "input",
       name: "value",
-      message: `请输入新的${field === "name" ? "名称" : field === "command" ? "命令" : field === "args" ? "参数（空格分隔）" : "URL"}:`,
-      default: field === "args"
-        ? (server.args || []).join(" ")
-        : (server as any)[field] || "",
+      message: `请输入新${field === "command" ? "命令" : field === "args" ? "参数（空格分隔）" : "URL"}:`,
+      default: field === "args" ? (server.args || []).join(" ") : String((server as Record<string, unknown>)[field] ?? ""),
     },
   ]);
 
   if (field === "args") {
     server.args = value.trim() ? value.trim().split(/\s+/) : [];
   } else {
-    (server as any)[field] = value;
+    (server as Record<string, unknown>)[field] = value;
   }
-  saveConfig(config);
+  writeMcpConfig(mcp);
   console.log(chalk.green(`\n✅ MCP 服务器已更新\n`));
 }
 
-// ==================== 配置管理主菜单（扁平化） ====================
+// ==================== 配置管理主菜单 ====================
 
 export async function showInteractiveConfig(): Promise<void> {
   while (true) {
@@ -393,40 +364,20 @@ export async function showInteractiveConfig(): Promise<void> {
     ]);
 
     switch (action) {
-      case "show":
-        showConfig();
-        break;
-      case "set-key":
-        await setApiKeyInteractive();
-        break;
-      case "list-endpoints":
-        showEndpoints();
-        break;
-      case "edit-endpoint":
-        await editEndpoint();
-        break;
-      case "list-models":
-        showModels();
-        break;
-      case "set-default-model":
-        await setDefaultModelInteractive();
-        break;
-      case "list-image-models":
-        showImageModels();
-        break;
-      case "set-default-image-model":
-        await setDefaultImageModelInteractive();
-        break;
-      case "mcp":
-        await manageMcpServers();
-        break;
-      case "back":
-        return;
+      case "show": showConfig(); break;
+      case "set-key": await setApiKeyInteractive(); break;
+      case "list-endpoints": showEndpoints(); break;
+      case "edit-endpoint": await editEndpoint(); break;
+      case "list-models": showModels(); break;
+      case "set-default-model": await setDefaultModelInteractive(); break;
+      case "list-image-models": showImageModels(); break;
+      case "set-default-image-model": await setDefaultImageModelInteractive(); break;
+      case "mcp": await manageMcpServers(); break;
+      case "back": return;
     }
   }
 }
 
-/** MCP 服务器管理子菜单 */
 async function manageMcpServers(): Promise<void> {
   while (true) {
     console.log(chalk.blue.bold("\n🔌 MCP 服务器管理\n"));
@@ -446,17 +397,10 @@ async function manageMcpServers(): Promise<void> {
     ]);
 
     switch (action) {
-      case "list":
-        showMcpServers();
-        break;
-      case "add":
-        await addMcpServer();
-        break;
-      case "edit":
-        await editMcpServer();
-        break;
-      case "back":
-        return;
+      case "list": showMcpServers(); break;
+      case "add": await addMcpServer(); break;
+      case "edit": await editMcpServer(); break;
+      case "back": return;
     }
   }
 }
