@@ -89,9 +89,9 @@ function setupConfigDir(aizDir: string, apiKey = "sk-test-fake-key"): void {
   mkdirSync(join(aizDir, "agents"), { recursive: true });
   mkdirSync(join(aizDir, "sub-agents"), { recursive: true });
 
-  // config.json 在 cli/ 下
+  // config.json 在 AI_ZEN_DIR 根目录下
   writeFileSync(
-    join(aizDir, "cli", "config.json"),
+    join(aizDir, "config.json"),
     JSON.stringify(
       {
         endpoints: [

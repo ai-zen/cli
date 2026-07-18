@@ -1,6 +1,6 @@
 {
   "name": "@ai-zen/cli",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "AI-ZEN CLI - interactive conversation terminal with file tools and draft recovery",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -32,7 +32,7 @@
   "license": "ISC",
   "dependencies": {
     "@ai-zen/agents-core": "^3.0.0-alpha.2",
-    "@ai-zen/agents-sdk": "^0.2.0-alpha.2",
+    "@ai-zen/agents-sdk": "^0.2.0-alpha.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "chalk": "^5.3.0",
     "dayjs": "^1.11.21",
