@@ -158,20 +158,20 @@ export async function runConversation(options: RunConversationOptions): Promise<
 
   // ============ 流式渲染器 ============
 
-  const mainRenderer = new DeltaRenderer({
+  const renderer = new DeltaRenderer({
     reasoningHeader: "\n\n💭 思考中...\n",
     contentHeader: "\n\n💭 回答中...\n",
     reasoningStyle: chalk.blue,
     contentStyle: chalk.white,
   });
 
-  const onRun = () => { mainRenderer.reset(); };
+  const onRun = () => { renderer.reset(); };
 
   const onChunk = (chunk: AgentNS.StreamResponseData) => {
     if (!chunk?.choices?.[0]?.delta) return;
     const delta = chunk.choices[0].delta;
     const fr = chunk.choices[0].finish_reason ?? null;
-    mainRenderer.render(delta, fr);
+    renderer.render(delta, fr);
   };
 
   const onError = (error: any) => {
@@ -182,32 +182,12 @@ export async function runConversation(options: RunConversationOptions): Promise<
 
   const onSubAgent = (event: { agent: any; ctx: any }) => {
     const subAgent = event.agent;
-    const subCtx = event.ctx;
-    const toolName = subCtx.function_call?.name || "子任务";
-    const renderer = new DeltaRenderer({
-      reasoningHeader: "💭 ",
-      contentHeader: "",
-      reasoningStyle: chalk.blue,
-      contentStyle: chalk.white,
-      indent: "    ",
-    });
-    let namePrinted = false;
+    const toolName = event.ctx?.function_call?.name || "子任务";
 
-    subAgent.events.on("run", () => renderer.reset());
-    subAgent.events.on("chunk", (chunk: AgentNS.StreamResponseData) => {
-      if (!namePrinted) {
-        process.stdout.write(chalk.yellow.bold(`\n  🧩 ${toolName}:\n`));
-        namePrinted = true;
-      }
-      const delta = chunk?.choices?.[0]?.delta;
-      if (!delta) return;
-      const fr = chunk?.choices?.[0]?.finish_reason ?? null;
-      renderer.render(delta, fr);
-    });
-    subAgent.events.on("error", (error: any) => {
-      renderer.reset();
-      process.stdout.write(chalk.red(`\n    ❌ ${toolName} 错误: ${error?.message || error}\n`));
-    });
+    process.stdout.write(chalk.yellow.bold(`\n  🧩 ${toolName}:\n`));
+    subAgent.events.on("open", onRun);
+    subAgent.events.on("chunk", onChunk);
+    subAgent.events.on("error", onError);
   };
 
   const onSubAgentEnd = ({ ctx: subCtx }: { agent: any; ctx: any }) => {
@@ -217,7 +197,7 @@ export async function runConversation(options: RunConversationOptions): Promise<
 
   // ============ 注册事件 ============
 
-  ctx.agent.events.on("run", onRun);
+  ctx.agent.events.on("open", onRun);
   ctx.agent.events.on("chunk", onChunk);
   ctx.agent.events.on("error", onError);
   ctx.agent.events.on("sub-agent", onSubAgent);
@@ -261,7 +241,7 @@ export async function runConversation(options: RunConversationOptions): Promise<
     await sendAndStream(ctx);
   }
 
-  ctx.agent.events.off("run", onRun);
+  ctx.agent.events.off("open", onRun);
   ctx.agent.events.off("chunk", onChunk);
   ctx.agent.events.off("error", onError);
   ctx.agent.events.off("sub-agent", onSubAgent);

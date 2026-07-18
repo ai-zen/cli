@@ -52,7 +52,10 @@ export class DeltaRenderer {
    * @param delta - 流式 delta
    * @param finishReason - 当前 choice 的 finish_reason（用于 tool_calls 完成标记）
    */
-  render(delta: AgentNS.Delta, finishReason: AgentNS.FinishReason | null = null): void {
+  render(
+    delta: AgentNS.Delta,
+    finishReason: AgentNS.FinishReason | null = null,
+  ): void {
     // 1. 渲染工具调用
     if (delta.tool_calls) {
       this.renderToolCalls(delta, finishReason);
@@ -94,12 +97,17 @@ export class DeltaRenderer {
 
   // ==================== 工具调用渲染 ====================
 
-  private renderToolCalls(delta: AgentNS.Delta, finishReason: AgentNS.FinishReason | null): void {
+  private renderToolCalls(
+    delta: AgentNS.Delta,
+    finishReason: AgentNS.FinishReason | null,
+  ): void {
     if (!delta.tool_calls || delta.tool_calls.length === 0) return;
 
     const isFirstToolCall =
       Object.keys(this.toolPrints).length === 0 &&
-      delta.tool_calls.some((tc) => tc.function?.name || tc.function?.arguments);
+      delta.tool_calls.some(
+        (tc) => tc.function?.name || tc.function?.arguments,
+      );
 
     if (isFirstToolCall)
       process.stdout.write(chalk.blue.bold("\n\n💭 工具调用中..."));
@@ -150,8 +158,7 @@ export class DeltaRenderer {
           }
         }
       }
+      process.stdout.write("\n");
     }
   }
 }
-
-

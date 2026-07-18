@@ -25,7 +25,6 @@ function createCtx(agent: any): ConversationContext {
     currentId: undefined,
     agentId: undefined,
     running: true,
-    systemMessages: [],
   };
 }
 
