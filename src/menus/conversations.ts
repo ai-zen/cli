@@ -74,9 +74,8 @@ export async function manageConversations(): Promise<void> {
       emptyMessage: "📭 没有已保存的对话",
     });
 
-    if (!result) continue;
+    if (!result) return;
     const { item: conversation, action } = result;
-    if (action === "__exit__") return;
 
     const confirmed = await confirmAction(`确定要删除对话 "${conversation.name}" 吗?`, false);
     if (confirmed) {

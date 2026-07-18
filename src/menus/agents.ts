@@ -100,7 +100,7 @@ export async function manageAgentsInteractive(): Promise<void> {
       emptyMessage: "📭 没有可用的 Agent",
     });
 
-    if (!result) continue;
+    if (!result) return;
 
     const { item: agent, action } = result;
 
