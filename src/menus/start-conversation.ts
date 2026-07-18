@@ -7,17 +7,18 @@ import inquirer from "inquirer";
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AgentDefinition } from "@ai-zen/agents-sdk";
 import {
-  listAgents,
-  readAgent,
-  readConversation,
-  writeConversation,
-  readDraft,
-  deleteDraft,
+  AgentRepository,
+  ConversationRepository,
+  DraftRepository,
 } from "@ai-zen/agents-sdk";
 import { runConversation } from "../conversation-runner.js";
 import { readConfig, AGENTS_DIR, CONVERSATIONS_DIR, DRAFTS_DIR } from "../config.js";
 import { formatRelativeTime, formatShortTime, formatFileSize, formatMessageTime } from "../format-time.js";
 import { getConversationsList } from "./conversations.js";
+
+const agentRepo = new AgentRepository(AGENTS_DIR);
+const conversationRepo = new ConversationRepository(CONVERSATIONS_DIR);
+const draftRepo = new DraftRepository(DRAFTS_DIR);
 
 /**
  * 开始新对话
@@ -25,7 +26,7 @@ import { getConversationsList } from "./conversations.js";
 export async function startNewConversation(query?: string): Promise<void> {
   try {
     const config = readConfig();
-    const agents = listAgents(AGENTS_DIR);
+    const agents = agentRepo.list();
     let agentId: string | undefined;
     let modelId: string | undefined;
 
@@ -34,7 +35,7 @@ export async function startNewConversation(query?: string): Promise<void> {
       agentId = agent.id;
       if (agent.modelId) modelId = agent.modelId;
     } else if (agents.length > 1) {
-      const defaultAgent = config.defaultAgent ? readAgent(AGENTS_DIR, config.defaultAgent) : undefined;
+      const defaultAgent = config.defaultAgent ? agentRepo.read(config.defaultAgent) : undefined;
       const { selectedAgentId } = await inquirer.prompt([
         {
           type: "list",
@@ -52,7 +53,7 @@ export async function startNewConversation(query?: string): Promise<void> {
       ]);
       if (selectedAgentId === "__cancel__") return;
       if (selectedAgentId !== "__none__") {
-        const agent = readAgent(AGENTS_DIR, selectedAgentId);
+        const agent = agentRepo.read(selectedAgentId);
         if (agent) {
           agentId = agent.id;
           if (agent.modelId) modelId = agent.modelId;
@@ -86,7 +87,7 @@ export async function startNewConversation(query?: string): Promise<void> {
     }
 
     // 选完 Agent/模型后，进入对话前，将草稿归档
-    const draft = readDraft(DRAFTS_DIR);
+    const draft = draftRepo.read();
     if (draft) {
       try {
         const draftName = `草稿-${formatShortTime(draft.updatedAt)}`;
@@ -98,9 +99,9 @@ export async function startNewConversation(query?: string): Promise<void> {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        writeConversation(CONVERSATIONS_DIR, conv);
+        conversationRepo.write(conv);
         console.log(chalk.green(`📦 草稿已自动保存为对话存档: "${draftName}" (${formatMessageTime(draft.messages.length, draft.updatedAt)})\n`));
-        deleteDraft(DRAFTS_DIR);
+        draftRepo.delete();
       } catch (error) {
         console.error(chalk.red(`❌ 草稿自动存档失败: ${error}\n`));
         console.log(chalk.yellow("⚠️  草稿保留在文件中，下次启动仍可恢复\n"));
@@ -117,7 +118,7 @@ export async function startNewConversation(query?: string): Promise<void> {
  * 继续草稿对话
  */
 export async function continueDraft(): Promise<void> {
-  const draft = readDraft(DRAFTS_DIR);
+  const draft = draftRepo.read();
   if (!draft) {
     console.log(chalk.yellow("\n📭 没有未完成的对话\n"));
     return;
@@ -168,7 +169,7 @@ export async function continueConversation(): Promise<void> {
   if (convId === "__cancel__") return;
 
   try {
-    const conversation = readConversation(CONVERSATIONS_DIR, convId);
+    const conversation = conversationRepo.read(convId);
     if (!conversation) {
       console.log(chalk.red(`\n❌ 对话 "${convId}" 不存在\n`));
       return;

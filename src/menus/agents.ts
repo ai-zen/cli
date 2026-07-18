@@ -3,10 +3,7 @@ import inquirer from "inquirer";
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AgentDefinition } from "@ai-zen/agents-sdk";
 import {
-  listAgents,
-  readAgent,
-  writeAgent,
-  deleteAgent,
+  AgentRepository,
 } from "@ai-zen/agents-sdk";
 import type { Model } from "@ai-zen/agents-sdk";
 import { AGENTS_DIR, readConfig, saveConfig } from "../config.js";
@@ -16,6 +13,8 @@ import {
   confirmAction,
   SEPARATOR_LONG,
 } from "./common.js";
+
+const agentRepo = new AgentRepository(AGENTS_DIR);
 
 /**
  * 获取消息列表中的文本摘要
@@ -58,7 +57,7 @@ function formatAgentDetails(
  */
 function getDefaultAgent(): AgentDefinition | undefined {
   const config = readConfig();
-  return config.defaultAgent ? readAgent(AGENTS_DIR, config.defaultAgent) ?? undefined : undefined;
+  return config.defaultAgent ? agentRepo.read(config.defaultAgent) ?? undefined : undefined;
 }
 
 /**
@@ -68,7 +67,7 @@ export async function manageAgentsInteractive(): Promise<void> {
   while (true) {
     console.log(chalk.blue.bold("\n🤖 Agent 管理\n"));
 
-    const agents = listAgents(AGENTS_DIR);
+    const agents = agentRepo.list();
     if (agents.length === 0) {
       console.log(chalk.yellow("📭 没有可用的 Agent\n"));
       const { create } = await inquirer.prompt([
@@ -157,14 +156,14 @@ async function createAgentInteractive(): Promise<void> {
 
   let id = name.toLowerCase().replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, "_");
 
-  if (readAgent(AGENTS_DIR, id)) {
+  if (agentRepo.read(id)) {
     const suffix = Math.random().toString(36).substring(2, 6);
     id = `${id}_${suffix}`;
     console.log(chalk.yellow(`⚠️  名称生成的 ID 已存在，已调整为: ${id}\n`));
   }
 
   const now = new Date().toISOString();
-  writeAgent(AGENTS_DIR, {
+  agentRepo.write({
     id,
     name,
     description,
@@ -178,7 +177,7 @@ async function createAgentInteractive(): Promise<void> {
 
 /** 编辑 Agent */
 async function editAgentInteractive(agentId: string): Promise<void> {
-  const agent = readAgent(AGENTS_DIR, agentId);
+  const agent = agentRepo.read(agentId);
   if (!agent) return;
 
   const currentSystem = agent.messages.find(
@@ -223,7 +222,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
     },
   ]);
 
-  writeAgent(AGENTS_DIR, {
+  agentRepo.write({
     ...agent,
     name,
     description,
@@ -236,7 +235,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
 
 /** 删除 Agent */
 async function deleteAgentInteractive(agentId: string): Promise<void> {
-  const agent = readAgent(AGENTS_DIR, agentId);
+  const agent = agentRepo.read(agentId);
   if (!agent) return;
 
   const confirmed = await confirmAction(
@@ -244,7 +243,7 @@ async function deleteAgentInteractive(agentId: string): Promise<void> {
     false,
   );
   if (confirmed) {
-    deleteAgent(AGENTS_DIR, agentId);
+    agentRepo.delete(agentId);
     const config = readConfig();
     if (config.defaultAgent === agentId) {
       config.defaultAgent = "";

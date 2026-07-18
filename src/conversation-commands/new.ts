@@ -1,10 +1,13 @@
 import chalk from "chalk";
 import inquirer from "inquirer";
 import { AgentNS, Message } from "@ai-zen/agents-core";
-import { readDraft, writeConversation, deleteDraft } from "@ai-zen/agents-sdk";
+import { ConversationRepository, DraftRepository } from "@ai-zen/agents-sdk";
 import { formatShortTime } from "../format-time.js";
 import { CONVERSATIONS_DIR, DRAFTS_DIR } from "../config.js";
 import { ConversationContext } from "../types.js";
+
+const conversationRepo = new ConversationRepository(CONVERSATIONS_DIR);
+const draftRepo = new DraftRepository(DRAFTS_DIR);
 
 export async function handleNew(ctx: ConversationContext): Promise<void> {
   const agent = ctx.agent;
@@ -23,11 +26,11 @@ export async function handleNew(ctx: ConversationContext): Promise<void> {
   }
 
   // 将当前草稿存档（如果有），避免丢失
-  const draft = readDraft(DRAFTS_DIR);
+  const draft = draftRepo.read();
   if (draft && draft.messages.length > 1) {
     const name = `草稿-${formatShortTime(draft.updatedAt)}`;
     const id = name.replace(/[\\/:*?"<>|]/g, "_");
-    writeConversation(CONVERSATIONS_DIR, {
+    conversationRepo.write({
       id,
       agentId: draft.agentId || "default",
       modelId: draft.modelId,
@@ -36,7 +39,7 @@ export async function handleNew(ctx: ConversationContext): Promise<void> {
       updatedAt: new Date().toISOString(),
     });
     console.log(chalk.gray(`📦 当前对话已存档: ${name}\n`));
-    deleteDraft(DRAFTS_DIR);
+    draftRepo.delete();
   }
 
   // 重置为 Agent 定义的初始消息（system prompt + few-shot 示例等）

@@ -12,7 +12,8 @@ import {
   createAgent as sdkCreateAgent,
   SdkAgent,
   McpConnectionManager,
-  buildMigrationAgentDefinition,
+  TaskMigrationService,
+  createModel,
 } from "@ai-zen/agents-sdk";
 import type { McpServerConfig } from "@ai-zen/agents-sdk";
 import type { AgentNS } from "@ai-zen/agents-core";
@@ -124,8 +125,9 @@ export function createAgent(options: CreateAgentOptions): SdkAgent {
 
 export function createMigrationAgent(modelId: string): SdkAgent {
   const provider = getProvider();
-  const model = provider.createModel(modelId);
-  const definition = buildMigrationAgentDefinition({ modelId });
+  const config = readConfig();
+  const model = createModel(config, modelId);
+  const definition = TaskMigrationService.createAgentDefinition({ modelId });
 
   return new SdkAgent({
     provider,

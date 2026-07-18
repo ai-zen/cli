@@ -1,8 +1,11 @@
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { writeConversation, deleteDraft } from "@ai-zen/agents-sdk";
+import { ConversationRepository, DraftRepository } from "@ai-zen/agents-sdk";
 import { CONVERSATIONS_DIR, DRAFTS_DIR } from "../config.js";
 import type { ConversationContext } from "../types.js";
+
+const conversationRepo = new ConversationRepository(CONVERSATIONS_DIR);
+const draftRepo = new DraftRepository(DRAFTS_DIR);
 
 export async function handleExit(ctx: ConversationContext): Promise<void> {
   const agent = ctx.agent;
@@ -19,7 +22,7 @@ export async function handleExit(ctx: ConversationContext): Promise<void> {
     if (saveBeforeExit) {
       try {
         const id = ctx.currentId || ctx.currentName.replace(/[\\/:*?"<>|]/g, "_");
-        writeConversation(CONVERSATIONS_DIR, {
+        conversationRepo.write({
           id,
           agentId: ctx.agentId || "default",
           modelId: ctx.modelId,
@@ -28,7 +31,7 @@ export async function handleExit(ctx: ConversationContext): Promise<void> {
           updatedAt: new Date().toISOString(),
         });
         console.log(chalk.green(`\n✅ 对话已保存: ${ctx.currentName} (ID: ${id})\n`));
-        deleteDraft(DRAFTS_DIR);
+        draftRepo.delete();
       } catch (error) {
         console.error(chalk.red(`\n❌ 保存失败: ${error}\n`));
       }

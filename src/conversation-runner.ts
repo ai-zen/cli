@@ -9,7 +9,12 @@ import chalk from "chalk";
 import inquirer from "inquirer";
 import { AgentNS } from "@ai-zen/agents-core";
 import type { SdkAgent } from "@ai-zen/agents-sdk";
-import { autoMigrate, autoDraft, autoRefreshTools, writeConversation } from "@ai-zen/agents-sdk";
+import {
+  AutoMigratePlugin,
+  AutoDraftPlugin,
+  AutoRefreshToolsPlugin,
+  ConversationRepository,
+} from "@ai-zen/agents-sdk";
 import { DeltaRenderer } from "./delta-renderer.js";
 import { createAgent, createMigrationAgent } from "./agent-creator.js";
 import { readConfig, CONVERSATIONS_DIR, DRAFTS_DIR } from "./config.js";
@@ -17,6 +22,8 @@ import { ensureEndpointConfig } from "./config-wizard.js";
 import type { ConversationContext } from "./types.js";
 import { formatShortTime } from "./format-time.js";
 import { dispatchCommand, getCommandNames } from "./conversation-commands/index.js";
+
+const conversationRepo = new ConversationRepository(CONVERSATIONS_DIR);
 
 /** 保存当前对话到 conversations 目录 */
 function saveCurrentConversation(
@@ -27,7 +34,7 @@ function saveCurrentConversation(
   agentId?: string,
 ): string {
   const id = existingId || name.replace(/[\\/:*?"<>|]/g, "_");
-  writeConversation(CONVERSATIONS_DIR, {
+  conversationRepo.write({
     id,
     agentId: agentId || "default",
     modelId,
@@ -99,10 +106,10 @@ export async function runConversation(options: RunConversationOptions): Promise<
   // ============ 插件注册 ============
 
   // 1. autoRefreshTools — 每次 send 前刷新文件系统工具
-  agent.use(autoRefreshTools());
+  agent.use(new AutoRefreshToolsPlugin());
 
   // 2. autoDraft — 每次 send 后自动保存草稿
-  agent.use(autoDraft({
+  agent.use(new AutoDraftPlugin({
     draftsDir: DRAFTS_DIR,
     agentId: agentId || "default",
     modelId,
@@ -116,7 +123,7 @@ export async function runConversation(options: RunConversationOptions): Promise<
   const modelConfig = config.models.find((m) => m.id === modelId);
   const maxTokens = modelConfig?.maxContextTokens ?? (modelConfig?.maxContextChars ? Math.floor(modelConfig.maxContextChars / 4) : undefined);
   if (maxTokens && maxTokens > 0) {
-    agent.use(autoMigrate({
+    agent.use(new AutoMigratePlugin({
       maxTokens,
       migrationAgent,
       onHandoff: (handoffDoc: string, oldAgent: SdkAgent, newAgent: SdkAgent) => {

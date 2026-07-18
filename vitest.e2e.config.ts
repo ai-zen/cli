@@ -5,6 +5,6 @@ dotenv.config({ path: ".env.local" });
 
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts", "!src/__tests__/e2e.test.ts"],
+    include: ["src/__tests__/e2e.test.ts"],
   },
 });
