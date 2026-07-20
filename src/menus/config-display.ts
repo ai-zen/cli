@@ -1,5 +1,10 @@
 import chalk from "chalk";
-import { readConfig, CONFIG_FILE, readMcpConfig, MCP_CONFIG_FILE } from "../config.js";
+import { existsSync } from "fs";
+import {
+  readConfig, CONFIG_FILE, readMcpConfig, MCP_CONFIG_FILE,
+  USER_AGENTS_MCP_CONFIG_FILE, PROJECT_AGENTS_MCP_CONFIG_FILE,
+  USER_AGENTS_SKILLS_DIR, PROJECT_AGENTS_SKILLS_DIR,
+} from "../config.js";
 import type { Model, ImageModel } from "@ai-zen/agents-sdk";
 import { maskApiKey, SEPARATOR } from "./common.js";
 
@@ -65,5 +70,13 @@ export function showConfig(): void {
   console.log(SEPARATOR);
   console.log(chalk.gray(`配置文件路径: ${CONFIG_FILE}`));
   console.log(chalk.gray(`MCP 配置路径: ${MCP_CONFIG_FILE}`));
+  if (existsSync(USER_AGENTS_MCP_CONFIG_FILE))
+    console.log(chalk.gray(`~/.agents/mcp.json: ${USER_AGENTS_MCP_CONFIG_FILE} ✅`));
+  if (existsSync(PROJECT_AGENTS_MCP_CONFIG_FILE))
+    console.log(chalk.gray(`.agents/mcp.json: ${PROJECT_AGENTS_MCP_CONFIG_FILE} ✅`));
+  if (existsSync(USER_AGENTS_SKILLS_DIR))
+    console.log(chalk.gray(`~/.agents/skills/: ${USER_AGENTS_SKILLS_DIR} ✅`));
+  if (existsSync(PROJECT_AGENTS_SKILLS_DIR))
+    console.log(chalk.gray(`.agents/skills/: ${PROJECT_AGENTS_SKILLS_DIR} ✅`));
   console.log();
 }

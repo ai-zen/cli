@@ -16,6 +16,27 @@
  *   └── cli/                      ← CLI 运行时数据
  *       ├── conversations/        ← 对话记录
  *       └── drafts/               ← 草稿
+ *
+ *   ~/.agents/                    ← 业界通用规范（如 Cursor、Windsurf、Cline）
+ *   ├── skills/                   ← 用户级 Skill
+ *   └── mcp.json                  ← 用户级 MCP 配置
+ *
+ *   项目/.agents/                 ← 业界通用规范（如 Cursor、Windsurf、Cline）
+ *   ├── skills/                   ← 项目级 Skill
+ *   └── mcp.json                  ← 项目级 MCP 配置
+ *
+ *   MCP 配置合并优先级（高 → 低）：
+ *     1. 项目/.mcp.json
+ *     2. 项目/.ai-zen/mcp.json
+ *     3. 项目/.agents/mcp.json
+ *     4. ~/.ai-zen/mcp.json
+ *     5. ~/.agents/mcp.json
+ *
+ *   Skills 目录优先级（高 → 低）：
+ *     1. 项目/.ai-zen/skills/
+ *     2. 项目/.agents/skills/
+ *     3. ~/.ai-zen/skills/
+ *     4. ~/.agents/skills/
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "fs";
@@ -50,6 +71,22 @@ export const TOOLS_DIR = join(AI_ZEN_DIR, "tools");
 export const PROJECT_SUB_AGENTS_DIR = join(process.cwd(), ".ai-zen", "sub-agents");
 export const PROJECT_SKILLS_DIR = join(process.cwd(), ".ai-zen", "skills");
 export const PROJECT_TOOLS_DIR = join(process.cwd(), ".ai-zen", "tools");
+
+// ==================== 业界通用规范 ~/.agents/ 目录 ====================
+
+const USER_AGENTS_DIR = join(
+  process.env.HOME || process.env.USERPROFILE || "",
+  ".agents",
+);
+
+export const USER_AGENTS_SKILLS_DIR = join(USER_AGENTS_DIR, "skills");
+export const USER_AGENTS_MCP_CONFIG_FILE = join(USER_AGENTS_DIR, "mcp.json");
+
+// ==================== 业界通用规范 项目/.agents/ 目录 ====================
+
+export const PROJECT_AGENTS_DIR = join(process.cwd(), ".agents");
+export const PROJECT_AGENTS_SKILLS_DIR = join(PROJECT_AGENTS_DIR, "skills");
+export const PROJECT_AGENTS_MCP_CONFIG_FILE = join(PROJECT_AGENTS_DIR, "mcp.json");
 
 // ==================== MCP 配置 ====================
 

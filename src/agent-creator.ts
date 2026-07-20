@@ -21,6 +21,8 @@ import {
   AGENTS_DIR, SUB_AGENTS_DIR, SKILLS_DIR, TOOLS_DIR,
   CONVERSATIONS_DIR, DRAFTS_DIR, AI_ZEN_DIR,
   PROJECT_SUB_AGENTS_DIR, PROJECT_SKILLS_DIR, PROJECT_TOOLS_DIR,
+  USER_AGENTS_SKILLS_DIR, USER_AGENTS_MCP_CONFIG_FILE,
+  PROJECT_AGENTS_SKILLS_DIR, PROJECT_AGENTS_MCP_CONFIG_FILE,
 } from "./config.js";
 import { readConfig } from "./config.js";
 
@@ -75,14 +77,38 @@ export function getProvider(): Provider {
 
   _mcpManager = new McpConnectionManager();
 
-  const mcpPaths = [join(process.cwd(), ".mcp.json"), join(process.cwd(), ".ai-zen", "mcp.json"), join(AI_ZEN_DIR, "mcp.json")].filter(exists);
+  // MCP 配置合并优先级（从高到低）：
+  //   1. 项目/.mcp.json
+  //   2. 项目/.ai-zen/mcp.json
+  //   3. 项目/.agents/mcp.json           ← 业界通用规范
+  //   4. ~/.ai-zen/mcp.json
+  //   5. ~/.agents/mcp.json              ← 业界通用规范
+  const mcpPaths = [
+    join(process.cwd(), ".mcp.json"),
+    join(process.cwd(), ".ai-zen", "mcp.json"),
+    PROJECT_AGENTS_MCP_CONFIG_FILE,
+    join(AI_ZEN_DIR, "mcp.json"),
+    USER_AGENTS_MCP_CONFIG_FILE,
+  ].filter(exists);
   const mcpConfigs = buildMcpConfigs(mcpPaths);
+
+  // Skills 目录优先级（从高到低）：
+  //   1. 项目/.ai-zen/skills/
+  //   2. 项目/.agents/skills/            ← 业界通用规范
+  //   3. ~/.ai-zen/skills/
+  //   4. ~/.agents/skills/               ← 业界通用规范
+  const skillsPaths = [
+    PROJECT_SKILLS_DIR,
+    PROJECT_AGENTS_SKILLS_DIR,
+    SKILLS_DIR,
+    USER_AGENTS_SKILLS_DIR,
+  ].filter(exists);
 
   _provider = new Provider({
     config,
     agentsDir: AGENTS_DIR,
     subAgentsPaths: [PROJECT_SUB_AGENTS_DIR, SUB_AGENTS_DIR].filter(exists),
-    skillsPaths: [PROJECT_SKILLS_DIR, SKILLS_DIR].filter(exists),
+    skillsPaths,
     toolsPaths: [PROJECT_TOOLS_DIR, TOOLS_DIR].filter(exists),
     mcpPaths,
     conversationsDir: CONVERSATIONS_DIR,

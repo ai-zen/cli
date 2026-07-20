@@ -21,6 +21,11 @@ vi.mock("./config.js", () => ({
   PROJECT_SUB_AGENTS_DIR: "/mock/project/.ai-zen/sub-agents",
   PROJECT_SKILLS_DIR: "/mock/project/.ai-zen/skills",
   PROJECT_TOOLS_DIR: "/mock/project/.ai-zen/tools",
+  USER_AGENTS_SKILLS_DIR: "/mock/.agents/skills",
+  USER_AGENTS_MCP_CONFIG_FILE: "/mock/.agents/mcp.json",
+  PROJECT_AGENTS_DIR: "/mock/project/.agents",
+  PROJECT_AGENTS_SKILLS_DIR: "/mock/project/.agents/skills",
+  PROJECT_AGENTS_MCP_CONFIG_FILE: "/mock/project/.agents/mcp.json",
 }));
 
 import { getProvider, resetProvider, createAgent } from "./agent-creator.js";
