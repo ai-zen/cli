@@ -5,21 +5,19 @@
  * CLI 层负责：组装路径、构建 Provider 单例、注册默认插件。
  */
 
-import { existsSync, readFileSync } from "fs";
+import { existsSync } from "fs";
 import { join } from "path";
 import {
   Provider,
   createAgent as sdkCreateAgent,
   SdkAgent,
-  McpConnectionManager,
   TaskMigrationService,
   createModel,
 } from "@ai-zen/agents-sdk";
-import type { McpServerConfig } from "@ai-zen/agents-sdk";
 import type { AgentNS } from "@ai-zen/agents-core";
 import {
   AGENTS_DIR, SUB_AGENTS_DIR, SKILLS_DIR, TOOLS_DIR,
-  CONVERSATIONS_DIR, DRAFTS_DIR, AI_ZEN_DIR,
+  AI_ZEN_DIR,
   PROJECT_SUB_AGENTS_DIR, PROJECT_SKILLS_DIR, PROJECT_TOOLS_DIR,
   USER_AGENTS_SKILLS_DIR, USER_AGENTS_MCP_CONFIG_FILE,
   PROJECT_AGENTS_SKILLS_DIR, PROJECT_AGENTS_MCP_CONFIG_FILE,
@@ -29,53 +27,14 @@ import { readConfig } from "./config.js";
 // ==================== Provider 创建（单例）====================
 
 let _provider: Provider | null = null;
-let _mcpManager: McpConnectionManager | null = null;
 
 /** existsSync 的别名，用于数组 .filter() 场景 */
 const exists = existsSync;
-
-/**
- * 从 mcpPaths 中读取 mcp.json，构建 McpServerConfig Map。
- * 按优先级从高到低传入路径列表，同名 server 靠前的文件优先（先到先得）。
- */
-function buildMcpConfigs(mcpPaths: string[]): Map<string, { name: string; config: McpServerConfig }> {
-  const configs = new Map<string, { name: string; config: McpServerConfig }>();
-  for (const mcpPath of mcpPaths) {
-    if (!existsSync(mcpPath)) continue;
-    try {
-      const raw = readFileSync(mcpPath, "utf-8");
-      const json = JSON.parse(raw);
-      const servers = json.servers ?? {};
-      for (const [name, cfg] of Object.entries(servers)) {
-        const raw = cfg as Record<string, unknown>;
-        if (!configs.has(name)) {
-          configs.set(name, {
-            name,
-            config: {
-              id: (raw.id as string) || name,
-              name: (raw.name as string) || name,
-              transport: (raw.transport as McpServerConfig["transport"]) || "stdio",
-              enabled: raw.enabled !== false,
-              command: raw.command as string,
-              args: raw.args as string[],
-              env: raw.env as Record<string, string>,
-              url: raw.url as string,
-              headers: raw.headers as Record<string, string>,
-            },
-          });
-        }
-      }
-    } catch { /* 跳过解析失败 */ }
-  }
-  return configs;
-}
 
 export function getProvider(): Provider {
   if (_provider) return _provider;
 
   const config = readConfig();
-
-  _mcpManager = new McpConnectionManager();
 
   // MCP 配置合并优先级（从高到低）：
   //   1. 项目/.mcp.json
@@ -90,7 +49,6 @@ export function getProvider(): Provider {
     join(AI_ZEN_DIR, "mcp.json"),
     USER_AGENTS_MCP_CONFIG_FILE,
   ].filter(exists);
-  const mcpConfigs = buildMcpConfigs(mcpPaths);
 
   // Skills 目录优先级（从高到低）：
   //   1. 项目/.ai-zen/skills/
@@ -111,18 +69,13 @@ export function getProvider(): Provider {
     skillsPaths,
     toolsPaths: [PROJECT_TOOLS_DIR, TOOLS_DIR].filter(exists),
     mcpPaths,
-    conversationsDir: CONVERSATIONS_DIR,
-    draftsDir: DRAFTS_DIR,
-    mcpManager: _mcpManager,
-    mcpConfigs,
   });
 
   return _provider;
 }
 
 export function resetProvider(): void {
-  if (_mcpManager) { _mcpManager.disconnectAll().catch(() => {}); }
-  _provider = null; _mcpManager = null;
+  _provider = null;
 }
 
 // ==================== Agent 创建 ====================
