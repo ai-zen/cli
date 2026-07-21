@@ -1,6 +1,6 @@
 {
   "name": "@ai-zen/cli",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "AI-ZEN CLI - interactive conversation terminal with file tools and draft recovery",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

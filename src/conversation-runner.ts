@@ -18,6 +18,7 @@ import {
 import { DeltaRenderer } from "./delta-renderer.js";
 import { createAgent, createMigrationAgent } from "./agent-creator.js";
 import { readConfig, CONVERSATIONS_DIR, DRAFTS_DIR } from "./config.js";
+import { CwdTrackerPlugin } from "./cwd-tracker-plugin.js";
 import { ensureEndpointConfig } from "./config-wizard.js";
 import type { ConversationContext } from "./types.js";
 import { formatShortTime } from "./format-time.js";
@@ -105,7 +106,10 @@ export async function runConversation(options: RunConversationOptions): Promise<
 
   // ============ 插件注册 ============
 
-  // 1. autoRefreshTools — 每次 send 前刷新文件系统工具
+  // 1. cwdTracker — 追踪工作目录变化，动态通知 Agent
+  agent.use(new CwdTrackerPlugin());
+
+  // 2. autoRefreshTools — 每次 send 前刷新文件系统工具
   agent.use(new AutoRefreshToolsPlugin());
 
   // 2. autoDraft — 每次 send 后自动保存草稿
