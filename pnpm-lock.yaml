@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@ai-zen/agents-core':
-        specifier: ^3.0.0-alpha.2
-        version: 3.0.0-alpha.2
+        specifier: 3.0.0-alpha.4
+        version: 3.0.0-alpha.4
       '@ai-zen/agents-sdk':
-        specifier: ^0.2.6
-        version: 0.2.6(zod@4.4.3)
+        specifier: 0.2.7
+        version: 0.2.7(zod@4.4.3)
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
@@ -51,11 +51,11 @@ importers:
 
 packages:
 
-  '@ai-zen/agents-core@3.0.0-alpha.2':
-    resolution: {integrity: sha512-KByN+fLwGPU47tQeL4MJB96+czLDr6GRgtdJJeSZg/oDuvU4N0AA5f6sQjfQehRiIE+ELUrsqUOMkZLmnYGouw==}
+  '@ai-zen/agents-core@3.0.0-alpha.4':
+    resolution: {integrity: sha512-T2cF613U9NGFJfXMHj/G+0bnzWpkdd428inC8ZEQbuO1blrcts7MiAiPKIjZO24x1+4FEMtJHL37oyTuYPkG5Q==}
 
-  '@ai-zen/agents-sdk@0.2.6':
-    resolution: {integrity: sha512-+JLExmc20utOgPXYkYyJ84tkTLSvvn0CdAFN+Ze6jyHFBXqsyTMdHP3sTy0LtySVTs53dIG2MCBq2ut+KDIXCw==}
+  '@ai-zen/agents-sdk@0.2.7':
+    resolution: {integrity: sha512-tyC9rXSpdXoBQrZiDMUa0k7a8zwpKlieKtqy+4Th7H5/wFflfkzS3S1L+hmnT0fIp3u7k0yLa55IKhpFjvIvgA==}
 
   '@ai-zen/async-queue@1.4.0':
     resolution: {integrity: sha512-+LPm6OQl38WqMMzdSqOCWHQw9R5VIumnNEJOj9kTpCZzJAEXlQUCVXwdNzhriVy6kv6fRIEl2E/Gwuh4LdgzrQ==}
@@ -1121,7 +1121,7 @@ packages:
 
 snapshots:
 
-  '@ai-zen/agents-core@3.0.0-alpha.2':
+  '@ai-zen/agents-core@3.0.0-alpha.4':
     dependencies:
       '@ai-zen/async-queue': 1.4.0
       '@ai-zen/event-bus': 1.1.0
@@ -1130,9 +1130,9 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@ai-zen/agents-sdk@0.2.6(zod@4.4.3)':
+  '@ai-zen/agents-sdk@0.2.7(zod@4.4.3)':
     dependencies:
-      '@ai-zen/agents-core': 3.0.0-alpha.2
+      '@ai-zen/agents-core': 3.0.0-alpha.4
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
       dayjs: 1.11.21
     transitivePeerDependencies:
