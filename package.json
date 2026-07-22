@@ -28,8 +28,8 @@
     "chat",
     "autonomous-agent"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "LZQCN",
+  "license": "MIT",
   "dependencies": {
     "@ai-zen/agents-core": "3.0.0-alpha.4",
     "@ai-zen/agents-sdk": "0.2.7",
