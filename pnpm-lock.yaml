@@ -12,8 +12,8 @@ importers:
         specifier: 3.0.0-alpha.4
         version: 3.0.0-alpha.4
       '@ai-zen/agents-sdk':
-        specifier: 0.2.7
-        version: 0.2.7(zod@4.4.3)
+        specifier: 0.2.8
+        version: 0.2.8(zod@4.4.3)
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
@@ -54,8 +54,8 @@ packages:
   '@ai-zen/agents-core@3.0.0-alpha.4':
     resolution: {integrity: sha512-T2cF613U9NGFJfXMHj/G+0bnzWpkdd428inC8ZEQbuO1blrcts7MiAiPKIjZO24x1+4FEMtJHL37oyTuYPkG5Q==}
 
-  '@ai-zen/agents-sdk@0.2.7':
-    resolution: {integrity: sha512-tyC9rXSpdXoBQrZiDMUa0k7a8zwpKlieKtqy+4Th7H5/wFflfkzS3S1L+hmnT0fIp3u7k0yLa55IKhpFjvIvgA==}
+  '@ai-zen/agents-sdk@0.2.8':
+    resolution: {integrity: sha512-1lr4OxpNtJepoLMtZbzkUe0sH76oSHz1gJ82MWS33V56vsB7p7y0sNAvxXoj6Ewr41Yr+QNzBNHla5BUeFWuVw==}
 
   '@ai-zen/async-queue@1.4.0':
     resolution: {integrity: sha512-+LPm6OQl38WqMMzdSqOCWHQw9R5VIumnNEJOj9kTpCZzJAEXlQUCVXwdNzhriVy6kv6fRIEl2E/Gwuh4LdgzrQ==}
@@ -1130,7 +1130,7 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@ai-zen/agents-sdk@0.2.7(zod@4.4.3)':
+  '@ai-zen/agents-sdk@0.2.8(zod@4.4.3)':
     dependencies:
       '@ai-zen/agents-core': 3.0.0-alpha.4
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
