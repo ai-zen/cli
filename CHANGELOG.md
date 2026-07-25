@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.2.0] - 2026-07-26
+
+### 💥 破坏性变更
+
+- **同步 SDK 0.3.2 异步 API** — `@ai-zen/agents-sdk` 从 `0.3.1` → `0.3.2`
+- **`readConfig()` / `saveConfig()` 改为 async** — 因 SDK `ConfigManager` 全面异步化
+- **`createAgent()` 恢复为 async** — 因 SDK `createAgent()` 改回异步
+- **`installHook()` / `uninstallHook()` 改为 async** — Shell hook 安装/卸载使用 `fs.promises`
+
+### 🎯 优化
+
+- **全面消除同步文件 IO** — `config.ts`、`hook.ts`、`conversations.ts`、`config-display.ts` 中所有 `existsSync`、`readFileSync`、`writeFileSync`、`readdirSync`、`statSync`、`renameSync`、`appendFileSync`、`mkdirSync`、`unlinkSync` 替换为 `fs.promises` 异步 API
+- **`getConversationsList()` 改为 async** — 对话列表读取使用异步文件 API
+- **MCP 配置读写异步化** — `readMcpConfig()`、`writeMcpConfig()`、`readProjectMcpConfig()` 均改为 async
+
+### ✅ 测试
+
+- 同步更新 `config.test.ts` 为 `async`/`await`，全部 43 个测试通过（含 6 个 E2E）
+
 ## [0.1.7] - 2026-07-21
 
 ### 🔧 修复
