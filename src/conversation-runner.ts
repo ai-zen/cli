@@ -27,15 +27,15 @@ import { dispatchCommand, getCommandNames } from "./conversation-commands/index.
 const conversationRepo = new ConversationRepository(CONVERSATIONS_DIR);
 
 /** 保存当前对话到 conversations 目录 */
-function saveCurrentConversation(
+async function saveCurrentConversation(
   name: string,
   messages: AgentNS.Message[],
   modelId: string,
   existingId?: string,
   agentId?: string,
-): string {
+): Promise<string> {
   const id = existingId || name.replace(/[\\/:*?"<>|]/g, "_");
-  conversationRepo.write({
+  await conversationRepo.write({
     id,
     agentId: agentId || "default",
     modelId,
@@ -60,7 +60,7 @@ async function sendAndStream(ctx: ConversationContext): Promise<void> {
     if (lastMessage?.status === "error") {
       console.error(chalk.red(`\n❌ 发生错误: ${JSON.stringify(lastMessage)}\n`));
       try {
-        saveCurrentConversation(ctx.currentName, ctx.agent.messages, ctx.modelId, ctx.currentId, ctx.agentId);
+        await saveCurrentConversation(ctx.currentName, ctx.agent.messages, ctx.modelId, ctx.currentId, ctx.agentId);
         console.log(chalk.yellow(`💾 错误时对话已自动保存: ${ctx.currentName}\n`));
       } catch (saveError) {
         console.error(chalk.red(`❌ 自动保存失败: ${saveError}\n`));
@@ -102,7 +102,7 @@ export async function runConversation(options: RunConversationOptions): Promise<
   await ensureEndpointConfig(modelId);
 
   // 在 runConversation 内部创建 agent
-  const agent = createAgent({ messages, agentId });
+  const agent = await createAgent({ messages, agentId });
 
   // ============ 插件注册 ============
 
@@ -122,8 +122,8 @@ export async function runConversation(options: RunConversationOptions): Promise<
   }));
 
   // 3. autoMigrate — 检测 token 超限时自动迁移
-  const migrationAgent = createMigrationAgent(modelId);
-  const config = readConfig();
+  const migrationAgent = await createMigrationAgent(modelId);
+  const config = await readConfig();
   const modelConfig = config.models.find((m) => m.id === modelId);
   const maxTokens = modelConfig?.maxContextTokens ?? (modelConfig?.maxContextChars ? Math.floor(modelConfig.maxContextChars / 4) : undefined);
   if (maxTokens && maxTokens > 0) {
@@ -133,8 +133,8 @@ export async function runConversation(options: RunConversationOptions): Promise<
       onBeforeMigrate: (promptTokens: number, maxTokens: number) => {
         console.log(chalk.yellow.bold(`\n📋 检测到上下文即将超限（${promptTokens}/${maxTokens} tokens），正在自动生成交接文档以延续对话...\n`));
       },
-      onHandoff: (handoffDoc: string, agent: SdkAgent) => {
-        saveCurrentConversation(ctx.currentName, agent.messages, ctx.modelId, ctx.currentId, ctx.agentId);
+      onHandoff: async (handoffDoc: string, agent: SdkAgent) => {
+        await saveCurrentConversation(ctx.currentName, agent.messages, ctx.modelId, ctx.currentId, ctx.agentId);
         console.log(chalk.gray(`  ✅ 原对话已保存: ${ctx.currentName}`));
 
         // SDK 的 AutoMigratePlugin 已在内部替换 agent 消息，

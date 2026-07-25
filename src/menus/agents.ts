@@ -55,9 +55,9 @@ function formatAgentDetails(
 /**
  * 获取默认 Agent
  */
-function getDefaultAgent(): AgentDefinition | undefined {
-  const config = readConfig();
-  return config.defaultAgent ? agentRepo.read(config.defaultAgent) ?? undefined : undefined;
+async function getDefaultAgent(): Promise<AgentDefinition | undefined> {
+  const config = await readConfig();
+  return config.defaultAgent ? (await agentRepo.read(config.defaultAgent)) ?? undefined : undefined;
 }
 
 /**
@@ -67,7 +67,7 @@ export async function manageAgentsInteractive(): Promise<void> {
   while (true) {
     console.log(chalk.blue.bold("\n🤖 Agent 管理\n"));
 
-    const agents = agentRepo.list();
+    const agents = await agentRepo.list();
     if (agents.length === 0) {
       console.log(chalk.yellow("📭 没有可用的 Agent\n"));
       const { create } = await inquirer.prompt([
@@ -85,7 +85,7 @@ export async function manageAgentsInteractive(): Promise<void> {
       return;
     }
 
-    const defaultAgent = getDefaultAgent();
+    const defaultAgent = await getDefaultAgent();
     const result = await selectItemAndAction<AgentDefinition>(agents, {
       getName: (a) =>
         `${a.name}${defaultAgent?.id === a.id ? " ⭐(默认)" : ""}`,
@@ -111,9 +111,9 @@ export async function manageAgentsInteractive(): Promise<void> {
         await deleteAgentInteractive(agent.id);
         break;
       case "set-default": {
-        const config = readConfig();
+        const config = await readConfig();
         config.defaultAgent = agent.id;
-        saveConfig(config);
+        await saveConfig(config);
         console.log(chalk.green(`\n✅ 默认 Agent 已设置为 "${agent.name}"\n`));
         break;
       }
@@ -125,7 +125,7 @@ export async function manageAgentsInteractive(): Promise<void> {
 
 /** 创建 Agent */
 async function createAgentInteractive(): Promise<void> {
-  const config = readConfig();
+  const config = await readConfig();
   const { name, description, systemContent, modelId } = await inquirer.prompt([
     {
       type: "input",
@@ -156,14 +156,14 @@ async function createAgentInteractive(): Promise<void> {
 
   let id = name.toLowerCase().replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, "_");
 
-  if (agentRepo.read(id)) {
+  if (await agentRepo.read(id)) {
     const suffix = Math.random().toString(36).substring(2, 6);
     id = `${id}_${suffix}`;
     console.log(chalk.yellow(`⚠️  名称生成的 ID 已存在，已调整为: ${id}\n`));
   }
 
   const now = new Date().toISOString();
-  agentRepo.write({
+  await agentRepo.write({
     id,
     name,
     description,
@@ -177,7 +177,7 @@ async function createAgentInteractive(): Promise<void> {
 
 /** 编辑 Agent */
 async function editAgentInteractive(agentId: string): Promise<void> {
-  const agent = agentRepo.read(agentId);
+  const agent = await agentRepo.read(agentId);
   if (!agent) return;
 
   const currentSystem = agent.messages.find(
@@ -188,7 +188,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
       ? currentSystem.content
       : "";
 
-  const config = readConfig();
+  const config = await readConfig();
   const { name, description, systemContent, modelId } = await inquirer.prompt([
     {
       type: "input",
@@ -222,7 +222,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
     },
   ]);
 
-  agentRepo.write({
+  await agentRepo.write({
     ...agent,
     name,
     description,
@@ -235,7 +235,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
 
 /** 删除 Agent */
 async function deleteAgentInteractive(agentId: string): Promise<void> {
-  const agent = agentRepo.read(agentId);
+  const agent = await agentRepo.read(agentId);
   if (!agent) return;
 
   const confirmed = await confirmAction(
@@ -243,11 +243,11 @@ async function deleteAgentInteractive(agentId: string): Promise<void> {
     false,
   );
   if (confirmed) {
-    agentRepo.delete(agentId);
-    const config = readConfig();
+    await agentRepo.delete(agentId);
+    const config = await readConfig();
     if (config.defaultAgent === agentId) {
       config.defaultAgent = "";
-      saveConfig(config);
+      await saveConfig(config);
     }
     console.log(chalk.green(`\n✅ Agent "${agent.name}" 已删除\n`));
   }

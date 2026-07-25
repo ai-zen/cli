@@ -107,9 +107,9 @@ const sdkConfigMgr = new SdkConfigManager(CONFIG_FILE);
  * CLI 自身的运行时目录（conversations/、drafts/）由本函数额外创建。
  * SDK 的出厂默认配置会自动写入 config.json（如果不存在）。
  */
-export function ensureConfigDir(): void {
+export async function ensureConfigDir(): Promise<void> {
   // SDK bootstrap：目录 + config.json + default Agent + default SubAgent
-  sdkConfigMgr.bootstrap();
+  await sdkConfigMgr.bootstrap();
 
   // CLI 运行时目录
   const cliDirs = [CLI_DIR, CONVERSATIONS_DIR, DRAFTS_DIR];
@@ -123,14 +123,14 @@ export function ensureConfigDir(): void {
 
 // ==================== 配置读写 ====================
 
-export function readConfig(): AppConfig {
-  ensureConfigDir();
-  return sdkConfigMgr.read();
+export async function readConfig(): Promise<AppConfig> {
+  await ensureConfigDir();
+  return await sdkConfigMgr.read();
 }
 
-export function saveConfig(config: AppConfig): void {
-  ensureConfigDir();
-  sdkConfigMgr.write(config);
+export async function saveConfig(config: AppConfig): Promise<void> {
+  await ensureConfigDir();
+  await sdkConfigMgr.write(config);
 }
 
 // ==================== MCP 配置读写 ====================

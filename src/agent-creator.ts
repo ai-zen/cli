@@ -1,7 +1,7 @@
 /**
  * Agent 创建 — CLI 层
  *
- * 委托给 @ai-zen/agents-sdk 的 Provider + Capabilities。
+ * 委托给 @ai-zen/agents-sdk 的 Provider。
  * CLI 层负责：组装路径、构建 Provider 单例、注册默认插件。
  */
 
@@ -31,10 +31,10 @@ let _provider: Provider | null = null;
 /** existsSync 的别名，用于数组 .filter() 场景 */
 const exists = existsSync;
 
-export function getProvider(): Provider {
+export async function getProvider(): Promise<Provider> {
   if (_provider) return _provider;
 
-  const config = readConfig();
+  const config = await readConfig();
 
   // MCP 配置合并优先级（从高到低）：
   //   1. 项目/.mcp.json
@@ -62,7 +62,7 @@ export function getProvider(): Provider {
     USER_AGENTS_SKILLS_DIR,
   ].filter(exists);
 
-  _provider = new Provider({
+  _provider = await Provider.create({
     config,
     agentsDir: AGENTS_DIR,
     subAgentsPaths: [PROJECT_SUB_AGENTS_DIR, SUB_AGENTS_DIR].filter(exists),
@@ -85,12 +85,12 @@ export interface CreateAgentOptions {
   agentId?: string;
 }
 
-export function createAgent(options: CreateAgentOptions): SdkAgent {
+export async function createAgent(options: CreateAgentOptions): Promise<SdkAgent> {
   const { messages, agentId } = options;
-  const provider = getProvider();
+  const provider = await getProvider();
 
   // 始终从磁盘读取 Agent 定义（含 permissions、工具配置等）
-  const agent = sdkCreateAgent(provider, agentId || "default");
+  const agent = await sdkCreateAgent(provider, agentId || "default");
 
   // 有历史消息时替换（恢复草稿/已保存对话）
   if (messages && messages.length > 0) {
@@ -102,10 +102,9 @@ export function createAgent(options: CreateAgentOptions): SdkAgent {
 
 // ==================== 迁移 Agent ====================
 
-export function createMigrationAgent(modelId: string): SdkAgent {
-  const provider = getProvider();
-  const config = readConfig();
-  const model = createModel(config, modelId);
+export async function createMigrationAgent(modelId: string): Promise<SdkAgent> {
+  const provider = await getProvider();
+  const model = createModel(provider, modelId);
   const definition = TaskMigrationService.createAgentDefinition({ modelId });
 
   return new SdkAgent({

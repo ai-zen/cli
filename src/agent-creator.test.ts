@@ -35,21 +35,21 @@ describe("getProvider", () => {
     resetProvider();
   });
 
-  it("返回 Provider 单例", () => {
-    const p1 = getProvider();
-    const p2 = getProvider();
+  it("返回 Provider 单例", async () => {
+    const p1 = await getProvider();
+    const p2 = await getProvider();
     expect(p1).toBe(p2);
   });
 
-  it("resetProvider 后重新创建", () => {
-    const p1 = getProvider();
+  it("resetProvider 后重新创建", async () => {
+    const p1 = await getProvider();
     resetProvider();
-    const p2 = getProvider();
+    const p2 = await getProvider();
     expect(p1).not.toBe(p2);
   });
 
-  it("Provider 包含配置信息", () => {
-    const provider = getProvider();
+  it("Provider 包含配置信息", async () => {
+    const provider = await getProvider();
     expect(provider.config.defaultModel).toBe("gpt4");
     expect(provider.agentsDir).toBe("/mock/.ai-zen/agents");
   });
@@ -60,8 +60,7 @@ describe("createAgent", () => {
     resetProvider();
   });
 
-  it("磁盘文件不存在时抛出错误", () => {
-    // createAgent 始终从磁盘读取 Agent 定义，mock 环境没有磁盘文件
-    expect(() => createAgent({})).toThrow();
+  it("磁盘文件不存在时抛出错误", async () => {
+    await expect(createAgent({})).rejects.toThrow();
   });
 });

@@ -21,7 +21,7 @@ const draftRepo = new DraftRepository(DRAFTS_DIR);
 export async function showMainMenu(): Promise<void> {
   console.log(chalk.blue.bold(`\n🤖 AI-Zen CLI v${version}\n`));
 
-  const draft = draftRepo.read();
+  const draft = await draftRepo.read();
 
   const choices: { name: string; value: string }[] = [];
 

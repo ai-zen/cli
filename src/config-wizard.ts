@@ -8,7 +8,7 @@ import { readConfig, saveConfig } from "./config.js";
 import type { Model } from "@ai-zen/agents-sdk";
 
 export async function ensureEndpointConfig(modelId?: string): Promise<Model> {
-  const config = readConfig();
+  const config = await readConfig();
   let model: Model | undefined;
 
   if (modelId) {
@@ -42,7 +42,7 @@ export async function ensureEndpointConfig(modelId?: string): Promise<Model> {
     ]);
 
     endpoint.apiKey = apiKey;
-    saveConfig(config);
+    await saveConfig(config);
     console.log(chalk.green(`\n✅ API Key 已保存\n`));
   }
 

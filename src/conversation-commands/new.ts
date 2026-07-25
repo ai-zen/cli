@@ -26,11 +26,11 @@ export async function handleNew(ctx: ConversationContext): Promise<void> {
   }
 
   // 将当前草稿存档（如果有），避免丢失
-  const draft = draftRepo.read();
+  const draft = await draftRepo.read();
   if (draft && draft.messages.length > 1) {
     const name = `草稿-${formatShortTime(draft.updatedAt)}`;
     const id = name.replace(/[\\/:*?"<>|]/g, "_");
-    conversationRepo.write({
+    await conversationRepo.write({
       id,
       agentId: draft.agentId || "default",
       modelId: draft.modelId,
@@ -39,7 +39,7 @@ export async function handleNew(ctx: ConversationContext): Promise<void> {
       updatedAt: new Date().toISOString(),
     });
     console.log(chalk.gray(`📦 当前对话已存档: ${name}\n`));
-    draftRepo.delete();
+    await draftRepo.delete();
   }
 
   // 重置为 Agent 定义的初始消息（system prompt + few-shot 示例等）

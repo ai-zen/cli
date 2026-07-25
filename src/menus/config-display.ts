@@ -8,8 +8,8 @@ import {
 import type { Model, ImageModel } from "@ai-zen/agents-sdk";
 import { maskApiKey, SEPARATOR } from "./common.js";
 
-export function showConfig(): void {
-  const config = readConfig();
+export async function showConfig(): Promise<void> {
+  const config = await readConfig();
   console.log(chalk.blue.bold("\n📋 当前配置总览\n"));
 
   console.log(chalk.blue.bold("🌐 端点:"));

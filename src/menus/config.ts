@@ -15,8 +15,8 @@ import { maskApiKey, selectFromList, SEPARATOR } from "./common.js";
 
 // ==================== 端点相关 ====================
 
-function showEndpoints(): void {
-  const config = readConfig();
+async function showEndpoints(): Promise<void> {
+  const config = await readConfig();
   console.log(chalk.blue.bold("\n🌐 端点列表:\n"));
   for (const ep of config.endpoints) {
     console.log(chalk.white(`  ${ep.name} (${ep.id})`));
@@ -27,7 +27,7 @@ function showEndpoints(): void {
 }
 
 async function editEndpoint(): Promise<void> {
-  const config = readConfig();
+  const config = await readConfig();
   const endpointId = await selectFromList(config.endpoints, {
     message: "选择要编辑的端点:",
     getName: (e: Endpoint) => `${e.name} (${e.id}) ${e.apiKey ? "✅" : "❌"}`,
@@ -67,12 +67,12 @@ async function editEndpoint(): Promise<void> {
   ]);
 
   (endpoint as unknown as Record<string, unknown>)[field] = value;
-  saveConfig(config);
+  await saveConfig(config);
   console.log(chalk.green(`\n✅ 端点已更新\n`));
 }
 
 async function setApiKeyInteractive(): Promise<void> {
-  const config = readConfig();
+  const config = await readConfig();
   const endpointId = await selectFromList(config.endpoints, {
     message: "选择要设置 API Key 的端点:",
     getName: (e: Endpoint) => `${e.name} (${e.id}) ${e.apiKey ? "✅" : "❌"}`,
@@ -96,14 +96,14 @@ async function setApiKeyInteractive(): Promise<void> {
   ]);
 
   endpoint.apiKey = apiKey;
-  saveConfig(config);
+  await saveConfig(config);
   console.log(chalk.green(`\n✅ ${endpoint.name} API Key 已设置\n`));
 }
 
 // ==================== 模型相关 ====================
 
 async function setDefaultModelInteractive(): Promise<void> {
-  const config = readConfig();
+  const config = await readConfig();
   const modelId = await selectFromList(config.models, {
     message: "选择默认对话模型:",
     getName: (m: Model) => `${m.name} (${m.id})${config.defaultModel === m.id ? " ⭐ 当前" : ""}`,
@@ -113,13 +113,13 @@ async function setDefaultModelInteractive(): Promise<void> {
   });
   if (!modelId) return;
   config.defaultModel = modelId;
-  saveConfig(config);
+  await saveConfig(config);
   const model = config.models.find((m) => m.id === modelId);
   console.log(chalk.green(`\n✅ 默认对话模型已设置为 "${model?.name}"\n`));
 }
 
 async function setDefaultImageModelInteractive(): Promise<void> {
-  const config = readConfig();
+  const config = await readConfig();
   const imageModels = config.imageModels || [];
   const modelId = await selectFromList(imageModels, {
     message: "选择默认图片生成模型:",
@@ -130,13 +130,13 @@ async function setDefaultImageModelInteractive(): Promise<void> {
   });
   if (!modelId) return;
   config.defaultImageModel = modelId;
-  saveConfig(config);
+  await saveConfig(config);
   const model = imageModels.find((m) => m.id === modelId);
   console.log(chalk.green(`\n✅ 默认图片生成模型已设置为 "${model?.name}"\n`));
 }
 
-function showModels(): void {
-  const config = readConfig();
+async function showModels(): Promise<void> {
+  const config = await readConfig();
   console.log(chalk.blue.bold("\n🔧 对话模型列表:\n"));
   if (config.models.length === 0) {
     console.log(chalk.yellow("  (无)\n"));
@@ -153,8 +153,8 @@ function showModels(): void {
   }
 }
 
-function showImageModels(): void {
-  const config = readConfig();
+async function showImageModels(): Promise<void> {
+  const config = await readConfig();
   const imageModels = config.imageModels || [];
   console.log(chalk.blue.bold("\n🎨 图片生成模型列表:\n"));
   if (imageModels.length === 0) {
@@ -364,13 +364,13 @@ export async function showInteractiveConfig(): Promise<void> {
     ]);
 
     switch (action) {
-      case "show": showConfig(); break;
+      case "show": await showConfig(); break;
       case "set-key": await setApiKeyInteractive(); break;
-      case "list-endpoints": showEndpoints(); break;
+      case "list-endpoints": await showEndpoints(); break;
       case "edit-endpoint": await editEndpoint(); break;
-      case "list-models": showModels(); break;
+      case "list-models": await showModels(); break;
       case "set-default-model": await setDefaultModelInteractive(); break;
-      case "list-image-models": showImageModels(); break;
+      case "list-image-models": await showImageModels(); break;
       case "set-default-image-model": await setDefaultImageModelInteractive(); break;
       case "mcp": await manageMcpServers(); break;
       case "back": return;
