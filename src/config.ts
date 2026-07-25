@@ -39,7 +39,7 @@
  *     4. ~/.agents/skills/
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "fs";
+import { promises as fs } from "fs";
 import { join } from "path";
 import chalk from "chalk";
 import { ConfigManager as SdkConfigManager } from "@ai-zen/agents-sdk";
@@ -114,8 +114,10 @@ export async function ensureConfigDir(): Promise<void> {
   // CLI 运行时目录
   const cliDirs = [CLI_DIR, CONVERSATIONS_DIR, DRAFTS_DIR];
   for (const dir of cliDirs) {
-    if (!existsSync(dir)) {
-      try { mkdirSync(dir, { recursive: true }); }
+    try {
+      await fs.access(dir);
+    } catch {
+      try { await fs.mkdir(dir, { recursive: true }); }
       catch { console.warn(chalk.yellow(`⚠️  无法创建目录: ${dir}`)); }
     }
   }
@@ -153,10 +155,14 @@ export interface McpConfig {
 /**
  * 读取全局 ~/.ai-zen/mcp.json，不存在时返回空结构。
  */
-export function readMcpConfig(): McpConfig {
-  if (!existsSync(MCP_CONFIG_FILE)) return { servers: {} };
+export async function readMcpConfig(): Promise<McpConfig> {
   try {
-    return JSON.parse(readFileSync(MCP_CONFIG_FILE, "utf-8"));
+    await fs.access(MCP_CONFIG_FILE);
+  } catch {
+    return { servers: {} };
+  }
+  try {
+    return JSON.parse(await fs.readFile(MCP_CONFIG_FILE, "utf-8"));
   } catch {
     return { servers: {} };
   }
@@ -165,17 +171,21 @@ export function readMcpConfig(): McpConfig {
 /**
  * 原子写入全局 ~/.ai-zen/mcp.json。
  */
-export function writeMcpConfig(mcpConfig: McpConfig): void {
+export async function writeMcpConfig(mcpConfig: McpConfig): Promise<void> {
   const tmp = MCP_CONFIG_FILE + ".tmp";
-  writeFileSync(tmp, JSON.stringify(mcpConfig, null, 2), "utf-8");
-  renameSync(tmp, MCP_CONFIG_FILE);
+  await fs.writeFile(tmp, JSON.stringify(mcpConfig, null, 2), "utf-8");
+  await fs.rename(tmp, MCP_CONFIG_FILE);
 }
 
-export function readProjectMcpConfig(): McpConfig {
+export async function readProjectMcpConfig(): Promise<McpConfig> {
   const path = PROJECT_MCP_CONFIG_FILE;
-  if (!existsSync(path)) return { servers: {} };
   try {
-    return JSON.parse(readFileSync(path, "utf-8"));
+    await fs.access(path);
+  } catch {
+    return { servers: {} };
+  }
+  try {
+    return JSON.parse(await fs.readFile(path, "utf-8"));
   } catch {
     return { servers: {} };
   }

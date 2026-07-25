@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { promises as fs } from "node:fs";
 
 const MARKER_START = "# === aiz hook (开始) ===";
 const MARKER_END = "# === aiz hook (结束) ===";
@@ -30,43 +30,49 @@ function hookCode(hookFn: string): string {
   ].join("\n");
 }
 
-function isInstalled(rcFile: string): boolean {
-  if (!existsSync(rcFile)) return false;
-  const content = readFileSync(rcFile, "utf-8");
+async function isInstalled(rcFile: string): Promise<boolean> {
+  try {
+    await fs.access(rcFile);
+  } catch {
+    return false;
+  }
+  const content = await fs.readFile(rcFile, "utf-8");
   return content.includes(MARKER_START);
 }
 
-export function installHook(): void {
+export async function installHook(): Promise<void> {
   const shell = detectShell();
   if (!shell) {
     console.error("❌ 不支持的 shell（仅支持 bash / zsh）");
     process.exit(1);
   }
 
-  if (isInstalled(shell.rcFile)) {
+  if (await isInstalled(shell.rcFile)) {
     console.log("ℹ️  aiz hook 已安装，无需重复操作");
     return;
   }
 
-  appendFileSync(shell.rcFile, hookCode(shell.hookFn), "utf-8");
+  await fs.appendFile(shell.rcFile, hookCode(shell.hookFn), "utf-8");
   console.log(`✅ aiz hook 已安装到 ${shell.rcFile}`);
   console.log(`   重启终端或执行 source ${shell.rcFile} 即可生效`);
   console.log(`   之后输入不存在的命令会自动转发给 AI 处理`);
 }
 
-export function uninstallHook(): void {
+export async function uninstallHook(): Promise<void> {
   const shell = detectShell();
   if (!shell) {
     console.error("❌ 不支持的 shell（仅支持 bash / zsh）");
     process.exit(1);
   }
 
-  if (!existsSync(shell.rcFile)) {
+  try {
+    await fs.access(shell.rcFile);
+  } catch {
     console.log("ℹ️  aiz hook 未安装（文件不存在）");
     return;
   }
 
-  const content = readFileSync(shell.rcFile, "utf-8");
+  const content = await fs.readFile(shell.rcFile, "utf-8");
   if (!content.includes(MARKER_START)) {
     console.log("ℹ️  aiz hook 未安装");
     return;
@@ -89,6 +95,6 @@ export function uninstallHook(): void {
     }
   }
 
-  writeFileSync(shell.rcFile, newLines.join("\n"), "utf-8");
+  await fs.writeFile(shell.rcFile, newLines.join("\n"), "utf-8");
   console.log(`✅ aiz hook 已从 ${shell.rcFile} 卸载`);
 }

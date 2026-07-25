@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { existsSync } from "fs";
+import { promises as fs } from "fs";
 import {
   readConfig, CONFIG_FILE, readMcpConfig, MCP_CONFIG_FILE,
   USER_AGENTS_MCP_CONFIG_FILE, PROJECT_AGENTS_MCP_CONFIG_FILE,
@@ -51,7 +51,7 @@ export async function showConfig(): Promise<void> {
   console.log(SEPARATOR);
 
   console.log(chalk.blue.bold("🔌 MCP 服务器:"));
-  const mcp = readMcpConfig();
+  const mcp = await readMcpConfig();
   const names = Object.keys(mcp.servers);
   if (names.length === 0) {
     console.log(chalk.yellow("  (未配置)"));
@@ -70,13 +70,13 @@ export async function showConfig(): Promise<void> {
   console.log(SEPARATOR);
   console.log(chalk.gray(`配置文件路径: ${CONFIG_FILE}`));
   console.log(chalk.gray(`MCP 配置路径: ${MCP_CONFIG_FILE}`));
-  if (existsSync(USER_AGENTS_MCP_CONFIG_FILE))
-    console.log(chalk.gray(`~/.agents/mcp.json: ${USER_AGENTS_MCP_CONFIG_FILE} ✅`));
-  if (existsSync(PROJECT_AGENTS_MCP_CONFIG_FILE))
-    console.log(chalk.gray(`.agents/mcp.json: ${PROJECT_AGENTS_MCP_CONFIG_FILE} ✅`));
-  if (existsSync(USER_AGENTS_SKILLS_DIR))
-    console.log(chalk.gray(`~/.agents/skills/: ${USER_AGENTS_SKILLS_DIR} ✅`));
-  if (existsSync(PROJECT_AGENTS_SKILLS_DIR))
-    console.log(chalk.gray(`.agents/skills/: ${PROJECT_AGENTS_SKILLS_DIR} ✅`));
+  for (const [label, p] of [
+    ["~/.agents/mcp.json", USER_AGENTS_MCP_CONFIG_FILE],
+    [".agents/mcp.json", PROJECT_AGENTS_MCP_CONFIG_FILE],
+    ["~/.agents/skills/", USER_AGENTS_SKILLS_DIR],
+    [".agents/skills/", PROJECT_AGENTS_SKILLS_DIR],
+  ]) {
+    try { await fs.access(p); console.log(chalk.gray(`${label}: ${p} ✅`)); } catch {}
+  }
   console.log();
 }

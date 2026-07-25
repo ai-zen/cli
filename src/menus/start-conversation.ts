@@ -145,7 +145,7 @@ export async function continueDraft(): Promise<void> {
  * 继续已保存的对话
  */
 export async function continueConversation(): Promise<void> {
-  const conversations = getConversationsList();
+  const conversations = await getConversationsList();
   if (conversations.length === 0) {
     console.log(chalk.yellow("\n📭 没有已保存的对话\n"));
     return;

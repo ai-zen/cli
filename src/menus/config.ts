@@ -175,8 +175,8 @@ async function showImageModels(): Promise<void> {
 
 // ==================== MCP 服务器管理（操作 mcp.json）====================
 
-function showMcpServers(): void {
-  const mcp = readMcpConfig();
+async function showMcpServers(): Promise<void> {
+  const mcp = await readMcpConfig();
   const names = Object.keys(mcp.servers);
   console.log(chalk.blue.bold("\n🔌 MCP 服务器列表:\n"));
   if (names.length === 0) {
@@ -246,18 +246,18 @@ async function addMcpServer(): Promise<void> {
     server.url = url;
   }
 
-  const mcp = readMcpConfig();
+  const mcp = await readMcpConfig();
   if (mcp.servers[name]) {
     console.log(chalk.red(`\n❌ 服务器 "${name}" 已存在\n`));
     return;
   }
   mcp.servers[name] = server as McpServersMap[string];
-  writeMcpConfig(mcp);
+  await writeMcpConfig(mcp);
   console.log(chalk.green(`\n✅ MCP 服务器 "${name}" 已添加\n`));
 }
 
 async function editMcpServer(): Promise<void> {
-  const mcp = readMcpConfig();
+  const mcp = await readMcpConfig();
   const names = Object.keys(mcp.servers);
 
   const serverName = await selectFromList(names.map((n) => ({ name: n })), {
@@ -295,7 +295,7 @@ async function editMcpServer(): Promise<void> {
 
   if (field === "delete") {
     delete mcp.servers[serverName];
-    writeMcpConfig(mcp);
+    await writeMcpConfig(mcp);
     console.log(chalk.green(`\n✅ MCP 服务器 "${serverName}" 已删除\n`));
     return;
   }
@@ -314,7 +314,7 @@ async function editMcpServer(): Promise<void> {
       mcp.servers[newName] = server;
       delete mcp.servers[serverName];
     }
-    writeMcpConfig(mcp);
+    await writeMcpConfig(mcp);
     console.log(chalk.green(`\n✅ MCP 服务器已重命名\n`));
     return;
   }
@@ -333,7 +333,7 @@ async function editMcpServer(): Promise<void> {
   } else {
     (server as Record<string, unknown>)[field] = value;
   }
-  writeMcpConfig(mcp);
+  await writeMcpConfig(mcp);
   console.log(chalk.green(`\n✅ MCP 服务器已更新\n`));
 }
 
@@ -397,7 +397,7 @@ async function manageMcpServers(): Promise<void> {
     ]);
 
     switch (action) {
-      case "list": showMcpServers(); break;
+      case "list": await showMcpServers(); break;
       case "add": await addMcpServer(); break;
       case "edit": await editMcpServer(); break;
       case "back": return;
