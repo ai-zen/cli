@@ -130,19 +130,17 @@ export async function runConversation(options: RunConversationOptions): Promise<
     agent.use(new AutoMigratePlugin({
       maxTokens,
       migrationAgent,
-      onBeforeMigrate: (promptTokens: number, maxTokens: number) => {
+      onBeforeMigrate: async (promptTokens: number, maxTokens: number, agent: SdkAgent) => {
         console.log(chalk.yellow.bold(`\n📋 检测到上下文即将超限（${promptTokens}/${maxTokens} tokens），正在自动生成交接文档以延续对话...\n`));
-      },
-      onHandoff: async (handoffDoc: string, agent: SdkAgent) => {
+        // 迁移前 agent.messages 还是完整旧历史，先保存旧对话
         await saveCurrentConversation(ctx.currentName, agent.messages, ctx.modelId, ctx.currentId, ctx.agentId);
         console.log(chalk.gray(`  ✅ 原对话已保存: ${ctx.currentName}`));
-
-        // SDK 的 AutoMigratePlugin 已在内部替换 agent 消息，
-        // 此处无需手动创建新 agent
+      },
+      onMigrated: async (handoffDoc: string, agent: SdkAgent) => {
         ctx.currentName = `对话_${formatShortTime(new Date().toISOString())}`;
         ctx.currentId = undefined;
 
-        console.log(chalk.green.bold(`\n🚀 任务迁移完成！已保存当前对话并开启新会话，共 ${agent.messages.length} 条消息。\n`));
+        console.log(chalk.green.bold(`\n🚀 任务迁移完成！已开启新会话，共 ${agent.messages.length} 条消息。\n`));
         console.log(chalk.gray("💡 你可以继续提问，新助手已通过交接文档了解之前的全部工作。\n"));
       },
     }));

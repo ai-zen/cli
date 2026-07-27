@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2] - 2026-07-27
+
+### 🎯 优化
+
+- **更新 `@ai-zen/agents-sdk` 到 0.3.4** — 包含 AutoMigratePlugin 钩子重命名（`onHandoff` → `onMigrated`）
+- **保存旧对话的时机修正** — 从 `onMigrated`（原 `onHandoff`）移至 `onBeforeMigrate`，确保保存的是完整的旧对话历史
+
 ## [0.2.1] - 2026-07-27
 
 ### 🎯 优化
