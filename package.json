@@ -14,7 +14,7 @@
     "prebuild": "npm run clean",
     "build": "tsc",
     "start": "npm run build && node ./dist/index.js",
-    "prepublishOnly": "node scripts/check-publish-tool.mjs && npm run build",
+    "prepublishOnly": "node scripts/check-publish-tool.mjs && npm test && npm run build",
     "pretest": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:e2e": "npm run pretest && vitest run --config vitest.e2e.config.ts",
