@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.3] - 2026-07-29
+
+### 🎯 优化
+
+- **更新 `@ai-zen/agents-sdk` 到 0.4.0** — load_mcp 返回值改为结构化 JSON（含完整 inputSchema），日志 API 改为全局单例 `getLogger()`/`setLogger()`
+
 ## [0.2.2] - 2026-07-27
 
 ### 🎯 优化
