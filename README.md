@@ -190,7 +190,7 @@ Same-named servers in higher priority override lower ones.
 
 ## Built-in Tools
 
-The CLI provides 16 built-in file system tools, implemented by `@ai-zen/agents-sdk`:
+The CLI provides 17 built-in file system tools, implemented by `@ai-zen/agents-sdk`:
 
 | Tool | Description |
 |------|-------------|
@@ -199,17 +199,24 @@ The CLI provides 16 built-in file system tools, implemented by `@ai-zen/agents-s
 | `writeFile` | Write content to file |
 | `edit` | Replace text in files (single replacement) |
 | `batchEdit` | Batch replace text in files |
+| `exec` | Execute shell commands |
+| `exec_async` | Execute a shell command asynchronously (returns immediately) |
 | `mkdir` | Create directories |
 | `rm` | Delete files or directories |
 | `glob` | Scan files with glob patterns |
 | `ls` | List directory contents |
 | `exist` | Check if path exists |
-| `exec` | Execute shell commands |
 | `findText` | Search text in files |
 | `downloadFile` | Download file from URL |
-| `generateImage` | Generate images from text |
 | `rename` | Rename or move files |
 | `copy` | Copy files or directories |
+| `sleep` | Wait for a specified number of milliseconds |
+
+Conditionally injected (requires `defaultImageModel` in config):
+
+| Tool | Description |
+|------|-------------|
+| `generateImage` | Generate images from text |
 
 ### Dynamic Tools
 
@@ -225,7 +232,7 @@ In addition to built-in tools, the SDK provides 5 dynamic loading tools that are
 
 ## Tool Assembly Pipeline
 
-Tools are assembled in three phases by the SDK's `Capabilities` class:
+Tools are assembled in three phases by the SDK's `Provider` capability pipeline:
 
 1. **Discovery** — Scan filesystem for built-in tools, user tools, SubAgents, Skills, and MCP servers
 2. **Filtering** — Apply permissions (`allow`/`deny`) and security exclusions (recursion protection)
@@ -255,7 +262,7 @@ MCP servers are configured in `mcp.json` files:
 
 ```json
 {
-  "servers": {
+  "mcpServers": {
     "my-server": {
       "transport": "stdio",
       "command": "node",

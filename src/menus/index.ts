@@ -5,23 +5,20 @@
 import { createRequire } from "module";
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { DraftRepository } from "@ai-zen/agents-sdk";
 import { startNewConversation, continueConversation, continueDraft } from "./start-conversation.js";
 import { manageConversations } from "./conversations.js";
 import { manageAgentsInteractive } from "./agents.js";
 import { showInteractiveConfig } from "./config.js";
-import { DRAFTS_DIR } from "../config.js";
 import { formatMessageTime } from "../format-time.js";
+import { draftRepository } from "../draft-repository.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../../package.json");
 
-const draftRepo = new DraftRepository(DRAFTS_DIR);
-
 export async function showMainMenu(): Promise<void> {
   console.log(chalk.blue.bold(`\n🤖 AI-Zen CLI v${version}\n`));
 
-  const draft = await draftRepo.read();
+  const draft = await draftRepository.read();
 
   const choices: { name: string; value: string }[] = [];
 

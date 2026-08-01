@@ -1,10 +1,7 @@
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { ConversationRepository } from "@ai-zen/agents-sdk";
-import { CONVERSATIONS_DIR } from "../config.js";
+import { conversationRepository } from "../conversation-repository.js";
 import type { ConversationContext } from "../types.js";
-
-const conversationRepo = new ConversationRepository(CONVERSATIONS_DIR);
 
 export async function handleSave(ctx: ConversationContext): Promise<void> {
   const agent = ctx.agent;
@@ -19,7 +16,7 @@ export async function handleSave(ctx: ConversationContext): Promise<void> {
 
   try {
     const id = ctx.currentId || name.replace(/[\\/:*?"<>|]/g, "_");
-    conversationRepo.write({
+    await conversationRepository.write({
       id,
       agentId: ctx.agentId || "default",
       modelId: ctx.modelId,

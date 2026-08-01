@@ -11,20 +11,18 @@ import { AgentNS } from "@ai-zen/agents-core";
 import type { SdkAgent } from "@ai-zen/agents-sdk";
 import {
   AutoMigratePlugin,
-  AutoDraftPlugin,
   AutoRefreshToolsPlugin,
-  ConversationRepository,
 } from "@ai-zen/agents-sdk";
 import { DeltaRenderer } from "./delta-renderer.js";
 import { createAgent, createMigrationAgent } from "./agent-creator.js";
-import { readConfig, CONVERSATIONS_DIR, DRAFTS_DIR } from "./config.js";
+import { readConfig } from "./config.js";
 import { CwdTrackerPlugin } from "./cwd-tracker-plugin.js";
+import { DraftPlugin } from "./draft-plugin.js";
+import { conversationRepository } from "./conversation-repository.js";
 import { ensureEndpointConfig } from "./config-wizard.js";
 import type { ConversationContext } from "./types.js";
 import { formatShortTime } from "./format-time.js";
 import { dispatchCommand, getCommandNames } from "./conversation-commands/index.js";
-
-const conversationRepo = new ConversationRepository(CONVERSATIONS_DIR);
 
 /** 保存当前对话到 conversations 目录 */
 async function saveCurrentConversation(
@@ -35,7 +33,7 @@ async function saveCurrentConversation(
   agentId?: string,
 ): Promise<string> {
   const id = existingId || name.replace(/[\\/:*?"<>|]/g, "_");
-  await conversationRepo.write({
+  await conversationRepository.write({
     id,
     agentId: agentId || "default",
     modelId,
@@ -112,9 +110,8 @@ export async function runConversation(options: RunConversationOptions): Promise<
   // 2. autoRefreshTools — 每次 send 前刷新文件系统工具
   agent.use(new AutoRefreshToolsPlugin());
 
-  // 2. autoDraft — 每次 send 后自动保存草稿（始终写入 _current.json，统一草稿检测入口）
-  agent.use(new AutoDraftPlugin({
-    draftsDir: DRAFTS_DIR,
+  // 2. draftPlugin — 每次 send 后自动保存草稿（CLI 产品特性，不依赖 SDK；始终写入 _current.json，统一草稿检测入口）
+  agent.use(new DraftPlugin({
     agentId: agentId || "default",
     modelId,
     cwd: process.cwd(),

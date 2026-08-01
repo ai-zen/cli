@@ -14,7 +14,7 @@ import {
   SEPARATOR_LONG,
 } from "./common.js";
 
-const agentRepo = new AgentRepository(AGENTS_DIR);
+const agentRepository = new AgentRepository(AGENTS_DIR);
 
 /**
  * 获取消息列表中的文本摘要
@@ -57,7 +57,7 @@ function formatAgentDetails(
  */
 async function getDefaultAgent(): Promise<AgentDefinition | undefined> {
   const config = await readConfig();
-  return config.defaultAgent ? (await agentRepo.read(config.defaultAgent)) ?? undefined : undefined;
+  return config.defaultAgent ? (await agentRepository.read(config.defaultAgent)) ?? undefined : undefined;
 }
 
 /**
@@ -67,7 +67,7 @@ export async function manageAgentsInteractive(): Promise<void> {
   while (true) {
     console.log(chalk.blue.bold("\n🤖 Agent 管理\n"));
 
-    const agents = await agentRepo.list();
+    const agents = await agentRepository.list();
     if (agents.length === 0) {
       console.log(chalk.yellow("📭 没有可用的 Agent\n"));
       const { create } = await inquirer.prompt([
@@ -156,14 +156,14 @@ async function createAgentInteractive(): Promise<void> {
 
   let id = name.toLowerCase().replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, "_");
 
-  if (await agentRepo.read(id)) {
+  if (await agentRepository.read(id)) {
     const suffix = Math.random().toString(36).substring(2, 6);
     id = `${id}_${suffix}`;
     console.log(chalk.yellow(`⚠️  名称生成的 ID 已存在，已调整为: ${id}\n`));
   }
 
   const now = new Date().toISOString();
-  await agentRepo.write({
+  await agentRepository.write({
     id,
     name,
     description,
@@ -177,7 +177,7 @@ async function createAgentInteractive(): Promise<void> {
 
 /** 编辑 Agent */
 async function editAgentInteractive(agentId: string): Promise<void> {
-  const agent = await agentRepo.read(agentId);
+  const agent = await agentRepository.read(agentId);
   if (!agent) return;
 
   const currentSystem = agent.messages.find(
@@ -222,7 +222,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
     },
   ]);
 
-  await agentRepo.write({
+  await agentRepository.write({
     ...agent,
     name,
     description,
@@ -235,7 +235,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
 
 /** 删除 Agent */
 async function deleteAgentInteractive(agentId: string): Promise<void> {
-  const agent = await agentRepo.read(agentId);
+  const agent = await agentRepository.read(agentId);
   if (!agent) return;
 
   const confirmed = await confirmAction(
@@ -243,7 +243,7 @@ async function deleteAgentInteractive(agentId: string): Promise<void> {
     false,
   );
   if (confirmed) {
-    await agentRepo.delete(agentId);
+    await agentRepository.delete(agentId);
     const config = await readConfig();
     if (config.defaultAgent === agentId) {
       config.defaultAgent = "";

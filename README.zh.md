@@ -190,7 +190,7 @@ MCP 服务器配置从多个来源合并（优先级从高到低）：
 
 ## 内置工具
 
-CLI 提供 16 个内置文件系统工具，由 `@ai-zen/agents-sdk` 实现：
+CLI 提供 17 个内置文件系统工具，由 `@ai-zen/agents-sdk` 实现：
 
 | 工具 | 说明 |
 |------|------|
@@ -199,17 +199,24 @@ CLI 提供 16 个内置文件系统工具，由 `@ai-zen/agents-sdk` 实现：
 | `writeFile` | 写入文件 |
 | `edit` | 替换文件中的文本（单次替换） |
 | `batchEdit` | 批量编辑文本 |
+| `exec` | 执行 shell 命令 |
+| `exec_async` | 异步执行 shell 命令（立即返回，不等待结果） |
 | `mkdir` | 创建目录 |
 | `rm` | 删除文件或目录 |
 | `glob` | 通配符扫描文件 |
 | `ls` | 列出目录 |
 | `exist` | 检查路径是否存在 |
-| `exec` | 执行 shell 命令 |
 | `findText` | 在文件中查找文本 |
 | `downloadFile` | 从 URL 下载文件 |
-| `generateImage` | 根据描述生成图片 |
 | `rename` | 重命名或移动文件 |
 | `copy` | 复制文件或目录 |
+| `sleep` | 等待指定毫秒数 |
+
+条件注入（需配置 `defaultImageModel`）：
+
+| 工具 | 说明 |
+|------|------|
+| `generateImage` | 根据描述生成图片 |
 
 ### 动态工具
 
@@ -225,7 +232,7 @@ CLI 提供 16 个内置文件系统工具，由 `@ai-zen/agents-sdk` 实现：
 
 ## 工具装配流程
 
-工具装配由 SDK 的 `Capabilities` 类管理，分为三个阶段：
+工具装配由 SDK 的 `Provider` 能力管线管理，分为三个阶段：
 
 1. **发现** — 扫描文件系统获取内置工具、用户工具、SubAgent、Skill 和 MCP 服务器
 2. **过滤** — 应用权限（`allow`/`deny`）和安全排除（递归保护）
@@ -255,7 +262,7 @@ MCP 服务器配置在 `mcp.json` 文件中：
 
 ```json
 {
-  "servers": {
+  "mcpServers": {
     "my-server": {
       "transport": "stdio",
       "command": "node",
