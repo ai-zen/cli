@@ -112,12 +112,11 @@ export async function runConversation(options: RunConversationOptions): Promise<
   // 2. autoRefreshTools — 每次 send 前刷新文件系统工具
   agent.use(new AutoRefreshToolsPlugin());
 
-  // 2. autoDraft — 每次 send 后自动保存草稿
+  // 2. autoDraft — 每次 send 后自动保存草稿（始终写入 _current.json，统一草稿检测入口）
   agent.use(new AutoDraftPlugin({
     draftsDir: DRAFTS_DIR,
     agentId: agentId || "default",
     modelId,
-    conversationId,
     cwd: process.cwd(),
   }));
 
