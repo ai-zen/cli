@@ -164,7 +164,6 @@ export async function runConversation(options: RunConversationOptions): Promise<
     reasoningHeader: "\n\n💭 思考中...\n",
     contentHeader: "\n\n💭 回答中...\n",
     reasoningStyle: chalk.blue,
-    contentStyle: chalk.white,
   });
 
   const onRun = () => { renderer.reset(); };

@@ -26,10 +26,10 @@ export async function ensureEndpointConfig(modelId?: string): Promise<Model> {
 
   if (!endpoint.apiKey) {
     console.log(chalk.yellow.bold(`\n⚠️  端点 "${endpoint.name}" 的 API Key 未设置\n`));
-    console.log(chalk.white(`💡 请前往对应平台获取 API Key:`));
-    console.log(chalk.white(`   - OpenAI: https://platform.openai.com/api-keys`));
-    console.log(chalk.white(`   - BigModelCN (智谱AI): https://open.bigmodel.cn/usercenter/apikeys`));
-    console.log(chalk.white(`   - DeepSeek: https://platform.deepseek.com/api_keys\n`));
+    console.log(`💡 请前往对应平台获取 API Key:`);
+    console.log(`   - OpenAI: https://platform.openai.com/api-keys`);
+    console.log(`   - BigModelCN (智谱AI): https://open.bigmodel.cn/usercenter/apikeys`);
+    console.log(`   - DeepSeek: https://platform.deepseek.com/api_keys\n`);
 
     const { apiKey } = await inquirer.prompt([
       {

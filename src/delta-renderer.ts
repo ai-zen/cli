@@ -1,6 +1,9 @@
 import chalk from "chalk";
 import { AgentNS } from "@ai-zen/agents-core";
 
+/** 无颜色样式：普通文本保持终端默认前景色，避免在浅色背景下看不清 */
+const noStyle = (s: string): string => s;
+
 // ==================== 工具调用打印状态 ====================
 
 interface ToolCallPrint {
@@ -42,7 +45,7 @@ export class DeltaRenderer {
       reasoningHeader: opts.reasoningHeader ?? "",
       contentHeader: opts.contentHeader ?? "",
       reasoningStyle: opts.reasoningStyle ?? chalk.blue,
-      contentStyle: opts.contentStyle ?? chalk.white,
+      contentStyle: opts.contentStyle ?? noStyle,
       indent: opts.indent ?? "",
     };
   }
