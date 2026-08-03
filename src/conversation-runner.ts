@@ -18,6 +18,7 @@ import { createAgent, createMigrationAgent } from "./agent-creator.js";
 import { readConfig } from "./config.js";
 import { CwdTrackerPlugin } from "./cwd-tracker-plugin.js";
 import { DraftPlugin } from "./draft-plugin.js";
+import { draftRepository } from "./draft-repository.js";
 import { conversationRepository } from "./conversation-repository.js";
 import { ensureEndpointConfig } from "./config-wizard.js";
 import type { ConversationContext } from "./types.js";
@@ -138,6 +139,22 @@ export async function runConversation(options: RunConversationOptions): Promise<
 
         console.log(chalk.green.bold(`\n🚀 任务迁移完成！已开启新会话，共 ${agent.messages.length} 条消息。\n`));
         console.log(chalk.gray("💡 你可以继续提问，新助手已通过交接文档了解之前的全部工作。\n"));
+
+        // 迁移后立即把新开场白保存为草稿（_current.json），
+        // 避免迁移发生在 onAfterSend（DraftPlugin 的 onInnerLoopEnd 已不再触发）
+        // 导致迁移后的新对话未被及时落盘，用户中途退出时丢失迁移后的开场白。
+        try {
+          await draftRepository.write({
+            conversationId: ctx.currentId, // undefined → 写入 _current.json
+            agentId: ctx.agentId || "default",
+            modelId: ctx.modelId,
+            messages: agent.messages,
+            cwd: process.cwd(),
+            updatedAt: new Date().toISOString(),
+          });
+        } catch (err: any) {
+          console.warn(`[draft] 迁移后保存草稿失败: ${err?.message ?? err}`);
+        }
       },
     }));
   }

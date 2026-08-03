@@ -52,15 +52,15 @@ export async function showConfig(): Promise<void> {
 
   console.log(chalk.blue.bold("🔌 MCP 服务器:"));
   const mcp = await readMcpConfig();
-  const names = Object.keys(mcp.servers);
+  const names = Object.keys(mcp.mcpServers);
   if (names.length === 0) {
     console.log(chalk.yellow("  (未配置)"));
   } else {
     for (const name of names) {
-      const srv = mcp.servers[name];
+      const srv = mcp.mcpServers[name];
       console.log(chalk.white(`  ${name}`));
-      console.log(chalk.gray(`     传输方式: ${srv.transport}`));
-      if (srv.transport === "stdio") {
+      console.log(chalk.gray(`     传输方式: ${srv.type}`));
+      if (srv.type === "stdio") {
         console.log(chalk.gray(`     命令: ${srv.command}`));
       } else {
         console.log(chalk.gray(`     URL: ${srv.url}`));

@@ -139,7 +139,8 @@ export async function saveConfig(config: AppConfig): Promise<void> {
 
 export interface McpServersMap {
   [name: string]: {
-    transport: "stdio" | "http" | "sse";
+    /** 传输方式，业界标准字段名 `type`（与 SDK normalizeConfig 一致） */
+    type?: "stdio" | "http" | "sse";
     command?: string;
     args?: string[];
     env?: Record<string, string>;
@@ -149,22 +150,26 @@ export interface McpServersMap {
 }
 
 export interface McpConfig {
-  servers: McpServersMap;
+  /** 业界标准 mcpServers 顶层字段（与 SDK @ai-zen/agents-sdk 保持一致） */
+  mcpServers: McpServersMap;
 }
 
 /**
  * 读取全局 ~/.ai-zen/mcp.json，不存在时返回空结构。
+ * 采用业界标准 `mcpServers` 顶层字段（与 SDK discoverMcpServers 一致）。
  */
 export async function readMcpConfig(): Promise<McpConfig> {
   try {
     await fs.access(MCP_CONFIG_FILE);
   } catch {
-    return { servers: {} };
+    return { mcpServers: {} };
   }
   try {
-    return JSON.parse(await fs.readFile(MCP_CONFIG_FILE, "utf-8"));
+    const raw = JSON.parse(await fs.readFile(MCP_CONFIG_FILE, "utf-8")) as Partial<McpConfig>;
+    // 兼容并归一：以 mcpServers 为准，缺失时回退到空的 mcpServers
+    return { mcpServers: raw.mcpServers ?? {} };
   } catch {
-    return { servers: {} };
+    return { mcpServers: {} };
   }
 }
 
@@ -182,11 +187,12 @@ export async function readProjectMcpConfig(): Promise<McpConfig> {
   try {
     await fs.access(path);
   } catch {
-    return { servers: {} };
+    return { mcpServers: {} };
   }
   try {
-    return JSON.parse(await fs.readFile(path, "utf-8"));
+    const raw = JSON.parse(await fs.readFile(path, "utf-8")) as Partial<McpConfig>;
+    return { mcpServers: raw.mcpServers ?? {} };
   } catch {
-    return { servers: {} };
+    return { mcpServers: {} };
   }
 }

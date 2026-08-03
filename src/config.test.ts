@@ -46,14 +46,14 @@ describe("readMcpConfig / writeMcpConfig", () => {
       // 文件可能不存在，忽略
     }
     const result = await config.readMcpConfig();
-    expect(result).toEqual({ servers: {} });
+    expect(result).toEqual({ mcpServers: {} });
   });
 
   it("写入后再读取内容一致", async () => {
     const mcpConfig = {
-      servers: {
-        github: { transport: "stdio" as const, command: "gh" },
-        slack: { transport: "http" as const, url: "https://slack.example.com" },
+      mcpServers: {
+        github: { type: "stdio" as const, command: "gh" },
+        slack: { type: "http" as const, url: "https://slack.example.com" },
       },
     };
     await config.writeMcpConfig(mcpConfig);
@@ -63,25 +63,25 @@ describe("readMcpConfig / writeMcpConfig", () => {
 
   it("原子写入不损坏文件", async () => {
     const mcpConfig = {
-      servers: {
-        test: { transport: "stdio" as const, command: "echo" },
+      mcpServers: {
+        test: { type: "stdio" as const, command: "echo" },
       },
     };
     await config.writeMcpConfig(mcpConfig);
     const read = await config.readMcpConfig();
-    expect(read.servers.test.command).toBe("echo");
+    expect(read.mcpServers.test.command).toBe("echo");
   });
 
   it("损坏的 JSON 返回空结构", async () => {
     await fs.writeFile(config.MCP_CONFIG_FILE, "{ bad json", "utf-8");
     const result = await config.readMcpConfig();
-    expect(result).toEqual({ servers: {} });
+    expect(result).toEqual({ mcpServers: {} });
   });
 });
 
 describe("readProjectMcpConfig", () => {
   it("项目文件不存在时返回空结构", async () => {
     const result = await config.readProjectMcpConfig();
-    expect(result).toEqual({ servers: {} });
+    expect(result).toEqual({ mcpServers: {} });
   });
 });

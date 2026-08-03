@@ -177,17 +177,17 @@ async function showImageModels(): Promise<void> {
 
 async function showMcpServers(): Promise<void> {
   const mcp = await readMcpConfig();
-  const names = Object.keys(mcp.servers);
+  const names = Object.keys(mcp.mcpServers);
   console.log(chalk.blue.bold("\n🔌 MCP 服务器列表:\n"));
   if (names.length === 0) {
     console.log(chalk.yellow("  (未配置 MCP 服务器)\n"));
     return;
   }
   for (const name of names) {
-    const srv = mcp.servers[name];
+    const srv = mcp.mcpServers[name];
     console.log(chalk.white(`  ${name}`));
-    console.log(chalk.gray(`     传输方式: ${srv.transport}`));
-    if (srv.transport === "stdio") {
+    console.log(chalk.gray(`     传输方式: ${srv.type}`));
+    if (srv.type === "stdio") {
       console.log(chalk.gray(`     命令: ${srv.command}`));
       if (srv.args?.length) console.log(chalk.gray(`     参数: ${srv.args.join(" ")}`));
     } else {
@@ -216,7 +216,7 @@ async function addMcpServer(): Promise<void> {
     },
   ]);
 
-  const server: Record<string, unknown> = { transport };
+  const server: Record<string, unknown> = { type: transport };
 
   if (transport === "stdio") {
     const { command, args } = await inquirer.prompt([
@@ -247,18 +247,18 @@ async function addMcpServer(): Promise<void> {
   }
 
   const mcp = await readMcpConfig();
-  if (mcp.servers[name]) {
+  if (mcp.mcpServers[name]) {
     console.log(chalk.red(`\n❌ 服务器 "${name}" 已存在\n`));
     return;
   }
-  mcp.servers[name] = server as McpServersMap[string];
+  mcp.mcpServers[name] = server as McpServersMap[string];
   await writeMcpConfig(mcp);
   console.log(chalk.green(`\n✅ MCP 服务器 "${name}" 已添加\n`));
 }
 
 async function editMcpServer(): Promise<void> {
   const mcp = await readMcpConfig();
-  const names = Object.keys(mcp.servers);
+  const names = Object.keys(mcp.mcpServers);
 
   const serverName = await selectFromList(names.map((n) => ({ name: n })), {
     message: "选择要编辑的 MCP 服务器:",
@@ -269,7 +269,7 @@ async function editMcpServer(): Promise<void> {
   });
   if (!serverName) return;
 
-  const server = mcp.servers[serverName];
+  const server = mcp.mcpServers[serverName];
   if (!server) return;
 
   const { field } = await inquirer.prompt([
@@ -279,7 +279,7 @@ async function editMcpServer(): Promise<void> {
       message: "选择操作:",
       choices: [
         { name: `名称 (当前: ${serverName})`, value: "name" },
-        ...(server.transport === "stdio"
+        ...(server.type === "stdio"
           ? [
               { name: `命令 (当前: ${server.command})`, value: "command" },
               { name: `参数 (当前: ${(server.args || []).join(" ") || "无"})`, value: "args" },
@@ -294,7 +294,7 @@ async function editMcpServer(): Promise<void> {
   if (field === "back") return;
 
   if (field === "delete") {
-    delete mcp.servers[serverName];
+    delete mcp.mcpServers[serverName];
     await writeMcpConfig(mcp);
     console.log(chalk.green(`\n✅ MCP 服务器 "${serverName}" 已删除\n`));
     return;
@@ -311,8 +311,8 @@ async function editMcpServer(): Promise<void> {
       },
     ]);
     if (newName !== serverName) {
-      mcp.servers[newName] = server;
-      delete mcp.servers[serverName];
+      mcp.mcpServers[newName] = server;
+      delete mcp.mcpServers[serverName];
     }
     await writeMcpConfig(mcp);
     console.log(chalk.green(`\n✅ MCP 服务器已重命名\n`));
