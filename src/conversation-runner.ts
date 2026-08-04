@@ -12,6 +12,7 @@ import type { SdkAgent } from "@ai-zen/agents-sdk";
 import {
   AutoMigratePlugin,
   AutoRefreshToolsPlugin,
+  ContextGuardPlugin,
 } from "@ai-zen/agents-sdk";
 import { DeltaRenderer } from "./delta-renderer.js";
 import { createAgent, createMigrationAgent } from "./agent-creator.js";
@@ -111,19 +112,24 @@ export async function runConversation(options: RunConversationOptions): Promise<
   // 2. autoRefreshTools — 每次 send 前刷新文件系统工具
   agent.use(new AutoRefreshToolsPlugin());
 
-  // 2. draftPlugin — 每次 send 后自动保存草稿（CLI 产品特性，不依赖 SDK；始终写入 _current.json，统一草稿检测入口）
+  // 3. draftPlugin — 每次 send 后自动保存草稿（CLI 产品特性，不依赖 SDK；始终写入 _current.json，统一草稿检测入口）
   agent.use(new DraftPlugin({
     agentId: agentId || "default",
     modelId,
     cwd: process.cwd(),
   }));
 
-  // 3. autoMigrate — 检测 token 超限时自动迁移
+  // 4/5. contextGuard 与 autoMigrate 的前置准备（读取模型最大上下文 token）
   const migrationAgent = await createMigrationAgent(modelId);
   const config = await readConfig();
   const modelConfig = config.models.find((m) => m.id === modelId);
   const maxTokens = modelConfig?.maxContextTokens ?? (modelConfig?.maxContextChars ? Math.floor(modelConfig.maxContextChars / 4) : undefined);
   if (maxTokens && maxTokens > 0) {
+    // 4. contextGuard — 请求前检测用量，严重超限（> maxTokens×1.2）时抛 ContextOverflowError 中断对话。
+    //    作为安全护栏置于迁移插件之前：防止读入超大文件等突发超限在迁移生效前撑爆上下文。
+    agent.use(new ContextGuardPlugin({ maxTokens }));
+
+    // 5. autoMigrate — 检测 token 超限时自动迁移
     agent.use(new AutoMigratePlugin({
       maxTokens,
       migrationAgent,
