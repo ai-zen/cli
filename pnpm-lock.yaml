@@ -9,10 +9,10 @@ importers:
   .:
     dependencies:
       '@ai-zen/agents-core':
-        specifier: 3.2.0
+        specifier: ^3.2.0
         version: 3.2.0
       '@ai-zen/agents-sdk':
-        specifier: 0.5.3
+        specifier: ^0.5.3
         version: 0.5.3(zod@4.4.3)
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
