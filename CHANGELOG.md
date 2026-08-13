@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.5] - 2026-08-13
+
+### 🎯 优化
+
+- **升级 `@ai-zen/agents-core` 到 3.3.1、`@ai-zen/agents-sdk` 到 0.5.7** — 跟随上游内部重构，开箱即用，CLI 无代码改动：
+  - **`innerLoopTasks` 拆分为双集合语义** — Core 3.3.1 新增 `innerLoopsTasks`（整组任务记录）与 `innerLoopTasks`（当前轮活跃任务）；`abort()` 只中止当前轮活跃任务，不再误标已完成的轮次
+  - **内循环开头统一追加 Assistant 占位** — `send()` / `AgentTool` 不再手动追加 Assistant，由 `run()` 每次内循环开头统一处理，多轮工具调用同样收敛到该处
+  - **SDK 0.5.7 同步升级** — 依赖 core 3.3.1，全部 426 个测试（含真实 DeepSeek e2e）通过，完全兼容
+
 ## [0.3.4] - 2026-08-14
 
 ### 🎯 优化
