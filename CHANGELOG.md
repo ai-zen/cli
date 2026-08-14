@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0] - 2026-08-05
+
+### 🚀 新功能
+
+- **升级 `@ai-zen/agents-core` 到 3.4.0、`@ai-zen/agents-sdk` 到 0.6.0** — 随底层升级带来开箱即用的增强能力：
+  - **内置工具中断信号（abort）支持** — `sleep`/`exec`/`downloadFile`/`generateImage`/`glob`/`findText` 及 subAgent 体系监听 `abort` 信号，CLI 终止对话时超长耗时操作可及时中断，避免资源滞留（`exec` 可区分 `aborted` 与 `timeout` 终止原因）
+  - **工具定义内聚重构** — `Tool` 基类瘦身（不再强制传 `type`/`function`），定义与实现同处一类，回调签名由 `this` 注入改为显式 `(parsed_args, ctx)` 传参，`SdkCallbackTool` 构造改为 `{env}` 容器并透传完整 `ToolCallContext`
+  - **MCP 工具 signal 透传** — `call_mcp_tool` / `read_mcp_resource` 支持中断
+  - cli 层未直接使用上述受影响 API，升级为无破坏性平滑升级，功能不受影响
+
+### ✅ 测试
+
+- 依赖升级后单测全量通过（37 passed / 0 failed）
+
 ## [0.3.5] - 2026-08-13
 
 ### 🎯 优化
