@@ -104,7 +104,7 @@ export async function createAgent(options: CreateAgentOptions): Promise<SdkAgent
 
 export async function createMigrationAgent(modelId: string): Promise<SdkAgent> {
   const provider = await getProvider();
-  const model = createModel(provider, modelId);
+  const { client, model, modelConfig } = createModel(provider, modelId);
   const definition = TaskMigrationService.createAgentDefinition({ modelId });
 
   return new SdkAgent({
@@ -115,7 +115,9 @@ export async function createMigrationAgent(modelId: string): Promise<SdkAgent> {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
+    client,
     model,
+    modelConfig,
     messages: definition.messages,
     tools: [],
   });

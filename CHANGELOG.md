@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0] - 2026-08-23
+
+### 💥 破坏性变更
+
+- **升级 `@ai-zen/agents-core` 到 4.0.0、`@ai-zen/agents-sdk` 到 0.7.0** — 随底层核心重构（官方 OpenAI SDK + 插件化 Agent 驱动层）：
+  - **`createModel()` 返回结构变化** — 从返回旧 `ChatCompletionModel` 实例改为 `{ client, model, modelConfig }`（openai SDK client + 模型名 + 模型参数）；`createMigrationAgent` 相应解构后传入 `SdkAgent` 新构造签名
+  - **`SdkAgent` 构造签名变化** — 由 `{ ..., model }`（模型对象）改为 `{ client, model, modelConfig }`
+  - **CLI 其余部分完全兼容** — 流式事件（`open`/`chunk`/`error`/`sub-agent`/`sub-agent-end`）、插件（`AutoMigratePlugin`/`AutoRefreshToolsPlugin`/`ContextGuardPlugin`）、`AgentNS` 类型（`Delta`/`StreamResponseData`/`Message`）在 core 4.0.0 / sdk 0.7.0 中原样保留，`AgentPlugin`/`SendContext` 由 sdk 重新导出，无破坏
+
+### ✅ 测试
+
+- 依赖升级后单测全量通过（37 passed / 0 failed），`tsc --noEmit` 零错误
+
 ## [0.4.0] - 2026-08-05
 
 ### 🚀 新功能
