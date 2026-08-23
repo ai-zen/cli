@@ -13,6 +13,10 @@
 
 - 依赖升级后单测全量通过（37 passed / 0 failed），`tsc --noEmit` 零错误
 
+### 🎯 优化
+
+- **`test:all` / `test:e2e` 前置构建** — e2e 测试运行 `dist/index.js`，此前若 `dist` 缺失或为旧构建会导致 e2e 失败（升级后曾因旧 `dist` 报 `AgentContext must have a client`）。现于 e2e 前自动 `npm run build`，干净环境（CI clone 后）可开箱运行
+
 ## [0.4.0] - 2026-08-05
 
 ### 🚀 新功能
