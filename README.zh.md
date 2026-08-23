@@ -190,7 +190,7 @@ MCP 服务器配置从多个来源合并（优先级从高到低）：
 
 ## 内置工具
 
-CLI 提供 17 个内置文件系统工具，由 `@ai-zen/agents-sdk` 实现：
+CLI 提供 19 个内置工具，由 `@ai-zen/agents-sdk` 实现。工具可用性由各工具在构建阶段（模型已知时）通过 `isAvailable(config, definition)` 自声明：
 
 | 工具 | 说明 |
 |------|------|
@@ -211,12 +211,8 @@ CLI 提供 17 个内置文件系统工具，由 `@ai-zen/agents-sdk` 实现：
 | `rename` | 重命名或移动文件 |
 | `copy` | 复制文件或目录 |
 | `sleep` | 等待指定毫秒数 |
-
-条件注入（需配置 `defaultImageModel`）：
-
-| 工具 | 说明 |
-|------|------|
-| `generateImage` | 根据描述生成图片 |
+| `viewImage` | 查看/分析图片 — 仅视觉模型可用（`Model.vision`）。网络图片直接以 `image_url` 内容块返回；本地图片经 Files API 自动上传后以 `file` 内容块返回 |
+| `generateImage` | 根据描述生成图片 — 需配置 `defaultImageModel`；统一返回字符串（含图片 URL 列表与 `viewImage` / `downloadFile` 提示的 JSON），不再强制返回图片内容块 |
 
 ### 动态工具
 
@@ -234,8 +230,8 @@ CLI 提供 17 个内置文件系统工具，由 `@ai-zen/agents-sdk` 实现：
 
 工具装配由 SDK 的 `Provider` 能力管线管理，分为三个阶段：
 
-1. **发现** — 扫描文件系统获取内置工具、用户工具、SubAgent、Skill 和 MCP 服务器
-2. **过滤** — 应用权限（`allow`/`deny`）和安全排除（递归保护）
+1. **发现** — 扫描文件系统获取内置工具、用户工具、SubAgent、Skill 和 MCP 服务器。19 个内置工具全部无条件发现（此阶段不做过滤）
+2. **过滤** — 应用权限（`allow`/`deny`）、安全排除（递归保护），以及各工具自声明的 `isAvailable(config, definition)`（在模型已知的构建阶段判断可用性；如 `viewImage` 仅视觉模型、`generateImage` 需配置 `defaultImageModel`）
 3. **实例化** — 将过滤后的名称映射为 `Tool` 实例，注册动态加载器
 
 每个 Agent 拥有独立的权限配置，父 Agent 与 SubAgent 之间不继承权限。唯一的例外是 `call_skill_sub_agent` 创建的临时 Skill 子 Agent——它是临时的对话分身而非独立实体，因此继承调用者的权限。

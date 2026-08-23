@@ -190,7 +190,7 @@ Same-named servers in higher priority override lower ones.
 
 ## Built-in Tools
 
-The CLI provides 17 built-in file system tools, implemented by `@ai-zen/agents-sdk`:
+The CLI provides 19 built-in tools, implemented by `@ai-zen/agents-sdk`. Tool availability is self-declared by each tool via `isAvailable(config, definition)` at build time (when the model is already known):
 
 | Tool | Description |
 |------|-------------|
@@ -211,12 +211,8 @@ The CLI provides 17 built-in file system tools, implemented by `@ai-zen/agents-s
 | `rename` | Rename or move files |
 | `copy` | Copy files or directories |
 | `sleep` | Wait for a specified number of milliseconds |
-
-Conditionally injected (requires `defaultImageModel` in config):
-
-| Tool | Description |
-|------|-------------|
-| `generateImage` | Generate images from text |
+| `viewImage` | View/analyze an image — vision models only (`Model.vision`). A network URL is returned as an `image_url` content block; a local path is auto-uploaded via the Files API and returned as a `file` content block |
+| `generateImage` | Generate images from text — requires `defaultImageModel`; always returns a plain string (JSON with the image URLs plus `viewImage` / `downloadFile` hints) instead of forcing image content blocks |
 
 ### Dynamic Tools
 
@@ -234,8 +230,8 @@ In addition to built-in tools, the SDK provides 5 dynamic loading tools that are
 
 Tools are assembled in three phases by the SDK's `Provider` capability pipeline:
 
-1. **Discovery** — Scan filesystem for built-in tools, user tools, SubAgents, Skills, and MCP servers
-2. **Filtering** — Apply permissions (`allow`/`deny`) and security exclusions (recursion protection)
+1. **Discovery** — Scan filesystem for built-in tools, user tools, SubAgents, Skills, and MCP servers. All 19 built-in tools are discovered unconditionally (no filtering at this stage)
+2. **Filtering** — Apply permissions (`allow`/`deny`), security exclusions (recursion protection), and each tool's self-declared `isAvailable(config, definition)` (availability is decided at build time when the model is known; e.g. `viewImage` only for vision models, `generateImage` requires `defaultImageModel`)
 3. **Instantiation** — Map filtered names to `Tool` instances and register dynamic loaders
 
 Each Agent has independent permissions — no inheritance between parent Agent and SubAgent. The only exception is the temporary Skill sub-agent (created by `call_skill_sub_agent`), which inherits the caller's permissions as a transient conversation proxy rather than an independent entity.
