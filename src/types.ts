@@ -20,7 +20,7 @@ export type { Conversation } from "./conversation-repository.js";
 export type { Draft } from "./draft-repository.js";
 
 import { AgentNS } from "@ai-zen/agents-core";
-import type { SdkAgent } from "@ai-zen/agents-sdk";
+import type { SdkAgent, TaskMigrationService } from "@ai-zen/agents-sdk";
 
 export interface ConversationContext {
   agent: SdkAgent;
@@ -31,6 +31,8 @@ export interface ConversationContext {
   agentId: string | undefined;
   running: boolean;
   shouldSend?: boolean;
+  /** 迁移服务实例：自动迁移（AutoMigratePlugin）与手动迁移（/migrate 命令）共用同一实例。先建 ctx 再回填（migrate 前必已赋值） */
+  migrationService?: TaskMigrationService;
 }
 
 export type CommandHandler = (ctx: ConversationContext) => Promise<void>;

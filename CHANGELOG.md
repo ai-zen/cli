@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.6.0] - 2026-08-24
+
+### 💥 破坏性变更
+
+- **升级 `@ai-zen/agents-sdk` 到 0.8.0** — 任务迁移能力在 SDK 内完成重构（详见 SDK CHANGELOG）：
+  - **`TaskMigrationService` 变为实例化、自包含迁移服务** —— 构造仅接收 `{ onBeforeMigrate?, onMigrated?, logger? }`（钩子平铺，无 `hooks` 包装），`migrate({ agent })` 直接复用传入 `agent` 的 `client`/`model`/`modelConfig` 生成交接文档，无需 Provider、无需独立迁移 Agent；暴露结构化 `MigrationContext`
+  - **`AutoMigratePlugin` 收敛为仅触发角色** —— 构造注入 `{ service, maxTokens }`，只检测 token 超限并委托 `service.migrate`
+  - **CLI 移除 `createMigrationAgent`** —— 删除 `src/agent-creator.ts` 中依赖已删除 `TaskMigrationService.createAgentDefinition` 的迁移 Agent 构建；手动迁移命令与自动迁移回调统一改为使用 SDK 迁移服务实例，钩子平铺在服务构造上
+
+### 🚀 新功能
+
+- **手动任务迁移命令 `/migrate`** — 对话中随时输入 `/migrate` 即可主动触发任务迁移，无需等待 token 超限：
+  - 迁移动作：保存当前对话 → 生成交接文档 → 开启新会话（注入交接文档为上下文）→ 新对话落盘为草稿（`_current.json`）
+  - 与自动迁移联动复用 SDK 的 `TaskMigrationService.migrate`，通过 `onMigrated` 钩子处理后保存
+  - 非破坏性：旧对话已保存到 `conversations/`，生成失败时可重试或继续当前对话
+
+### 🎯 优化
+
+- **迁移服务单实例收敛** — 将 `TaskMigrationService` 实例挂载到 `ConversationContext.migrationService`，自动迁移（`AutoMigratePlugin` 触发）与手动迁移（`/migrate` 命令）共用**同一个实例**；迁移前后处理（保存旧对话 / 开启新会话 / 落盘草稿）统一收敛到该服务钩子，消除自动与手动两侧各自 `new TaskMigrationService` 及重复的后处理实现
+- **迁移服务抽离为独立模块** — 新增 `src/migration-service.ts`，由 `createMigrationService(ctx)` 统一构建迁移服务实例（含迁移前后钩子）；`saveCurrentConversation` 提升为 `conversation-repository.ts` 的共享 `saveConversation`，供迁移钩子与错误保存共用
+
+### ✅ 测试
+
+- SDK 侧：`TaskMigrationService`（含 `migrate` / 序列化 / 钩子上下文）、`AutoMigratePlugin`（触发委托断言）全量通过（447 passed / 2 skipped）
+- CLI 侧：`pretest` 类型检查与全量单测通过（37 passed），`npm run build` 成功
+
 ## [0.5.0] - 2026-08-23
 
 ### 💥 破坏性变更

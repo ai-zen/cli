@@ -8,43 +8,22 @@
 import chalk from "chalk";
 import inquirer from "inquirer";
 import { AgentNS } from "@ai-zen/agents-core";
-import type { SdkAgent } from "@ai-zen/agents-sdk";
 import {
   AutoMigratePlugin,
   AutoRefreshToolsPlugin,
   ContextGuardPlugin,
 } from "@ai-zen/agents-sdk";
 import { DeltaRenderer } from "./delta-renderer.js";
-import { createAgent, createMigrationAgent } from "./agent-creator.js";
+import { createAgent } from "./agent-creator.js";
 import { readConfig } from "./config.js";
 import { CwdTrackerPlugin } from "./cwd-tracker-plugin.js";
 import { DraftPlugin } from "./draft-plugin.js";
-import { draftRepository } from "./draft-repository.js";
-import { conversationRepository } from "./conversation-repository.js";
+import { saveConversation } from "./conversation-repository.js";
+import { createMigrationService } from "./migration-service.js";
 import { ensureEndpointConfig } from "./config-wizard.js";
 import type { ConversationContext } from "./types.js";
 import { formatShortTime } from "./format-time.js";
 import { dispatchCommand, getCommandNames } from "./conversation-commands/index.js";
-
-/** 保存当前对话到 conversations 目录 */
-async function saveCurrentConversation(
-  name: string,
-  messages: AgentNS.Message[],
-  modelId: string,
-  existingId?: string,
-  agentId?: string,
-): Promise<string> {
-  const id = existingId || name.replace(/[\\/:*?"<>|]/g, "_");
-  await conversationRepository.write({
-    id,
-    agentId: agentId || "default",
-    modelId,
-    messages,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
-  return id;
-}
 
 // ==================== 发送消息 ====================
 
@@ -60,7 +39,7 @@ async function sendAndStream(ctx: ConversationContext): Promise<void> {
     if (lastMessage?.status === "error") {
       console.error(chalk.red(`\n❌ 发生错误: ${JSON.stringify(lastMessage)}\n`));
       try {
-        await saveCurrentConversation(ctx.currentName, ctx.agent.messages, ctx.modelId, ctx.currentId, ctx.agentId);
+        await saveConversation(ctx);
         console.log(chalk.yellow(`💾 错误时对话已自动保存: ${ctx.currentName}\n`));
       } catch (saveError) {
         console.error(chalk.red(`❌ 自动保存失败: ${saveError}\n`));
@@ -104,6 +83,17 @@ export async function runConversation(options: RunConversationOptions): Promise<
   // 在 runConversation 内部创建 agent
   const agent = await createAgent({ messages, agentId });
 
+  // 会话上下文：先创建基础字段（迁移服务实例随后装配并回填 migrationService）
+  const ctx: ConversationContext = {
+    agent,
+    input: "",
+    currentName: conversationName || `对话_${formatShortTime(new Date().toISOString())}`,
+    currentId: conversationId,
+    modelId,
+    agentId,
+    running: true,
+  };
+
   // ============ 插件注册 ============
 
   // 1. cwdTracker — 追踪工作目录变化，动态通知 Agent
@@ -120,49 +110,22 @@ export async function runConversation(options: RunConversationOptions): Promise<
   }));
 
   // 4/5. contextGuard 与 autoMigrate 的前置准备（读取模型最大上下文 token）
-  const migrationAgent = await createMigrationAgent(modelId);
   const config = await readConfig();
   const modelConfig = config.models.find((m) => m.id === modelId);
   const maxTokens = modelConfig?.maxContextTokens ?? (modelConfig?.maxContextChars ? Math.floor(modelConfig.maxContextChars / 4) : undefined);
+
+  // 迁移服务实例：自动迁移（AutoMigratePlugin）与手动迁移（/migrate 命令）共用同一实例。
+  // 迁移前后处理（保存旧对话 / 开启新会话 / 落盘草稿）统一收敛到 src/migration-service.ts。
+  const migrationService = createMigrationService(ctx);
+  ctx.migrationService = migrationService;
+
   if (maxTokens && maxTokens > 0) {
-    // 4. contextGuard — 请求前检测用量，严重超限（> maxTokens×1.2）时抛 ContextOverflowError 中断对话。
+    // contextGuard — 请求前检测用量，严重超限（> maxTokens×1.5）时抛 ContextOverflowError 中断对话。
     //    作为安全护栏置于迁移插件之前：防止读入超大文件等突发超限在迁移生效前撑爆上下文。
     agent.use(new ContextGuardPlugin({ maxTokens }));
 
-    // 5. autoMigrate — 检测 token 超限时自动迁移
-    agent.use(new AutoMigratePlugin({
-      maxTokens,
-      migrationAgent,
-      onBeforeMigrate: async (promptTokens: number, maxTokens: number, agent: SdkAgent) => {
-        console.log(chalk.yellow.bold(`\n📋 检测到上下文即将超限（${promptTokens}/${maxTokens} tokens），正在自动生成交接文档以延续对话...\n`));
-        // 迁移前 agent.messages 还是完整旧历史，先保存旧对话
-        await saveCurrentConversation(ctx.currentName, agent.messages, ctx.modelId, ctx.currentId, ctx.agentId);
-        console.log(chalk.gray(`  ✅ 原对话已保存: ${ctx.currentName}`));
-      },
-      onMigrated: async (handoffDoc: string, agent: SdkAgent) => {
-        ctx.currentName = `对话_${formatShortTime(new Date().toISOString())}`;
-        ctx.currentId = undefined;
-
-        console.log(chalk.green.bold(`\n🚀 任务迁移完成！已开启新会话，共 ${agent.messages.length} 条消息。\n`));
-        console.log(chalk.gray("💡 你可以继续提问，新助手已通过交接文档了解之前的全部工作。\n"));
-
-        // 迁移后立即把新开场白保存为草稿（_current.json），
-        // 避免迁移发生在 onAfterSend（DraftPlugin 的 onInnerLoopEnd 已不再触发）
-        // 导致迁移后的新对话未被及时落盘，用户中途退出时丢失迁移后的开场白。
-        try {
-          await draftRepository.write({
-            conversationId: ctx.currentId, // undefined → 写入 _current.json
-            agentId: ctx.agentId || "default",
-            modelId: ctx.modelId,
-            messages: agent.messages,
-            cwd: process.cwd(),
-            updatedAt: new Date().toISOString(),
-          });
-        } catch (err: any) {
-          console.warn(`[draft] 迁移后保存草稿失败: ${err?.message ?? err}`);
-        }
-      },
-    }));
+    // autoMigrate — 检测 token 超限时自动迁移。仅负责触发（何时迁移），实际迁移委托给共享的 migrationService。
+    agent.use(new AutoMigratePlugin({ service: migrationService, maxTokens }));
   }
 
   // 初始化所有插件
@@ -170,16 +133,6 @@ export async function runConversation(options: RunConversationOptions): Promise<
 
   const cmdList = getCommandNames().map((c) => `/${c}`).join(", ");
   console.log(chalk.blue.bold(`💬 对话已开始 (输入 ${cmdList} 查看和操作)\n`));
-
-  const ctx: ConversationContext = {
-    agent,
-    input: "",
-    currentName: conversationName || `对话_${formatShortTime(new Date().toISOString())}`,
-    currentId: conversationId,
-    modelId,
-    agentId,
-    running: true,
-  };
 
   // ============ 流式渲染器 ============
 

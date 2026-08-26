@@ -11,8 +11,6 @@ import {
   Provider,
   createAgent as sdkCreateAgent,
   SdkAgent,
-  TaskMigrationService,
-  createModel,
 } from "@ai-zen/agents-sdk";
 import type { AgentNS } from "@ai-zen/agents-core";
 import {
@@ -98,27 +96,4 @@ export async function createAgent(options: CreateAgentOptions): Promise<SdkAgent
   }
 
   return agent;
-}
-
-// ==================== 迁移 Agent ====================
-
-export async function createMigrationAgent(modelId: string): Promise<SdkAgent> {
-  const provider = await getProvider();
-  const { client, model, modelConfig } = createModel(provider, modelId);
-  const definition = TaskMigrationService.createAgentDefinition({ modelId });
-
-  return new SdkAgent({
-    provider,
-    definition: {
-      ...definition,
-      id: "__migration__",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    client,
-    model,
-    modelConfig,
-    messages: definition.messages,
-    tools: [],
-  });
 }

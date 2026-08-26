@@ -9,5 +9,6 @@ export async function handleHelp(ctx: ConversationContext): Promise<void> {
   console.log(`  ${chalk.cyan("/back")}           撤回消息（可修改后重发）`);
   console.log(`  ${chalk.cyan("/editor")}         使用系统编辑器输入长消息`);
   console.log(`  ${chalk.cyan("/clear")}          清屏`);
+  console.log(`  ${chalk.cyan("/migrate")}        手动任务迁移（生成交接文档并开启新会话）`);
   console.log(`  ${chalk.cyan("/help")}           显示此帮助\n`);
 }

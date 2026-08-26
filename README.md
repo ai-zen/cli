@@ -68,11 +68,14 @@ While in a conversation, all commands start with `/`:
 | `/back` | Undo messages (roll back to a specific point and resend) |
 | `/editor` | Open system editor for long-form input |
 | `/clear` | Clear the screen |
+| `/migrate` | Manually trigger task migration (generate handoff doc & start a new session) |
 | `/help` | Show available commands |
 
 ### Conversation Migration
 
 When the API response's `usage.prompt_tokens` exceeds the model's `maxContextTokens`, the system automatically generates a **handover document** summarizing completed tasks, pending items, and key decisions. A new conversation session is created with this document as context, ensuring seamless continuation.
+
+You can also manually trigger a migration at any time by typing `/migrate` in the conversation — no need to wait for the token limit. Both automatic and manual migration delegate to the SDK's `TaskMigrationService`, so the handoff document is always produced consistently.
 
 The migration prompt template includes:
 - **Conversation Breakpoint** — Last user/AI exchange verbatim

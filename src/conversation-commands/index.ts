@@ -6,6 +6,7 @@ import { handleBack } from "./back.js";
 import { handleEditor } from "./editor.js";
 import { handleClear } from "./clear.js";
 import { handleHelp } from "./help.js";
+import { handleMigrate } from "./migrate.js";
 
 /**
  * 命令注册表
@@ -20,6 +21,7 @@ const commands: Record<string, CommandHandler> = {
   editor: handleEditor,
   clear: handleClear,
   help: handleHelp,
+  migrate: handleMigrate,
 };
 
 /**
@@ -68,5 +70,6 @@ export function getCommandNames(): string[] {
   names.add("editor");
   names.add("clear");
   names.add("help");
+  names.add("migrate");
   return Array.from(names).sort();
 }
