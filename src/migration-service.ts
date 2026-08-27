@@ -18,6 +18,8 @@ export function createMigrationService(
   ctx: ConversationContext,
 ): TaskMigrationService {
   return new TaskMigrationService({
+    // CLI 采用物理剔除模式：迁移后不保留历史消息，仅保留系统提示 + 交接断点。
+    strategy: "prune",
     onBeforeMigrate: async (mctx: MigrationContext) => {
       // 自动迁移由 AutoMigratePlugin 传入 promptTokens/maxTokens；手动迁移为 undefined。
       const isAuto = mctx.promptTokens != null && mctx.maxTokens != null;
