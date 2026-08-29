@@ -1,0 +1,34 @@
+{
+  "name": "cli",
+  "npm": "@ai-zen/cli",
+  "description": {
+    "zh": "交互式 AI Agent 终端（内置 19 种工具，支持 MCP、Skill 与任务迁移）",
+    "en": "Interactive AI Agent terminal (ships with 19 built-in tools, with MCP, Skill, and task migration support)"
+  },
+  "version": "0.6.1",
+  "docsRoot": "docs",
+  "locales": ["zh", "en"],
+  "defaultLocale": "zh",
+  "entry": {
+    "zh": "zh/index.md",
+    "en": "en/index.md"
+  },
+  "sections": {
+    "zh": [
+      { "title": "快速开始", "path": "zh/getting-started.md" },
+      { "title": "内置工具", "path": "zh/tools.md" },
+      { "title": "MCP 支持", "path": "zh/mcp.md" },
+      { "title": "Skill 技能", "path": "zh/skills.md" },
+      { "title": "任务迁移", "path": "zh/migration.md" },
+      { "title": "配置", "path": "zh/configuration.md" }
+    ],
+    "en": [
+      { "title": "Quick Start", "path": "en/getting-started.md" },
+      { "title": "Built-in Tools", "path": "en/tools.md" },
+      { "title": "MCP Support", "path": "en/mcp.md" },
+      { "title": "Skill", "path": "en/skills.md" },
+      { "title": "Task Migration", "path": "en/migration.md" },
+      { "title": "Configuration", "path": "en/configuration.md" }
+    ]
+  }
+}
