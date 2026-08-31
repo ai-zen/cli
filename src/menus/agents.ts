@@ -1,6 +1,6 @@
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { AgentNS } from "@ai-zen/agents-core";
+import { AgentNS, Message } from "@ai-zen/agents-core";
 import type { AgentDefinition } from "@ai-zen/agents-sdk";
 import {
   AgentRepository,
@@ -167,7 +167,7 @@ async function createAgentInteractive(): Promise<void> {
     id,
     name,
     description,
-    messages: [{ role: AgentNS.Role.System, content: systemContent }],
+    messages: [Message.System(systemContent)],
     modelId: modelId || undefined,
     createdAt: now,
     updatedAt: now,
@@ -226,7 +226,7 @@ async function editAgentInteractive(agentId: string): Promise<void> {
     ...agent,
     name,
     description,
-    messages: [{ role: AgentNS.Role.System, content: systemContent }],
+    messages: [Message.System(systemContent)],
     modelId: modelId || undefined,
     updatedAt: new Date().toISOString(),
   });

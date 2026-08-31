@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.2] - 2026-08-31
+
+### 🎯 优化
+
+- **启动版本 banner 增强** — 新增 `src/version.ts`，统一从实际安装包读取版本号（而非依赖声明中的版本范围）；主菜单版本行由仅打印 CLI 版本扩展为同时展示 CLI / SDK / Core 三版本，例如 `AI-Zen CLI v0.6.2 · SDK 0.9.2 · Core 4.1.0`
+- **适配 `@ai-zen/agents-core` 4.1.0 类型变更** — 上游将 `AgentNS.Message.id` 由可选改为**强制必填**（构造时自动生成）。`src/menus/agents.ts` 与 `src/conversation-commands/back.test.ts` 中直接构造的裸消息对象改用 `Message` 内置工厂方法创建（`Message.System` / `Message.User` / `Message.Assistant`，以及 `new Message(...)`），由 core 统一生成消息 `id`
+- **依赖跟随升级** — `@ai-zen/agents-sdk` 至 `0.9.2`、`@ai-zen/agents-core` 至 `4.1.0`（借助 caret 范围自动解析）
+
+### ✅ 测试
+
+- 依赖升级后 `tsc` 类型检查与全量单测通过（37 passed / 5 files），`npm run build` 成功
+
 ## [0.6.1] - 2026-08-28
 
 ### 🎯 优化

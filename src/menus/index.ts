@@ -2,7 +2,6 @@
  * 主菜单
  */
 
-import { createRequire } from "module";
 import chalk from "chalk";
 import inquirer from "inquirer";
 import { startNewConversation, continueConversation, continueDraft } from "./start-conversation.js";
@@ -11,12 +10,14 @@ import { manageAgentsInteractive } from "./agents.js";
 import { showInteractiveConfig } from "./config.js";
 import { formatMessageTime } from "../format-time.js";
 import { draftRepository } from "../draft-repository.js";
-
-const require = createRequire(import.meta.url);
-const { version } = require("../../package.json");
+import { CLI_VERSION, SDK_VERSION, CORE_VERSION } from "../version.js";
 
 export async function showMainMenu(): Promise<void> {
-  console.log(chalk.blue.bold(`\n🤖 AI-Zen CLI v${version}\n`));
+  console.log(
+    chalk.blue.bold(
+      `\n🤖 AI-Zen CLI v${CLI_VERSION} · SDK ${SDK_VERSION} · Core ${CORE_VERSION}\n`,
+    ),
+  );
 
   const draft = await draftRepository.read();
 
