@@ -90,9 +90,10 @@ export async function createAgent(options: CreateAgentOptions): Promise<SdkAgent
   // 始终从磁盘读取 Agent 定义（含 permissions、工具配置等）
   const agent = await sdkCreateAgent(provider, agentId || "default");
 
-  // 有历史消息时替换（恢复草稿/已保存对话）
+  // 有历史消息时替换（恢复草稿/已保存对话）。
+  // 拷贝而非直接引用：恢复的数组来自草稿/对话存档，直接引用会让后续 append 改写传入数组。
   if (messages && messages.length > 0) {
-    agent.messages = messages;
+    agent.messages = [...messages];
   }
 
   return agent;

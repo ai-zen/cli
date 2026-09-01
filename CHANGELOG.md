@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.3] - 2026-09-01
+
+### 🔧 修复
+
+- **修复迁移后旧消息既未标记 omit 也未物理删除的问题（依赖升级）** — 上游 `@ai-zen/agents-sdk` 0.9.3 修复 `createAgent` 直接引用 `definition.messages` 导致对话 `append` 反向污染 Agent 定义模板的缺陷；此前该缺陷使任务迁移 `prune`/`omit` 策略失效（旧消息不被清理、却能注入断点消息）
+- **恢复草稿/已保存对话时拷贝消息数组** — `src/agent-creator.ts` 由直接引用改为 `agent.messages = [...messages]`，避免后续 `append` 改写草稿/对话存档的内存数组
+- **依赖跟随升级** — `@ai-zen/agents-sdk` 至 `0.9.3`（借助 caret 范围自动解析）
+
+### ✅ 测试
+
+- `tsc` 类型检查与全量单测通过（37 passed / 5 files）
+
 ## [0.6.2] - 2026-08-31
 
 ### 🎯 优化
