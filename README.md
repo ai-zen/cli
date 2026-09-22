@@ -58,7 +58,14 @@ If you exit a conversation without saving (or the process is killed), the conver
 
 ### Conversation Commands
 
-While in a conversation, all commands start with `/`:
+While in a conversation, all commands start with `/`. Typing `/` lists the available commands, with descriptions, right below the input line; typing more characters narrows the candidates by prefix:
+
+```
+💬 You: /b
+  /back         Undo messages (roll back to a specific point and resend)
+```
+
+> Hints are display-only and do not change submission semantics: Enter always submits exactly what you typed, and commands are matched by their full names. An unrecognized `/xxx` command reports "Unknown command".
 
 | Command | Description |
 |---------|-------------|
@@ -73,7 +80,7 @@ While in a conversation, all commands start with `/`:
 
 ### Conversation Migration
 
-When the API response's `usage.prompt_tokens` exceeds the model's `maxContextTokens`, the system automatically generates a **handover document** summarizing completed tasks, pending items, and key decisions. A new conversation session is created with this document as context, ensuring seamless continuation.
+When the API response's `usage.prompt_tokens` exceeds the model's `maxContextTokens`, the system first asks for a **second confirmation** (showing current usage and the threshold, defaulting to "yes"; choosing "no" skips this migration and leaves the current conversation untouched), then generates a **handover document** summarizing completed tasks, pending items, and key decisions. A new conversation session is created with this document as context, ensuring seamless continuation. The confirmation only appears when both stdin and stdout are TTYs; non-interactive scenarios such as pipes and redirections keep the previous automatic migration behavior.
 
 You can also manually trigger a migration at any time by typing `/migrate` in the conversation — no need to wait for the token limit. Both automatic and manual migration delegate to the SDK's `TaskMigrationService`, so the handoff document is always produced consistently.
 

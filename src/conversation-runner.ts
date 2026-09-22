@@ -6,13 +6,9 @@
  */
 
 import chalk from "chalk";
-import inquirer from "inquirer";
 import { AgentNS } from "@ai-zen/agents-core";
-import {
-  AutoMigratePlugin,
-  AutoRefreshToolsPlugin,
-  ContextGuardPlugin,
-} from "@ai-zen/agents-sdk";
+import { AutoRefreshToolsPlugin, ContextGuardPlugin } from "@ai-zen/agents-sdk";
+import { AutoMigrateConfirmPlugin } from "./auto-migrate-confirm-plugin.js";
 import { DeltaRenderer } from "./delta-renderer.js";
 import { createAgent } from "./agent-creator.js";
 import { readConfig } from "./config.js";
@@ -24,6 +20,7 @@ import { ensureEndpointConfig } from "./config-wizard.js";
 import type { ConversationContext } from "./types.js";
 import { formatShortTime } from "./format-time.js";
 import { dispatchCommand, getCommandNames } from "./conversation-commands/index.js";
+import { askInput } from "./slash-hint-prompt.js";
 
 // ==================== 发送消息 ====================
 
@@ -125,7 +122,9 @@ export async function runConversation(options: RunConversationOptions): Promise<
     agent.use(new ContextGuardPlugin({ maxTokens }));
 
     // autoMigrate — 检测 token 超限时自动迁移。仅负责触发（何时迁移），实际迁移委托给共享的 migrationService。
-    agent.use(new AutoMigratePlugin({ service: migrationService, maxTokens }));
+    //    触发后先做一次「二次确认」（AutoMigrateConfirmPlugin，CLI 层）：非交互环境无确认通道，
+    //    保持既有静默自动迁移行为；用户拒绝则跳过本次迁移、不改变当前对话。
+    agent.use(new AutoMigrateConfirmPlugin({ service: migrationService, maxTokens }));
   }
 
   // 初始化所有插件
@@ -191,16 +190,8 @@ export async function runConversation(options: RunConversationOptions): Promise<
   // ============ 主循环 ============
 
   while (ctx.running) {
-    const { question } = await inquirer.prompt([
-      {
-        type: "input",
-        name: "question",
-        message: chalk.cyan("你:"),
-        prefix: "💬",
-      },
-    ]);
-
-    ctx.input = question.trim();
+    // 命令提示（输入 / 时列出候选命令）由输入提示自行渲染，此处只取输入内容
+    ctx.input = await askInput();
     if (!ctx.input) continue;
 
     const handled = await dispatchCommand(ctx);

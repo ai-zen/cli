@@ -67,7 +67,12 @@ After starting, the main menu appears:
 
 ## Conversation commands
 
-All in-conversation commands start with `/`; use `/help` to list them:
+All in-conversation commands start with `/`; use `/help` to list them. Typing `/` lists the available commands, with descriptions, right below the input line; typing more characters narrows the candidates by prefix:
+
+```
+💬 You: /b
+  /back         Undo messages (roll back to a specific point and resend)
+```
 
 | Command | Description |
 |---------|-------------|
@@ -80,7 +85,7 @@ All in-conversation commands start with `/`; use `/help` to list them:
 | `/migrate` | Manually trigger task migration (generate a handoff document and start a new session) |
 | `/help` | Show help |
 
-> Note: typing an unrecognized `/xxx` command shows: "Unknown command: xxx (type `/help` to view available commands)".
+> Note: Hints are display-only and do not change submission semantics — Enter always submits exactly what you typed, and commands are matched by their full names. Typing an unrecognized `/xxx` command shows: "Unknown command: xxx (type `/help` to view available commands)".
 
 ## Shell fallback hook
 

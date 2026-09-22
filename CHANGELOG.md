@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.7.0] - 2026-09-20
+
+### 🚀 新功能
+
+- **自动迁移二次确认** — 上下文 token 超限触发的自动迁移不再静默执行，迁移前先向用户确认（新增 `src/auto-migrate-confirm-plugin.ts`）：
+  - `AutoMigrateConfirmPlugin` 继承 SDK 的 `AutoMigratePlugin`，**仅在「超阈值」与「调用迁移」之间插入一次确认**：阈值判断、迁移调用与错误处理仍复用基类，实际迁移仍委托共享的 `migrationService`（与 `/migrate` 同一条链路）——即 SDK 侧「只负责触发」的语义不变，确认是 CLI 层的增量
+  - 确认框展示当前用量与阈值（如 `260000/250000 tokens`）并说明影响（生成交接文档 → 保存当前对话 → 开启新会话继续），**默认「是」**（回车即迁移，与 `/migrate` 默认值一致）
+  - 选择「否」仅跳过**本次**迁移，不记录隐式状态：当前对话不受影响（历史未被剔除），可继续提问或随时 `/migrate`；仍处超限状态时下次发送后再次询问，并提示继续增长至严重超限会被 `ContextGuardPlugin` 中断
+  - **非交互环境不询问**：仅在 stdin 与 stdout 均为 TTY 时弹出确认框；管道、重定向、e2e 脚本无确认通道，保持既有静默自动迁移行为（不阻塞等待输入、不额外输出，管道语义不变）
+  - 对话装配处（`src/conversation-runner.ts`）改注册 `AutoMigrateConfirmPlugin`，其余插件（`ContextGuardPlugin` 护栏位置）不变
+- **对话内命令提示** — 对话输入行键入 `/` 即实时列出可用命令及说明，继续输入按前缀收敛候选，无匹配时提示「无匹配命令（输入 /help 查看全部）」：
+  - 新增 `src/slash-hint-prompt.ts`：继承 inquirer 的 input 提示并覆写 `render`，将候选命令作为底栏（`bottomContent`）交由 inquirer 的 `ScreenManager` 渲染，复用其折行、终端缩放、擦除与光标归位处理，渲染表现与其它提示一致
+  - **仅提示，不改变提交语义**：回车始终提交输入原文，命令仍由 `dispatchCommand` 按完整名称精确匹配分发（不做前缀补全、不做高亮选择）
+  - 非 TTY 环境（stdin/stdout 重定向、e2e 脚本）自动不渲染提示，退化为普通输入行，既有输出行为不变
+  - 普通聊天内容（非 `/` 开头）不产生任何提示
+- 对话主循环输入改由 `src/slash-hint-prompt.ts` 的 `askInput()` 提供（`src/conversation-runner.ts` 不再直接构造输入提示）
+
+### 🎯 优化
+
+- **对话命令清单收敛为唯一来源** — 新增 `src/conversation-commands/registry.ts` 集中声明命令名、别名与说明，由分发（`index.ts`）、帮助（`help.ts`）与输入提示三处共用：
+  - **别名不再重复登记**：registry 声明的别名由 `index.ts` 自动展开为处理函数表的键；registry 声明了命令却未注册处理函数时于启动阶段即报错（fail-fast）
+  - `/help` 输出改由 registry 渲染，命令列按最长命令串对齐，与输入提示列宽一致（命令与说明文案保持不变）
+  - `getCommandNames()` 迁至 registry，`conversation-commands/index.ts` 原样再导出，调用方无需改动
+
+### ⚠️ 依赖约束
+
+- **引用了 inquirer 内部模块** `inquirer/lib/prompts/input.js` — inquirer 9 未导出 BasePrompt/InputPrompt，实现命令提示底栏只能深层导入（inquirer@9 的 `package.json` 无 `exports` 字段，ESM 深层导入已在 Node 26 + inquirer 9.3.8 下实测可用）。类型声明见 `src/typings/inquirer-internals.d.ts`；**升级 inquirer 主版本时须回归验证该模块路径与 `render` 行为**
+- **未新增运行时依赖**，`pnpm-lock.yaml` 不变
+
+### ✅ 测试
+
+- 新增 `src/auto-migrate-confirm-plugin.test.ts`（阈值判断、确认与拒绝分支、非交互降级、TTY 判定与默认确认文案）
+- 新增 `src/slash-hint-prompt.test.ts`（提示文本生成 + 底栏渲染，覆盖 TTY / 非 TTY / 已提交 / 错误行分支）
+- 新增 `src/conversation-commands/registry.test.ts`（元数据、别名折叠、前缀匹配、命令分发与别名等价）
+- `tsc` 类型检查与全量单测通过（68 passed / 8 files），`npm run build` 成功
+- 构建产物在真实 TTY 下实测：输入 `/` 列出全部命令、`/b` 收敛为 `/back`、回车提交原文且提示行正确擦除；`/help` 输出格式与列宽正常
+
 ## [0.6.3] - 2026-09-01
 
 ### 🔧 修复

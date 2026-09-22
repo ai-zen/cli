@@ -12,8 +12,10 @@ As a conversation's context approaches the model's context-window limit, continu
 
 ### Automatic migration
 
-When the API response's `usage.prompt_tokens` exceeds the current model's `maxContextTokens`, the SDK's `AutoMigratePlugin` automatically triggers a migration.
+When the API response's `usage.prompt_tokens` exceeds the current model's `maxContextTokens`, the SDK's `AutoMigratePlugin` automatically triggers a migration; the CLI wraps it with `AutoMigrateConfirmPlugin` (`src/auto-migrate-confirm-plugin.ts`) to ask for a **second confirmation** before migrating.
 
+- **Second confirmation**: the prompt shows the current usage and the threshold (e.g. `260000/250000 tokens`), defaults to "yes" (pressing Enter migrates, matching the default of `/migrate`), and explains the impact (generate a handoff document → save the current conversation → start a new session). Choosing "no" **skips this one** migration: the current conversation is unaffected (history is not pruned), and you can keep chatting or use `/migrate` at any time; as long as usage stays over the threshold, the prompt appears again after the next response.
+- **Non-interactive environments**: the confirmation is only shown when both stdin and stdout are TTYs. Pipes, redirections, and e2e scripts have no confirmation channel and keep the previous behavior — migrate automatically without blocking on input and without extra output.
 - The threshold is determined by the model config `maxContextTokens` (the README suggests setting it to roughly 25% of the model's actual context window — e.g. 250,000 for a 1M-token model).
 - During conversation assembly, `ContextGuardPlugin` acts as a **safety guardrail** placed before the migration plugin: when usage severely exceeds the limit (`> maxTokens × 1.5`) it throws a `ContextOverflowError` to interrupt the conversation, preventing a sudden over-limit (such as reading a very large file) from blowing past the context before migration takes effect.
 
@@ -56,5 +58,5 @@ The migration prompt template includes the following parts:
 
 ## Related documentation
 
-- The underlying migration service is provided by `@ai-zen/agents-sdk`'s `TaskMigrationService`; triggering is handled by `AutoMigratePlugin`.
+- The underlying migration service is provided by `@ai-zen/agents-sdk`'s `TaskMigrationService`; triggering is handled by the SDK's `AutoMigratePlugin`, and the CLI-level `AutoMigrateConfirmPlugin` merely inserts a second confirmation before that trigger (reusing the base class's threshold check and migration call).
 - For other capabilities, see [Built-in Tools](./tools.md), [MCP Support](./mcp.md), and [Skill](./skills.md).

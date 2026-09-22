@@ -12,8 +12,10 @@ outline: deep
 
 ### 自动迁移
 
-当 API 响应的 `usage.prompt_tokens` 超过当前模型的 `maxContextTokens` 时，SDK 的 `AutoMigratePlugin` 会自动触发迁移。
+当 API 响应的 `usage.prompt_tokens` 超过当前模型的 `maxContextTokens` 时，SDK 的 `AutoMigratePlugin` 会自动触发迁移；CLI 在其之上包了一层 `AutoMigrateConfirmPlugin`（`src/auto-migrate-confirm-plugin.ts`），迁移前先做一次**二次确认**。
 
+- **二次确认**：确认框展示当前用量与阈值（如 `260000/250000 tokens`），默认「是」（回车即迁移，与 `/migrate` 的默认值一致），并说明迁移影响（生成交接文档 → 保存当前对话 → 开启新会话继续）。选择「否」则**跳过本次**迁移：当前对话不受影响（历史未被剔除），可继续提问或随时改用 `/migrate`；只要仍处于超限状态，下次发送后仍会再次询问。
+- **非交互环境**：仅在 stdin 与 stdout 均为 TTY 时询问。管道、重定向、e2e 脚本等无确认通道的场景保持既有行为——直接自动迁移，不阻塞等待输入、不额外输出。
 - 阈值由模型配置项 `maxContextTokens` 决定（README 建议设为模型实际上下文窗口的约 25%，例如 100 万 token 模型设为 250,000）。
 - 在对话装配中，`ContextGuardPlugin` 作为**安全护栏**位于迁移插件之前：当用量严重超限（`> maxTokens × 1.5`）时会抛出 `ContextOverflowError` 中断对话，防止读入超大文件等突发超限在迁移生效前撑爆上下文。
 
@@ -56,5 +58,5 @@ CLI 显式采用 SDK 的 `strategy: "prune"`（物理剔除模式）：
 
 ## 相关文档
 
-- 底层迁移服务由 `@ai-zen/agents-sdk` 的 `TaskMigrationService` 提供；触发由 `AutoMigratePlugin` 承担。
+- 底层迁移服务由 `@ai-zen/agents-sdk` 的 `TaskMigrationService` 提供；触发由 SDK 的 `AutoMigratePlugin` 承担，CLI 层的 `AutoMigrateConfirmPlugin` 仅在其触发前插入一次二次确认（复用基类的阈值判断与迁移调用）。
 - 其他能力见 [内置工具](./tools.md)、[MCP 支持](./mcp.md)、[Skill 技能](./skills.md)。

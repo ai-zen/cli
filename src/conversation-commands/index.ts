@@ -1,4 +1,5 @@
 import { ConversationContext, CommandHandler } from "../types.js";
+import { getCommandHints } from "./registry.js";
 import { handleExit } from "./exit.js";
 import { handleSave } from "./save.js";
 import { handleNew } from "./new.js";
@@ -9,12 +10,11 @@ import { handleHelp } from "./help.js";
 import { handleMigrate } from "./migrate.js";
 
 /**
- * 命令注册表
- * key 为命令名称（不含 / 前缀），value 为处理函数
+ * 命令处理函数表
+ * key 为主命令名（不含 / 前缀），命令名/别名/说明的声明见 ./registry.ts
  */
-const commands: Record<string, CommandHandler> = {
+const handlers: Record<string, CommandHandler> = {
   exit: handleExit,
-  quit: handleExit,
   save: handleSave,
   new: handleNew,
   back: handleBack,
@@ -23,6 +23,26 @@ const commands: Record<string, CommandHandler> = {
   help: handleHelp,
   migrate: handleMigrate,
 };
+
+/**
+ * 命令注册表
+ * key 为命令名称（不含 / 前缀，含别名），value 为处理函数
+ * 别名按 registry 自动展开：新增别名只需改动 ./registry.ts
+ */
+const commands: Record<string, CommandHandler> = {};
+for (const hint of getCommandHints()) {
+  const primary = hint.names[0];
+  const handler = handlers[primary];
+  if (!handler) {
+    throw new Error(
+      `对话命令 "${primary}" 已在 conversation-commands/registry.ts 声明，但未注册处理函数`,
+    );
+  }
+  for (const name of hint.names) commands[name] = handler;
+}
+
+/** 全部命令名（含别名，升序） */
+export { getCommandNames } from "./registry.js";
 
 /**
  * 判断输入是否为命令（以 / 开头）
@@ -54,22 +74,4 @@ export async function dispatchCommand(
 
   await handler(ctx);
   return true;
-}
-
-/**
- * 获取所有命令名称列表（用于提示信息）
- */
-export function getCommandNames(): string[] {
-  // 去重（exit 和 quit 指向同一处理函数）
-  const names = new Set<string>();
-  names.add("exit");
-  names.add("quit");
-  names.add("save");
-  names.add("new");
-  names.add("back");
-  names.add("editor");
-  names.add("clear");
-  names.add("help");
-  names.add("migrate");
-  return Array.from(names).sort();
 }

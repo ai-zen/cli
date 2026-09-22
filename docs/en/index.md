@@ -15,12 +15,13 @@ When collaborating with AI in a bare terminal, you often have to manually switch
 ## Key features
 
 - **Interactive main menu**: resume an unfinished draft, start a new conversation, continue a saved conversation, manage saved conversations, manage Agents, and manage configuration.
+- **Command hints**: typing `/` in a conversation lists the available commands with descriptions below the input line, narrowing the candidates by prefix as you type.
 - **19 built-in tools**: the file-system and image-processing toolset provided by `@ai-zen/agents-sdk` — see [Built-in Tools](./tools.md).
 - **5 dynamically loaded tools**: `load_skill`, `call_skill_sub_agent`, `load_mcp`, `call_mcp_tool`, `read_mcp_resource`.
 - **Sub-agent orchestration**: Agents with a `function` field can be called as tools by other Agents, with an independent permission system.
 - **Skill**: reusable skills defined via `SKILL.md`, loaded contextually and delegatable to a Skill sub-agent.
 - **MCP support**: connect MCP servers over stdio / HTTP / SSE transports, with multi-level config merging.
-- **Task migration**: automatically generate a handoff document and start a new session when context tokens exceed the limit; you can also trigger it manually at any time with `/migrate`.
+- **Task migration**: ask for confirmation first when context tokens exceed the limit, then automatically generate a handoff document and start a new session; you can also trigger it manually at any time with `/migrate`.
 - **Draft recovery**: an abnormally exited conversation is automatically saved as a draft and can be resumed with one click on the next launch.
 - **Shell fallback hook**: `zen hook install` forwards unrecognized terminal commands to the AI for processing.
 
