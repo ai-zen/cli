@@ -7,8 +7,10 @@
 
 import chalk from "chalk";
 import { AgentNS } from "@ai-zen/agents-core";
+import type { SubAgentContext } from "@ai-zen/agents-core";
 import { AutoRefreshToolsPlugin, ContextGuardPlugin } from "@ai-zen/agents-sdk";
 import { AutoMigrateConfirmPlugin } from "./auto-migrate-confirm-plugin.js";
+import { SubAgentGuardInstallerPlugin } from "./sub-agent-guard-plugin.js";
 import { DeltaRenderer } from "./delta-renderer.js";
 import { createAgent } from "./agent-creator.js";
 import { readConfig } from "./config.js";
@@ -125,6 +127,11 @@ export async function runConversation(options: RunConversationOptions): Promise<
     //    触发后先做一次「二次确认」（AutoMigrateConfirmPlugin，CLI 层）：非交互环境无确认通道，
     //    保持既有静默自动迁移行为；用户拒绝则跳过本次迁移、不改变当前对话。
     agent.use(new AutoMigrateConfirmPlugin({ service: migrationService, maxTokens }));
+
+    // subAgentGuard — 子 Agent 上下文护栏：委派前给子 Agent 安插主 Agent 同款的
+    //    ContextGuardPlugin（同一 maxTokens）。子 Agent 由 SDK 新建实例、不继承宿主插件
+    //    （且走 run() 而非 send()），故必须经 onSubAgentStart 显式安插。
+    agent.use(new SubAgentGuardInstallerPlugin({ maxTokens }));
   }
 
   // 初始化所有插件
@@ -156,9 +163,8 @@ export async function runConversation(options: RunConversationOptions): Promise<
 
   // ============ 子 Agent 渲染 ============
 
-  const onSubAgent = (event: { agent: any; ctx: any }) => {
-    const subAgent = event.agent;
-    const toolName = event.ctx?.function_call?.name || "子任务";
+  const onSubAgent = ({ subAgent, toolCallContext }: SubAgentContext) => {
+    const toolName = toolCallContext?.tool_call?.function?.name || "子任务";
 
     process.stdout.write(chalk.yellow.bold(`\n  🧩 ${toolName}:\n`));
     subAgent.events.on("open", onRun);
@@ -166,8 +172,8 @@ export async function runConversation(options: RunConversationOptions): Promise<
     subAgent.events.on("error", onError);
   };
 
-  const onSubAgentEnd = ({ ctx: subCtx }: { agent: any; ctx: any }) => {
-    const toolName = subCtx.function_call?.name || "子任务";
+  const onSubAgentEnd = ({ toolCallContext }: SubAgentContext) => {
+    const toolName = toolCallContext?.tool_call?.function?.name || "子任务";
     process.stdout.write(chalk.gray(`\n    ✅ ${toolName} 完成\n`));
   };
 
@@ -176,7 +182,7 @@ export async function runConversation(options: RunConversationOptions): Promise<
   ctx.agent.events.on("open", onRun);
   ctx.agent.events.on("chunk", onChunk);
   ctx.agent.events.on("error", onError);
-  ctx.agent.events.on("sub-agent", onSubAgent);
+  ctx.agent.events.on("sub-agent-start", onSubAgent);
   ctx.agent.events.on("sub-agent-end", onSubAgentEnd);
 
   // ============ 初始消息 ============
@@ -212,7 +218,7 @@ export async function runConversation(options: RunConversationOptions): Promise<
   ctx.agent.events.off("open", onRun);
   ctx.agent.events.off("chunk", onChunk);
   ctx.agent.events.off("error", onError);
-  ctx.agent.events.off("sub-agent", onSubAgent);
+  ctx.agent.events.off("sub-agent-start", onSubAgent);
   ctx.agent.events.off("sub-agent-end", onSubAgentEnd);
 
   console.log(chalk.blue.bold("\n👋 再见！\n"));

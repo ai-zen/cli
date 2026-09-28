@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.8.0] - 2026-09-28
+
+### 🚀 新功能
+
+- **子 Agent 上下文护栏（`SubAgentGuardInstallerPlugin`）** — 补上「主 Agent 有护栏、子 Agent 无护栏」的缺口（新增 `src/sub-agent-guard-plugin.ts`）：
+  - **背景**：SDK 的子 Agent 由 `AgentTool` / `AgentToolLazy` 在委派时 `new Agent({...})` 构建，新建实例不携带任何插件（`Agent._plugins` 每实例私有，不向子 Agent 传播），且子 Agent 走 `run()` 而非 `send()`（`onBeforeSend` / `onAfterSend` 不会触发）——因此主 Agent 上的 `ContextGuardPlugin` 与自动迁移插件对子 Agent 完全无效，子 Agent 的内循环没有约束
+  - **介入点**：core 4.2.0 的 `onSubAgentStart` 钩子在「子 Agent 已构建、尚未 `run()`」时由宿主 Agent 分发，载荷携带子 Agent 实例；`use()` 只是把插件推入 `_plugins`，而钩子分发每次都实时遍历该列表，故在钩子内安插对**本次 `run()` 立即生效**（无需 `init()`，`AgentTool` 也不调用子 Agent 的 `init()`）
+  - **约束口径**：把主 Agent 同款的 `ContextGuardPlugin` 装到子 Agent 上——同一 `maxTokens`（当前模型 `maxContextTokens`）、同样不传 ratio（沿用 SDK 默认 1.5），使「上下文 token 超过 `maxTokens` × 1.5 即中断」对子 Agent 同样成立；**不设轮次上限、不设工具调用次数上限**（仅此一项限制）
+  - **中断语义为「软中断」**：子 Agent 的 run 立即结束，异常经 `AgentTool` 的 `finally`（分发 `onSubAgentEnd`）上抛至父 Agent，而父 Agent 默认 `allowJsonParseError = true`，故被降级为一条工具结果文本（`执行工具 X 时出错: …`），父 Agent 继续下一轮——停掉烧钱的子 Agent，但不终止用户对话
+  - **递归覆盖**：安装器在委派时把自身一并装给子 Agent，故子 Agent 再委派（孙级）同样受约束（默认 SubAgent 定义为 `subagents: deny`，该路径默认不触发，仅在放开递归时生效）
+  - **覆盖范围**：仅 core 的 `AgentTool` / `AgentToolLazy` 两条委派路径（均分发 `onSubAgentStart`）；SDK 的 `call_skill_sub_agent`（技能子 Agent）不分发该钩子，本次不覆盖
+
+### ⚠️ 依赖升级
+
+- **`@ai-zen/agents-core` 升至 `^4.2.0`、`@ai-zen/agents-sdk` 升至 `^0.10.0`** — `src/version.ts` 由实际安装版本读取，版本横幅随之显示 core `4.2.0` / sdk `0.10.0`；SDK 0.10.0 新增的 `load_mcp` `include_manifest` 开关为向后兼容的可选参数（默认 `true`，行为与升级前逐字一致），CLI 无需适配
+
+### 🔧 修复
+
+- **子 Agent 事件对齐 core 4.2.0 的改名与载荷结构** — core 4.2.0 将事件 `sub-agent` 更名为 `sub-agent-start`，载荷由 `{ agent: 子 Agent, ctx }` 改为 `SubAgentContext = { agent: 主 Agent, subAgent: 子 Agent, toolCallContext }`。`src/conversation-runner.ts` 同步适配：事件监听与注销改用 `sub-agent-start`（此前监听旧名将不再触发，子 Agent 流式渲染会静默失效）；子 Agent 实例改取自 `subAgent` 字段，工具名改取自 `toolCallContext.tool_call.function.name`（此前读取已不存在的 `ctx` 字段会在 `sub-agent-end` 回调中抛错）
+
+### ✅ 测试
+
+- 新增 `src/sub-agent-guard-plugin.test.ts`（6 个用例）：安装器的装载清单与「不拒绝委派」、安插后对本次 `run()` 立即生效（无需 `init()`）、用量恰好等于硬上限时放行、首轮无 usage 数据时放行、阈值随传入 `maxTokens` 变化、孙级传染
+- `tsc --noEmit` 类型检查、全量单测与 `npm run build` 通过（74 passed / 9 files）
+
 ## [0.7.0] - 2026-09-20
 
 ### 🚀 新功能

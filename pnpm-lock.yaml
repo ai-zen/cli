@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@ai-zen/agents-core':
-        specifier: ^4.0.0
-        version: 4.1.0(zod@4.5.4)
+        specifier: ^4.2.0
+        version: 4.2.0(zod@4.5.4)
       '@ai-zen/agents-sdk':
-        specifier: ^0.9.3
-        version: 0.9.3(supports-color@7.2.0)(zod@4.5.4)
+        specifier: ^0.10.0
+        version: 0.10.0(supports-color@7.2.0)(zod@4.5.4)
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
@@ -51,11 +51,11 @@ importers:
 
 packages:
 
-  '@ai-zen/agents-core@4.1.0':
-    resolution: {integrity: sha512-mTc+kIXcGbcUWzK3nOoqCpPsrxh6CUvFSpH3CovW0LJ7WCnoekVESuQyeYnfgk3kvFUxlPSDxas766b7ee50kg==}
+  '@ai-zen/agents-core@4.2.0':
+    resolution: {integrity: sha512-Q7ImxpKvO11sBWhp/9U3DVAB0ieG6PM8YJki4OrWLdqa6GQjB+S2vGe9zWeLYLPMdkAnNyZsK1f74IMpBsALEg==}
 
-  '@ai-zen/agents-sdk@0.9.3':
-    resolution: {integrity: sha512-wQuVo/mHY1jK2jBOBBJJdMyccH6cyPLqAmlEb5aVP2duADWNYOK3EqRUL4OPq0w/DwIHZUwMigWe3qqFA/wJFw==}
+  '@ai-zen/agents-sdk@0.10.0':
+    resolution: {integrity: sha512-C2qcU8N/cmYGbgtRGifWzip9HmzUIj2NSZBIdi8ocoIBrrpI75du4vxyepT3WET4n1PltqgG+6tdyWwfOMA6Cg==}
 
   '@ai-zen/event-bus@1.1.0':
     resolution: {integrity: sha512-xjfQEmUMly++dOSrQMJkwrnBVl7bQHtiw8S09AW5jPuqnFV9OwBk0PsGFc/T+4eP4yWThBJo2X3cCdE5DkAr+Q==}
@@ -1097,7 +1097,7 @@ packages:
 
 snapshots:
 
-  '@ai-zen/agents-core@4.1.0(zod@4.5.4)':
+  '@ai-zen/agents-core@4.2.0(zod@4.5.4)':
     dependencies:
       '@ai-zen/event-bus': 1.1.0
       openai: 7.8.0(zod@4.5.4)
@@ -1109,9 +1109,9 @@ snapshots:
       - ws
       - zod
 
-  '@ai-zen/agents-sdk@0.9.3(supports-color@7.2.0)(zod@4.5.4)':
+  '@ai-zen/agents-sdk@0.10.0(supports-color@7.2.0)(zod@4.5.4)':
     dependencies:
-      '@ai-zen/agents-core': 4.1.0(zod@4.5.4)
+      '@ai-zen/agents-core': 4.2.0(zod@4.5.4)
       '@modelcontextprotocol/sdk': 1.30.0(supports-color@7.2.0)(zod@4.5.4)
       dayjs: 1.11.23
       openai: 7.8.0(zod@4.5.4)
