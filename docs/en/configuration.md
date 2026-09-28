@@ -12,7 +12,7 @@ Configuration is stored under the shared root directory (determined by `AI_ZEN_D
 
 - **Global config**: `$AI_ZEN_DIR/config.json` (default `~/.ai-zen/config.json` when `AI_ZEN_DIR` is not set).
 
-> ⚠️ The README claims configuration is at `~/.ai-zen/cli/config.json`, but in the **source**, `CONFIG_FILE = join(AI_ZEN_DIR, "config.json")` in `src/config.ts`, i.e. configuration is at `~/.ai-zen/config.json`, **shared** with the CLI/Desktop. The source is authoritative. The `~/.ai-zen/cli/` directory holds CLI runtime data such as `conversations/` and `drafts/`.
+> The config directory is **shared** with other AI-Zen clients: the config file lives in the shared root (`CONFIG_FILE = join(AI_ZEN_DIR, "config.json")` in `src/config.ts`), while `~/.ai-zen/cli/` holds CLI runtime data such as `conversations/` and `drafts/`.
 
 Key paths defined in `src/config.ts`:
 
@@ -56,15 +56,15 @@ Key paths defined in `src/config.ts`:
   ],
   "imageModels": [
     {
-      "id": "cogview-3",
-      "name": "CogView-3",
+      "id": "cogview-4",
+      "name": "CogView-4",
       "endpointId": "bigmodelcn",
-      "modelName": "cogview-3",
+      "modelName": "cogview-4",
       "defaultSize": "1024x1024"
     }
   ],
   "defaultModel": "deepseek-v4-flash",
-  "defaultImageModel": "cogview-3",
+  "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
   "defaultMigrationModel": "deepseek-v4-flash"
 }
@@ -123,16 +123,14 @@ Industry-convention directories: `~/.agents/` and `<project>/.agents/` (`skills/
 | ID | Name | Endpoint |
 |----|------|----------|
 | `gpt-5.5` | GPT-5.5 | OpenAI |
-| `glm-5.2` | GLM-5.2 | ZhipuAI |
 | `glm-5.1` | GLM-5.1 | ZhipuAI |
-| `glm-5` | GLM-5 | ZhipuAI |
-| `glm-5-turbo` | GLM-5-Turbo | ZhipuAI |
-| `glm-5v-turbo` | GLM-5V-Turbo | ZhipuAI |
+| `glm-5v-turbo` | GLM-5V-Turbo (vision) | ZhipuAI |
 | `glm-4.7-flash` | GLM-4.7-Flash | ZhipuAI |
 | `deepseek-v4-pro` | DeepSeek-V4-Pro | DeepSeek |
 | `deepseek-v4-flash` | DeepSeek-V4-Flash | DeepSeek (**default**) |
+| `deepseek-v4-flash-vision-exp` | DeepSeek-V4-Flash-Vision-Exp (vision) | DeepSeek |
 
-> The preset endpoints/models come from `src/config-wizard.ts` and SDK constants. **Note**: `package.json`/README do not explicitly list these preset values; the actual data follows the SDK (`@ai-zen/agents-sdk`) constants — to confirm precisely, consult the SDK's `config/constants`.
+> The preset endpoints/models come from the SDK (`@ai-zen/agents-sdk`) `config/constants`; the CLI keeps no preset list of its own (`src/config.ts` reuses the SDK factory defaults). This table matches the README's "Preset Models" table.
 
 ## Interactive configuration management
 

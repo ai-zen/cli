@@ -84,6 +84,8 @@ zen 你好，请介绍一下你自己。
 
 你也可以在对话中随时输入 `/migrate` 手动触发迁移，而无需等待 token 超限。手动与自动迁移均委托给 SDK 的 `TaskMigrationService`，交接文档生成始终一致。
 
+同样的上下文护栏也作用于**子 Agent**：每次委派边界（`onSubAgentStart`）CLI 都会把同一个 `ContextGuardPlugin`（同一 `maxTokens`）安插到新建的子 Agent 上，因此被委派的子 Agent 在上下文超出硬上限时同样会被中断。该过程是透明的，正常运行的子 Agent 不受影响。
+
 迁移提示词模板包含：
 - **对话断点** — 最后一段对话原文引用
 - **已完成的任务** — 任务标题和产出路径
@@ -110,7 +112,7 @@ zen hook uninstall
 
 ## 配置管理
 
-配置文件存储在 `~/.ai-zen/cli/config.json`（或 `$AI_ZEN_DIR/cli/config.json`）。其中 `maxContextTokens` 是迁移触发阈值（通常设为模型实际上下文窗口的约 25%，例如 1M tokens 的模型设为 250,000）。
+配置文件存储在 `~/.ai-zen/config.json`（或 `$AI_ZEN_DIR/config.json`），与其他 AI-Zen 客户端共享。其中 `maxContextTokens` 是迁移触发阈值（通常设为模型实际上下文窗口的约 25%，例如 1M tokens 的模型设为 250,000）。
 
 ```jsonc
 {
@@ -133,15 +135,15 @@ zen hook uninstall
   ],
   "imageModels": [
     {
-      "id": "cogview-3",
-      "name": "CogView-3",
+      "id": "cogview-4",
+      "name": "CogView-4",
       "endpointId": "bigmodelcn",
-      "modelName": "cogview-3",
+      "modelName": "cogview-4",
       "defaultSize": "1024x1024"
     }
   ],
   "defaultModel": "deepseek-v4-flash",
-  "defaultImageModel": "cogview-3",
+  "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
   "defaultMigrationModel": "deepseek-v4-flash"
 }
@@ -155,8 +157,8 @@ zen hook uninstall
 
 ```
 ~/.ai-zen/                    ← 共享根（AI_ZEN_DIR）
+├── config.json               ← 端点与模型配置（与其他 AI-Zen 客户端共享）
 ├── cli/                      ← CLI 运行时数据
-│   ├── config.json           ← CLI 的端点、模型配置
 │   ├── conversations/        ← CLI 对话记录
 │   └── drafts/               ← CLI 草稿
 ├── agents/                   ← Agent 定义（共享）
@@ -192,9 +194,11 @@ zen hook uninstall
 
 MCP 服务器配置从多个来源合并（优先级从高到低）：
 
-1. 项目个人 `.ai-zen/mcp.json`（从 cwd 向上到 git root 沿途收集）
-2. 项目共享 `.mcp.json`（同上）
-3. 用户级 `~/.ai-zen/mcp.json`
+1. 项目共享 `./.mcp.json`（从 cwd 向上到 git root 沿途收集）
+2. 项目个人 `./.ai-zen/mcp.json`（同上）
+3. 项目规范 `./.agents/mcp.json`
+4. 用户级 `~/.ai-zen/mcp.json`
+5. 用户规范 `~/.agents/mcp.json`
 
 同名 server 高优先级覆盖低优先级。
 
@@ -270,7 +274,7 @@ MCP 服务器配置在 `mcp.json` 文件中：
 {
   "mcpServers": {
     "my-server": {
-      "transport": "stdio",
+      "type": "stdio",
       "command": "node",
       "args": ["server.js"],
       "env": {
@@ -300,14 +304,12 @@ OAuth 2.0 授权流程（`mcp.json` 中的 `oauth` 字段）已定义类型和�
 | ID | 名称 | 端点 |
 |----|------|------|
 | `gpt-5.5` | GPT-5.5 | OpenAI |
-| `glm-5.2` | GLM-5.2 | 智谱AI |
 | `glm-5.1` | GLM-5.1 | 智谱AI |
-| `glm-5` | GLM-5 | 智谱AI |
-| `glm-5-turbo` | GLM-5-Turbo | 智谱AI |
-| `glm-5v-turbo` | GLM-5V-Turbo | 智谱AI |
+| `glm-5v-turbo` | GLM-5V-Turbo（视觉） | 智谱AI |
 | `glm-4.7-flash` | GLM-4.7-Flash | 智谱AI |
 | `deepseek-v4-pro` | DeepSeek-V4-Pro | DeepSeek |
 | `deepseek-v4-flash` | DeepSeek-V4-Flash | DeepSeek（**默认模型**） |
+| `deepseek-v4-flash-vision-exp` | DeepSeek-V4-Flash-Vision-Exp（视觉） | DeepSeek |
 
 ## 开发
 
@@ -324,9 +326,9 @@ pnpm start
 pnpm test
 
 # 端到端测试（需在 .env.local 中配置 API Key）
-pnpm test -- src/__tests__/e2e.test.ts
+pnpm test:e2e
 ```
 
 ## 许可
 
-ISC
+MIT

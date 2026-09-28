@@ -18,6 +18,7 @@ When the API response's `usage.prompt_tokens` exceeds the current model's `maxCo
 - **Non-interactive environments**: the confirmation is only shown when both stdin and stdout are TTYs. Pipes, redirections, and e2e scripts have no confirmation channel and keep the previous behavior — migrate automatically without blocking on input and without extra output.
 - The threshold is determined by the model config `maxContextTokens` (the README suggests setting it to roughly 25% of the model's actual context window — e.g. 250,000 for a 1M-token model).
 - During conversation assembly, `ContextGuardPlugin` acts as a **safety guardrail** placed before the migration plugin: when usage severely exceeds the limit (`> maxTokens × 1.5`) it throws a `ContextOverflowError` to interrupt the conversation, preventing a sudden over-limit (such as reading a very large file) from blowing past the context before migration takes effect.
+- The same guardrail also applies to **sub-agents**: at each delegation boundary (`onSubAgentStart`) the same `ContextGuardPlugin` (same `maxTokens`) is installed onto the newly built sub-agent (see `src/sub-agent-guard-plugin.ts`), so a delegated sub-agent is interrupted when its context exceeds the hard limit too.
 
 ### Manual migration
 

@@ -35,7 +35,7 @@ MCP 服务器配置存放在 `mcp.json` 文件中，顶层字段统一采用业�
 - `disabled`：是否禁用（默认 `false`）。
 - `description`：服务器描述（供 `load_mcp` 呈现给 LLM）。
 
-> 底层 SDK 类型 `McpServerConfig` 使用 `transport` 表示传输方式，并在内部做归一化。CLI 自身读写全局 `mcp.json` 时以 `type` 字段存储（见 `src/config.ts` 的 `McpServersMap`）。README 中的示例使用 `transport`，与 CLI 源码字段略有出入，建议以源码为准。
+> 底层 SDK 类型 `McpServerConfig` 使用 `transport` 表示传输方式，并在内部做归一化（同时兼容 `type` / `transportType`）。CLI 自身读写 `mcp.json` 时统一以业界标准字段 `type` 存储（见 `src/config.ts` 的 `McpServersMap`），README 示例与之一致。
 
 ## 配置文件与合并优先级
 
@@ -47,7 +47,7 @@ MCP 服务器配置会从多个来源**由高到低**合并，同名服务器以
 4. 用户级 `~/.ai-zen/mcp.json`
 5. 用户规范 `~/.agents/mcp.json`
 
-> ⚠️ README 中的合并优先级描述（“项目 `.ai-zen/mcp.json` → 项目 `.mcp.json` → 用户级 `~/.ai-zen/mcp.json`”）与源码顺序**不一致**。以上顺序来自 `src/agent-creator.ts` 的 `getProvider()` 与 `src/config.ts` 的注释，源码为准。
+> 以上顺序来自 `src/agent-creator.ts` 的 `getProvider()` 与 `src/config.ts` 的注释。
 
 ## 动态加载工具
 

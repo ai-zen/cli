@@ -14,8 +14,8 @@ outline: deep
 
 - **Node.js**: the package is published as ESM (`"type": "module"`). `package.json` does not declare an `engines` field, so the actual required version follows the Node ecosystem (a recent LTS is recommended).
 - **Runtime dependencies** (declared in `package.json`):
-  - `@ai-zen/agents-core` `^4.0.0`
-  - `@ai-zen/agents-sdk` `^0.9.0`
+  - `@ai-zen/agents-core` `^4.2.0`
+  - `@ai-zen/agents-sdk` `^0.10.0`
   - `@modelcontextprotocol/sdk` `^1.29.0`
   - `chalk`, `dayjs`, `inquirer`, `zod`
 - **Platform**: the underlying tools and the Shell hook depend on a Unix shell (`bash`/`zsh`) and `process.env.SHELL`; the Shell hook is unavailable on Windows (`hook` will report "unsupported shell").
@@ -122,7 +122,7 @@ pnpm start
 pnpm test
 
 # E2E (requires API Key in .env.local)
-pnpm test -- src/__tests__/e2e.test.ts
+pnpm test:e2e
 ```
 
 > See the `scripts` field in `package.json`. `test:all` runs typecheck, unit tests, build, and E2E in sequence.

@@ -35,7 +35,7 @@ Server fields (written by the CLI via the configuration menu):
 - `disabled`: whether it is disabled (default `false`).
 - `description`: the server description (shown to the LLM by `load_mcp`).
 
-> The underlying SDK type `McpServerConfig` uses `transport` to represent the transport and normalizes it internally. When the CLI reads/writes the global `mcp.json` itself, it stores the `type` field (see the `McpServersMap` in `src/config.ts`). The example in the README uses `transport`, which differs slightly from the CLI source field — the source is authoritative.
+> The underlying SDK type `McpServerConfig` uses `transport` to represent the transport and normalizes it internally (also accepting `type` / `transportType`). When the CLI reads/writes `mcp.json` itself, it consistently stores the conventional `type` field (see the `McpServersMap` in `src/config.ts`), and the README example matches it.
 
 ## Config files and merge priority
 
@@ -47,7 +47,7 @@ MCP server configurations are merged from multiple sources **high to low**, with
 4. User-level `~/.ai-zen/mcp.json`
 5. User-convention `~/.agents/mcp.json`
 
-> ⚠️ The merge priority described in the README ("project `.ai-zen/mcp.json` → project `.mcp.json` → user-level `~/.ai-zen/mcp.json`") is **inconsistent** with the source order. The order above comes from `getProvider()` in `src/agent-creator.ts` and the comments in `src/config.ts`; the source is authoritative.
+> The order above comes from `getProvider()` in `src/agent-creator.ts` and the comments in `src/config.ts`.
 
 ## Dynamically loaded tools
 

@@ -14,8 +14,8 @@ outline: deep
 
 - **Node.js**：包以 ESM（`"type": "module"`）发布。`package.json` 未声明 `engines` 字段，实际所需版本以 Node 生态为准（建议使用较新的 LTS）。
 - **运行时依赖**（由 `package.json` 声明）：
-  - `@ai-zen/agents-core` `^4.0.0`
-  - `@ai-zen/agents-sdk` `^0.9.0`
+  - `@ai-zen/agents-core` `^4.2.0`
+  - `@ai-zen/agents-sdk` `^0.10.0`
   - `@modelcontextprotocol/sdk` `^1.29.0`
   - `chalk`、`dayjs`、`inquirer`、`zod`
 - **平台**：底层工具与 Shell 钩子依赖 Unix shell（`bash`/`zsh`）与 `process.env.SHELL`；在 Windows 上 Shell 钩子不可用（`hook` 会报“不支持的 shell”）。
@@ -122,7 +122,7 @@ pnpm start
 pnpm test
 
 # E2E（需要 .env.local 中的 API Key）
-pnpm test -- src/__tests__/e2e.test.ts
+pnpm test:e2e
 ```
 
 > 参考 `package.json` 的 `scripts`。`test:all` 会依次执行类型检查、单元测试、构建与 E2E。

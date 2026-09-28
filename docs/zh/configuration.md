@@ -12,7 +12,7 @@ outline: deep
 
 - **全局配置**：`$AI_ZEN_DIR/config.json`（默认 `~/.ai-zen/config.json`，当未设置 `AI_ZEN_DIR` 时为 `~/.ai-zen/config.json`）。
 
-> ⚠️ README 声称配置位于 `~/.ai-zen/cli/config.json`，但**源码**中 `src/config.ts` 的 `CONFIG_FILE = join(AI_ZEN_DIR, "config.json")`，即配置在 `~/.ai-zen/config.json`，与 CLI/Desktop **共享**。以上以源码为准。`~/.ai-zen/cli/` 目录下存放的是 `conversations/` 与 `drafts/` 这类 CLI 运行时数据。
+> 配置目录与 CLI/Desktop **共享**：配置文件在共享根目录（`src/config.ts` 的 `CONFIG_FILE = join(AI_ZEN_DIR, "config.json")`），而 `~/.ai-zen/cli/` 下存放的是 `conversations/` 与 `drafts/` 这类 CLI 运行时数据。
 
 `src/config.ts` 定义的关键路径：
 
@@ -56,15 +56,15 @@ outline: deep
   ],
   "imageModels": [
     {
-      "id": "cogview-3",
-      "name": "CogView-3",
+      "id": "cogview-4",
+      "name": "CogView-4",
       "endpointId": "bigmodelcn",
-      "modelName": "cogview-3",
+      "modelName": "cogview-4",
       "defaultSize": "1024x1024"
     }
   ],
   "defaultModel": "deepseek-v4-flash",
-  "defaultImageModel": "cogview-3",
+  "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
   "defaultMigrationModel": "deepseek-v4-flash"
 }
@@ -123,16 +123,14 @@ outline: deep
 | ID | 名称 | 端点 |
 |----|------|------|
 | `gpt-5.5` | GPT-5.5 | OpenAI |
-| `glm-5.2` | GLM-5.2 | ZhipuAI |
 | `glm-5.1` | GLM-5.1 | ZhipuAI |
-| `glm-5` | GLM-5 | ZhipuAI |
-| `glm-5-turbo` | GLM-5-Turbo | ZhipuAI |
-| `glm-5v-turbo` | GLM-5V-Turbo | ZhipuAI |
+| `glm-5v-turbo` | GLM-5V-Turbo（视觉） | ZhipuAI |
 | `glm-4.7-flash` | GLM-4.7-Flash | ZhipuAI |
 | `deepseek-v4-pro` | DeepSeek-V4-Pro | DeepSeek |
 | `deepseek-v4-flash` | DeepSeek-V4-Flash | DeepSeek（**默认**） |
+| `deepseek-v4-flash-vision-exp` | DeepSeek-V4-Flash-Vision-Exp（视觉） | DeepSeek |
 
-> 预设端点/模型列表来源于 `src/config-wizard.ts` 与 SDK 常量。**注意**：`package.json`/README 未明确列出这些预设值，实际数据以 SDK (`@ai-zen/agents-sdk`) 的常量为准——如需精确核对，请查阅 SDK 的 `config/constants`。
+> 预设端点/模型来自 SDK（`@ai-zen/agents-sdk`）的 `config/constants`；CLI 不维护自己的预置列表（`src/config.ts` 直接复用 SDK 的出厂默认）。上表与 README 的「预置模型」表一致。
 
 ## 交互式配置管理
 

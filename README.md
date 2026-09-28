@@ -84,6 +84,8 @@ When the API response's `usage.prompt_tokens` exceeds the model's `maxContextTok
 
 You can also manually trigger a migration at any time by typing `/migrate` in the conversation — no need to wait for the token limit. Both automatic and manual migration delegate to the SDK's `TaskMigrationService`, so the handoff document is always produced consistently.
 
+The same context guard also applies to **sub-agents**: at each delegation boundary (`onSubAgentStart`) the CLI installs the same `ContextGuardPlugin` (same `maxTokens`) onto the newly built sub-agent, so a delegated sub-agent is interrupted as soon as its context exceeds the hard limit. This is transparent — a normally-running sub-agent is unaffected.
+
 The migration prompt template includes:
 - **Conversation Breakpoint** — Last user/AI exchange verbatim
 - **Completed Tasks** — Task titles and output paths
@@ -110,7 +112,7 @@ zen hook uninstall
 
 ## Configuration
 
-Configuration is stored in `~/.ai-zen/cli/config.json` (or `$AI_ZEN_DIR/cli/config.json` if set). The `maxContextTokens` field on each model sets the migration threshold (typically ~25% of the model's actual context window, e.g. 250,000 for a 1M-token model).
+Configuration is stored in `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json` if set), shared with other AI-Zen clients. The `maxContextTokens` field on each model sets the migration threshold (typically ~25% of the model's actual context window, e.g. 250,000 for a 1M-token model).
 
 ```jsonc
 {
@@ -133,15 +135,15 @@ Configuration is stored in `~/.ai-zen/cli/config.json` (or `$AI_ZEN_DIR/cli/conf
   ],
   "imageModels": [
     {
-      "id": "cogview-3",
-      "name": "CogView-3",
+      "id": "cogview-4",
+      "name": "CogView-4",
       "endpointId": "bigmodelcn",
-      "modelName": "cogview-3",
+      "modelName": "cogview-4",
       "defaultSize": "1024x1024"
     }
   ],
   "defaultModel": "deepseek-v4-flash",
-  "defaultImageModel": "cogview-3",
+  "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
   "defaultMigrationModel": "deepseek-v4-flash"
 }
@@ -155,8 +157,8 @@ Configuration is stored in `~/.ai-zen/cli/config.json` (or `$AI_ZEN_DIR/cli/conf
 
 ```
 ~/.ai-zen/                    ← Shared root (AI_ZEN_DIR)
+├── config.json               ← Endpoints & models (shared with other AI-Zen clients)
 ├── cli/                      ← CLI runtime data
-│   ├── config.json           ← CLI endpoints, models
 │   ├── conversations/        ← CLI conversations
 │   └── drafts/               ← CLI drafts
 ├── agents/                   ← Agent definitions (shared)
@@ -192,9 +194,11 @@ Configuration is stored in `~/.ai-zen/cli/config.json` (or `$AI_ZEN_DIR/cli/conf
 
 MCP server configurations are merged from multiple sources (high to low priority):
 
-1. Project personal `.ai-zen/mcp.json` (collected from cwd up to git root)
-2. Project shared `.mcp.json` (same)
-3. User-level `~/.ai-zen/mcp.json`
+1. Project shared `./.mcp.json` (collected from cwd up to git root)
+2. Project personal `./.ai-zen/mcp.json` (same)
+3. Project convention `./.agents/mcp.json`
+4. User-level `~/.ai-zen/mcp.json`
+5. User convention `~/.agents/mcp.json`
 
 Same-named servers in higher priority override lower ones.
 
@@ -270,7 +274,7 @@ MCP servers are configured in `mcp.json` files:
 {
   "mcpServers": {
     "my-server": {
-      "transport": "stdio",
+      "type": "stdio",
       "command": "node",
       "args": ["server.js"],
       "env": {
@@ -283,9 +287,9 @@ MCP servers are configured in `mcp.json` files:
 
 Connection lifecycle (connect, reconnect with exponential backoff, idle timeout) is fully managed by the SDK's `McpConnectionManager`.
 
-### OAuth (HTTP transport only) — 暂不支持
+### OAuth (HTTP transport only) — Not Yet Supported
 
-OAuth 2.0 授权流程（`mcp.json` 中的 `oauth` 字段）已定义类型和预留 `mcp-oauth/` 存储目录，但尚未实现。目前配置了 `oauth` 的 HTTP MCP 服务器将因缺少 token 而连接失败。
+The OAuth 2.0 authorization flow (the `oauth` field in `mcp.json`) has its types defined and a `mcp-oauth/` storage directory reserved, but is not implemented yet. An HTTP MCP server configured with `oauth` currently fails to connect due to the missing token.
 
 ## Preset Endpoints
 
@@ -300,14 +304,12 @@ OAuth 2.0 授权流程（`mcp.json` 中的 `oauth` 字段）已定义类型和�
 | ID | Name | Endpoint |
 |----|------|----------|
 | `gpt-5.5` | GPT-5.5 | OpenAI |
-| `glm-5.2` | GLM-5.2 | ZhipuAI |
 | `glm-5.1` | GLM-5.1 | ZhipuAI |
-| `glm-5` | GLM-5 | ZhipuAI |
-| `glm-5-turbo` | GLM-5-Turbo | ZhipuAI |
-| `glm-5v-turbo` | GLM-5V-Turbo | ZhipuAI |
+| `glm-5v-turbo` | GLM-5V-Turbo (vision) | ZhipuAI |
 | `glm-4.7-flash` | GLM-4.7-Flash | ZhipuAI |
 | `deepseek-v4-pro` | DeepSeek-V4-Pro | DeepSeek |
 | `deepseek-v4-flash` | DeepSeek-V4-Flash | DeepSeek (**default**) |
+| `deepseek-v4-flash-vision-exp` | DeepSeek-V4-Flash-Vision-Exp (vision) | DeepSeek |
 
 ## Development
 
@@ -324,9 +326,9 @@ pnpm start
 pnpm test
 
 # E2E tests (requires API key in .env.local)
-pnpm test -- src/__tests__/e2e.test.ts
+pnpm test:e2e
 ```
 
 ## License
 
-ISC
+MIT
