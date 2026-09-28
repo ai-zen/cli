@@ -88,4 +88,4 @@ Key rules:
 - `"*"` wildcard matches any name.
 - Denied resources are **completely invisible** to the LLM (not merely blocked).
 - Each Agent has **independent permissions**; parent and child Agents do not inherit from each other.
-- **The only exception**: the temporary Skill sub-agent created by `call_skill_sub_agent` acts as a one-off conversation proxy that **inherits the caller's permissions** rather than being an independent entity.
+- **The only exception**: the temporary Skill sub-agent created by `call_skill_sub_agent` acts as a one-off conversation proxy that **reuses the caller's tool set** without a second permission pass rather than being an independent entity.

@@ -5,7 +5,7 @@
     "zh": "交互式 AI Agent 终端（内置 19 种工具，支持 MCP、Skill 与任务迁移）",
     "en": "Interactive AI Agent terminal (ships with 19 built-in tools, with MCP, Skill, and task migration support)"
   },
-  "version": "0.8.0",
+  "version": "0.8.1",
   "docsRoot": "docs",
   "locales": ["zh", "en"],
   "defaultLocale": "zh",

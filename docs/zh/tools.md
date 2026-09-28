@@ -88,4 +88,4 @@ interface AgentPermissions {
 - `"*"` 通配符匹配任意名称。
 - 被拒绝的资源对 LLM **完全不可见**（不仅是调用被阻断）。
 - 每个 Agent 拥有**独立的权限**，父子 Agent 之间不继承。
-- **唯一例外**：`call_skill_sub_agent` 创建的临时 Skill 子 Agent，作为一次性的对话代理**继承调用者的权限**，而不是独立实体。
+- **唯一例外**：`call_skill_sub_agent` 创建的临时 Skill 子 Agent，作为一次性的对话代理**沿用调用者的工具能力**（不再走第二遍权限过滤），而不是独立实体。

@@ -42,7 +42,9 @@ Skill directories are merged from multiple sources **high to low** (from `getPro
 The temporary Skill sub-agent created by `call_skill_sub_agent` exists as a **one-off conversation proxy**. It is the **only exception** in the permission system:
 
 - A normal sub-agent (an Agent with a `function` field) has **independent permissions** and does not inherit from the parent Agent.
-- A Skill sub-agent, being a temporary proxy, **inherits the caller's permissions** rather than being an independent entity.
+- A Skill sub-agent, being a temporary proxy, **reuses the caller's tool set** (`ctx.agent.tools`) without a second permission pass rather than being an independent entity; `call_skill_sub_agent` itself is excluded to prevent chained self-recursion.
+
+This path also crosses the sub-agent delegation boundary (`onSubAgentStart` / `onSubAgentEnd` hooks and `sub-agent-start` / `sub-agent-end` events), so the sub-agent context guard and streaming rendering cover Skill sub-agents as well.
 
 ## Related configuration
 

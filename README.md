@@ -84,7 +84,7 @@ When the API response's `usage.prompt_tokens` exceeds the model's `maxContextTok
 
 You can also manually trigger a migration at any time by typing `/migrate` in the conversation — no need to wait for the token limit. Both automatic and manual migration delegate to the SDK's `TaskMigrationService`, so the handoff document is always produced consistently.
 
-The same context guard also applies to **sub-agents**: at each delegation boundary (`onSubAgentStart`) the CLI installs the same `ContextGuardPlugin` (same `maxTokens`) onto the newly built sub-agent, so a delegated sub-agent is interrupted as soon as its context exceeds the hard limit. This is transparent — a normally-running sub-agent is unaffected.
+The same context guard also applies to **sub-agents**: at each delegation boundary (`onSubAgentStart`) the CLI installs the same `ContextGuardPlugin` (same `maxTokens`) onto the newly built sub-agent, so a delegated sub-agent (including the Skill sub-agent created by `call_skill_sub_agent`) is interrupted as soon as its context exceeds the hard limit. This is transparent — a normally-running sub-agent is unaffected.
 
 The migration prompt template includes:
 - **Conversation Breakpoint** — Last user/AI exchange verbatim
@@ -248,7 +248,7 @@ Tools are assembled in three phases by the SDK's `Provider` capability pipeline:
 2. **Filtering** — Apply permissions (`allow`/`deny`), security exclusions (recursion protection), and each tool's self-declared `isAvailable(config, definition)` (availability is decided at build time when the model is known; e.g. `viewImage` only for vision models, `generateImage` requires `defaultImageModel`)
 3. **Instantiation** — Map filtered names to `Tool` instances and register dynamic loaders
 
-Each Agent has independent permissions — no inheritance between parent Agent and SubAgent. The only exception is the temporary Skill sub-agent (created by `call_skill_sub_agent`), which inherits the caller's permissions as a transient conversation proxy rather than an independent entity.
+Each Agent has independent permissions — no inheritance between parent Agent and SubAgent. The only exception is the temporary Skill sub-agent (created by `call_skill_sub_agent`), which reuses the caller's tool set without a second permission pass, as a transient conversation proxy rather than an independent entity.
 
 ## Permission Model
 

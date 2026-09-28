@@ -42,7 +42,9 @@ Skill 目录从多个来源**由高到低**合并（来自 `src/agent-creator.ts
 由 `call_skill_sub_agent` 创建的临时 Skill 子 Agent，作为**一次性的对话代理**存在。它是权限体系中的**唯一例外**：
 
 - 普通子 Agent（带 `function` 字段的 Agent）拥有**独立权限**，不与父 Agent 继承。
-- Skill 子 Agent 作为临时代理，**继承调用者的权限**，并非独立实体。
+- Skill 子 Agent 作为临时代理，**沿用调用者的工具能力**（`ctx.agent.tools`），不再走第二遍权限过滤，并非独立实体；同时剔除 `call_skill_sub_agent` 自身，防止链式自递归。
+
+该路径同样经过子 Agent 委派边界（`onSubAgentStart` / `onSubAgentEnd` 钩子与 `sub-agent-start` / `sub-agent-end` 事件），因此子 Agent 上下文护栏与流式渲染同样覆盖技能子 Agent。
 
 ## 相关配置
 

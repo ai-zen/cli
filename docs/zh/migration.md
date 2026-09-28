@@ -18,7 +18,7 @@ outline: deep
 - **非交互环境**：仅在 stdin 与 stdout 均为 TTY 时询问。管道、重定向、e2e 脚本等无确认通道的场景保持既有行为——直接自动迁移，不阻塞等待输入、不额外输出。
 - 阈值由模型配置项 `maxContextTokens` 决定（README 建议设为模型实际上下文窗口的约 25%，例如 100 万 token 模型设为 250,000）。
 - 在对话装配中，`ContextGuardPlugin` 作为**安全护栏**位于迁移插件之前：当用量严重超限（`> maxTokens × 1.5`）时会抛出 `ContextOverflowError` 中断对话，防止读入超大文件等突发超限在迁移生效前撑爆上下文。
-- 同一护栏也作用于**子 Agent**：每次委派边界（`onSubAgentStart`）会为新建的子 Agent 安插同一个 `ContextGuardPlugin`（同一 `maxTokens`，见 `src/sub-agent-guard-plugin.ts`），故被委派的子 Agent 上下文超硬上限时同样被中断。
+- 同一护栏也作用于**子 Agent**：每次委派边界（`onSubAgentStart`）会为新建的子 Agent 安插同一个 `ContextGuardPlugin`（同一 `maxTokens`，见 `src/sub-agent-guard-plugin.ts`），故被委派的子 Agent 上下文超硬上限时同样被中断。`call_skill_sub_agent` 创建的技能子 Agent 自 SDK 0.11.0 起同样经过该委派边界，一并覆盖。
 
 ### 手动迁移
 

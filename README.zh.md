@@ -84,7 +84,7 @@ zen 你好，请介绍一下你自己。
 
 你也可以在对话中随时输入 `/migrate` 手动触发迁移，而无需等待 token 超限。手动与自动迁移均委托给 SDK 的 `TaskMigrationService`，交接文档生成始终一致。
 
-同样的上下文护栏也作用于**子 Agent**：每次委派边界（`onSubAgentStart`）CLI 都会把同一个 `ContextGuardPlugin`（同一 `maxTokens`）安插到新建的子 Agent 上，因此被委派的子 Agent 在上下文超出硬上限时同样会被中断。该过程是透明的，正常运行的子 Agent 不受影响。
+同样的上下文护栏也作用于**子 Agent**：每次委派边界（`onSubAgentStart`）CLI 都会把同一个 `ContextGuardPlugin`（同一 `maxTokens`）安插到新建的子 Agent 上，因此被委派的子 Agent（含 `call_skill_sub_agent` 创建的技能子 Agent）在上下文超出硬上限时同样会被中断。该过程是透明的，正常运行的子 Agent 不受影响。
 
 迁移提示词模板包含：
 - **对话断点** — 最后一段对话原文引用
@@ -248,7 +248,7 @@ CLI 提供 19 个内置工具，由 `@ai-zen/agents-sdk` 实现。工具可用�
 2. **过滤** — 应用权限（`allow`/`deny`）、安全排除（递归保护），以及各工具自声明的 `isAvailable(config, definition)`（在模型已知的构建阶段判断可用性；如 `viewImage` 仅视觉模型、`generateImage` 需配置 `defaultImageModel`）
 3. **实例化** — 将过滤后的名称映射为 `Tool` 实例，注册动态加载器
 
-每个 Agent 拥有独立的权限配置，父 Agent 与 SubAgent 之间不继承权限。唯一的例外是 `call_skill_sub_agent` 创建的临时 Skill 子 Agent——它是临时的对话分身而非独立实体，因此继承调用者的权限。
+每个 Agent 拥有独立的权限配置，父 Agent 与 SubAgent 之间不继承权限。唯一的例外是 `call_skill_sub_agent` 创建的临时 Skill 子 Agent——它是临时的对话分身而非独立实体，因此沿用调用者的工具能力（不再走第二遍权限过滤）。
 
 ## 权限模型
 
