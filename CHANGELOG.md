@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.1] - 2026-09-28
+
+### 🚀 新功能
+
+- **Skill 子 Agent 纳入子 Agent 上下文护栏与流式渲染** — 依托 SDK 0.11.0 将 `call_skill_sub_agent` 统一到 `AgentToolLazy`，技能子 Agent 自此与常规 SubAgent 共享同一套委派边界（`onSubAgentStart` / `onSubAgentEnd` 钩子与 `sub-agent-start` / `sub-agent-end` 事件）。故 0.8.0 引入的 `SubAgentGuardInstallerPlugin` 与子 Agent 流式渲染**自动覆盖**该路径，本次 CLI 无源码改动（0.8.0 CHANGELOG「覆盖范围」中「技能子 Agent 不在覆盖范围」的说明随之失效）
+
+### ⚠️ 依赖升级
+
+- **`@ai-zen/agents-core` 升至 `^4.3.0`、`@ai-zen/agents-sdk` 升至 `^0.11.0`** — `src/version.ts` 由实际安装版本读取，版本横幅随之显示 core `4.3.0` / sdk `0.11.0`。SDK 0.11.0 的破坏性变更（`createCallSkillSubAgentTool` 移除第三参 `provider`）仅影响直接调用该工厂函数的代码；CLI 经 `Provider.instantiate` 间接使用，无需适配
+
+### ✅ 测试
+
+- 沿用既有 9 文件 / 74 用例，全部通过；`tsc --noEmit` 与 `npm run build`（`0.8.1`）均通过
+
 ## [0.8.0] - 2026-09-28
 
 ### 🚀 新功能
