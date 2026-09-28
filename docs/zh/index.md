@@ -1,6 +1,6 @@
 ---
 title: AI-Zen CLI
-description: @ai-zen/cli 交互式 AI Agent 终端——内置 19 种文件系统工具，支持 MCP、Skill 技能、子 Agent 编排与任务迁移。
+description: @ai-zen/cli 交互式 AI Agent 终端——内置 20 种文件系统工具，支持 MCP、Skill 技能、子 Agent 编排与任务迁移。
 outline: deep
 ---
 
@@ -16,7 +16,7 @@ outline: deep
 
 - **交互式主菜单**：继续未完成草稿、开始新对话、继续已保存对话、管理已保存对话、管理 Agents、配置管理。
 - **命令提示**：对话中键入 `/` 即在输入行下方列出可用命令及说明，继续输入按前缀收敛候选。
-- **19 种内置工具**：由 `@ai-zen/agents-sdk` 提供的文件系统与图片处理工具集，详见 [内置工具](./tools.md)。
+- **20 种内置工具**：由 `@ai-zen/agents-sdk` 提供的文件系统与图片处理工具集，详见 [内置工具](./tools.md)。
 - **5 种动态加载工具**：`load_skill`、`call_skill_sub_agent`、`load_mcp`、`call_mcp_tool`、`read_mcp_resource`。
 - **子 Agent 编排**：带 `function` 字段的 Agent 可作为工具被其他 Agent 调用，支持独立权限体系。
 - **Skill 技能**：通过 `SKILL.md` 定义可复用技能，支持按上下文加载与委托给技能子 Agent。
@@ -28,7 +28,7 @@ outline: deep
 ## 文档导航
 
 - [快速开始](./getting-started.md) — 安装、主菜单、对话命令。
-- [内置工具](./tools.md) — 19 种内置工具、动态加载工具与权限模型。
+- [内置工具](./tools.md) — 20 种内置工具、动态加载工具与权限模型。
 - [MCP 支持](./mcp.md) — MCP 配置、合并优先级、连接与 OAuth 现状。
 - [Skill 技能](./skills.md) — Skill 目录、加载与子 Agent 委托。
 - [任务迁移](./migration.md) — 自动/手动迁移、交接文档结构。

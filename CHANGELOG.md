@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.8.2] - 2026-09-29
+
+### ⚠️ 依赖升级
+
+- **`@ai-zen/agents-sdk` 升至 `^0.12.0`** — SDK 0.12.0 新增内置工具 `inspectFile`（内置工具类 19 → 20）、`readFile` 的 `range` 分批读取参数，新增配置项 `maxToolOutput`（缺省 32768 字符）与工具输出保护行为，并精简了 `batchEdit` 的输出。该版本**无破坏性变更**，CLI 源码无需适配：类型与默认配置全量委托 SDK，`src/version.ts` 由实际安装版本读取，工具清单由 SDK 静态注册表自动发现，故版本横幅随之显示 sdk `0.12.0`
+
+### 📝 文档
+
+- 同步内置工具计数 19 → 20：中英 README、`docs/zh|en/tools.md`、`docs/zh|en/index.md` 与 `docs/manifest.json`
+- 工具表补充 `inspectFile`（勘察文件结构概况），并为 `readFile` 补注 `range` 参数
+- `docs/zh|en/tools.md` 新增「输出保护」说明：超限时 `exec` / `findText` / `glob` / `ls` 落盘并返回警告，`readFile` / `inspectFile` 仅警告不落盘
+- `docs/zh|en/getting-started.md` 的运行时依赖版本同步为 `@ai-zen/agents-sdk` `^0.12.0`
+
+### ✅ 测试
+
+- 沿用既有 9 文件 / 74 用例，全部通过；`tsc --noEmit` 与 `npm run build`（`0.8.2`）均通过
+
 ## [0.8.1] - 2026-09-28
 
 ### 🚀 新功能

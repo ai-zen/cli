@@ -1,21 +1,22 @@
 ---
 title: Built-in Tools
-description: The 19 built-in tools, 5 dynamically loaded tools, the tool assembly pipeline, and the permission model of @ai-zen/cli.
+description: The 20 built-in tools, 5 dynamically loaded tools, the tool assembly pipeline, and the permission model of @ai-zen/cli.
 outline: deep
 ---
 
 # Built-in Tools
 
-All tool capabilities come from `@ai-zen/agents-sdk` (`BUILTIN_TOOL_CLASSES`, 19 in total) and the SDK's dynamic loading mechanism. The CLI itself does **not** add any tool class; it only assembles paths, builds the `Provider` singleton, and passes the tool directories plus the MCP/Skill-related paths to the SDK.
+All tool capabilities come from `@ai-zen/agents-sdk` (`BUILTIN_TOOL_CLASSES`, 20 in total) and the SDK's dynamic loading mechanism. The CLI itself does **not** add any tool class; it only assembles paths, builds the `Provider` singleton, and passes the tool directories plus the MCP/Skill-related paths to the SDK.
 
-## The 19 built-in tools
+## The 20 built-in tools
 
 These tools are instantiated by the SDK's static registry (`discoverBuiltinTools`) and are assembled **without any filtering** (all are unconditionally registered during discovery); their availability is self-declared by each tool (`isAvailable`).
 
 | Tool | Description |
 |------|-------------|
 | `cwd` | Get the current working directory |
-| `readFile` | Read file contents |
+| `readFile` | Read file contents (supports `range` for partial reads) |
+| `inspectFile` | Inspect file structure (lines, chars, column widths, line-ending style) without reading content |
 | `writeFile` | Write content to a file |
 | `edit` | Replace text in a file (single replacement) |
 | `batchEdit` | Batch-replace text in files |
@@ -42,6 +43,15 @@ These tools are instantiated by the SDK's static registry (`discoverBuiltinTools
 
 > The exact field names, declarations, and return types should be confirmed against the SDK's `.d.ts` (e.g. `ViewImageTool` / `GenerateImageTool`).
 
+### Output protection (`maxToolOutput`)
+
+When a tool's result exceeds `maxToolOutput` (an `AppConfig` option, 32768 characters by default), the SDK no longer returns it verbatim but replies with a warning plus a preview, so that a single tool result cannot blow up the context:
+
+- **Dumped to disk with a warning**: `exec` (stdout / stderr written to separate files), `findText`, `glob`, and `ls` write the payload to `<system temp dir>/ai-zen/tool-output/<tool>-<timestamp>-<random>/` (a fresh directory per call) and return a warning, a head preview (`exec` gets 1000 characters each from the head and tail of every stream) plus statistics, along with hints on narrowing the scope;
+- **Warning only, no dump**: `readFile` suggests reading in chunks via `range`; `inspectFile` returns just the overview plus a hint when its detail payload exceeds the limit.
+
+> `maxToolOutput` is a CONFIG-layer option: it is not exposed as a tool argument and cannot be overridden per Agent.
+
 ## The 5 dynamically loaded tools
 
 In addition to the built-in tools, the SDK also provides **dynamically loaded tools** that are registered on demand based on available resources and permissions:
@@ -64,7 +74,7 @@ The SDK's `createSubAgentTool` registers Agents that have a **`function` field**
 
 Tools are assembled through the SDK `Provider` capability pipeline in three phases:
 
-1. **Discovery**: scan the filesystem to discover built-in tools, user tools, SubAgents, Skills, and MCP servers. All 19 built-in tools are registered unconditionally (no filtering at this stage).
+1. **Discovery**: scan the filesystem to discover built-in tools, user tools, SubAgents, Skills, and MCP servers. All 20 built-in tools are registered unconditionally (no filtering at this stage).
 2. **Filtering**: apply permissions (`allow`/`deny`), security exclusions (recursion protection), and each tool's self-declared `isAvailable(config, definition)`. Availability is decided at build time when the model is known — e.g. `viewImage` is only available for vision models, and `generateImage` requires `defaultImageModel` to be configured.
 3. **Instantiation**: map the filtered names to `Tool` instances and register the dynamic loaders.
 

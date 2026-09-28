@@ -204,12 +204,13 @@ Same-named servers in higher priority override lower ones.
 
 ## Built-in Tools
 
-The CLI provides 19 built-in tools, implemented by `@ai-zen/agents-sdk`. Tool availability is self-declared by each tool via `isAvailable(config, definition)` at build time (when the model is already known):
+The CLI provides 20 built-in tools, implemented by `@ai-zen/agents-sdk`. Tool availability is self-declared by each tool via `isAvailable(config, definition)` at build time (when the model is already known):
 
 | Tool | Description |
 |------|-------------|
 | `cwd` | Get current working directory |
-| `readFile` | Read file contents |
+| `readFile` | Read file contents (supports `range` for partial reads) |
+| `inspectFile` | Inspect file structure (lines, chars, column widths, line-ending style) without reading content |
 | `writeFile` | Write content to file |
 | `edit` | Replace text in files (single replacement) |
 | `batchEdit` | Batch replace text in files |
@@ -244,7 +245,7 @@ In addition to built-in tools, the SDK provides 5 dynamic loading tools that are
 
 Tools are assembled in three phases by the SDK's `Provider` capability pipeline:
 
-1. **Discovery** — Scan filesystem for built-in tools, user tools, SubAgents, Skills, and MCP servers. All 19 built-in tools are discovered unconditionally (no filtering at this stage)
+1. **Discovery** — Scan filesystem for built-in tools, user tools, SubAgents, Skills, and MCP servers. All 20 built-in tools are discovered unconditionally (no filtering at this stage)
 2. **Filtering** — Apply permissions (`allow`/`deny`), security exclusions (recursion protection), and each tool's self-declared `isAvailable(config, definition)` (availability is decided at build time when the model is known; e.g. `viewImage` only for vision models, `generateImage` requires `defaultImageModel`)
 3. **Instantiation** — Map filtered names to `Tool` instances and register dynamic loaders
 

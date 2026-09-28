@@ -1,21 +1,22 @@
 ---
 title: 内置工具
-description: @ai-zen/cli 的 19 种内置工具、5 种动态加载工具，以及工具装配流水线与权限模型。
+description: @ai-zen/cli 的 20 种内置工具、5 种动态加载工具，以及工具装配流水线与权限模型。
 outline: deep
 ---
 
 # 内置工具
 
-工具能力全部来自 `@ai-zen/agents-sdk`（`BUILTIN_TOOL_CLASSES`，共 19 种）与 SDK 的动态加载机制。CLI 本身**不新增**工具类，只负责组装路径、构建 `Provider` 单例，并把工具目录与 MCP/Skill 相关路径传给 SDK。
+工具能力全部来自 `@ai-zen/agents-sdk`（`BUILTIN_TOOL_CLASSES`，共 20 种）与 SDK 的动态加载机制。CLI 本身**不新增**工具类，只负责组装路径、构建 `Provider` 单例，并把工具目录与 MCP/Skill 相关路径传给 SDK。
 
-## 19 种内置工具
+## 20 种内置工具
 
 这些工具由 SDK 静态注册表 `discoverBuiltinTools` 实例化，装配时**不做任何过滤**（发现阶段无条件注册全部），其可用性由各工具自行声明（`isAvailable`）。
 
 | 工具 | 说明 |
 |------|------|
 | `cwd` | 获取当前工作目录 |
-| `readFile` | 读取文件内容 |
+| `readFile` | 读取文件内容（支持 `range` 分批读取） |
+| `inspectFile` | 勘察文件结构概况（行数、字符数、列宽分布、行尾风格），不读取内容 |
 | `writeFile` | 写入文件内容 |
 | `edit` | 在文件中替换文本（单次替换） |
 | `batchEdit` | 批量替换文件中的文本 |
@@ -42,6 +43,15 @@ outline: deep
 
 > 具体字段名、声明与返回类型均以 SDK 的 `.d.ts` 为准（如 `ViewImageTool` / `GenerateImageTool`）。
 
+### 输出保护（`maxToolOutput`）
+
+工具返回给模型的内容超过 `maxToolOutput`（`AppConfig` 配置项，缺省 32768 字符）时，SDK 不再原样回传，而是给出警告与预览，以免单次工具结果撑爆上下文：
+
+- **落盘并警告**：`exec`（stdout / stderr 分文件落盘）、`findText`、`glob`、`ls` 超限时写入 `<系统临时目录>/ai-zen/tool-output/<工具名>-<时间戳>-<随机串>/`（每次调用独立目录），返回警告 + 头部预览（`exec` 为各流头尾各 1000 字符）与统计信息，并提示缩小范围的方式；
+- **仅警告不落盘**：`readFile` 超限时提示改用 `range` 分批读取；`inspectFile` 的明细超限时仅返回概况与提示。
+
+> `maxToolOutput` 为 CONFIG 层配置项，不暴露为工具参数，亦不支持按 Agent 覆盖。
+
 ## 5 种动态加载工具
 
 除内置工具外，SDK 还提供**动态加载工具**，依据可用资源与权限按需注册：
@@ -64,7 +74,7 @@ SDK 的 `createSubAgentTool` 会把**带 `function` 字段的 Agent** 注册为�
 
 工具通过 SDK `Provider` 的能力流水线分三个阶段装配：
 
-1. **发现（Discovery）**：扫描文件系统，发现内置工具、用户工具、SubAgent、Skill 与 MCP 服务器。19 种内置工具无条件注册（本阶段不过滤）。
+1. **发现（Discovery）**：扫描文件系统，发现内置工具、用户工具、SubAgent、Skill 与 MCP 服务器。20 种内置工具无条件注册（本阶段不过滤）。
 2. **过滤（Filtering）**：应用权限（`allow`/`deny`）、安全排除（递归保护）以及每个工具自行声明的 `isAvailable(config, definition)`。可用性在**模型已知的构建期**决定，例如 `viewImage` 仅视觉模型可用、`generateImage` 需配置 `defaultImageModel`。
 3. **实例化（Instantiation）**：将过滤后的名称映射到 `Tool` 实例，并注册动态加载器。
 

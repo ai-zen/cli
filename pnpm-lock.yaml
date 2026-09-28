@@ -12,8 +12,8 @@ importers:
         specifier: ^4.3.0
         version: 4.3.0(zod@4.5.4)
       '@ai-zen/agents-sdk':
-        specifier: ^0.11.0
-        version: 0.11.0(supports-color@7.2.0)(zod@4.5.4)
+        specifier: ^0.12.0
+        version: 0.12.0(supports-color@7.2.0)(zod@4.5.4)
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
@@ -54,8 +54,8 @@ packages:
   '@ai-zen/agents-core@4.3.0':
     resolution: {integrity: sha512-rc5p63jyPo9gaDo41mFwfhfm9aEdKyo4+hl2QiKTP8zbd+lblTLs8PGdJLF1/QcQmRIGBrxZ8MQyWIB8wilxGw==}
 
-  '@ai-zen/agents-sdk@0.11.0':
-    resolution: {integrity: sha512-Z6W8V4Fprp7qEqrUr+ogkGpg9BYBQ0P5ueQKX4tvAFhbArqFW5Mte17F9zqOUmQ57LIiOPKo0nb9REftSco8VA==}
+  '@ai-zen/agents-sdk@0.12.0':
+    resolution: {integrity: sha512-lAcN10fvRYy+ofVlYxoaOSprivXjQ2Obf82XzH6vDR9d4jOfAe1WuV+Pl/CXfwImYS+wwYbkjbvxGmjn1gjlDQ==}
 
   '@ai-zen/event-bus@1.1.0':
     resolution: {integrity: sha512-xjfQEmUMly++dOSrQMJkwrnBVl7bQHtiw8S09AW5jPuqnFV9OwBk0PsGFc/T+4eP4yWThBJo2X3cCdE5DkAr+Q==}
@@ -1109,7 +1109,7 @@ snapshots:
       - ws
       - zod
 
-  '@ai-zen/agents-sdk@0.11.0(supports-color@7.2.0)(zod@4.5.4)':
+  '@ai-zen/agents-sdk@0.12.0(supports-color@7.2.0)(zod@4.5.4)':
     dependencies:
       '@ai-zen/agents-core': 4.3.0(zod@4.5.4)
       '@modelcontextprotocol/sdk': 1.30.0(supports-color@7.2.0)(zod@4.5.4)

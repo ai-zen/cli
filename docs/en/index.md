@@ -1,6 +1,6 @@
 ---
 title: AI-Zen CLI
-description: An interactive AI Agent terminal for @ai-zen/cli — ships with 19 built-in file-system tools, and supports MCP, Skill, sub-agent orchestration, and task migration.
+description: An interactive AI Agent terminal for @ai-zen/cli — ships with 20 built-in file-system tools, and supports MCP, Skill, sub-agent orchestration, and task migration.
 outline: deep
 ---
 
@@ -16,7 +16,7 @@ When collaborating with AI in a bare terminal, you often have to manually switch
 
 - **Interactive main menu**: resume an unfinished draft, start a new conversation, continue a saved conversation, manage saved conversations, manage Agents, and manage configuration.
 - **Command hints**: typing `/` in a conversation lists the available commands with descriptions below the input line, narrowing the candidates by prefix as you type.
-- **19 built-in tools**: the file-system and image-processing toolset provided by `@ai-zen/agents-sdk` — see [Built-in Tools](./tools.md).
+- **20 built-in tools**: the file-system and image-processing toolset provided by `@ai-zen/agents-sdk` — see [Built-in Tools](./tools.md).
 - **5 dynamically loaded tools**: `load_skill`, `call_skill_sub_agent`, `load_mcp`, `call_mcp_tool`, `read_mcp_resource`.
 - **Sub-agent orchestration**: Agents with a `function` field can be called as tools by other Agents, with an independent permission system.
 - **Skill**: reusable skills defined via `SKILL.md`, loaded contextually and delegatable to a Skill sub-agent.
@@ -28,7 +28,7 @@ When collaborating with AI in a bare terminal, you often have to manually switch
 ## Documentation navigation
 
 - [Quick Start](./getting-started.md) — installation, the main menu, and conversation commands.
-- [Built-in Tools](./tools.md) — the 19 built-in tools, the dynamic loading tools, and the permission model.
+- [Built-in Tools](./tools.md) — the 20 built-in tools, the dynamic loading tools, and the permission model.
 - [MCP Support](./mcp.md) — MCP configuration, merge priority, connection, and current OAuth status.
 - [Skill](./skills.md) — Skill directories, loading, and Skill sub-agent delegation.
 - [Task Migration](./migration.md) — automatic/manual migration and the handoff document structure.
