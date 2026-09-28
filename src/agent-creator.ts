@@ -1,14 +1,15 @@
 /**
  * Agent 创建 — CLI 层
  *
- * 委托给 @ai-zen/agents-sdk 的 Provider。
- * CLI 层负责：组装路径、构建 Provider 单例、注册默认插件。
+ * 委托给 @ai-zen/agents-sdk 的 Scope。
+ * CLI 层负责：组装路径、构建 Scope 单例、装配能力插件。
  */
 
 import { existsSync } from "fs";
 import { join } from "path";
 import {
-  Provider,
+  Scope,
+  allInOne,
   createAgent as sdkCreateAgent,
   SdkAgent,
 } from "@ai-zen/agents-sdk";
@@ -22,15 +23,15 @@ import {
 } from "./config.js";
 import { readConfig } from "./config.js";
 
-// ==================== Provider 创建（单例）====================
+// ==================== Scope 创建（单例）====================
 
-let _provider: Provider | null = null;
+let _scope: Scope | null = null;
 
 /** existsSync 的别名，用于数组 .filter() 场景 */
 const exists = existsSync;
 
-export async function getProvider(): Promise<Provider> {
-  if (_provider) return _provider;
+export async function getScope(): Promise<Scope> {
+  if (_scope) return _scope;
 
   const config = await readConfig();
 
@@ -60,20 +61,25 @@ export async function getProvider(): Promise<Provider> {
     USER_AGENTS_SKILLS_DIR,
   ].filter(exists);
 
-  _provider = await Provider.create({
+  _scope = new Scope({
     config,
     agentsDir: AGENTS_DIR,
-    subAgentsPaths: [PROJECT_SUB_AGENTS_DIR, SUB_AGENTS_DIR].filter(exists),
-    skillsPaths,
-    toolsPaths: [PROJECT_TOOLS_DIR, TOOLS_DIR].filter(exists),
-    mcpPaths,
-  });
+  }).use(
+    ...allInOne({
+      subAgentsPaths: [PROJECT_SUB_AGENTS_DIR, SUB_AGENTS_DIR].filter(exists),
+      skillsPaths,
+      toolsPaths: [PROJECT_TOOLS_DIR, TOOLS_DIR].filter(exists),
+      mcpPaths,
+    }),
+  );
 
-  return _provider;
+  await _scope.init();
+
+  return _scope;
 }
 
-export function resetProvider(): void {
-  _provider = null;
+export function resetScope(): void {
+  _scope = null;
 }
 
 // ==================== Agent 创建 ====================
@@ -85,10 +91,10 @@ export interface CreateAgentOptions {
 
 export async function createAgent(options: CreateAgentOptions): Promise<SdkAgent> {
   const { messages, agentId } = options;
-  const provider = await getProvider();
+  const scope = await getScope();
 
   // 始终从磁盘读取 Agent 定义（含 permissions、工具配置等）
-  const agent = await sdkCreateAgent(provider, agentId || "default");
+  const agent = await sdkCreateAgent(scope, agentId || "default");
 
   // 有历史消息时替换（恢复草稿/已保存对话）。
   // 拷贝而非直接引用：恢复的数组来自草稿/对话存档，直接引用会让后续 append 改写传入数组。

@@ -25,7 +25,7 @@ Project-level Skills live under the project directory:
 
 ## Directory priority
 
-Skill directories are merged from multiple sources **high to low** (from `getProvider()` in `src/agent-creator.ts` and the comments in `src/config.ts`):
+Skill directories are merged from multiple sources **high to low** (from `getScope()` in `src/agent-creator.ts` and the comments in `src/config.ts`):
 
 1. Project `./.ai-zen/skills/`
 2. Project `./.agents/skills/`

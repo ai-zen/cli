@@ -6,7 +6,7 @@ outline: deep
 
 # Built-in Tools
 
-All tool capabilities come from `@ai-zen/agents-sdk` (`BUILTIN_TOOL_CLASSES`, 20 in total) and the SDK's dynamic loading mechanism. The CLI itself does **not** add any tool class; it only assembles paths, builds the `Provider` singleton, and passes the tool directories plus the MCP/Skill-related paths to the SDK.
+All tool capabilities come from `@ai-zen/agents-sdk` (`BUILTIN_TOOL_CLASSES`, 20 in total) and the SDK's dynamic loading mechanism. The CLI itself does **not** add any tool class; it only assembles paths, builds the `Scope` singleton, and passes the tool directories plus the MCP/Skill-related paths to the SDK.
 
 ## The 20 built-in tools
 
@@ -72,7 +72,7 @@ The SDK's `createSubAgentTool` registers Agents that have a **`function` field**
 
 ## Tool assembly pipeline
 
-Tools are assembled through the SDK `Provider` capability pipeline in three phases:
+Tools are assembled through the SDK `Scope` capability pipeline in three phases:
 
 1. **Discovery**: scan the filesystem to discover built-in tools, user tools, SubAgents, Skills, and MCP servers. All 20 built-in tools are registered unconditionally (no filtering at this stage).
 2. **Filtering**: apply permissions (`allow`/`deny`), security exclusions (recursion protection), and each tool's self-declared `isAvailable(config, definition)`. Availability is decided at build time when the model is known — e.g. `viewImage` is only available for vision models, and `generateImage` requires `defaultImageModel` to be configured.

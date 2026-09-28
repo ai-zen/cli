@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.9.0] - 2026-09-30
+
+### 💥 破坏性变更
+
+- **升级 `@ai-zen/agents-sdk` 到 `1.0.0-alpha.0`（Provider → Scope 架构重构）** — SDK 1.0.0-alpha.0 将全局入口对象 `Provider` 改名为 `Scope`，把四类能力来源疏散为 5 个可组合的 `ScopePlugin`，并移除 `Provider.create()`（改为显式装配）。CLI 侧同步适配 `src/agent-creator.ts`：
+  - 导入 `Scope` / `allInOne` 取代 `Provider`
+  - `Provider.create({ config, agentsDir, subAgentsPaths, skillsPaths, toolsPaths, mcpPaths })` → `new Scope({ config, agentsDir }).use(...allInOne({ subAgentsPaths, skillsPaths, toolsPaths, mcpPaths }))` + `await scope.init()`
+  - 单例/工厂改名：`getProvider` → `getScope`、`resetProvider` → `resetScope`；`createAgent` 内部改调 `sdkCreateAgent(scope, agentId)`
+  - 依赖声明由 `^0.12.0` 改为精确 `1.0.0-alpha.0`（alpha 阶段锁定）
+
+### 📝 文档
+
+- 中英 README 与 `docs/zh|en/{tools,mcp,skills}.md`：`Provider` / `getProvider()` 同步为 `Scope` / `getScope()`
+- `docs/zh|en/getting-started.md`：运行时依赖版本同步为 `@ai-zen/agents-sdk` `1.0.0-alpha.0`
+- `docs/manifest.json`：版本号同步为 `0.9.0`
+
+### ✅ 测试
+
+- `tsc --noEmit`（`tsconfig.test.json`）与 `npm run build` 零错误
+- 全量单测 9 文件 / 74 用例通过
+- e2e 6 用例通过（含真实 DeepSeek API 对话，验证 CLI → SDK `1.0.0-alpha.0` → API 全链路）
+
 ## [0.8.2] - 2026-09-29
 
 ### ⚠️ 依赖升级

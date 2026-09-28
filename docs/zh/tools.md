@@ -6,7 +6,7 @@ outline: deep
 
 # 内置工具
 
-工具能力全部来自 `@ai-zen/agents-sdk`（`BUILTIN_TOOL_CLASSES`，共 20 种）与 SDK 的动态加载机制。CLI 本身**不新增**工具类，只负责组装路径、构建 `Provider` 单例，并把工具目录与 MCP/Skill 相关路径传给 SDK。
+工具能力全部来自 `@ai-zen/agents-sdk`（`BUILTIN_TOOL_CLASSES`，共 20 种）与 SDK 的动态加载机制。CLI 本身**不新增**工具类，只负责组装路径、构建 `Scope` 单例，并把工具目录与 MCP/Skill 相关路径传给 SDK。
 
 ## 20 种内置工具
 
@@ -72,7 +72,7 @@ SDK 的 `createSubAgentTool` 会把**带 `function` 字段的 Agent** 注册为�
 
 ## 工具装配流水线
 
-工具通过 SDK `Provider` 的能力流水线分三个阶段装配：
+工具通过 SDK `Scope` 的能力流水线分三个阶段装配：
 
 1. **发现（Discovery）**：扫描文件系统，发现内置工具、用户工具、SubAgent、Skill 与 MCP 服务器。20 种内置工具无条件注册（本阶段不过滤）。
 2. **过滤（Filtering）**：应用权限（`allow`/`deny`）、安全排除（递归保护）以及每个工具自行声明的 `isAvailable(config, definition)`。可用性在**模型已知的构建期**决定，例如 `viewImage` 仅视觉模型可用、`generateImage` 需配置 `defaultImageModel`。

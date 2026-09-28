@@ -243,7 +243,7 @@ CLI 提供 20 个内置工具，由 `@ai-zen/agents-sdk` 实现。工具可用�
 
 ## 工具装配流程
 
-工具装配由 SDK 的 `Provider` 能力管线管理，分为三个阶段：
+工具装配由 SDK 的 `Scope` 能力管线管理，分为三个阶段：
 
 1. **发现** — 扫描文件系统获取内置工具、用户工具、SubAgent、Skill 和 MCP 服务器。20 个内置工具全部无条件发现（此阶段不做过滤）
 2. **过滤** — 应用权限（`allow`/`deny`）、安全排除（递归保护），以及各工具自声明的 `isAvailable(config, definition)`（在模型已知的构建阶段判断可用性；如 `viewImage` 仅视觉模型、`generateImage` 需配置 `defaultImageModel`）

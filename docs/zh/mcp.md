@@ -47,7 +47,7 @@ MCP 服务器配置会从多个来源**由高到低**合并，同名服务器以
 4. 用户级 `~/.ai-zen/mcp.json`
 5. 用户规范 `~/.agents/mcp.json`
 
-> 以上顺序来自 `src/agent-creator.ts` 的 `getProvider()` 与 `src/config.ts` 的注释。
+> 以上顺序来自 `src/agent-creator.ts` 的 `getScope()` 与 `src/config.ts` 的注释。
 
 ## 动态加载工具
 

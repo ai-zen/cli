@@ -243,7 +243,7 @@ In addition to built-in tools, the SDK provides 5 dynamic loading tools that are
 
 ## Tool Assembly Pipeline
 
-Tools are assembled in three phases by the SDK's `Provider` capability pipeline:
+Tools are assembled in three phases by the SDK's `Scope` capability pipeline:
 
 1. **Discovery** — Scan filesystem for built-in tools, user tools, SubAgents, Skills, and MCP servers. All 20 built-in tools are discovered unconditionally (no filtering at this stage)
 2. **Filtering** — Apply permissions (`allow`/`deny`), security exclusions (recursion protection), and each tool's self-declared `isAvailable(config, definition)` (availability is decided at build time when the model is known; e.g. `viewImage` only for vision models, `generateImage` requires `defaultImageModel`)

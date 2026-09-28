@@ -28,36 +28,36 @@ vi.mock("./config.js", () => ({
   PROJECT_AGENTS_MCP_CONFIG_FILE: "/mock/project/.agents/mcp.json",
 }));
 
-import { getProvider, resetProvider, createAgent } from "./agent-creator.js";
+import { getScope, resetScope, createAgent } from "./agent-creator.js";
 
-describe("getProvider", () => {
+describe("getScope", () => {
   afterEach(() => {
-    resetProvider();
+    resetScope();
   });
 
-  it("返回 Provider 单例", async () => {
-    const p1 = await getProvider();
-    const p2 = await getProvider();
-    expect(p1).toBe(p2);
+  it("返回 Scope 单例", async () => {
+    const s1 = await getScope();
+    const s2 = await getScope();
+    expect(s1).toBe(s2);
   });
 
-  it("resetProvider 后重新创建", async () => {
-    const p1 = await getProvider();
-    resetProvider();
-    const p2 = await getProvider();
-    expect(p1).not.toBe(p2);
+  it("resetScope 后重新创建", async () => {
+    const s1 = await getScope();
+    resetScope();
+    const s2 = await getScope();
+    expect(s1).not.toBe(s2);
   });
 
-  it("Provider 包含配置信息", async () => {
-    const provider = await getProvider();
-    expect(provider.config.defaultModel).toBe("gpt4");
-    expect(provider.agentsDir).toBe("/mock/.ai-zen/agents");
+  it("Scope 包含配置信息", async () => {
+    const scope = await getScope();
+    expect(scope.config.defaultModel).toBe("gpt4");
+    expect(scope.agentsDir).toBe("/mock/.ai-zen/agents");
   });
 });
 
 describe("createAgent", () => {
   afterEach(() => {
-    resetProvider();
+    resetScope();
   });
 
   it("磁盘文件不存在时抛出错误", async () => {

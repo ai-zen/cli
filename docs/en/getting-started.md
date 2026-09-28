@@ -15,7 +15,7 @@ outline: deep
 - **Node.js**: the package is published as ESM (`"type": "module"`). `package.json` does not declare an `engines` field, so the actual required version follows the Node ecosystem (a recent LTS is recommended).
 - **Runtime dependencies** (declared in `package.json`):
   - `@ai-zen/agents-core` `^4.3.0`
-  - `@ai-zen/agents-sdk` `^0.12.0`
+  - `@ai-zen/agents-sdk` `1.0.0-alpha.0`
   - `@modelcontextprotocol/sdk` `^1.29.0`
   - `chalk`, `dayjs`, `inquirer`, `zod`
 - **Platform**: the underlying tools and the Shell hook depend on a Unix shell (`bash`/`zsh`) and `process.env.SHELL`; the Shell hook is unavailable on Windows (`hook` will report "unsupported shell").

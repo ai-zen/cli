@@ -25,7 +25,7 @@ Skill（技能）是可复用的、带 Fronmatter 说明的 Markdown 文档，�
 
 ## 目录优先级
 
-Skill 目录从多个来源**由高到低**合并（来自 `src/agent-creator.ts` 的 `getProvider()` 与 `src/config.ts` 注释）：
+Skill 目录从多个来源**由高到低**合并（来自 `src/agent-creator.ts` 的 `getScope()` 与 `src/config.ts` 注释）：
 
 1. 项目 `./.ai-zen/skills/`
 2. 项目 `./.agents/skills/`
