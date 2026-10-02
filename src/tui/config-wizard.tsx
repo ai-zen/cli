@@ -15,9 +15,13 @@
  *     「整帧高度小于终端行数」约定（见 `text.ts` 的 `usableFrameRows`）。
  */
 
-import { useRef, useState, type ReactNode } from "react";
-import { Box, Text, useCursor, useInput, useWindowSize } from "ink";
-import type { AppConfig, Endpoint, ImageModel, Model } from "@ai-zen/agents-sdk";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
+import { tmpdir } from "os";
+import { join } from "path";
+import { readFileSync, unlinkSync, writeFileSync } from "fs";
+import { spawnSync } from "child_process";
+import type { AgentDefinition, AppConfig, Endpoint, ImageModel, Model } from "@ai-zen/agents-sdk";
 import { theme } from "./theme.js";
 import { SelectList, KeyHints, type SelectItem } from "./components.js";
 import {
@@ -33,15 +37,28 @@ import {
 import { CONFIG_FILE, mcpConfigPath, writeMcpConfigAt } from "../config.js";
 import type { McpConfig, McpScope, McpServerEntry } from "../config.js";
 import {
+  agentKindLabel,
+  agentList,
+  createAgentStore,
+  findAgentDefinition,
+  type AgentKind,
+  type AgentStore,
+} from "../agents-store.js";
+import {
   addEndpoint,
   addImageModel,
   addMcpServer,
   addModel,
   apiKeyGuide,
+  createAgentDefinition,
+  createSubAgentDefinition,
   findEndpoint,
   findMcpServer,
   findModel,
+  formatAgentPermission,
   formatArgs,
+  formatFunctionParameters,
+  getAgentPrompt,
   isApiKeySet,
   kvEntries,
   kvSummary,
@@ -49,12 +66,17 @@ import {
   mcpServerIdTaken,
   modelsUsingEndpoint,
   parseArgs,
+  parseFunctionParameters,
   parseKvInput,
+  parsePermission,
+  PERMISSION_DIMENSIONS,
   removeEndpoint,
   removeImageModel,
   removeMcpServer,
   removeModel,
   renameMcpServer,
+  setAgentPermission,
+  setAgentPrompt,
   setDefaultAgent,
   setDefaultImageModel,
   setDefaultMigrationModel,
@@ -63,6 +85,10 @@ import {
   setEndpointBaseUrl,
   setMaxToolOutput,
   summarizeEndpoints,
+  summarizePermissions,
+  uniqueAgentId,
+  updateAgentDefinition,
+  updateAgentFunction,
   updateEndpoint,
   updateImageModel,
   updateMcpServer,
@@ -96,6 +122,11 @@ export type WizardStep =
   | { kind: "mcp-server"; scope: McpScope; serverId: string }
   | { kind: "mcp-new"; scope: McpScope }
   | { kind: "mcp-kv"; scope: McpScope; serverId: string; field: "env" | "headers" }
+  | { kind: "agents" }
+  | { kind: "agent"; agentKind: AgentKind; agentId: string }
+  | { kind: "agent-perms"; agentKind: AgentKind; agentId: string }
+  | { kind: "agent-prompt"; agentKind: AgentKind; agentId: string }
+  | { kind: "agent-new"; agentKind: AgentKind }
   | { kind: "edit"; field: EndpointField; endpointId: string };
 
 /** 列表里「新建…」哨兵值（实例 id 由名称派生、不含下划线，故不会冲突） */
@@ -106,6 +137,9 @@ const NEW_IMAGE_MODEL = "__new_image_model__";
 const SWITCH_SCOPE = "__mcp_switch_scope__";
 /** MCP 屏的「新建服务器」哨兵值 */
 const NEW_MCP_SERVER = "__new_mcp_server__";
+/** Agent 屏的「新建 Agent / Sub-agent」哨兵值 */
+const NEW_AGENT = "__new_agent__";
+const NEW_SUBAGENT = "__new_subagent__";
 
 export interface NewEndpointDraft {
   name: string;
@@ -123,6 +157,8 @@ export interface WizardCloseResult {
   changedEndpointIds: string[];
   /** 是否有 MCP 配置改动（宿主据此重建会话，让新工具生效） */
   mcpChanged?: boolean;
+  /** 是否有 Agent 定义改动（宿主据此重建会话，让新定义生效） */
+  agentsChanged?: boolean;
 }
 
 /** MCP 配置快照：全局 + 项目两个作用域 */
@@ -144,6 +180,8 @@ export interface ConfigWizardProps {
   agents?: { id: string; name: string }[];
   /** MCP 配置初始快照（全局 + 项目）；缺省视为两个空配置 */
   mcp?: McpSnapshot;
+  /** Agent / Sub-agent 定义仓储（缺省为空快照 + 真实文件读写） */
+  agentStore?: AgentStore;
   /** 持久化配置（通常是 `saveConfig`） */
   onSave: (config: AppConfig) => Promise<void>;
   /** 持久化 MCP 配置（缺省写入 scope 对应的 mcp.json） */
@@ -530,6 +568,7 @@ interface MenuStepProps {
   rows: number;
   config: AppConfig;
   mcp: McpSnapshot;
+  agentStore: AgentStore;
   savedCount: number;
   /** 最近一次保存提示 */
   notice?: string | null;
@@ -537,7 +576,7 @@ interface MenuStepProps {
   onClose: () => void;
 }
 
-function MenuStep({ columns, rows, config, mcp, savedCount, notice, onPick, onClose }: MenuStepProps) {
+function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, notice, onPick, onClose }: MenuStepProps) {
   const { setCursorPosition } = useCursor();
   setCursorPosition(undefined); // 无文本编辑：隐藏硬件光标
   useInput((_char, key) => {
@@ -566,6 +605,11 @@ function MenuStep({ columns, rows, config, mcp, savedCount, notice, onPick, onCl
       label: "MCP 服务器",
       value: "mcp",
       hint: `全局 ${mcpCount(mcp, "global")} · 项目 ${mcpCount(mcp, "project")}`,
+    },
+    {
+      label: "Agent 定义",
+      value: "agents",
+      hint: `Agent ${agentStore.agents.length} · Sub-agent ${agentStore.subAgents.length}`,
     },
     {
       label: "默认项",
@@ -666,6 +710,11 @@ function DetailStep({ columns, rows, title, details, fields, notice, action, onB
   const [error, setError] = useState<string | null>(null);
   const [choosing, setChoosing] = useState(false);
   const [confirming, setConfirming] = useState(false);
+
+  // 行数变化（如 Agent 详情 ↔ 权限子屏共用本组件）时收敛高亮索引，避免越界导致无高亮
+  useEffect(() => {
+    setIndex((i) => Math.min(i, Math.max(0, rowCount - 1)));
+  }, [rowCount]);
 
   const labelWidth = Math.max(6, ...fields.map((f) => displayWidth(f.label)));
   const valueX = 2 + labelWidth + 2;
@@ -1127,6 +1176,93 @@ function KvEditorScreen({ columns, rows, title, subtitle, map, notice, onCommit,
   );
 }
 
+// ==================== 提示词编辑屏（系统编辑器）====================
+
+interface PromptEditorScreenProps {
+  columns: number;
+  rows: number;
+  title: string;
+  subtitle?: string;
+  prompt: string;
+  notice?: string | null;
+  onSave: (text: string) => Promise<string | null>;
+  onBack: () => void;
+}
+
+/**
+ * 提示词编辑屏 —— 多行文本交给**系统编辑器**（复用 `/editor` 的 `suspendTerminal` 模式）。
+ *
+ * 屏内只预览当前提示词；`Enter` 挂起 Ink、用 `$EDITOR`（Windows 默认 notepad）打开临时
+ * `.md` 文件，保存回读后写盘；`Esc` 返回。
+ */
+function PromptEditorScreen({ columns, rows, title, subtitle, prompt, notice, onSave, onBack }: PromptEditorScreenProps) {
+  const { setCursorPosition } = useCursor();
+  const { suspendTerminal } = useApp();
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const launch = async () => {
+    setError(null);
+    const file = join(tmpdir(), `aizen-agent-prompt-${Date.now()}.md`);
+    try {
+      writeFileSync(file, prompt, "utf-8");
+      await suspendTerminal(() => {
+        const editor =
+          process.env.EDITOR || process.env.VISUAL || (process.platform === "win32" ? "notepad" : "vi");
+        const result = spawnSync(editor, [file], { stdio: "inherit" });
+        if (result.error) throw result.error;
+      });
+      const text = readFileSync(file, "utf-8").replace(/\r\n/g, "\n").trimEnd();
+      const failure = await onSave(text);
+      if (failure) setError(failure);
+    } catch (cause: any) {
+      setError(`打开编辑器失败：${cause?.message ?? cause}`);
+    } finally {
+      try {
+        unlinkSync(file);
+      } catch {
+        /* 忽略 */
+      }
+    }
+  };
+
+  setCursorPosition(undefined);
+  useInput(
+    (_char, key) => {
+      if (key.escape) onBack();
+      else if (key.return && !busy) {
+        setBusy(true);
+        void launch().finally(() => setBusy(false));
+      }
+    },
+    { isActive: !busy },
+  );
+
+  const headerRows: Row[] = [
+    ...textRows(title, columns, theme.highlight, true),
+    ...(subtitle ? textRows(subtitle, columns, theme.dim) : []),
+    ...(notice ? textRows(`✔ ${notice}`, columns, theme.ok) : []),
+    ...(error ? textRows(`✖ ${error}`, columns, theme.error) : []),
+  ];
+  const previewBudget = Math.max(3, usableFrameRows(rows) - headerRows.length - 3);
+  const preview = prompt ? wrapText(prompt, Math.max(8, columns - 4)).slice(0, previewBudget) : ["（空）"];
+  const contentLines = headerRows.length + 1 + preview.length + 1;
+
+  return (
+    <WizardFrame columns={columns} rows={rows} contentLines={contentLines}>
+      <Header rows={headerRows} />
+      <Box marginTop={1} flexDirection="column" paddingX={1}>
+        {preview.map((line, index) => (
+          <Text key={index} color={theme.assistant} wrap="truncate">
+            {line}
+          </Text>
+        ))}
+      </Box>
+      <KeyHints hints={[["Enter", busy ? "编辑中…" : "打开系统编辑器"], ["Esc", "返回"]]} />
+    </WizardFrame>
+  );
+}
+
 // ==================== 向导主体 ====================
 
 export function ConfigWizard(props: ConfigWizardProps) {
@@ -1140,6 +1276,7 @@ export function ConfigWizard(props: ConfigWizardProps) {
   const [mcp, setMcp] = useState<McpSnapshot>(
     props.mcp ?? { global: { mcpServers: {} }, project: { mcpServers: {} } },
   );
+  const [store, setStore] = useState<AgentStore>(() => props.agentStore ?? createAgentStore([], []));
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -1153,6 +1290,7 @@ export function ConfigWizard(props: ConfigWizardProps) {
       changedEndpointIds: [...acc.current.changedEndpointIds],
     };
     if (acc.current.mcpChanged) result.mcpChanged = true;
+    if (acc.current.agentsChanged) result.agentsChanged = true;
     return result;
   };
 
@@ -1199,6 +1337,53 @@ export function ConfigWizard(props: ConfigWizardProps) {
     return null;
   };
 
+  /** 写盘某个 Agent / Sub-agent 定义（创建或更新），刷新本地快照并记录变更 */
+  const saveAgent = async (kind: AgentKind, def: AgentDefinition, message: string): Promise<string | null> => {
+    const next: AgentDefinition = { ...def, updatedAt: new Date().toISOString() };
+    try {
+      await store.save(kind, next);
+    } catch (cause: any) {
+      return `写入 Agent 定义失败：${cause?.message ?? cause}`;
+    }
+    setStore((prev) => {
+      const list = [...agentList(prev, kind)];
+      const index = list.findIndex((item) => item.id === next.id);
+      if (index >= 0) list[index] = next;
+      else list.push(next);
+      return kind === "agent" ? { ...prev, agents: list } : { ...prev, subAgents: list };
+    });
+    acc.current.dirty = true;
+    acc.current.agentsChanged = true;
+    acc.current.summary.push(message);
+    setNotice(message);
+    return null;
+  };
+
+  /** 静默删除某个定义（用于重命名时清理旧文件；不记录变更） */
+  const removeAgentQuiet = async (kind: AgentKind, id: string): Promise<string | null> => {
+    try {
+      await store.remove(kind, id);
+    } catch (cause: any) {
+      return `删除 Agent 定义失败：${cause?.message ?? cause}`;
+    }
+    setStore((prev) => {
+      const list = agentList(prev, kind).filter((item) => item.id !== id);
+      return kind === "agent" ? { ...prev, agents: list } : { ...prev, subAgents: list };
+    });
+    return null;
+  };
+
+  /** 删除某个定义并记录变更 */
+  const deleteAgent = async (kind: AgentKind, id: string): Promise<string | null> => {
+    const failure = await removeAgentQuiet(kind, id);
+    if (failure) return failure;
+    acc.current.dirty = true;
+    acc.current.agentsChanged = true;
+    acc.current.summary.push(`已删除 ${agentKindLabel(kind)} ${id}`);
+    setNotice(`已删除 ${agentKindLabel(kind)} ${id}`);
+    return null;
+  };
+
   /** 写盘 + 记录变更 + 跳转；成功且 `closeOnSave` 时直接关闭，否则跳到 `after` 步骤（默认回菜单） */
   const commit = async (
     next: AppConfig,
@@ -1233,6 +1418,12 @@ export function ConfigWizard(props: ConfigWizardProps) {
       !findMcpServer(mcp[current.scope], current.serverId)
     ) {
       return { kind: "mcp", scope: current.scope };
+    }
+    if (
+      (current.kind === "agent" || current.kind === "agent-perms" || current.kind === "agent-prompt") &&
+      !findAgentDefinition(store, current.agentKind, current.agentId)
+    ) {
+      return { kind: "agents" };
     }
     return current;
   };
@@ -1520,6 +1711,145 @@ export function ConfigWizard(props: ConfigWizardProps) {
     return fields;
   };
 
+  /** Agent / Sub-agent 详情字段；编辑出厂托管 Agent（如 default）时自动标记 custom: true */
+  const agentFields = (kind: AgentKind, def: AgentDefinition): DetailField[] => {
+    const kindName = agentKindLabel(kind);
+    const managed = kind === "agent" && !def.custom;
+    const save = (nextDef: AgentDefinition, label: string) => {
+      const marked = managed ? { ...nextDef, custom: true } : nextDef;
+      const suffix = managed ? "（已标记为自定义，改动才会保留）" : "";
+      return saveAgent(kind, marked, `${kindName} ${def.id} 的 ${label} 已更新${suffix}`);
+    };
+    const fields: DetailField[] = [
+      {
+        key: "name",
+        label: "名称",
+        kind: "text",
+        value: def.name || def.id,
+        initial: def.name,
+        commit: (raw) =>
+          raw.trim()
+            ? save(updateAgentDefinition(def, { name: raw.trim() }), "名称")
+            : Promise.resolve("名称不能为空"),
+      },
+      {
+        key: "id",
+        label: "标识",
+        kind: "text",
+        value: def.id,
+        initial: def.id,
+        commit: (raw) => {
+          const name = raw.trim();
+          if (!name) return Promise.resolve("标识不能为空");
+          if (name === def.id) return Promise.resolve(null);
+          if (agentList(store, kind).some((item) => item.id === name)) return Promise.resolve(`已存在标识 ${name} 的定义`);
+          return (async () => {
+            const failure = await saveAgent(kind, { ...def, id: name }, `${kindName} ${def.id} 已重命名为 ${name}`);
+            if (failure) return failure;
+            await removeAgentQuiet(kind, def.id);
+            go({ kind: "agent", agentKind: kind, agentId: name });
+            return null;
+          })();
+        },
+      },
+      {
+        key: "description",
+        label: "描述",
+        kind: "text",
+        value: def.description ?? "（空）",
+        initial: def.description ?? "",
+        commit: (raw) => save(updateAgentDefinition(def, { description: raw.trim() || undefined }), "描述"),
+      },
+      {
+        key: "modelId",
+        label: "模型",
+        kind: "enum",
+        value: findModel(config, def.modelId)?.name ?? def.modelId ?? "（未设置）",
+        options: [
+          ...config.models.map((model) => ({ label: model.name || model.id, value: model.id })),
+          { label: "（未设置）", value: "" },
+        ],
+        commit: (raw) => save(updateAgentDefinition(def, { modelId: raw || undefined }), "模型"),
+      },
+      {
+        key: "prompt",
+        label: "提示词",
+        kind: "map",
+        value: `${getAgentPrompt(def).split("\n").length} 行 · Enter 打开编辑器`,
+        open: () => go({ kind: "agent-prompt", agentKind: kind, agentId: def.id }),
+      },
+      {
+        key: "permissions",
+        label: "权限",
+        kind: "map",
+        value: summarizePermissions(def.permissions),
+        open: () => go({ kind: "agent-perms", agentKind: kind, agentId: def.id }),
+      },
+    ];
+    if (kind === "agent") {
+      fields.push({
+        key: "custom",
+        label: "自定义",
+        kind: "bool",
+        value: def.custom ? "是" : "否（出厂托管）",
+        toggle: () => save(updateAgentDefinition(def, { custom: !def.custom }), "「自定义」"),
+      });
+    } else {
+      fields.push(
+        {
+          key: "fnName",
+          label: "函数名",
+          kind: "text",
+          value: def.function?.name ?? "（空）",
+          initial: def.function?.name ?? "",
+          commit: (raw) =>
+            raw.trim()
+              ? save(updateAgentFunction(def, { name: raw.trim() }), "函数名")
+              : Promise.resolve("函数名不能为空"),
+        },
+        {
+          key: "fnDesc",
+          label: "函数说明",
+          kind: "text",
+          value: def.function?.description ?? "（空）",
+          initial: def.function?.description ?? "",
+          commit: (raw) => save(updateAgentFunction(def, { description: raw }), "函数说明"),
+        },
+        {
+          key: "fnParams",
+          label: "参数 schema",
+          kind: "text",
+          value: formatFunctionParameters(def.function),
+          initial: formatFunctionParameters(def.function),
+          commit: (raw) => {
+            const parsed = parseFunctionParameters(raw);
+            return typeof parsed === "string"
+              ? Promise.resolve(parsed)
+              : save(updateAgentFunction(def, { parameters: parsed }), "参数 schema");
+          },
+        },
+      );
+    }
+    return fields;
+  };
+
+  /** 四维权限子屏字段（`allow: a, b` / `deny: x`；留空清除该维） */
+  const agentPermFields = (kind: AgentKind, def: AgentDefinition): DetailField[] =>
+    PERMISSION_DIMENSIONS.map((dim) => ({
+      key: dim,
+      label: dim,
+      kind: "text" as const,
+      value: formatAgentPermission(def.permissions, dim) || "（未设置）",
+      initial: formatAgentPermission(def.permissions, dim),
+      commit: (raw: string) => {
+        const parsed = parsePermission(raw);
+        if (typeof parsed === "string") return Promise.resolve(parsed);
+        const managed = kind === "agent" && !def.custom;
+        const next = setAgentPermission(managed ? { ...def, custom: true } : def, dim, parsed);
+        return saveAgent(kind, next, `${agentKindLabel(kind)} ${def.id} 的 ${dim} 权限已更新`);
+      },
+    }));
+
   // ---------- 配置中心菜单 ----------
   if (activeStep.kind === "menu") {
     return (
@@ -1528,6 +1858,7 @@ export function ConfigWizard(props: ConfigWizardProps) {
         rows={rows}
         config={config}
         mcp={mcp}
+        agentStore={store}
         savedCount={acc.current.summary.length}
         notice={notice}
         onClose={() => props.onClose(snapshot())}
@@ -1536,6 +1867,7 @@ export function ConfigWizard(props: ConfigWizardProps) {
           else if (action === "models") go({ kind: "models" });
           else if (action === "imageModels") go({ kind: "image-models" });
           else if (action === "mcp") go({ kind: "mcp", scope: "global" });
+          else if (action === "agents") go({ kind: "agents" });
           else if (action === "defaults") go({ kind: "defaults" });
           else if (action === "maxToolOutput") go({ kind: "max-tool-output" });
           else props.onClose(snapshot());
@@ -1602,7 +1934,10 @@ export function ConfigWizard(props: ConfigWizardProps) {
       }));
     } else {
       title = "默认 Agent";
-      items = (props.agents ?? []).map((agent) => ({ label: agent.name, value: agent.id, hint: agent.id }));
+      const source = props.agentStore
+        ? store.agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id }))
+        : (props.agents ?? []);
+      items = source.map((agent) => ({ label: agent.name, value: agent.id, hint: agent.id }));
     }
     items = [...items, { label: "（未设置）", value: "" }];
     return (
@@ -1913,6 +2248,151 @@ export function ConfigWizard(props: ConfigWizardProps) {
           })();
         }}
         onCancel={() => go({ kind: "mcp", scope })}
+      />
+    );
+  }
+
+  // ---------- Agent 定义列表 ----------
+  if (activeStep.kind === "agents") {
+    const items: SelectItem<string>[] = [
+      { label: "＋ 新建 Agent", value: NEW_AGENT, hint: "顶层 Agent（可作为默认 Agent）" },
+      { label: "＋ 新建 Sub-agent", value: NEW_SUBAGENT, hint: "可被委派的子 Agent" },
+      ...store.agents.map((def) => ({
+        label: def.name || def.id,
+        value: `agent:${def.id}`,
+        hint: `Agent · ${def.id}${def.custom ? "" : " · 出厂托管"}`,
+      })),
+      ...store.subAgents.map((def) => ({
+        label: def.name || def.id,
+        value: `subagent:${def.id}`,
+        hint: `Sub-agent · ${def.id}`,
+      })),
+    ];
+    return (
+      <ListStep
+        columns={cols}
+        rows={rows}
+        title="◆ Agent 定义"
+        subtitle={`Agent ${store.agents.length} · Sub-agent ${store.subAgents.length}`}
+        items={items}
+        onPick={(value) => {
+          if (value === NEW_AGENT) go({ kind: "agent-new", agentKind: "agent" });
+          else if (value === NEW_SUBAGENT) go({ kind: "agent-new", agentKind: "subagent" });
+          else {
+            const [kind, id] = value.split(":");
+            go({ kind: "agent", agentKind: kind as AgentKind, agentId: id! });
+          }
+        }}
+        onCancel={() => go({ kind: "menu" })}
+      />
+    );
+  }
+
+  // ---------- Agent 详情 ----------
+  if (activeStep.kind === "agent") {
+    const { agentKind, agentId } = activeStep;
+    const def = findAgentDefinition(store, agentKind, agentId)!;
+    return (
+      <DetailStep
+        columns={cols}
+        rows={rows}
+        title={`◆ ${agentKindLabel(agentKind)} · ${def.name || def.id}`}
+        details={[
+          `${def.id} · ${def.custom ? "自定义" : "出厂托管"}${agentKind === "subagent" ? " · Sub-agent" : ""}`,
+          "↑ ↓ 移动 · Enter 编辑/切换/进入 · 改动即时写入磁盘",
+        ]}
+        fields={agentFields(agentKind, def)}
+        notice={notice}
+        action={{
+          label: `删除${agentKindLabel(agentKind)}`,
+          run: async () => {
+            const failure = await deleteAgent(agentKind, def.id);
+            if (!failure) go({ kind: "agents" });
+            return failure;
+          },
+        }}
+        onBack={() => go({ kind: "agents" })}
+      />
+    );
+  }
+
+  // ---------- Agent 权限子屏 ----------
+  if (activeStep.kind === "agent-perms") {
+    const { agentKind, agentId } = activeStep;
+    const def = findAgentDefinition(store, agentKind, agentId)!;
+    return (
+      <DetailStep
+        columns={cols}
+        rows={rows}
+        title={`◆ ${agentKindLabel(agentKind)} · ${def.id} · 权限`}
+        details={["格式：`allow: a, b` 或 `deny: x`（逗号分隔；留空清除该维）", "↑ ↓ 移动 · Enter 编辑 · Esc 返回"]}
+        fields={agentPermFields(agentKind, def)}
+        notice={notice}
+        onBack={() => go({ kind: "agent", agentKind, agentId })}
+      />
+    );
+  }
+
+  // ---------- Agent 提示词编辑（系统编辑器）----------
+  if (activeStep.kind === "agent-prompt") {
+    const { agentKind, agentId } = activeStep;
+    const def = findAgentDefinition(store, agentKind, agentId)!;
+    return (
+      <PromptEditorScreen
+        columns={cols}
+        rows={rows}
+        title={`◆ ${agentKindLabel(agentKind)} · ${def.id} · 提示词`}
+        subtitle="Enter 打开系统编辑器（$EDITOR / notepad）；改完保存即写盘"
+        prompt={getAgentPrompt(def)}
+        notice={notice}
+        onSave={(text) => {
+          const managed = agentKind === "agent" && !def.custom;
+          const next = setAgentPrompt(managed ? { ...def, custom: true } : def, text);
+          return saveAgent(agentKind, next, `${agentKindLabel(agentKind)} ${def.id} 的提示词已更新`);
+        }}
+        onBack={() => go({ kind: "agent", agentKind, agentId })}
+      />
+    );
+  }
+
+  // ---------- 新建 Agent / Sub-agent ----------
+  if (activeStep.kind === "agent-new") {
+    const kind = activeStep.agentKind;
+    const kindName = agentKindLabel(kind);
+    return (
+      <PromptScreen
+        key={`new:${kind}`}
+        columns={cols}
+        rows={rows}
+        title={`新建 ${kindName} · 名称`}
+        details={[
+          "用于在列表与状态栏中标识该定义，例如 Coder",
+          kind === "agent" ? "创建后可在「默认项 → 默认 Agent」中选为默认" : "创建后自动生成 function 骨架（可编辑）",
+        ]}
+        error={error}
+        hints={[["Enter", "创建并编辑"], ["Esc", "返回"]]}
+        onSubmit={(value) => {
+          const name = value.trim();
+          if (!name) {
+            setError("名称不能为空");
+            return;
+          }
+          const id = uniqueAgentId(
+            agentList(store, kind).map((item) => item.id),
+            name,
+            kind === "agent" ? "agent" : "subagent",
+          );
+          const def = kind === "agent" ? createAgentDefinition({ id, name }) : createSubAgentDefinition({ id, name });
+          void (async () => {
+            const failure = await saveAgent(kind, def, `已新建 ${kindName} ${name}（${id}）`);
+            if (failure) {
+              setError(failure);
+              return;
+            }
+            go({ kind: "agent", agentKind: kind, agentId: id });
+          })();
+        }}
+        onCancel={() => go({ kind: "agents" })}
       />
     );
   }

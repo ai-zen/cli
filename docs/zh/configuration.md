@@ -139,10 +139,11 @@ outline: deep
 TUI 内可用 `/config` 打开**配置中心**交互式编辑常用项，无需手改 JSON：
 
 - 配置文件路径：`~/.ai-zen/config.json`（或 `$AI_ZEN_DIR/config.json`）。
-- 可设置：**端点**（名称 / Base URL / API Key / 描述，增删改）、**模型**（名称 / 端点 / 模型名 / 迁移阈值 / 视觉 / 描述 / 自定义，增删改）、**图片模型**（名称 / 端点 / 模型名 / 尺寸 / 质量 / 自定义，增删改）、**MCP 服务器**（作用域可屏内切换：全局 `~/.ai-zen/mcp.json` / 项目 `<cwd>/.ai-zen/mcp.json`；名称 / 传输 stdio·http·sse / 启用·禁用 / 描述 / 命令 / 参数 / 环境变量 / URL / 请求头，增删改）、**默认项**（默认模型 / 默认图片模型 / 默认 Agent / 默认迁移模型）、**工具输出上限**。
+- 可设置：**端点**（名称 / Base URL / API Key / 描述，增删改）、**模型**（名称 / 端点 / 模型名 / 迁移阈值 / 视觉 / 描述 / 自定义，增删改）、**图片模型**（名称 / 端点 / 模型名 / 尺寸 / 质量 / 自定义，增删改）、**MCP 服务器**（作用域可屏内切换：全局 `~/.ai-zen/mcp.json` / 项目 `<cwd>/.ai-zen/mcp.json`；名称 / 传输 stdio·http·sse / 启用·禁用 / 描述 / 命令 / 参数 / 环境变量 / URL / 请求头，增删改）、**Agent 定义**（顶层 `agents/*.json` 与子 `sub-agents/*.json`；名称 / 标识 / 描述 / 模型 / 提示词【系统编辑器】/ 四维权限 `tools`·`skills`·`mcps`·`subagents` / 自定义，Sub-agent 另含 `function`，均支持增删改）、**默认项**（默认模型 / 默认图片模型 / 默认 Agent / 默认迁移模型）、**工具输出上限**。
 - 列表 = [＋ 新建…] + 各条目；选中条目进入**详情屏**就地编辑（`↑ ↓` 移动、`Enter` 编辑/切换/选择、危险动作二次确认）。编辑「出厂托管」的模型时会自动标记 `custom: true`；删除端点会先校验是否仍被模型引用。
 - **MCP 服务器**：传输方式为枚举选择（stdio / http / sse）、启用·禁用为即时切换；参数按 shell 风格（引号 / 转义）切分为 argv；环境变量与请求头进入**键值编辑子屏**（`KEY=VALUE`，可增 / 改 / 删）。改动即时写入对应作用域的 `mcp.json`；关闭配置中心后会话会重建，使新服务器 / 工具生效。
+- **Agent 定义**：列表区分顶层 Agent 与 Sub-agent（各带「＋ 新建」）；详情屏编辑名称 / 标识（改标识即重命名文件）/ 描述 / 模型（枚举自 `config.models`）/ 四维权限（紧凑语法 `allow: a, b` 或 `deny: x`，留空清除该维）/ 自定义开关；Sub-agent 另有 `function`（函数名 / 说明 / 参数 schema JSON）。**提示词**为多行内容，按 `Enter` 调起**系统编辑器**（`$EDITOR`，Windows 默认 `notepad`）。编辑「出厂托管」的 `default` Agent 会自动标记 `custom: true`，避免改动被 SDK 同步覆盖。
 - 首次启动若模型绑定的端点缺 API Key，会先弹出凭据设置屏；对话内 `/key` 可改当前端点的 Key（保存后自动重建会话）。
-- Agent 定义等仍需手动编辑文件（`agents/*.json`）。
+- Skill（`skills/SKILL.md`）与用户工具（`tools/*.js`）仍以文件为准。
 
 > 说明：CLI 入口只实现了 `hook` 子命令（`ai hook install|uninstall`）；**没有 `config` 子命令**。若端点缺少 API Key，纯 stdio 模式会直接报错退出（非 0），TUI 模式会在启动对话时提示。

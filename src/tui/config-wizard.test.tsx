@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "ink-testing-library";
-import type { AppConfig } from "@ai-zen/agents-sdk";
+import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
+import { Message } from "@ai-zen/agents-core";
 import type { McpConfig, McpScope } from "../config.js";
+import type { AgentKind, AgentStore } from "../agents-store.js";
 import { ConfigWizard, PromptScreen, promptLayout } from "./config-wizard.js";
 
 const tick = () => new Promise((r) => setTimeout(r, 25));
@@ -427,6 +429,8 @@ describe("ConfigWizard（配置中心）", () => {
     await tick();
     stdin.write(DOWN); // → MCP 服务器
     await tick();
+    stdin.write(DOWN); // → Agent 定义
+    await tick();
     stdin.write(DOWN); // → 默认项
     await tick();
     stdin.write(ENTER); // 打开默认项
@@ -676,6 +680,8 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     stdin.write(DOWN);
     await tick();
     stdin.write(DOWN); // → MCP 服务器
+    await tick();
+    stdin.write(DOWN); // → Agent 定义
     await tick();
     stdin.write(DOWN); // → 默认项
     await tick();
@@ -968,6 +974,337 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     stdin.write(ESC); // 关闭
     await tick();
     expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ dirty: true, mcpChanged: true }));
+    unmount();
+  });
+});
+
+// ==================== Agent / Sub-agent 定义管理 ====================
+
+const makeAgentDef = (over: Partial<AgentDefinition> = {}): AgentDefinition => ({
+  id: "default",
+  name: "默认助手",
+  description: "",
+  messages: [Message.System("你是助手")],
+  permissions: {
+    tools: { allow: ["*"] },
+    skills: { allow: ["*"] },
+    mcps: { allow: ["*"] },
+    subagents: { allow: ["*"] },
+  },
+  custom: false,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  ...over,
+});
+
+const makeAgentStore = (agents: AgentDefinition[] = [], subAgents: AgentDefinition[] = []) => {
+  const save = vi.fn<(kind: AgentKind, def: AgentDefinition) => Promise<void>>(async () => undefined);
+  const remove = vi.fn<(kind: AgentKind, id: string) => Promise<void>>(async () => undefined);
+  const store: AgentStore = { agents, subAgents, save, remove };
+  return { store, save, remove };
+};
+
+describe("ConfigWizard（Agent 定义管理）", () => {
+  it("菜单 → Agent 定义：列出 Agent / Sub-agent 与两个新建项", async () => {
+    const { store } = makeAgentStore(
+      [makeAgentDef()],
+      [makeAgentDef({ id: "general", name: "通用助手", function: { name: "sub_agent_general", description: "d", parameters: {} } })],
+    );
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard config={makeConfig()} agentStore={store} onSave={makeOnSave()} onClose={noop} />,
+    );
+    await tick();
+    expect(lastFrame()).toContain("Agent 1 · Sub-agent 1");
+    for (let i = 0; i < 4; i += 1) {
+      stdin.write(DOWN); // → Agent 定义
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    const frame = lastFrame()!;
+    expect(frame).toContain("＋ 新建 Agent");
+    expect(frame).toContain("＋ 新建 Sub-agent");
+    expect(frame).toContain("默认助手");
+    expect(frame).toContain("通用助手");
+    unmount();
+  });
+
+  it("新建 Agent：名称 → 写盘并进入详情（自动 custom: true）", async () => {
+    const { store, save } = makeAgentStore([makeAgentDef()]);
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent-new", agentKind: "agent" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    expect(lastFrame()).toContain("新建 Agent · 名称");
+    stdin.write("Coder");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]![0]).toBe("agent");
+    const def = save.mock.calls[0]![1];
+    expect(def.id).toBe("coder");
+    expect(def.custom).toBe(true);
+    expect(def.messages[0]!.role).toBe("system");
+    expect(lastFrame()).toContain("◆ Agent · Coder");
+    unmount();
+  });
+
+  it("新建 Sub-agent：含 function 骨架与 {{task}} 用户消息", async () => {
+    const { store, save } = makeAgentStore();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent-new", agentKind: "subagent" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write("Helper");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(save.mock.calls[0]![0]).toBe("subagent");
+    const def = save.mock.calls[0]![1];
+    expect(def.id).toBe("helper");
+    expect(def.function?.name).toBe("sub_agent_helper");
+    expect(def.messages.some((m) => m.role === "user" && m.content === "{{task}}")).toBe(true);
+    expect(lastFrame()).toContain("◆ Sub-agent · Helper");
+    unmount();
+  });
+
+  it("Agent 详情：编辑「描述」写盘，出厂托管自动转自定义", async () => {
+    const { store, save } = makeAgentStore([makeAgentDef({ custom: false })]);
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write(DOWN); // → 标识
+    await tick();
+    stdin.write(DOWN); // → 描述
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("我的助手");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    const def = save.mock.calls[0]![1];
+    expect(def.description).toBe("我的助手");
+    expect(def.custom).toBe(true);
+    unmount();
+  });
+
+  it("Agent 详情：重命名标识（写新 + 删旧）", async () => {
+    const { store, save, remove } = makeAgentStore([makeAgentDef()]);
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write(DOWN); // → 标识
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("\u0015"); // Ctrl+U
+    await tick();
+    stdin.write("primary");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(save.mock.calls[0]![1].id).toBe("primary");
+    expect(remove).toHaveBeenCalledWith("agent", "default");
+    unmount();
+  });
+
+  it("权限子屏：写入某一维（allow/deny）", async () => {
+    const { store, save } = makeAgentStore([makeAgentDef()]);
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent-perms", agentKind: "agent", agentId: "default" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    expect(lastFrame()).toContain("权限");
+    expect(lastFrame()).toContain("allow: *");
+    stdin.write(ENTER); // tools（第 0 行）
+    await tick();
+    stdin.write("\u0015"); // Ctrl+U
+    await tick();
+    stdin.write("deny: exec, rm");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(save.mock.calls[0]![1].permissions!.tools).toEqual({ deny: ["exec", "rm"] });
+    unmount();
+  });
+
+  it("权限子屏：非法格式报错且不写盘", async () => {
+    const { store, save } = makeAgentStore([makeAgentDef()]);
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent-perms", agentKind: "agent", agentId: "default" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("\u0015");
+    await tick();
+    stdin.write("nope");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(save).not.toHaveBeenCalled();
+    expect(lastFrame()).toContain("格式应为");
+    unmount();
+  });
+
+  it("Sub-agent 详情：编辑函数名 / 参数 schema（非法 JSON 被拒）", async () => {
+    const { store, save } = makeAgentStore([], [
+      makeAgentDef({ id: "helper", name: "Helper", function: { name: "sub_agent_helper", description: "d", parameters: { type: "object" } } }),
+    ]);
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent", agentKind: "subagent", agentId: "helper" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    // 参数 schema 是 index 8
+    for (let i = 0; i < 8; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("\u0015");
+    await tick();
+    stdin.write("{ not json");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(save).not.toHaveBeenCalled();
+    expect(lastFrame()).toContain("JSON 解析失败");
+    unmount();
+  });
+
+  it("Agent 详情：删除需二次确认", async () => {
+    const { store, remove } = makeAgentStore([makeAgentDef()]);
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    for (let i = 0; i < 7; i += 1) {
+      stdin.write(DOWN); // → 删除Agent（index 7）
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame()).toContain("删除Agent？");
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(remove).toHaveBeenCalledWith("agent", "default");
+    unmount();
+  });
+
+  it("关闭时上报 agentsChanged（供宿主重建会话）", async () => {
+    const { store } = makeAgentStore([makeAgentDef()]);
+    const onClose = vi.fn();
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={onClose}
+      />,
+    );
+    await tick();
+    stdin.write(ENTER); // 编辑名称
+    await tick();
+    stdin.write("新名");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    stdin.write(ESC); // → Agent 列表
+    await tick();
+    stdin.write(ESC); // → 菜单
+    await tick();
+    stdin.write(ESC); // 关闭
+    await tick();
+    expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ dirty: true, agentsChanged: true }));
+    unmount();
+  });
+
+  it("Agent 详情 → 权限子屏：高亮索引收敛（不越界、仍有高亮）", async () => {
+    const { store } = makeAgentStore([makeAgentDef()]);
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    for (let i = 0; i < 5; i += 1) {
+      stdin.write(DOWN); // → 权限（index 5，共 8 行）
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    const frame = lastFrame()!;
+    expect(frame).toContain("格式：");
+    // 权限屏仅 4 行，索引应被收敛到有效范围（末行 subagents）
+    expect(frame).toMatch(/❯\s+subagents/);
     unmount();
   });
 });

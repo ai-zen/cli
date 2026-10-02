@@ -9,7 +9,17 @@
  *   - 不抛异常、不写盘、不读盘，纯输入 → 输出。
  */
 
-import type { AppConfig, Endpoint, ImageModel, Model } from "@ai-zen/agents-sdk";
+import type {
+  AgentDefinition,
+  AgentPermissions,
+  AppConfig,
+  Endpoint,
+  ImageModel,
+  Model,
+  PermissionPolicy,
+} from "@ai-zen/agents-sdk";
+import type { AgentNS } from "@ai-zen/agents-core";
+import { Message } from "@ai-zen/agents-core";
 import type { McpConfig, McpServerEntry, McpServersMap } from "./config.js";
 
 // ==================== 查询 ====================
@@ -423,4 +433,178 @@ export function renameMcpServer(mcp: McpConfig, oldId: string, newId: string): M
     mcpServers[key === oldId ? newId : key] = value;
   }
   return { ...mcp, mcpServers };
+}
+
+// ==================== Agent / Sub-agent 定义改写 ====================
+
+/** Agent 四维权限的维度顺序 */
+export const PERMISSION_DIMENSIONS = ["tools", "skills", "mcps", "subagents"] as const;
+export type PermissionDimension = (typeof PERMISSION_DIMENSIONS)[number];
+
+/** 由名称派生唯一的 Agent id（在既有 id 集合内避让） */
+export function uniqueAgentId(taken: Iterable<string>, name: string, fallback = "agent"): string {
+  return deriveUniqueId(new Set(taken), name, fallback);
+}
+
+/** 提示词 = 首条 system 消息的文本内容（无则空串） */
+export function getAgentPrompt(def: AgentDefinition): string {
+  const sys = (def.messages ?? []).find((m) => m.role === "system" && typeof m.content === "string");
+  return typeof sys?.content === "string" ? sys.content : "";
+}
+
+/** 写入提示词：替换首条 system 消息；不存在则前插一条 */
+export function setAgentPrompt(def: AgentDefinition, text: string): AgentDefinition {
+  const messages = [...(def.messages ?? [])];
+  const index = messages.findIndex((m) => m.role === "system");
+  if (index >= 0) messages[index] = { ...messages[index], content: text };
+  else messages.unshift(Message.System(text));
+  return { ...def, messages };
+}
+
+/** 权限策略 → 紧凑文本（`allow: a, b` / `deny: *`）；未设置 → 空串 */
+export function formatPermission(policy: PermissionPolicy | undefined): string {
+  if (!policy) return "";
+  if ("allow" in policy) return `allow: ${policy.allow.join(", ")}`;
+  return `deny: ${policy.deny.join(", ")}`;
+}
+
+/**
+ * 紧凑文本 → 权限策略：
+ *   - 空串 → `null`（未设置）
+ *   - 非法 → 返回错误文本（string）
+ *   - 合法 → 返回 `PermissionPolicy`
+ */
+export function parsePermission(raw: string): PermissionPolicy | null | string {
+  const text = raw.trim();
+  if (!text) return null;
+  const match = /^(allow|deny)\s*:\s*(.*)$/i.exec(text);
+  if (!match) return "格式应为「allow: a, b」或「deny: x」";
+  const mode = match[1]!.toLowerCase();
+  const list = match[2]!
+    .split(",")
+    .map((piece) => piece.trim())
+    .filter(Boolean);
+  if (list.length === 0) return "至少需要一个模式（如 `*`）";
+  return mode === "allow" ? { allow: list } : { deny: list };
+}
+
+/** 读某维权限的紧凑文本 */
+export function formatAgentPermission(
+  permissions: AgentPermissions | undefined,
+  dim: PermissionDimension,
+): string {
+  return formatPermission(permissions?.[dim]);
+}
+
+/** 权限总览：列出已配置的维度（如 `4 维（tools, skills, mcps, subagents）`） */
+export function summarizePermissions(permissions: AgentPermissions | undefined): string {
+  const set = PERMISSION_DIMENSIONS.filter((dim) => permissions?.[dim]);
+  if (set.length === 0) return "（未设置）";
+  return `${set.length} 维（${set.join(", ")}）`;
+}
+
+/** 写入某一维权限（`policy` 为 null 时删除该维） */
+export function setAgentPermission(
+  def: AgentDefinition,
+  dim: PermissionDimension,
+  policy: PermissionPolicy | null,
+): AgentDefinition {
+  const permissions: AgentPermissions = { ...(def.permissions ?? {}) };
+  if (policy) permissions[dim] = policy;
+  else delete permissions[dim];
+  return { ...def, permissions };
+}
+
+/** 通用 Agent 字段改写（纯合并；`updatedAt` 由写盘侧统一刷新） */
+export function updateAgentDefinition(def: AgentDefinition, patch: Partial<AgentDefinition>): AgentDefinition {
+  return { ...def, ...patch };
+}
+
+/** 函数参数 schema → 紧凑 JSON 文本 */
+export function formatFunctionParameters(fn: AgentNS.FunctionDefine | undefined): string {
+  return fn?.parameters ? JSON.stringify(fn.parameters) : "{}";
+}
+
+/** 解析函数参数 JSON；合法返回对象，非法返回错误文本 */
+export function parseFunctionParameters(raw: string): Record<string, unknown> | string {
+  const text = raw.trim();
+  if (!text) return "参数 schema 不能为空（至少为 {}）";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (cause: any) {
+    return `JSON 解析失败：${cause?.message ?? cause}`;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "参数需为 JSON 对象";
+  return parsed as Record<string, unknown>;
+}
+
+/** 改写 Sub-agent 的 `function`（缺省时补一个骨架） */
+export function updateAgentFunction(
+  def: AgentDefinition,
+  patch: { name?: string; description?: string; parameters?: Record<string, unknown> },
+): AgentDefinition {
+  const fn: AgentNS.FunctionDefine =
+    def.function ?? { name: `sub_agent_${def.id.replace(/-/g, "_")}`, description: "", parameters: {} };
+  return { ...def, function: { ...fn, ...patch } };
+}
+
+/** 新建顶层 Agent 定义 */
+export function createAgentDefinition(input: {
+  id: string;
+  name: string;
+  prompt?: string;
+  now?: string;
+}): AgentDefinition {
+  const now = input.now ?? new Date().toISOString();
+  return {
+    id: input.id,
+    name: input.name,
+    description: "",
+    messages: [Message.System(input.prompt ?? "")],
+    permissions: {
+      tools: { allow: ["*"] },
+      skills: { allow: ["*"] },
+      mcps: { allow: ["*"] },
+      subagents: { allow: ["*"] },
+    },
+    custom: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** 新建 Sub-agent 定义（带 function 骨架，尾部保留 `{{task}}` 用户消息） */
+export function createSubAgentDefinition(input: {
+  id: string;
+  name: string;
+  prompt?: string;
+  now?: string;
+}): AgentDefinition {
+  const now = input.now ?? new Date().toISOString();
+  return {
+    id: input.id,
+    name: input.name,
+    description: "",
+    messages: [Message.System(input.prompt ?? ""), Message.User("{{task}}")],
+    permissions: {
+      tools: { allow: ["*"] },
+      skills: { allow: ["*"] },
+      mcps: { allow: ["*"] },
+      subagents: { deny: ["*"] },
+    },
+    function: {
+      name: `sub_agent_${input.id.replace(/-/g, "_")}`,
+      description: input.name,
+      parameters: {
+        type: "object",
+        properties: { task: { type: "string", description: "完整的任务描述" } },
+        required: ["task"],
+        additionalProperties: false,
+      },
+    },
+    custom: true,
+    createdAt: now,
+    updatedAt: now,
+  };
 }

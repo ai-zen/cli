@@ -7,10 +7,15 @@ import {
   addMcpServer,
   addModel,
   apiKeyGuide,
+  createAgentDefinition,
+  createSubAgentDefinition,
   findEndpoint,
   findMcpServer,
   findModel,
   formatArgs,
+  formatFunctionParameters,
+  formatPermission,
+  getAgentPrompt,
   isApiKeySet,
   kvEntries,
   kvSummary,
@@ -19,12 +24,16 @@ import {
   modelsUsingEndpoint,
   parseArgs,
   parseKvInput,
+  parseFunctionParameters,
+  parsePermission,
   removeEndpoint,
   removeImageModel,
   removeMcpServer,
   removeModel,
   renameMcpServer,
   resolveCredential,
+  setAgentPermission,
+  setAgentPrompt,
   setDefaultAgent,
   setDefaultImageModel,
   setDefaultMigrationModel,
@@ -33,11 +42,15 @@ import {
   setEndpointBaseUrl,
   setMaxToolOutput,
   summarizeEndpoints,
+  summarizePermissions,
+  uniqueAgentId,
   uniqueEndpointId,
   uniqueImageModelId,
   uniqueMcpServerId,
   uniqueModelId,
   updateEndpoint,
+  updateAgentDefinition,
+  updateAgentFunction,
   updateImageModel,
   updateMcpServer,
   updateModel,
@@ -307,5 +320,79 @@ describe("MCP 服务器增删改", () => {
       { key: "B", value: "2" },
       { key: "A", value: "1" },
     ]);
+  });
+});
+
+// ==================== Agent / Sub-agent 定义改写 ====================
+
+describe("Agent 定义改写", () => {
+  it("createAgentDefinition / createSubAgentDefinition 结构", () => {
+    const agent = createAgentDefinition({ id: "coder", name: "Coder" });
+    expect(agent.id).toBe("coder");
+    expect(agent.custom).toBe(true);
+    expect(agent.messages[0]!.role).toBe("system");
+    expect(agent.permissions!.tools).toEqual({ allow: ["*"] });
+
+    const sub = createSubAgentDefinition({ id: "helper", name: "Helper" });
+    expect(sub.function?.name).toBe("sub_agent_helper");
+    expect(sub.messages.map((m) => m.role)).toEqual(["system", "user"]);
+    expect(sub.permissions!.subagents).toEqual({ deny: ["*"] });
+  });
+
+  it("getAgentPrompt / setAgentPrompt 不可变往返", () => {
+    const agent = createAgentDefinition({ id: "x", name: "X", prompt: "你好" });
+    expect(getAgentPrompt(agent)).toBe("你好");
+    const next = setAgentPrompt(agent, "改了");
+    expect(getAgentPrompt(next)).toBe("改了");
+    expect(agent.messages[0]!.content).toBe("你好"); // 原对象不被修改
+  });
+
+  it("parsePermission / formatPermission 往返与校验", () => {
+    expect(parsePermission("")).toBeNull();
+    expect(parsePermission("allow: a, b")).toEqual({ allow: ["a", "b"] });
+    expect(parsePermission("deny:*")).toEqual({ deny: ["*"] });
+    expect(typeof parsePermission("nope")).toBe("string");
+    expect(formatPermission({ allow: ["a", "b"] })).toBe("allow: a, b");
+    expect(formatPermission(undefined)).toBe("");
+  });
+
+  it("setAgentPermission 可写可删", () => {
+    const agent = createAgentDefinition({ id: "x", name: "X" });
+    const denied = setAgentPermission(agent, "tools", { deny: ["exec"] });
+    expect(denied.permissions!.tools).toEqual({ deny: ["exec"] });
+    const cleared = setAgentPermission(denied, "tools", null);
+    expect(cleared.permissions!.tools).toBeUndefined();
+    expect(denied.permissions!.tools).toEqual({ deny: ["exec"] }); // 不可变
+  });
+
+  it("summarizePermissions 概览", () => {
+    expect(summarizePermissions(undefined)).toBe("（未设置）");
+    expect(summarizePermissions({ tools: { allow: ["*"] } })).toBe("1 维（tools）");
+  });
+
+  it("parseFunctionParameters 校验", () => {
+    expect(parseFunctionParameters('{"type":"object"}')).toEqual({ type: "object" });
+    expect(typeof parseFunctionParameters("{ bad")).toBe("string");
+    expect(typeof parseFunctionParameters("[1]")).toBe("string");
+  });
+
+  it("updateAgentFunction 补骨架并合并字段", () => {
+    const sub = createSubAgentDefinition({ id: "helper", name: "Helper" });
+    const next = updateAgentFunction(sub, { description: "新的" });
+    expect(next.function?.description).toBe("新的");
+    expect(next.function?.name).toBe("sub_agent_helper");
+  });
+
+  it("formatFunctionParameters 紧凑 JSON", () => {
+    expect(formatFunctionParameters({ name: "f", description: "", parameters: { type: "object" } })).toBe(
+      '{"type":"object"}',
+    );
+    expect(formatFunctionParameters(undefined)).toBe("{}");
+  });
+
+  it("uniqueAgentId 避让", () => {
+    expect(uniqueAgentId([], "Coder")).toBe("coder");
+    expect(uniqueAgentId(["coder"], "Coder")).toBe("coder-2");
+    expect(uniqueAgentId([], "My Agent")).toBe("my-agent");
   });
 });

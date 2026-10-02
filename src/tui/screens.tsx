@@ -22,13 +22,14 @@ import { ChatSession, stripCwdNote, type ChatEvent } from "./chat-session.js";
 import type { CommandHint } from "../conversation-commands/registry.js";
 import { matchCommandHints } from "../conversation-commands/registry.js";
 import { conversationRepository, listConversations } from "../conversation-repository.js";
-import { AGENTS_DIR, readConfig, readMcpConfig, saveConfig, writeMcpConfig } from "../config.js";
+import { readConfig, readMcpConfig, saveConfig, writeMcpConfig } from "../config.js";
+import { readAgentStore, type AgentStore } from "../agents-store.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type McpSnapshot, type WizardCloseResult, type WizardStep } from "./config-wizard.js";
 import { formatShortTime } from "../format-time.js";
 import { CLI_VERSION, SDK_VERSION, CORE_VERSION } from "../version.js";
 import { AgentNS } from "@ai-zen/agents-core";
-import { AgentRepository, type AppConfig } from "@ai-zen/agents-sdk";
+import type { AppConfig } from "@ai-zen/agents-sdk";
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -626,6 +627,8 @@ export function Chat(props: ChatScreenProps) {
   const [wizardAgents, setWizardAgents] = useState<{ id: string; name: string }[]>([]);
   /** MCP 配置快照（全局 + 项目），打开向导时刷新 */
   const [wizardMcp, setWizardMcp] = useState<McpSnapshot | null>(null);
+  /** Agent / Sub-agent 定义仓储（快照 + 读写），打开向导时刷新 */
+  const [wizardAgentStore, setWizardAgentStore] = useState<AgentStore | null>(null);
   /** 当前会话所用端点 id（打开向导时刷新，用于判断改动是否影响本会话） */
   const currentEndpointRef = useRef<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
@@ -694,23 +697,15 @@ export function Chat(props: ChatScreenProps) {
 
   // ---- 配置向导（凭据 / 配置中心）----
 
-  /** 读取可用 Agent 列表（供「默认 Agent」选择；失败时返回空数组） */
-  const listAgents = async (): Promise<{ id: string; name: string }[]> => {
-    try {
-      const agents = await new AgentRepository(AGENTS_DIR).list();
-      return agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id }));
-    } catch {
-      return [];
-    }
-  };
-
-  /** 打开配置向导：先取配置快照，再切入指定步骤 */
+  /** 打开配置向导：先取配置 / MCP / Agent 快照，再切入指定步骤 */
   const openWizard = async (step: WizardStep) => {
     try {
       const config = await readConfig();
       currentEndpointRef.current = resolveCredential(config, props.modelId)?.endpointId ?? null;
+      const agentStore = await readAgentStore();
       setWizardConfig(config);
-      setWizardAgents(await listAgents());
+      setWizardAgents(agentStore.agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id })));
+      setWizardAgentStore(agentStore);
       setWizardMcp({ global: await readMcpConfig("global"), project: await readMcpConfig("project") });
       setWizardStep(step);
     } catch (error: any) {
@@ -743,6 +738,7 @@ export function Chat(props: ChatScreenProps) {
     setWizardStep(null);
     setWizardConfig(null);
     setWizardMcp(null);
+    setWizardAgentStore(null);
     for (const line of result.summary) dispatch({ type: "notice", text: `配置已更新：${line}` });
     if (!result.dirty) return;
 
@@ -753,7 +749,7 @@ export function Chat(props: ChatScreenProps) {
     }
     const endpointChanged =
       !!currentEndpointRef.current && result.changedEndpointIds.includes(currentEndpointRef.current);
-    if (endpointChanged || result.mcpChanged) {
+    if (endpointChanged || result.mcpChanged || result.agentsChanged) {
       sessionRef.current
         .reload()
         .then(() => dispatch({ type: "notice", text: "已按新配置重建会话（消息与上下文保留）" }))
@@ -1166,6 +1162,7 @@ export function Chat(props: ChatScreenProps) {
         closeOnSave={wizardStep.kind !== "menu"}
         agents={wizardAgents}
         mcp={wizardMcp ?? undefined}
+        agentStore={wizardAgentStore ?? undefined}
         onSave={saveConfig}
         onSaveMcp={async (scope, cfg) => {
           await writeMcpConfig(cfg, scope);
