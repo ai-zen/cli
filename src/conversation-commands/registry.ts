@@ -28,7 +28,7 @@ export const COMMAND_REGISTRY: readonly CommandMeta[] = [
   { name: "back", description: "撤回消息（可修改后重发）" },
   { name: "editor", description: "使用系统编辑器输入长消息" },
   { name: "clear", description: "清屏" },
-  { name: "config", description: "打开配置中心（默认模型 / 端点凭据 / 端点地址）" },
+  { name: "config", description: "打开配置中心（默认模型 / 端点管理）" },
   { name: "key", description: "设置当前端点的 API Key" },
   { name: "migrate", description: "手动任务迁移（生成交接文档并开启新会话）" },
   { name: "help", description: "显示此帮助" },

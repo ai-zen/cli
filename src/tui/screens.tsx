@@ -580,6 +580,23 @@ export interface ChatScreenProps {
   clearTranscript?: boolean;
 }
 
+/**
+ * 计算回车时应提交的文本。
+ *
+ * 斜杠候选菜单可见时（输入以 `/` 开头且尚未输入参数），回车应**直接执行高亮命令**，
+ * 而不是提交半截输入 —— 否则用户只输入 `/` 或未补全的命令名时，回车会落到
+ * 「未知命令」报错（体验很差）。非命令输入原样返回。
+ *
+ * `menuIndex` 越界时回落到最后一项，避免菜单看似有选中却回车落空。
+ */
+export function resolveSubmitText(input: string, hints: CommandHint[], menuIndex: number): string {
+  const slash = input.startsWith("/") && !input.includes("\n") && !input.includes(" ");
+  if (!slash || hints.length === 0) return input;
+  const index = Math.max(0, Math.min(menuIndex, hints.length - 1));
+  const picked = hints[index]?.names[0];
+  return picked ? `/${picked}` : input;
+}
+
 export function Chat(props: ChatScreenProps) {
   const { exit, suspendTerminal } = useApp();
   const { setCursorPosition } = useCursor();
@@ -592,6 +609,10 @@ export function Chat(props: ChatScreenProps) {
   /** 光标位置：以 code point 计的字符索引（0..len） */
   const [cursor, setCursor] = useState(Array.from(props.initialInput ?? "").length);
   const [menuIndex, setMenuIndex] = useState(0);
+  // 输入变化后候选集随之改变：高亮重置回首项，避免索引越界（看似选中实为无高亮 / 回车落空）
+  useEffect(() => {
+    setMenuIndex(0);
+  }, [input]);
   const [confirmState, setConfirmState] = useState<{ question: string; resolve: (v: boolean) => void } | null>(null);
   const [pickerState, setPickerState] = useState<{
     title: string;
@@ -1041,7 +1062,8 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if (key.return) {
-        void runSubmit(input);
+        // 斜杠候选菜单可见时回车直接执行高亮命令，避免把半截输入（如仅 `/`）当命令提交
+        void runSubmit(resolveSubmitText(input, hints, menuIndex));
         return;
       }
       if (key.tab && hints.length > 0) {

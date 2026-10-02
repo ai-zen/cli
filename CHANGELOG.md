@@ -41,6 +41,7 @@
 - **修复「输入框偶尔自动填入 `[?0u`」**：Ink 的 `kittyKeyboard: auto` 会在**每个实例创建时**向终端发送一次 `CSI ? u` 查询，终端回 `CSI ? 0 u`（flags=0，不支持）；本 TUI 反复挂载（启动界面 → 对话 → 配置向导 …），应答源源不断。应答一旦被**拆包**（前导 ESC 被 Ink 的「待定转义刷新」当作一次独立的 Escape 键消费），残留在后一个 chunk 里的 `[?0u` 会退化成普通文本、被当作输入插入对话框（已实测重现）。修法两层：
   - 渲染选项改为 `kittyKeyboard: { mode: "disabled" }`，**不再发查询**（根因消除；该协议在本环境本就不生效，换行由不依赖终端协议的 `Ctrl+N` / `Ctrl+J` 承担）；
   - 新增纯函数 `isTerminalReply()`，在输入层丢弃整段终端应答（Kitty 协议应答 / 光标位置报告 / 设备状态报告），逐字键入同样字符不受影响。
+- **修复「斜杠命令菜单回车不执行」**：输入 `/` 时下方会实时列出候选命令（可 `↑ ↓` 选择），但此前回车把**半截输入**（如仅 `/` 或未补全的命令名）直接提交，落到「未知命令」报错。现在候选菜单可见时回车**直接执行高亮命令**（与先 `Tab` 补全再回车等效）；并在输入变化后把高亮重置回首项、对越界索引兑底，避免「看似选中却回车落空」。逻辑抽为纯函数 `resolveSubmitText()` 便于单测。
 - `tsconfig.json` 启用 `jsx: react-jsx`。
 - **移除旧行式对话链路（死代码）**：`src/conversation-runner.ts`、`src/slash-hint-prompt.ts`、`src/delta-renderer.ts`、`src/config-wizard.ts`、`src/draft-repository.ts`、`src/draft-plugin.ts` 及 `src/conversation-commands/` 下的命令处理器（保留 `registry.ts` 作为命令清单唯一来源，供 TUI 复用）。注：其中被删除的是 **inquirer 版** `src/config-wizard.ts`；同版本新增的 `src/tui/config-wizard.tsx` 是**纯 Ink 重写**，二者无关。
 - **移除主菜单**：删除 `MainMenu` 次级屏幕、`/menu` 命令与整个 `src/menus/*`（inquirer 流程）；对话内 `/load` 所需的列表函数迁为 `conversation-repository.ts` 的 `listConversations()`。菜单功能（管理 Agents / 管理已保存对话等）转为 P1 待办，将以 Ink 原生组件重新实现；其中**配置管理**已在同版本以 Ink 原生的 `/config` 配置中心回归（见上）。
@@ -55,11 +56,11 @@
 
 - 新增 `src/tui/theme.test.ts`、`src/tui/screens.test.tsx`：颜色/渐变/Logo、组件渲染、`chatReducer` 流式拼接、`messagesToBlocks`、`stripCwdNote`，以及吸底布局的文本测量/折行、块 → 行、`computeChatLayout`（行数守恒 + 应用内翻页视口 + 内容冻结）、`layoutInput` 光标定位、`computeInputCursorPosition`（IME 光标）、`wordLeft`/`wordRight` 跨词移动、`usableFrameRows` 预留末行。
 - `src/agent-creator.test.ts` 改为「临时 `AI_ZEN_DIR` + 动态 import」，不再依赖 `vi.mock`（在某些环境中 `vi.mock` 会静默失效）。
-- `screens.test.tsx` 新增 `isTerminalReply`（终端应答识别与不误伤普通输入）与 `RENDER_OPTIONS` 决策锁定（断言 kitty 查询已关闭）；`config-wizard.test.tsx` 新增「终端应答不写进输入框 / 逐字键入不受影响」用例。
+- `screens.test.tsx` 新增 `isTerminalReply`（终端应答识别与不误伤普通输入）、`resolveSubmitText`（斜杠菜单回车执行高亮命令 / 越界兑底 / 非命令原样返回）与 `RENDER_OPTIONS` 决策锁定（断言 kitty 查询已关闭）；`config-wizard.test.tsx` 新增「终端应答不写进输入框 / 逐字键入不受影响」用例。
 - `config-wizard.test.tsx` 新增吸底布局用例：`promptLayout` 的顶部留白与硬件光标坐标（含宽字符列宽）、内容超帧时留白为 0；菜单屏与列表屏的整帧高度、顶部留白与「内容贴底」断言。
 - 新增 `src/config-editor.test.ts`（13 例：模型/端点查询、密钥掩码、厂商指引、不可变改写、端点 id 派生与避让）。
 - 新增 `src/tui/config-wizard.test.tsx`（21 例：掩码输入不回显明文、`Tab` 切明文、`Esc` 取消、`Backspace`/`Home` 编辑、菜单 → 端点管理 → 选中端点就地编辑并写盘、端点详情字段切换/URL 校验/未改动不写盘、空 Key/非法 URL 校验、`closeOnSave` 保存即关闭、新建端点三步、默认模型切换）。
-- 全量单测 11 文件 / 145 例通过；`tsc --noEmit` 与 `npm run build` 零错误；e2e 12 例通过；真实 PTY 实测「启动→直达对话→流式→`/load`→`/clear`→退出交还 shell」全链路正常。
+- 全量单测 11 文件 / 150 例通过；`tsc --noEmit` 与 `npm run build` 零错误；e2e 12 例通过；真实 PTY 实测「启动→直达对话→流式→`/load`→`/clear`→退出交还 shell」全链路正常。
 - 用「假 TTY」探针向 Ink 捕获实际写出的字节：`kittyKeyboard: auto` 每个实例写 1 次 `ESC[?u` 查询，`disabled` 为 0 次（对照实验，确认根因已消除）；真实 PTY 中手工注入 `[?0u` 应答不再落入输入框。
 - 真实 PTY 实测首启凭据链路：`AI_ZEN_DIR` 指向空目录启动 → 弹出凭据设置屏 → 输入 Key 后写盘并直接进入对话（仅目标端点的 `apiKey` 被写入）→ `/config` 改「非当前端点」凭据（回菜单并提示，不重建会话）→ `/key` 改当前端点凭据（保存后自动重建会话）→ 退出后二次启动跳过凭据引导；`/help` 正确列出 `/config` 与 `/key`。
 

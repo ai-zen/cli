@@ -16,10 +16,11 @@ import {
   wordLeft,
   wordRight,
   computeChatLayout,
+  resolveSubmitText,
   type ChatState,
   type Block,
 } from "./screens.js";
-import { getCommandHints } from "../conversation-commands/registry.js";
+import { getCommandHints, matchCommandHints } from "../conversation-commands/registry.js";
 import { stripCwdNote } from "./chat-session.js";
 import { isTerminalReply } from "./text.js";
 import { RENDER_OPTIONS } from "./index.js";
@@ -77,6 +78,36 @@ describe("SlashMenu", () => {
     expect(frame).toContain("/help");
     expect(frame).toContain("显示此帮助");
     unmount();
+  });
+});
+
+describe("resolveSubmitText（回车执行高亮命令）", () => {
+  it("仅输入 `/` 时回车执行高亮命令，而不是提交半截输入", () => {
+    const hints = matchCommandHints("");
+    expect(resolveSubmitText("/", hints, 0)).toBe("/exit");
+    expect(resolveSubmitText("/", hints, 2)).toBe(`/${hints[2]!.names[0]}`);
+  });
+
+  it("前缀匹配时执行高亮的那一条", () => {
+    const hints = matchCommandHints("c"); // clear / config
+    expect(hints.map((hint) => hint.names[0])).toEqual(["clear", "config"]);
+    expect(resolveSubmitText("/c", hints, 0)).toBe("/clear");
+    expect(resolveSubmitText("/c", hints, 1)).toBe("/config");
+  });
+
+  it("索引越界时回落到最后一项（避免菜单看似选中却回车落空）", () => {
+    const hints = matchCommandHints("c");
+    expect(resolveSubmitText("/c", hints, 99)).toBe("/config");
+  });
+
+  it("非斜杠输入原样返回", () => {
+    expect(resolveSubmitText("hello", [], 0)).toBe("hello");
+    // 含空格视为「已带参数」，不再当作候选选择
+    expect(resolveSubmitText("/help now", matchCommandHints("help"), 0)).toBe("/help now");
+  });
+
+  it("无候选（未知命令）时原样返回，交由 runCommand 报错", () => {
+    expect(resolveSubmitText("/zzz", [], 0)).toBe("/zzz");
   });
 });
 
