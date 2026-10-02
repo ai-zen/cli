@@ -157,8 +157,8 @@ Configuration is stored in `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json`
 |----------|-----|
 | First launch, endpoint has no key | The **credential screen** appears automatically |
 | Change the current model's endpoint key | `/key` in the chat (session rebuilt on save) |
-| Endpoint key / base URL, default model, add endpoint | `/config` → "Endpoint management" |
-| Models, MCP servers, and other advanced fields | Edit `config.json` manually |
+| Endpoints / models / image models, defaults, tool-output cap | `/config` (the configuration center — full management) |
+| MCP servers, agent definitions, and other advanced fields | Edit `mcp.json` / `agents/*.json` manually |
 
 The `maxContextTokens` field on each model sets the migration threshold (typically ~25% of the model's actual context window, e.g. 250,000 for a 1M-token model).
 

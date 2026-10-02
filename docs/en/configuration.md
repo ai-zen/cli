@@ -139,8 +139,9 @@ Industry-convention directories: `~/.agents/` and `<project>/.agents/` (`skills/
 In the TUI, `/config` opens the **configuration center** for editing the common fields interactively — no need to hand-edit the JSON:
 
 - Config file path: `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json`).
-- What you can set: API endpoints (name, Base URL, API Key), the default conversation model, and new endpoints (custom OpenAI-compatible services) — the "Endpoint management" list is [add endpoint] + each endpoint; select one to edit its API Key / Base URL in place.
+- What you can set: **endpoints** (name / Base URL / API Key / description — add, edit, delete), **models** (name / endpoint / model name / migration threshold / vision / description / custom — add, edit, delete), **image models** (name / endpoint / model name / size / quality / custom — add, edit, delete), **defaults** (default model / image model / agent / migration model), and the **tool-output cap**.
+- Each list is [add …] + its entries; selecting an entry opens a **detail screen** for in-place editing (`↑ ↓` to move, `Enter` to edit / toggle / choose, with confirmation for destructive actions). Editing a "factory-managed" model automatically marks it `custom: true`; deleting an endpoint first checks whether any model still references it.
 - On first launch, if the endpoint bound to the model has no API Key, a credential screen appears first; `/key` in the chat changes the current endpoint's key (the session is rebuilt on save).
-- Models, image models, MCP servers, and other advanced fields still require editing the config file manually.
+- MCP servers, agent definitions, and other advanced fields still require editing the files by hand (`mcp.json` / `agents/*.json`).
 
 > Note: the CLI entry only implements the `hook` subcommand (`ai hook install|uninstall`); there is **no `config` subcommand**. If an endpoint has no API Key, pure stdio mode fails fast with a non-zero exit code, and TUI mode reports it when starting a conversation.

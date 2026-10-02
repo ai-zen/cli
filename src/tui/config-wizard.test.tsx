@@ -18,7 +18,9 @@ function makeConfig(): AppConfig {
       { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash", endpointId: "deepseek", maxContextTokens: 250_000 },
       { id: "gpt-5.5", name: "GPT-5.5", endpointId: "openai", maxContextTokens: 250_000 },
     ],
+    imageModels: [{ id: "cogview-4", name: "CogView-4", endpointId: "openai", modelName: "cogview-4" }],
     defaultModel: "deepseek-v4-flash",
+    defaultImageModel: "cogview-4",
   };
 }
 
@@ -227,8 +229,11 @@ describe("ConfigWizard（配置中心）", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain("配置中心");
     expect(frame).toContain("config.json");
-    expect(frame).toContain("默认模型");
     expect(frame).toContain("端点管理");
+    expect(frame).toContain("模型管理");
+    expect(frame).toContain("图片模型");
+    expect(frame).toContain("默认项");
+    expect(frame).toContain("工具输出上限");
     expect(frame).toContain("DeepSeek ✗");
     unmount();
   });
@@ -241,9 +246,7 @@ describe("ConfigWizard（配置中心）", () => {
     );
     await tick();
 
-    stdin.write(DOWN); // → 端点管理
-    await tick();
-    stdin.write(ENTER);
+    stdin.write(ENTER); // 首项即「端点管理」
     await tick();
     expect(lastFrame()).toContain("端点管理");
     expect(lastFrame()).toContain("＋ 新建端点");
@@ -255,6 +258,10 @@ describe("ConfigWizard（配置中心）", () => {
     await tick();
     expect(lastFrame()).toContain("◆ 端点 · DeepSeek");
 
+    stdin.write(DOWN); // 名称 → Base URL
+    await tick();
+    stdin.write(DOWN); // Base URL → API Key
+    await tick();
     stdin.write(ENTER); // 选中 API Key 字段 → 进入就地编辑
     await tick();
     stdin.write("sk-new-key");
@@ -398,7 +405,15 @@ describe("ConfigWizard（配置中心）", () => {
       <ConfigWizard config={makeConfig()} onSave={onSave} onClose={noop} />,
     );
     await tick();
-    stdin.write(ENTER); // 菜单第一项：默认模型
+    stdin.write(DOWN); // → 模型管理
+    await tick();
+    stdin.write(DOWN); // → 图片模型
+    await tick();
+    stdin.write(DOWN); // → 默认项
+    await tick();
+    stdin.write(ENTER); // 打开默认项
+    await tick();
+    stdin.write(ENTER); // 默认模型（第一项）
     await tick();
     stdin.write(DOWN); // → GPT-5.5
     await tick();
@@ -476,6 +491,10 @@ describe("ConfigWizard（端点详情 · 就地编辑）", () => {
       />,
     );
     await tick();
+    stdin.write(DOWN); // 名称 → Base URL
+    await tick();
+    stdin.write(DOWN); // Base URL → API Key
+    await tick();
     stdin.write(ENTER); // API Key 字段 → 编辑（预填 sk-old-key-123456）
     await tick();
     stdin.write(ENTER); // 未改动，保存应被跳过
@@ -495,12 +514,182 @@ describe("ConfigWizard（端点详情 · 就地编辑）", () => {
       />,
     );
     await tick();
+    stdin.write(DOWN); // 名称 → Base URL
+    await tick();
+    stdin.write(DOWN); // Base URL → API Key
+    await tick();
     stdin.write(ENTER); // 编辑 API Key
     await tick();
     expect(lastFrame()).not.toContain("sk-old-key-123456"); // 掩码态
     stdin.write("\t"); // Tab 切明文
     await tick();
     expect(lastFrame()).toContain("sk-old-key-123456");
+    unmount();
+  });
+});
+
+describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", () => {
+  it("模型管理：新建模型自动 custom: true 并进入详情", async () => {
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard config={makeConfig()} onSave={onSave} onClose={noop} />,
+    );
+    await tick();
+    stdin.write(DOWN); // → 模型管理
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame()).toContain("模型管理");
+    expect(lastFrame()).toContain("＋ 新建模型");
+
+    stdin.write(ENTER); // 新建模型（首项）
+    await tick();
+    expect(lastFrame()).toContain("新建模型 · 名称");
+    stdin.write("My GPT");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+
+    const saved = onSave.mock.calls[0]![0];
+    const created = saved.models.find((m) => m.name === "My GPT");
+    expect(created).toBeTruthy();
+    expect(created!.id).toBe("my-gpt");
+    expect(created!.custom).toBe(true);
+    expect(lastFrame()).toContain("◆ 模型 · My GPT");
+    unmount();
+  });
+
+  it("模型详情：切换「视觉」（bool）即时写盘", async () => {
+    const onSave = makeOnSave();
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    // 字段顺序：名称(0) 端点(1) 模型名(2) 迁移阈值(3) 视觉(4) …
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(ENTER); // 切换视觉
+    await tick();
+    expect(onSave.mock.calls[0]![0].models[0]!.vision).toBe(true);
+    unmount();
+  });
+
+  it("模型详情：编辑「出厂托管」模型会自动标记为自定义", async () => {
+    const onSave = makeOnSave();
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write(ENTER); // 名称 → 编辑
+    await tick();
+    stdin.write("\u0015"); // Ctrl+U 清空
+    await tick();
+    stdin.write("DS Renamed");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    const saved = onSave.mock.calls[0]![0];
+    expect(saved.models[0]!.name).toBe("DS Renamed");
+    expect(saved.models[0]!.custom).toBe(true);
+    unmount();
+  });
+
+  it("删除端点：仍被模型引用时拒绝，不写盘", async () => {
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "endpoint", endpointId: "deepseek" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    // 字段：名称(0) Base URL(1) API Key(2) 描述(3) 删除端点(4)
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(ENTER); // 删除端点 → 确认子屏
+    await tick();
+    stdin.write(ENTER); // 确认删除端点（首项）
+    await tick();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(lastFrame()).toContain("仍被");
+    unmount();
+  });
+
+  it("默认项：切换默认 Agent（枚举选择）", async () => {
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        agents={[
+          { id: "default", name: "默认助手" },
+          { id: "coder", name: "Coder" },
+        ]}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN); // → 默认项
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame()).toContain("默认项");
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN); // → 默认 Agent（第 3 项）
+    await tick();
+    stdin.write(ENTER); // 打开 Agent 选择
+    await tick();
+    expect(lastFrame()).toContain("默认 Agent");
+    stdin.write(DOWN); // → Coder
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(onSave.mock.calls[0]![0].defaultAgent).toBe("coder");
+    unmount();
+  });
+
+  it("工具输出上限：写入正整数", async () => {
+    const onSave = makeOnSave();
+    const { stdin, unmount } = render(
+      <ConfigWizard config={makeConfig()} initialStep={{ kind: "max-tool-output" }} onSave={onSave} onClose={noop} />,
+    );
+    await tick();
+    stdin.write("\u0015"); // Ctrl+U 清空
+    await tick();
+    stdin.write("4096");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(onSave.mock.calls[0]![0].maxToolOutput).toBe(4096);
     unmount();
   });
 });

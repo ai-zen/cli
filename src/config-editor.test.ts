@@ -2,18 +2,32 @@ import { describe, it, expect } from "vitest";
 import type { AppConfig } from "@ai-zen/agents-sdk";
 import {
   addEndpoint,
+  addImageModel,
+  addModel,
   apiKeyGuide,
   findEndpoint,
   findModel,
   isApiKeySet,
   maskApiKey,
   modelsUsingEndpoint,
+  removeEndpoint,
+  removeImageModel,
+  removeModel,
   resolveCredential,
+  setDefaultAgent,
+  setDefaultImageModel,
+  setDefaultMigrationModel,
   setDefaultModel,
   setEndpointApiKey,
   setEndpointBaseUrl,
+  setMaxToolOutput,
   summarizeEndpoints,
   uniqueEndpointId,
+  uniqueImageModelId,
+  uniqueModelId,
+  updateEndpoint,
+  updateImageModel,
+  updateModel,
 } from "./config-editor.js";
 
 function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
@@ -140,5 +154,62 @@ describe("config-editor / 不可变改写", () => {
     });
     expect(config.endpoints).toHaveLength(3);
     expect(config.endpoints[2]).toEqual(endpoint);
+  });
+});
+
+describe("config-editor / 通用改写（配置中心）", () => {
+  it("updateEndpoint / removeEndpoint", () => {
+    const before = makeConfig();
+    expect(updateEndpoint(before, "deepseek", { name: "DS", description: "x" }).endpoints[0]).toMatchObject({
+      name: "DS",
+      description: "x",
+      baseUrl: "https://api.deepseek.com/v1",
+    });
+    expect(removeEndpoint(before, "deepseek").endpoints.map((e) => e.id)).toEqual(["bigmodelcn"]);
+    expect(before.endpoints).toHaveLength(2);
+  });
+
+  it("updateModel 只改目标模型", () => {
+    const after = updateModel(makeConfig(), "glm-5.1", { maxContextTokens: 100_000, custom: true });
+    expect(after.models[1]).toMatchObject({ maxContextTokens: 100_000, custom: true });
+    expect(after.models[0].maxContextTokens).toBe(250_000);
+  });
+
+  it("removeModel 修正悬空的默认引用", () => {
+    const after = removeModel(makeConfig(), "deepseek-v4-flash");
+    expect(after.models.map((m) => m.id)).toEqual(["glm-5.1"]);
+    expect(after.defaultModel).toBe("glm-5.1");
+  });
+
+  it("addModel 派生 id 并标记 custom", () => {
+    const { config, model } = addModel(makeConfig(), { name: "My GPT", endpointId: "deepseek" });
+    expect(model).toMatchObject({ id: "my-gpt", name: "My GPT", endpointId: "deepseek", custom: true });
+    expect(model.maxContextTokens).toBeGreaterThan(0);
+    expect(config.models).toHaveLength(3);
+  });
+
+  it("uniqueModelId / uniqueImageModelId 派生合法 id", () => {
+    expect(uniqueModelId(makeConfig(), "GLM-5.1")).toBe("glm-5-1");
+    expect(uniqueImageModelId(makeConfig(), "CogView")).toBe("cogview");
+  });
+
+  it("addImageModel / removeImageModel 维护 defaultImageModel", () => {
+    const base = makeConfig({
+      imageModels: [{ id: "cogview-4", name: "CogView-4", endpointId: "bigmodelcn", modelName: "cogview-4" }],
+      defaultImageModel: "cogview-4",
+    });
+    const added = addImageModel(base, { name: "My Image", endpointId: "bigmodelcn" });
+    expect(added.model).toMatchObject({ id: "my-image", custom: true });
+    const removed = removeImageModel(base, "cogview-4");
+    expect(removed.imageModels).toEqual([]);
+    expect(removed.defaultImageModel).toBeUndefined();
+  });
+
+  it("setDefault* / setMaxToolOutput 写入对应字段", () => {
+    const config = makeConfig();
+    expect(setDefaultAgent(config, "coder").defaultAgent).toBe("coder");
+    expect(setDefaultImageModel(config, undefined).defaultImageModel).toBeUndefined();
+    expect(setDefaultMigrationModel(config, "glm-5.1").defaultMigrationModel).toBe("glm-5.1");
+    expect(setMaxToolOutput(config, 4096).maxToolOutput).toBe(4096);
   });
 });

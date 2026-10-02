@@ -9,7 +9,7 @@
  *   - 不抛异常、不写盘、不读盘，纯输入 → 输出。
  */
 
-import type { AppConfig, Endpoint, Model } from "@ai-zen/agents-sdk";
+import type { AppConfig, Endpoint, ImageModel, Model } from "@ai-zen/agents-sdk";
 
 // ==================== 查询 ====================
 
@@ -133,27 +133,35 @@ export function setEndpointBaseUrl(config: AppConfig, endpointId: string, baseUr
   };
 }
 
-/** 设置默认模型 */
-export function setDefaultModel(config: AppConfig, modelId: string): AppConfig {
+/** 设置默认模型（传 `undefined` 表示清空，交由 SDK 回退出厂默认） */
+export function setDefaultModel(config: AppConfig, modelId: string | undefined): AppConfig {
   return { ...config, defaultModel: modelId };
 }
 
-/**
- * 由端点名派生唯一的端点 id：小写、非字母数字折叠为 `-`，冲突时追加序号。
- */
-export function uniqueEndpointId(config: AppConfig, name: string): string {
+/** 由名称派生唯一 id：小写、非字母数字折叠为 `-`，冲突时追加序号 */
+function deriveUniqueId(taken: Set<string>, name: string, fallback: string): string {
   const base =
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 32) || "endpoint";
-  const taken = new Set(config.endpoints.map((endpoint) => endpoint.id));
+    name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || fallback;
   if (!taken.has(base)) return base;
   for (let i = 2; ; i += 1) {
     const candidate = `${base}-${i}`;
     if (!taken.has(candidate)) return candidate;
   }
+}
+
+/** 由端点名派生唯一的端点 id */
+export function uniqueEndpointId(config: AppConfig, name: string): string {
+  return deriveUniqueId(new Set(config.endpoints.map((endpoint) => endpoint.id)), name, "endpoint");
+}
+
+/** 由模型名派生唯一的模型 id */
+export function uniqueModelId(config: AppConfig, name: string): string {
+  return deriveUniqueId(new Set(config.models.map((model) => model.id)), name, "model");
+}
+
+/** 由图片模型名派生唯一的图片模型 id */
+export function uniqueImageModelId(config: AppConfig, name: string): string {
+  return deriveUniqueId(new Set((config.imageModels ?? []).map((model) => model.id)), name, "image");
 }
 
 /** 新增端点（id 由名称派生） */
@@ -169,4 +177,125 @@ export function addEndpoint(
     apiKey: input.apiKey.trim(),
   };
   return { config: { ...config, endpoints: [...config.endpoints, endpoint] }, endpoint };
+}
+
+// ==================== 通用改写（配置中心）====================
+
+/** 通用端点字段改写（不可变） */
+export function updateEndpoint(config: AppConfig, endpointId: string, patch: Partial<Endpoint>): AppConfig {
+  return {
+    ...config,
+    endpoints: config.endpoints.map((endpoint) =>
+      endpoint.id === endpointId ? { ...endpoint, ...patch } : endpoint,
+    ),
+  };
+}
+
+/** 删除端点（调用方负责确认它不再被任何模型引用） */
+export function removeEndpoint(config: AppConfig, endpointId: string): AppConfig {
+  return { ...config, endpoints: config.endpoints.filter((endpoint) => endpoint.id !== endpointId) };
+}
+
+/** 通用模型字段改写（不可变） */
+export function updateModel(config: AppConfig, modelId: string, patch: Partial<Model>): AppConfig {
+  return {
+    ...config,
+    models: config.models.map((model) => (model.id === modelId ? { ...model, ...patch } : model)),
+  };
+}
+
+/**
+ * 删除模型；若 `defaultModel` / `defaultMigrationModel` 指向它，
+ * 则改指剩余的第一个模型（无剩余模型则清空）。
+ */
+export function removeModel(config: AppConfig, modelId: string): AppConfig {
+  const models = config.models.filter((model) => model.id !== modelId);
+  const ids = new Set(models.map((model) => model.id));
+  const fallback = models[0]?.id;
+  return {
+    ...config,
+    models,
+    defaultModel: config.defaultModel && ids.has(config.defaultModel) ? config.defaultModel : fallback,
+    defaultMigrationModel:
+      config.defaultMigrationModel && ids.has(config.defaultMigrationModel)
+        ? config.defaultMigrationModel
+        : fallback,
+  };
+}
+
+/** 新增模型（id 由名称派生；默认 `custom: true`，避免被 SDK 出厂清单托管覆盖） */
+export function addModel(
+  config: AppConfig,
+  input: { name: string; endpointId: string; modelName?: string },
+): { config: AppConfig; model: Model } {
+  const id = uniqueModelId(config, input.name);
+  const model: Model = {
+    id,
+    name: input.name.trim() || id,
+    endpointId: input.endpointId,
+    modelName: input.modelName?.trim() || id,
+    maxContextTokens: 128_000,
+    custom: true,
+  };
+  return { config: { ...config, models: [...config.models, model] }, model };
+}
+
+/** 通用图片模型字段改写（不可变） */
+export function updateImageModel(config: AppConfig, modelId: string, patch: Partial<ImageModel>): AppConfig {
+  return {
+    ...config,
+    imageModels: (config.imageModels ?? []).map((model) =>
+      model.id === modelId ? { ...model, ...patch } : model,
+    ),
+  };
+}
+
+/** 删除图片模型；若 `defaultImageModel` 指向它，则改指剩余的第一个（无剩余则清空） */
+export function removeImageModel(config: AppConfig, modelId: string): AppConfig {
+  const imageModels = (config.imageModels ?? []).filter((model) => model.id !== modelId);
+  const ids = new Set(imageModels.map((model) => model.id));
+  return {
+    ...config,
+    imageModels,
+    defaultImageModel:
+      config.defaultImageModel && ids.has(config.defaultImageModel)
+        ? config.defaultImageModel
+        : imageModels[0]?.id,
+  };
+}
+
+/** 新增图片模型（id 由名称派生；默认 `custom: true`） */
+export function addImageModel(
+  config: AppConfig,
+  input: { name: string; endpointId: string },
+): { config: AppConfig; model: ImageModel } {
+  const id = uniqueImageModelId(config, input.name);
+  const model: ImageModel = {
+    id,
+    name: input.name.trim() || id,
+    endpointId: input.endpointId,
+    modelName: id,
+    custom: true,
+  };
+  return { config: { ...config, imageModels: [...(config.imageModels ?? []), model] }, model };
+}
+
+/** 设置默认图片模型（传 `undefined` 表示清空） */
+export function setDefaultImageModel(config: AppConfig, modelId: string | undefined): AppConfig {
+  return { ...config, defaultImageModel: modelId };
+}
+
+/** 设置默认 Agent（传 `undefined` 表示清空，交给 SDK 选第一个 Agent） */
+export function setDefaultAgent(config: AppConfig, agentId: string | undefined): AppConfig {
+  return { ...config, defaultAgent: agentId };
+}
+
+/** 设置默认迁移模型（传 `undefined` 表示清空，交由 SDK 回退出厂默认） */
+export function setDefaultMigrationModel(config: AppConfig, modelId: string | undefined): AppConfig {
+  return { ...config, defaultMigrationModel: modelId };
+}
+
+/** 设置工具输出上限（字符数） */
+export function setMaxToolOutput(config: AppConfig, value: number): AppConfig {
+  return { ...config, maxToolOutput: value };
 }

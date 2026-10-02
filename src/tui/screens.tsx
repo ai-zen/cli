@@ -22,13 +22,13 @@ import { ChatSession, stripCwdNote, type ChatEvent } from "./chat-session.js";
 import type { CommandHint } from "../conversation-commands/registry.js";
 import { matchCommandHints } from "../conversation-commands/registry.js";
 import { conversationRepository, listConversations } from "../conversation-repository.js";
-import { readConfig, saveConfig } from "../config.js";
+import { AGENTS_DIR, readConfig, saveConfig } from "../config.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult, type WizardStep } from "./config-wizard.js";
 import { formatShortTime } from "../format-time.js";
 import { CLI_VERSION, SDK_VERSION, CORE_VERSION } from "../version.js";
 import { AgentNS } from "@ai-zen/agents-core";
-import type { AppConfig } from "@ai-zen/agents-sdk";
+import { AgentRepository, type AppConfig } from "@ai-zen/agents-sdk";
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -622,6 +622,8 @@ export function Chat(props: ChatScreenProps) {
   /** 配置向导：非 null 时整屏接管（凭据设置 / 配置中心） */
   const [wizardStep, setWizardStep] = useState<WizardStep | null>(null);
   const [wizardConfig, setWizardConfig] = useState<AppConfig | null>(null);
+  /** 可用 Agent 列表（供配置中心「默认 Agent」选择） */
+  const [wizardAgents, setWizardAgents] = useState<{ id: string; name: string }[]>([]);
   /** 当前会话所用端点 id（打开向导时刷新，用于判断改动是否影响本会话） */
   const currentEndpointRef = useRef<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
@@ -690,12 +692,23 @@ export function Chat(props: ChatScreenProps) {
 
   // ---- 配置向导（凭据 / 配置中心）----
 
+  /** 读取可用 Agent 列表（供「默认 Agent」选择；失败时返回空数组） */
+  const listAgents = async (): Promise<{ id: string; name: string }[]> => {
+    try {
+      const agents = await new AgentRepository(AGENTS_DIR).list();
+      return agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id }));
+    } catch {
+      return [];
+    }
+  };
+
   /** 打开配置向导：先取配置快照，再切入指定步骤 */
   const openWizard = async (step: WizardStep) => {
     try {
       const config = await readConfig();
       currentEndpointRef.current = resolveCredential(config, props.modelId)?.endpointId ?? null;
       setWizardConfig(config);
+      setWizardAgents(await listAgents());
       setWizardStep(step);
     } catch (error: any) {
       dispatch({ type: "error", text: `读取配置失败：${error?.message ?? error}` });
@@ -1145,6 +1158,7 @@ export function Chat(props: ChatScreenProps) {
         config={wizardConfig}
         initialStep={wizardStep}
         closeOnSave={wizardStep.kind !== "menu"}
+        agents={wizardAgents}
         onSave={saveConfig}
         onClose={closeWizard}
       />
