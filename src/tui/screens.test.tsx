@@ -19,7 +19,7 @@ import {
   resolveSubmitText,
   type ChatState,
   type Block,
-} from "./screens.js";
+} from "./screens/index.js";
 import { getCommandHints, matchCommandHints } from "../conversation-commands/registry.js";
 import { stripCwdNote } from "./chat-session.js";
 import { isTerminalReply } from "./text.js";

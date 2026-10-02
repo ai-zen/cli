@@ -4,7 +4,7 @@ import { writeFileSync } from "fs";
 import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
 import { Message } from "@ai-zen/agents-core";
 import { spawnSync } from "child_process";
-import { ConfigWizard } from "./config-wizard.js";
+import { ConfigWizard } from "./config-wizard/index.js";
 import type { AgentStore } from "../agents-store.js";
 
 // 拦截系统编辑器：把「打开编辑器」替换为直接把新内容写回临时文件

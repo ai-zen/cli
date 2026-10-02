@@ -4,7 +4,7 @@ import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
 import { Message } from "@ai-zen/agents-core";
 import type { McpConfig, McpScope } from "../config.js";
 import type { AgentKind, AgentStore } from "../agents-store.js";
-import { ConfigWizard, PromptScreen, promptLayout } from "./config-wizard.js";
+import { ConfigWizard, PromptScreen, promptLayout } from "./config-wizard/index.js";
 
 const tick = () => new Promise((r) => setTimeout(r, 25));
 const DOWN = "\u001B[B";

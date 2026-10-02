@@ -14,10 +14,10 @@ import { AgentRepository } from "@ai-zen/agents-sdk";
 import type { AppConfig } from "@ai-zen/agents-sdk";
 import { AGENTS_DIR, readConfig, saveConfig } from "../config.js";
 import { resolveCredential } from "../config-editor.js";
-import { ConfigWizard, type WizardCloseResult } from "./config-wizard.js";
+import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
 import { conversationRepository } from "../conversation-repository.js";
 import { readLastSession } from "../session-pointer.js";
-import { Splash, Chat } from "./screens.js";
+import { Splash, Chat } from "./screens/index.js";
 import type { AgentNS } from "@ai-zen/agents-core";
 
 /** ANSI：清屏 + 光标归位 + 显示光标（屏幕间切换时从头绘制，避免行偏移） */
