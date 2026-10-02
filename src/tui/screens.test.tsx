@@ -84,8 +84,10 @@ describe("SlashMenu", () => {
 describe("resolveSubmitText（回车执行高亮命令）", () => {
   it("仅输入 `/` 时回车执行高亮命令，而不是提交半截输入", () => {
     const hints = matchCommandHints("");
-    expect(resolveSubmitText("/", hints, 0)).toBe("/exit");
+    expect(resolveSubmitText("/", hints, 0)).toBe(`/${hints[0]!.names[0]}`);
     expect(resolveSubmitText("/", hints, 2)).toBe(`/${hints[2]!.names[0]}`);
+    // exit 已移到末尾：只输入 `/` 回车不会误退出（高亮项是首项）
+    expect(hints[hints.length - 1]!.names[0]).toBe("exit");
   });
 
   it("前缀匹配时执行高亮的那一条", () => {

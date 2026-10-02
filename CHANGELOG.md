@@ -41,7 +41,7 @@
 - **修复「输入框偶尔自动填入 `[?0u`」**：Ink 的 `kittyKeyboard: auto` 会在**每个实例创建时**向终端发送一次 `CSI ? u` 查询，终端回 `CSI ? 0 u`（flags=0，不支持）；本 TUI 反复挂载（启动界面 → 对话 → 配置向导 …），应答源源不断。应答一旦被**拆包**（前导 ESC 被 Ink 的「待定转义刷新」当作一次独立的 Escape 键消费），残留在后一个 chunk 里的 `[?0u` 会退化成普通文本、被当作输入插入对话框（已实测重现）。修法两层：
   - 渲染选项改为 `kittyKeyboard: { mode: "disabled" }`，**不再发查询**（根因消除；该协议在本环境本就不生效，换行由不依赖终端协议的 `Ctrl+N` / `Ctrl+J` 承担）；
   - 新增纯函数 `isTerminalReply()`，在输入层丢弃整段终端应答（Kitty 协议应答 / 光标位置报告 / 设备状态报告），逐字键入同样字符不受影响。
-- **修复「斜杠命令菜单回车不执行」**：输入 `/` 时下方会实时列出候选命令（可 `↑ ↓` 选择），但此前回车把**半截输入**（如仅 `/` 或未补全的命令名）直接提交，落到「未知命令」报错。现在候选菜单可见时回车**直接执行高亮命令**（与先 `Tab` 补全再回车等效）；并在输入变化后把高亮重置回首项、对越界索引兑底，避免「看似选中却回车落空」。逻辑抽为纯函数 `resolveSubmitText()` 便于单测。
+- **修复「斜杠命令菜单回车不执行」**：输入 `/` 时下方会实时列出候选命令（可 `↑ ↓` 选择），但此前回车把**半截输入**（如仅 `/` 或未补全的命令名）直接提交，落到「未知命令」报错。现在候选菜单可见时回车**直接执行高亮命令**（与先 `Tab` 补全再回车等效）；并在输入变化后把高亮重置回首项、对越界索引兑底，避免「看似选中却回车落空」；同时把 `exit` 移到命令列表末尾，避免「只输入 `/` 就回车」直接退出。逻辑抽为纯函数 `resolveSubmitText()` 便于单测。
 - `tsconfig.json` 启用 `jsx: react-jsx`。
 - **移除旧行式对话链路（死代码）**：`src/conversation-runner.ts`、`src/slash-hint-prompt.ts`、`src/delta-renderer.ts`、`src/config-wizard.ts`、`src/draft-repository.ts`、`src/draft-plugin.ts` 及 `src/conversation-commands/` 下的命令处理器（保留 `registry.ts` 作为命令清单唯一来源，供 TUI 复用）。注：其中被删除的是 **inquirer 版** `src/config-wizard.ts`；同版本新增的 `src/tui/config-wizard.tsx` 是**纯 Ink 重写**，二者无关。
 - **移除主菜单**：删除 `MainMenu` 次级屏幕、`/menu` 命令与整个 `src/menus/*`（inquirer 流程）；对话内 `/load` 所需的列表函数迁为 `conversation-repository.ts` 的 `listConversations()`。菜单功能（管理 Agents / 管理已保存对话等）转为 P1 待办，将以 Ink 原生组件重新实现；其中**配置管理**已在同版本以 Ink 原生的 `/config` 配置中心回归（见上）。

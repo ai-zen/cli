@@ -21,7 +21,6 @@ export interface CommandMeta {
 
 /** 命令元数据表（数组顺序即展示顺序） */
 export const COMMAND_REGISTRY: readonly CommandMeta[] = [
-  { name: "exit", aliases: ["quit"], description: "退出对话（会提示是否保存）" },
   { name: "save", description: "保存当前对话" },
   { name: "load", description: "加载已保存的对话（替换当前会话）" },
   { name: "new", description: "重置会话（清空历史）" },
@@ -32,6 +31,8 @@ export const COMMAND_REGISTRY: readonly CommandMeta[] = [
   { name: "key", description: "设置当前端点的 API Key" },
   { name: "migrate", description: "手动任务迁移（生成交接文档并开启新会话）" },
   { name: "help", description: "显示此帮助" },
+  // exit 置于末尾：斜杠菜单回车执行高亮项，避免「只输入 / 就回车」直接退出
+  { name: "exit", aliases: ["quit"], description: "退出对话（会提示是否保存）" },
 ];
 
 /** 命令展示条目：等价写法（如 `/exit` `/quit`）折叠为一条 */

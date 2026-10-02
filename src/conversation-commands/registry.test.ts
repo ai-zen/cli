@@ -8,9 +8,10 @@ import {
 } from "./registry.js";
 
 describe("对话命令元数据", () => {
-  it("展示条目折叠别名，首项为主命令名", () => {
-    const exit = getCommandHints()[0];
-    expect(exit).toEqual({
+  it("展示条目折叠别名（exit/quit 折叠为一条），且 exit 置于末尾", () => {
+    const hints = getCommandHints();
+    expect(hints[0]!.names).toEqual(["save"]); // exit 不再打头，避免误回车直接退出
+    expect(hints[hints.length - 1]).toEqual({
       names: ["exit", "quit"],
       label: "/exit /quit",
       description: "退出对话（会提示是否保存）",
