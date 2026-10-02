@@ -30,6 +30,7 @@
 
 ### 🔧 变更
 
+- **升级 `@ai-zen/agents-sdk` 到 `1.0.0-alpha.2`**：出厂默认 `mcp.json` 新增 `chrome-devtools` 服务器（Google 官方 `chrome-devtools-mcp`，`npx -y chrome-devtools-mcp@latest`），与既有的 `socket-pty` 并列，开箱即用浏览器调试 / 自动化能力（页面导航、性能追踪、网络与控制台检查、截图等）；**已存在的 `mcp.json` 仍不覆盖**，用户配置（含自定义 flag）不受影响。CLI 侧代码零改动 —— CLI 不引用 SDK 的 `DEFAULT_MCP_CONFIG`，自带 `mcp.json` 仅做文件读写；与 alpha.1 相比 API / 类型声明完全一致，仅有 `DEFAULT_MCP_CONFIG`（多一个服务器）与注释变动。
 - **升级 `@ai-zen/agents-sdk` 到 `1.0.0-alpha.1`**：出厂模型目录刷新（`deepseek-v4-flash` → `deepseek-flash`、`gpt-5.5` → `gpt-6-*`、`glm-5.1` → `glm-5.3` 等，默认模型改为 `deepseek-flash`）；新增**出厂模型清单托管**（`models` / `imageModels` 中未标 `custom: true` 的条目会被出厂定义替换，悬空 `defaultModel` / `defaultMigrationModel` 回退到出厂默认；`endpoints` 不受影响）；`maxContextTokens` 语义澄清为「任务迁移触发阈值」；`Model` / `ImageModel` 新增可选 `custom?: boolean`。CLI 侧代码零改动，仅测试夹具需标 `custom: true`。
 - 新增依赖：`ink`、`react`（运行时），`ink-testing-library`、`@types/react`（开发）。
 - **移除依赖**：`inquirer`、`@types/inquirer`、`chalk` —— 三者均已从代码中彻底移除：inquirer 的确认改由调用方注入（TUI 走 Ink 确认框）；着色改用 Ink `<Text color>`（随 SDK 升级到 `1.0.0-alpha.1`，chalk / inquirer 已从依赖树中彻底消失）。
