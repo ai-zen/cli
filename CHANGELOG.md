@@ -1,108 +1,45 @@
-# Changelog
-
 ## [1.0.0-alpha.1] - 2026-09-30
 
-### ✨ 新增 — TUI 全屏交互界面（Ink + React）
-
-- **以 Ink（React）重写交互界面**，取代原 inquirer 行式对话。启动呈现**动画渐变 ASCII 启动界面**（对角渐变 + 扫光 + 逐行揭示），结束后**直接进入对话界面**（存在上一轮会话则自动续接，否则新建对话）。
-- **对话界面底部固定**：分隔线 / 输入行 / 状态栏始终吸附终端底部，对话历史在其上方滚动 —— 按显示宽度**预折行** + 自底部截取 + 顶部补齐。整帧高度**预留末行**、恒小于终端行数：既避免单条回复远超一屏时撑破帧，也规避 Ink 在「帧高 ≥ 终端行数」时走全屏分支（渲染串不补末尾换行却仍按「光标停在末行之后」定位）导致硬件光标整体上移一行、IME 候选框偏上的问题。
-- 对话界面：
-  - 流式输出区（思考过程、回答正文、工具调用分行展示 —— **每个工具调用单行展示 `⚙ 名称(参数)`**：参数折叠空白后内联，超宽则按显示宽度裁剪并补省略号，始终保持**严格单行**），历史按行裁剪、自底部滚动；
-  - **多行输入**（`Enter` 发送、`Ctrl+N` 换行；`Ctrl+J` 亦可）；
-  - **光标编辑**：`←`/`→`、`Home`/`End`、`Backspace`/`Delete`、光标处插入，及 `Ctrl`/`Meta` + `←`/`→` 跨词移动；反显光标 + 硬件光标同步；
-  - **应用内翻页**：`PgUp`/`PgDn` 翻页、`Shift`/`Alt` + `↑`/`↓` 单行滚动、发送自动回底、`Esc` 清输入并回底（翻页时内容冻结，新内容追加不漂移）；
-  - 输入历史（`↑`/`↓`）；
-  - **内联 `/` 命令菜单**（↑↓ 选择、`Tab` 补全、`Enter` 确认），取代原 `src/slash-hint-prompt.ts` 底栏提示；
-  - 状态栏（模型 · Agent · token 用量 · 生成状态）；
-  - 确认框（是/否，支持 y/n / ←→ / Esc）。
-- **语法高亮（高亮数据 / 渲染彻底分离）**：工具调用参数按 **JSON** 高亮；回答正文与思考内容里的**围栏代码块**（` ```lang `）按语言高亮（围栏行本身不显示）。高亮**数据**来自 `highlight.js`（经 `lowlight` 产出 hast），CLI 只负责把 `hljs-*` scope 映射成 Ink `<Text>` 颜色 —— 与 Google Gemini CLI（同为 Ink/React，依赖 `highlight.js` + `lowlight`）做法一致。`src/tui/highlight.ts` 为数据层（纯函数 `highlightCode` / `highlightJson` / `splitFences`，注册 ~36 种常用语言，带结果缓存，未知语言**原样不着色**不做猜测）；`src/tui/theme.ts` 的 `syntax` / `syntaxStyle()` 为 scope→样式映射；行模型 `RLine` 新增 `spans` 分段，`LineView` 逐段渲染（缺省分段继承所在行基础色）。
-- 对话命令（TUI 内）：`/help`、`/load`（加载已保存的对话）、`/clear`、`/new`、`/save`、`/config`、`/key`、`/migrate`、`/back`（撤回并预填输入）、`/editor`（借助 Ink `suspendTerminal` 调用系统编辑器）、`/exit` `/quit`。
-- **首启凭据引导 + 配置中心（Ink 原生）**：此前端点缺 API Key 时只有一行报错随即退出，**没有任何输入入口**（旧 inquirer 向导随主菜单一并移除）。现在：
-  - **启动预检**：所选模型绑定的端点缺 API Key 时，先弹出**凭据设置屏**（端点名 / Base URL / 厂商申请链接 / 掩码输入，`Tab` 切明文核对），保存后立即进入对话；`Esc` 放弃即退出；
-  - **`/key`**：对话内直达「当前模型所用端点」的 API Key 编辑，保存后**自动重建会话**（消息与上下文保留，新凭据立即生效）；
-  - **`/config` 配置中心**：默认模型 / 端点管理；端点管理列表 = [＋ 新建端点] + 各端点，选中端点进入详情屏，一屏内就地编辑其 API Key / Base URL，每次确认即时写入 `config.json`；
-  - **启动失败不再只能退出**：出错屏提示「按 `k` 打开配置中心」，改完自动重试（仅对话框无会话时重挂载重试）。
-- 命令清单新增 `/config`、`/key`（`registry.ts` 仍是唯一来源，`/help` 与输入补全自动生效）。
-- **IME 候选框跟随光标**：用 Ink `useCursor()` 把终端硬件光标同步到编辑光标（`computeInputCursorPosition`），中文输入法候选框正确定位；生成中 / 覆盖层弹出时隐藏硬件光标。
-- **会话持久化改革：会话即文件 + 单指针**：每轮结束把会话落盘、并在 `cli/last-session.json` 记录上一轮会话 id；首条消息后才落盘（不留空会话）；`/save` 幂等；旧 `drafts/_current.json` 不迁移。
-- 继续 / 加载已保存的对话时，会**按消息重建历史记录**显示。
-- **终端状态安全**：`SIGINT` / `SIGTERM` / 未捕获异常均卸载 Ink，恢复 raw mode 与光标；`Ctrl+C` 语义为「忙时取消本轮、空闲时退出」。
-- **干净退出**：Ink 卸载后显式暂停 stdin 并终止进程（`farewell()`），避免残留句柄（TTY flowing、SDK 定时器）导致「返回 shell 却不退出、终端不归还」。
-
-### 🔧 变更
-
-- **升级 `@ai-zen/agents-sdk` 到 `1.0.0-alpha.2`**：出厂默认 `mcp.json` 新增 `chrome-devtools` 服务器（Google 官方 `chrome-devtools-mcp`，`npx -y chrome-devtools-mcp@latest`），与既有的 `socket-pty` 并列，开箱即用浏览器调试 / 自动化能力（页面导航、性能追踪、网络与控制台检查、截图等）；**已存在的 `mcp.json` 仍不覆盖**，用户配置（含自定义 flag）不受影响。CLI 侧代码零改动 —— CLI 不引用 SDK 的 `DEFAULT_MCP_CONFIG`，自带 `mcp.json` 仅做文件读写；与 alpha.1 相比 API / 类型声明完全一致，仅有 `DEFAULT_MCP_CONFIG`（多一个服务器）与注释变动。
-- **升级 `@ai-zen/agents-sdk` 到 `1.0.0-alpha.1`**：出厂模型目录刷新（`deepseek-v4-flash` → `deepseek-flash`、`gpt-5.5` → `gpt-6-*`、`glm-5.1` → `glm-5.3` 等，默认模型改为 `deepseek-flash`）；新增**出厂模型清单托管**（`models` / `imageModels` 中未标 `custom: true` 的条目会被出厂定义替换，悬空 `defaultModel` / `defaultMigrationModel` 回退到出厂默认；`endpoints` 不受影响）；`maxContextTokens` 语义澄清为「任务迁移触发阈值」；`Model` / `ImageModel` 新增可选 `custom?: boolean`。CLI 侧代码零改动，仅测试夹具需标 `custom: true`。
-- 新增依赖：`ink`、`react`（运行时），`ink-testing-library`、`@types/react`（开发）；**语法高亮**新增 `highlight.js` / `lowlight`（运行时）与 `@types/hast`（开发）—— 高亮**数据**委托专业库（190+ 语言），CLI 仅实现渲染（见「语法高亮」）。
-- **移除依赖**：`inquirer`、`@types/inquirer`、`chalk` —— 三者均已从代码中彻底移除：inquirer 的确认改由调用方注入（TUI 走 Ink 确认框）；着色改用 Ink `<Text color>`（随 SDK 升级到 `1.0.0-alpha.1`，chalk / inquirer 已从依赖树中彻底消失）。
-- **TUI 输出统一走 Ink**：迁移进度、跳过迁移、会话落盘失败等提示不再 `console.log` / `console.warn` 直写终端（会撕裂 Ink 帧），改为经回调上报、由对话屏渲染为 notice 块；启动 Logo 渐变也由 chalk 字符串改为 Ink 逐字符 `<Text color>`。
-- **配置向导改为「吸底」布局（修复 VS Code 终端里被裁切）**：此前配置中心 / 凭据设置屏是**顶对齐短帧**，从对话屏（整帧高 = 终端行数 − 1）切过来时，Ink 的擦除 / 滚动会错位，内容被顶出视口、渲染不全。现在向导与对话屏统一为「顶部留白 + 内容贴底」，整帧高度一致、内容不再飘出可视区：
-  - 新增纯函数 `bottomPadding()` 与 `WizardFrame` 外壳（菜单 / 列表 / 输入屏全部套用）；输入屏的硬件光标 y 随留白一起算（`promptLayout()`，IME 仍精确跟随）；
-  - 列表项与键位提示统一裁成**严格单行**（新增 `clipWidth()`，`SelectList` 接受 `columns`），列表过长时自动截断并提示，避免折行把帧高撞破；
-  - `/load`、`/back` 的覆盖层同样传入列宽裁剪条目。
-- **配置中心「端点管理」改造**：原「端点凭据 / 端点地址 / 新建端点」三条合并为**一条「端点管理」**——列表 = [＋ 新建端点] + 各端点；选中端点进入**详情屏**，一屏同时列出该端点的 API Key 与 Base URL（`↑ ↓` 切换字段、`Enter` 就地编辑、`Tab` 切密钥明文/掩码、`Esc` 返回；未改动不写盘）。新建端点仍为「名称 → Base URL → API Key」三步，完成后回到端点列表。
-- **配置中心全面化**：`/config` 从「端点 + 默认模型」扩展为**尽可能全面管理 `config.json`** —— 端点（增删改：名称/Base URL/API Key/描述）、模型（增删改：名称/端点/模型名/迁移阈值/视觉/描述/自定义）、图片模型（增删改：名称/端点/模型名/尺寸/质量/自定义）、默认项（默认模型/默认图片模型/默认 Agent/默认迁移模型）、工具输出上限。列表 = [＋ 新建…] + 各条目；选中进入**通用详情屏**就地编辑（文本/密钥/数字/布尔/枚举五类字段；枚举弹选项列表、布尔即时切换、危险动作二次确认）。编辑「出厂托管」模型会自动标记 `custom: true`，避免被 SDK 同步覆盖；删除端点前校验模型引用。纯函数层新增 `update{Endpoint,Model,ImageModel}` / `remove*` / `addModel` / `addImageModel` / `setDefault*` / `setMaxToolOutput` / `unique*Id`。
-- **配置中心新增「MCP 服务器」管理**：`/config` 新增 MCP 服务器管理屏，完整管理 `mcp.json` 的增删改 —— 作用域可**屏内切换**（全局 `~/.ai-zen/mcp.json` / 项目 `<cwd>/.ai-zen/mcp.json`）；每个服务器可编辑名称（改 key）、传输方式（stdio / http / sse）、启用·禁用、描述，以及按传输方式区分的字段（stdio：命令 / 参数 / 环境变量；http·sse：URL / 请求头）。参数按 shell 风格（引号 / 转义）解析为 argv；环境变量与请求头走**键值编辑子屏**（`KEY=VALUE`，可增 / 改 / 删）。改动即时写盘，关闭配置中心后**重建会话**让新工具生效。`src/config.ts` 的 MCP 读写**作用域化**（`readMcpConfig(scope)` / `writeMcpConfig(cfg, scope)` / `readMcpConfigAt` / `writeMcpConfigAt` / `mcpConfigPath`），服务器条目类型补全 `disabled` / `description` / `oauth`（并保留未知字段）；纯函数层新增 `parseArgs` / `formatArgs` / `parseKvInput` / `kvEntries` / `kvSummary` / `addMcpServer` / `updateMcpServer` / `removeMcpServer` / `renameMcpServer` / `uniqueMcpServerId` / `mcpServerIdTaken` / `findMcpServer`。
-- **配置中心新增「Agent 定义」管理**：`/config` 新增 Agent 定义管理屏，管理顶层 Agent（`~/.ai-zen/agents/*.json`）与子 Agent（`~/.ai-zen/sub-agents/*.json`）的增删改 —— 列表区分两类并各带「＋ 新建」；详情屏可编辑名称 / 标识（改文件名 = 重命名）/ 描述 / 模型（枚举自 `config.models`）/ 四维权限（`tools`·`skills`·`mcps`·`subagents`，紧凑语法 `allow: a, b` / `deny: x`）/ 自定义开关；Sub-agent 另有 `function`（函数名 / 说明 / 参数 schema，带 JSON 校验）。**提示词**为多行内容，`Enter` 调起**系统编辑器**（复用 `/editor` 的 `suspendTerminal` 模式：`$EDITOR`，Windows 默认 `notepad`）编辑后回写首条 system 消息。编辑「出厂托管」的 `default` Agent 会自动标记 `custom: true`，避免改动被 SDK 同步覆盖；改动即时写盘，关闭配置中心后**重建会话**。新增 `src/agents-store.ts`（`AgentKind` / `AgentStore` / `readAgentStore` / `createAgentStore`）与纯函数 `createAgentDefinition` / `createSubAgentDefinition` / `getAgentPrompt` / `setAgentPrompt` / `parsePermission` / `formatPermission` / `setAgentPermission` / `summarizePermissions` / `parseFunctionParameters` / `formatFunctionParameters` / `updateAgentFunction` / `uniqueAgentId` 等。
-- **多行文本统一走系统编辑器**：配置中心里 Agent 提示词、Sub-agent **函数说明 / 参数 schema** 等**多行字段**均按 `Enter` 调起系统编辑器（`$EDITOR`，Windows 默认 `notepad`）；参数 schema 以 `.json` 打开、保存后即时校验（非法 JSON 被拒，且**保留改动**便于继续修改），内容未改动则不写盘。
-- **修复「详情屏字段高亮越界」**：`DetailStep` 现按当前行数收敛高亮索引 —— Agent 详情屏与权限子屏共用该组件，切换时索引可能超出新屏行数而无可高亮项；现进入后自动收敛到有效行。
-- **修复「多轮工具调用在对话区被拼到同一行」**：AI 一轮里可**并行**调用多个工具，且**工具执行后会在同一轮对话内继续下一轮**（每次请求 SDK 都 `emit("open")`）；每轮的 `tool_calls.index` 都会从 `0` 重新计数，而流式渲染此前**按 index 归并不分轮**，导致第二轮的工具名被追加到上一轮同一行上（`read` + `edit` → `readedit`，参数同理混在一起）。现为 `live` 增加「本轮起始下标 `roundBase`」，每轮开始（`assistant-start`）时锚定当前工具数，新一轮的 index 落到**新的一行** —— 并行与多轮工具调用各自独立成行。
-- **修复「输入框偶尔自动填入 `[?0u`」**：Ink 的 `kittyKeyboard: auto` 会在**每个实例创建时**向终端发送一次 `CSI ? u` 查询，终端回 `CSI ? 0 u`（flags=0，不支持）；本 TUI 反复挂载（启动界面 → 对话 → 配置向导 …），应答源源不断。应答一旦被**拆包**（前导 ESC 被 Ink 的「待定转义刷新」当作一次独立的 Escape 键消费），残留在后一个 chunk 里的 `[?0u` 会退化成普通文本、被当作输入插入对话框（已实测重现）。修法两层：
-  - 渲染选项改为 `kittyKeyboard: { mode: "disabled" }`，**不再发查询**（根因消除；该协议在本环境本就不生效，换行由不依赖终端协议的 `Ctrl+N` / `Ctrl+J` 承担）；
-  - 新增纯函数 `isTerminalReply()`，在输入层丢弃整段终端应答（Kitty 协议应答 / 光标位置报告 / 设备状态报告），逐字键入同样字符不受影响。
-- **修复「斜杠命令菜单回车不执行」**：输入 `/` 时下方会实时列出候选命令（可 `↑ ↓` 选择），但此前回车把**半截输入**（如仅 `/` 或未补全的命令名）直接提交，落到「未知命令」报错。现在候选菜单可见时回车**直接执行高亮命令**（与先 `Tab` 补全再回车等效）；并在输入变化后把高亮重置回首项、对越界索引兑底，避免「看似选中却回车落空」；同时把 `exit` 移到命令列表末尾，避免「只输入 `/` 就回车」直接退出。逻辑抽为纯函数 `resolveSubmitText()` 便于单测。
-- `tsconfig.json` 启用 `jsx: react-jsx`。
-- **移除旧行式对话链路（死代码）**：`src/conversation-runner.ts`、`src/slash-hint-prompt.ts`、`src/delta-renderer.ts`、`src/config-wizard.ts`、`src/draft-repository.ts`、`src/draft-plugin.ts` 及 `src/conversation-commands/` 下的命令处理器（保留 `registry.ts` 作为命令清单唯一来源，供 TUI 复用）。注：其中被删除的是 **inquirer 版** `src/config-wizard.ts`；同版本新增的 `src/tui/config-wizard.tsx` 是**纯 Ink 重写**，二者无关。
-- **移除主菜单**：删除 `MainMenu` 次级屏幕、`/menu` 命令与整个 `src/menus/*`（inquirer 流程）；对话内 `/load` 所需的列表函数迁为 `conversation-repository.ts` 的 `listConversations()`。菜单功能（管理 Agents / 管理已保存对话等）转为 P1 待办，将以 Ink 原生组件重新实现；其中**配置管理**已在同版本以 Ink 原生的 `/config` 配置中心回归（见上）。
-- 新增 `src/session-pointer.ts`（上一轮会话 id 指针，原子写）与 `src/conversation-persist-plugin.ts`（每轮落盘会话 + 更新指针）。
-- 新增 `src/config-editor.ts`：配置查询与**不可变改写**的纯函数层（模型/端点解析、凭据状态、密钥掩码、厂商申请指引、新增端点），供 TUI 与单测共用。
-- 新增 `src/tui/config-wizard.tsx`：**纯 Ink** 的凭据设置屏 / 配置中心 / 单行输入屏（自带硬件光标同步，IME 候选框跟随）。
-- 文本度量与折行（`displayWidth` / `wrapText` / `layoutInput` / `INPUT_PREFIX_WIDTH` / `usableFrameRows`）抽到 `src/tui/text.ts`，消除 `screens.tsx` 与向导之间的循环依赖（`screens.tsx` 保留 re-export，既有引用与测试不变）。
-- `resetScope()` 改为 `async` 并 `dispose()` 旧 Scope；新增 `ChatSession.reload()`。**Scope 持有配置快照**，改了端点凭据 / 地址后必须连同 Scope 一起重建才会生效（这也是 `/config`、`/key` 保存后能立刻生效的原因）。
-- `src/index.ts` 的 TUI 分支改调 `runTui()`；`src/tui/` 为新的界面实现（`theme` / `components` / `screens` / `chat-session` / `index`）。
-
-### ✅ 测试
-
-- 新增 `src/tui/theme.test.ts`、`src/tui/screens.test.tsx`：颜色/渐变/Logo、组件渲染、`chatReducer` 流式拼接、`messagesToBlocks`、`stripCwdNote`，以及吸底布局的文本测量/折行、块 → 行、`computeChatLayout`（行数守恒 + 应用内翻页视口 + 内容冻结）、`layoutInput` 光标定位、`computeInputCursorPosition`（IME 光标）、`wordLeft`/`wordRight` 跨词移动、`usableFrameRows` 预留末行。
-- `src/agent-creator.test.ts` 改为「临时 `AI_ZEN_DIR` + 动态 import」，不再依赖 `vi.mock`（在某些环境中 `vi.mock` 会静默失效）。
-- `screens.test.tsx` 新增 `isTerminalReply`（终端应答识别与不误伤普通输入）、`resolveSubmitText`（斜杠菜单回车执行高亮命令 / 越界兑底 / 非命令原样返回）与 `RENDER_OPTIONS` 决策锁定（断言 kitty 查询已关闭）；`config-wizard.test.tsx` 新增「终端应答不写进输入框 / 逐字键入不受影响」用例。
-- `config-wizard.test.tsx` 新增吸底布局用例：`promptLayout` 的顶部留白与硬件光标坐标（含宽字符列宽）、内容超帧时留白为 0；菜单屏与列表屏的整帧高度、顶部留白与「内容贴底」断言。
-- `src/config-editor.test.ts` 扩展至 **20 例**：在原有查询/掩码/厂商指引/不可变改写/端点 id 派生之外，新增 `update{Endpoint,Model,ImageModel}`、`remove*`（含悬空默认引用修正）、`addModel`/`addImageModel`、`setDefault*` / `setMaxToolOutput`、`uniqueModelId`/`uniqueImageModelId`。
-- 新增 `src/tui/config-wizard.test.tsx`（**27 例**：掩码输入不回显明文、`Tab` 切明文、`Esc` 取消、`Backspace`/`Home` 编辑、菜单 → 端点管理 → 选中端点就地编辑并写盘、端点详情字段切换/URL 校验/未改动不写盘、空 Key/非法 URL 校验、`closeOnSave` 保存即关闭、新建端点三步、默认模型切换，以及**新建模型自动 `custom: true`、模型详情布尔切换、托管模型编辑自动转自定义、删除端点引用守卫、默认 Agent 枚举选择、工具输出上限**）。
-- 新增 `src/tui/highlight.test.ts`（9 例）：JSON / 代码的 scope 归类、语言别名（`ts` → `typescript`）、未注册语言回退（原样不着色）、空串、围栏切分；`screens.test.tsx` 新增「工具调用参数带 JSON 高亮分段」「正文围栏代码块按语言高亮且不显示裸围栏」两例。
-- 全量单测 13 文件 / 224 例通过；`tsc --noEmit` 与 `npm run build` 零错误；e2e 12 例通过；真实 PTY 实测「启动→直达对话→流式→`/load`→`/clear`→退出交还 shell」全链路正常。
-- 用「假 TTY」探针向 Ink 捕获实际写出的字节：`kittyKeyboard: auto` 每个实例写 1 次 `ESC[?u` 查询，`disabled` 为 0 次（对照实验，确认根因已消除）；真实 PTY 中手工注入 `[?0u` 应答不再落入输入框。
-- 真实 PTY 实测首启凭据链路：`AI_ZEN_DIR` 指向空目录启动 → 弹出凭据设置屏 → 输入 Key 后写盘并直接进入对话（仅目标端点的 `apiKey` 被写入）→ `/config` 改「非当前端点」凭据（回菜单并提示，不重建会话）→ `/key` 改当前端点凭据（保存后自动重建会话）→ 退出后二次启动跳过凭据引导；`/help` 正确列出 `/config` 与 `/key`。
-
-## [0.10.0] - 2026-09-30
+> 本版本汇总**相对上一发布版本 `0.9.0`** 的全部变化。
 
 ### 💥 破坏性变更
 
-- **启动命令由 `aiz` / `zen` 改为 `ai`** — `package.json` 的 `bin` 改为 `{ "ai", "aiz", "zen" }`。`aiz` / `zen` 作为**过渡别名**在当前版本保留，未来版本移除。
-- **引入双模式运行，两种模式互不混合** — 此前「有参数 = 快速对话后继续进入交互循环」的行为被废除，改为：
-  - **纯 stdio 模式**：带位置参数，**或** stdin/stdout 非 TTY（管道、重定向、CI）时启用。**无任何额外交互**，把最终 assistant 文本以纯文本写入 `stdout`（零 ANSI / emoji 前缀 / spinner），日志、进度、工具过程与错误摘要一律走 `stderr`；成功退出码 `0`，失败非 `0`；默认**不落盘**。
-  - **TUI 模式**：仅在**无参数且 stdin/stdout 均为 TTY** 时进入（原交互式主菜单）。
+- **启动命令由 `aiz` / `zen` 改为 `ai`** —— `package.json` 的 `bin` 改为 `{ "ai", "aiz", "zen" }`；`aiz` / `zen` 作为**过渡别名**保留，未来版本移除。
+- **引入双模式运行，两种模式互不混合** —— 带位置参数、或 stdin/stdout 非 TTY（管道 / 重定向 / CI）时启用**纯 stdio 模式**：无任何额外交互，最终 assistant 文本以纯文本写入 `stdout`（零 ANSI / emoji 前缀 / spinner），日志、进度、工具过程与错误摘要一律走 `stderr`，成功退出码 `0`、失败非 `0`、默认不落盘；仅在**无参数且 stdin/stdout 均为 TTY** 时进入 **TUI 模式**。
+- **交互界面整体重写为 Ink（React）全屏 TUI** —— 取代原 inquirer 行式对话；随之**移除主菜单**（`/menu` 与 `src/menus/*`）以及 `inquirer` / `@types/inquirer` / `chalk` 依赖。
 
 ### ✨ 新增
 
-- `src/mode.ts` — 运行模式判定与启动参数解析（纯函数，单测覆盖）：`decideMode` / `resolveInvocation`。
-- `src/stdio-runner.ts` — 纯 stdio 运行器：读取 stdin、合并「参数指令 + stdin 内容」、单轮发送、提取最终文本写 stdout。
-- 新增启动选项与子命令：`ai --help` / `-h`、`ai --version` / `-v`、`ai --save`。
-- 通过 SDK 的 `setLogger` 将 SDK 日志与 `console.log` 统一改道 `stderr`，保证 stdout 纯净。
+- **TUI 全屏交互界面（Ink + React）**：
+  - 动画渐变 ASCII 启动界面，结束后直接进入对话（有上一轮会话则自动续接）；
+  - 对话区**吸底**（分隔线 / 输入行 / 状态栏固定底部，整帧高度恒为「终端行数 − 1」以避开 Ink 全屏分支）；
+  - 流式输出（思考 / 正文 / 工具调用分行）、历史按行裁剪自底滚动；
+  - **多行输入**（`Enter` 发送、`Ctrl+N` / `Ctrl+J` 换行）与**光标编辑**（`←`/`→`/`Home`/`End`/`Backspace`/`Delete`，`Ctrl`/`Meta` + `←`/`→` 跨词，反显光标 + 硬件光标同步）；
+  - **应用内翻页**（`PgUp`/`PgDn` 翻页、`Shift`/`Alt` + `↑`/`↓` 单行滚动、发送自动回底）；
+  - 输入历史、内联 `/` 命令菜单、状态栏、确认框。
+- **语法高亮**：工具调用参数按 **JSON** 高亮、正文与思考里的**围栏代码块**按语言高亮。高亮**数据**委托 `highlight.js`（经 `lowlight` 产出 hast），CLI 仅把 `hljs-*` scope 映射为 Ink `<Text>` 颜色 —— 与同为 Ink/React 的 Google Gemini CLI 做法一致。
+- **对话内命令**：`/help`、`/load`、`/clear`、`/new`、`/save`、`/config`、`/key`、`/migrate`、`/back`、`/editor`、`/exit`（`registry.ts` 为命令清单唯一来源，`/help` 与输入补全自动同步）。
+- **首启凭据引导 + 配置中心（Ink 原生）**：端点缺 API Key 时先弹凭据设置屏；`/config` 配置中心管理端点、模型、图片模型、默认项（默认模型 / 图片模型 / Agent / 迁移模型）、工具输出上限、**MCP 服务器**（全局 / 项目作用域）与 **Agent 定义**（顶层 Agent + Sub-agent，含四维权限）；编辑「出厂托管」条目自动转 `custom: true`，危险操作二次确认并做引用守卫。
+- **多行文本走系统编辑器**：Agent 提示词、Sub-agent 函数说明 / 参数 schema 等多行字段按 `Enter` 调起 `$EDITOR`（Windows 默认 `notepad`）；参数 schema 以 `.json` 打开并即时校验。
+- **会话持久化改革：会话即文件 + 单指针** —— 每轮结束落盘、`cli/last-session.json` 记录上一轮会话 id、首条消息后才落盘、`/save` 幂等；继续 / 加载时按消息重建历史。
+- **纯 stdio 模式配套**：`ai --help` / `-h`、`ai --version` / `-v`、`ai --save`；SDK 日志与 `console.log` 统一改道 `stderr` 以保证 stdout 纯净。
+- **IME 候选框跟随光标**：用 Ink `useCursor()` 把硬件光标同步到编辑光标，中文输入法候选框正确定位。
 
 ### 🔧 变更
 
-- `src/index.ts` 重构为「模式路由 + 两套入口分发」，业务逻辑下移到 `mode.ts` / `stdio-runner.ts`。
-- shell 兜底钩子函数体由 `aiz "$@"` 改为 `ai "$@"`；标记由 `aiz hook` 改为 `ai hook`，`ai hook install` 会自动识别并升级旧的 `aiz` 钩子块（`ai hook uninstall` 同时清理两代标记）。
-- 修正 `src/conversation-runner.ts` 中过时提示文案（`aiz config set-key` → 运行 `ai` 进入交互界面配置）。
-- 文档：中英 README 与 `docs/zh|en/{index,getting-started,configuration}.md` 补充「运行模式」说明并全量改用 `ai` 命令名；`docs/manifest.json` 版本与描述同步。
+- **依赖**：新增 `ink` / `react`（运行时）、`ink-testing-library` / `@types/react`（开发）；新增语法高亮 `highlight.js` / `lowlight`（运行时）与 `@types/hast`（开发）；**移除** `inquirer` / `@types/inquirer` / `chalk`。
+- **升级 `@ai-zen/agents-sdk`**：`1.0.0-alpha.0` → `1.0.0-alpha.1` → `1.0.0-alpha.2`（出厂模型目录刷新、模型清单托管、默认 `mcp.json` 增补 `chrome-devtools` 等；CLI 侧代码零改动）。
+- **TUI 输出统一走 Ink**：迁移进度、会话落盘失败等提示不再 `console.log` / `console.warn` 直写终端（会撕裂 Ink 帧），改为经回调渲染为 notice 块；启动 Logo 渐变也改为 Ink 逐字符 `<Text color>`。
+- **配置向导 / 覆盖层统一「吸底」布局**，列表项与键位提示裁成**严格单行**，修复 VS Code 终端里内容被裁切的问题。
+- **终端状态安全与干净退出**：`SIGINT` / `SIGTERM` / 未捕获异常均卸载 Ink、恢复 raw mode 与光标；`Ctrl+C` 语义为「忙时取消本轮、空闲时退出」；退出显式暂停 stdin 并终止进程（`farewell()`）。
+- **移除旧行式链路（死代码）**：`src/conversation-runner.ts`、`src/slash-hint-prompt.ts`、`src/delta-renderer.ts`、inquirer 版 `src/config-wizard.ts`、`src/draft-*.ts` 等；新增 `src/mode.ts` / `src/stdio-runner.ts` / `src/session-pointer.ts` / `src/conversation-persist-plugin.ts` / `src/config-editor.ts` 与 `src/tui/*` 新实现。
+- 文档：中英 README 与 `docs/zh|en/*` 同步（运行模式、`ai` 命令名、配置中心、多行编辑器等），`docs/manifest.json` 同步。
 
 ### ✅ 测试
 
-- 新增 `src/mode.test.ts`（14 例）：模式判定与参数路由。
-- 新增 `src/stdio-runner.test.ts`（9 例）：`mergePrompt` 合并语义与 `extractText` 文本提取。
-- e2e 重写为双模式场景（12 例）：子命令、stdio 纯净性（无 ANSI）、退出码、`--save` 落盘、真实 API 管道对话。
-- `tsc --noEmit`（`tsconfig.test.json`）与 `npm run build` 零错误。
+- 全量单测 **13 文件 / 224 例**，`tsc --noEmit` 与 `npm run build` 零错误；e2e **12 例**真连 DeepSeek API（覆盖双模式、stdio 纯净性、退出码、`--save` 落盘）。
+- 新增测试文件：`mode.test.ts`、`stdio-runner.test.ts`、`theme.test.ts`、`screens.test.tsx`、`tui/config-wizard.test.tsx`、`tui/agent-prompt.test.tsx`、`tui/highlight.test.ts`、`sub-agent-guard-plugin.test.ts`、`auto-migrate-confirm-plugin.test.ts`、`conversation-commands/registry.test.ts`。
+- 真实 PTY 实测：启动 → 对话 → 流式 → `/load` → `/clear` → 退出交还 shell；首启凭据链路；配置中心各子屏。
 
 ## [0.9.0] - 2026-09-30
 
