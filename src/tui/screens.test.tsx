@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "ink-testing-library";
 import { StatusBar, SlashMenu, SelectList } from "./components.js";
+import { syntax } from "./theme.js";
 import {
   Splash,
   chatReducer,
@@ -303,6 +304,40 @@ describe("吸底布局：块 → 行", () => {
     ).find((l) => l.kind === "tool");
     expect(displayWidth(narrow?.text ?? "")).toBeLessThanOrEqual(18);
     expect(narrow?.text.endsWith("…")).toBe(true);
+  });
+
+  it("工具调用行的参数带 JSON 高亮分段", () => {
+    const line = blockToLines(
+      {
+        id: 10,
+        kind: "assistant",
+        reasoning: "",
+        content: "",
+        tools: [{ name: "exec", args: '{"n":1}' }],
+      },
+      80,
+    ).find((l) => l.kind === "tool");
+    expect(line?.text).toBe('  ⚙ exec({"n":1})');
+    expect(line?.spans?.some((s) => s.text === '"n"' && s.color === syntax.attr?.color)).toBe(true);
+    expect(line?.spans?.some((s) => s.text === "1" && s.color === syntax.number?.color)).toBe(true);
+  });
+
+  it("正文里的围栏代码块按语言高亮，且不显示裸围栏", () => {
+    const lines = blockToLines(
+      {
+        id: 11,
+        kind: "assistant",
+        reasoning: "",
+        content: "看：\n```typescript\nconst a = 1;\n```\n完",
+        tools: [],
+      },
+      80,
+    );
+    const texts = lines.map((l) => l.text);
+    expect(texts).toContain("  const a = 1;");
+    expect(texts.some((t) => t.includes("```"))).toBe(false);
+    const codeLine = lines.find((l) => l.text === "  const a = 1;");
+    expect(codeLine?.spans?.some((s) => s.text === "const" && s.color === syntax.keyword?.color)).toBe(true);
   });
 
   it("思考 / 工具与正文之间有空行（完成态与流式一致）", () => {

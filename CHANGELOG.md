@@ -15,6 +15,7 @@
   - **内联 `/` 命令菜单**（↑↓ 选择、`Tab` 补全、`Enter` 确认），取代原 `src/slash-hint-prompt.ts` 底栏提示；
   - 状态栏（模型 · Agent · token 用量 · 生成状态）；
   - 确认框（是/否，支持 y/n / ←→ / Esc）。
+- **语法高亮（高亮数据 / 渲染彻底分离）**：工具调用参数按 **JSON** 高亮；回答正文与思考内容里的**围栏代码块**（` ```lang `）按语言高亮（围栏行本身不显示）。高亮**数据**来自 `highlight.js`（经 `lowlight` 产出 hast），CLI 只负责把 `hljs-*` scope 映射成 Ink `<Text>` 颜色 —— 与 Google Gemini CLI（同为 Ink/React，依赖 `highlight.js` + `lowlight`）做法一致。`src/tui/highlight.ts` 为数据层（纯函数 `highlightCode` / `highlightJson` / `splitFences`，注册 ~36 种常用语言，带结果缓存，未知语言**原样不着色**不做猜测）；`src/tui/theme.ts` 的 `syntax` / `syntaxStyle()` 为 scope→样式映射；行模型 `RLine` 新增 `spans` 分段，`LineView` 逐段渲染（缺省分段继承所在行基础色）。
 - 对话命令（TUI 内）：`/help`、`/load`（加载已保存的对话）、`/clear`、`/new`、`/save`、`/config`、`/key`、`/migrate`、`/back`（撤回并预填输入）、`/editor`（借助 Ink `suspendTerminal` 调用系统编辑器）、`/exit` `/quit`。
 - **首启凭据引导 + 配置中心（Ink 原生）**：此前端点缺 API Key 时只有一行报错随即退出，**没有任何输入入口**（旧 inquirer 向导随主菜单一并移除）。现在：
   - **启动预检**：所选模型绑定的端点缺 API Key 时，先弹出**凭据设置屏**（端点名 / Base URL / 厂商申请链接 / 掩码输入，`Tab` 切明文核对），保存后立即进入对话；`Esc` 放弃即退出；
@@ -32,7 +33,7 @@
 
 - **升级 `@ai-zen/agents-sdk` 到 `1.0.0-alpha.2`**：出厂默认 `mcp.json` 新增 `chrome-devtools` 服务器（Google 官方 `chrome-devtools-mcp`，`npx -y chrome-devtools-mcp@latest`），与既有的 `socket-pty` 并列，开箱即用浏览器调试 / 自动化能力（页面导航、性能追踪、网络与控制台检查、截图等）；**已存在的 `mcp.json` 仍不覆盖**，用户配置（含自定义 flag）不受影响。CLI 侧代码零改动 —— CLI 不引用 SDK 的 `DEFAULT_MCP_CONFIG`，自带 `mcp.json` 仅做文件读写；与 alpha.1 相比 API / 类型声明完全一致，仅有 `DEFAULT_MCP_CONFIG`（多一个服务器）与注释变动。
 - **升级 `@ai-zen/agents-sdk` 到 `1.0.0-alpha.1`**：出厂模型目录刷新（`deepseek-v4-flash` → `deepseek-flash`、`gpt-5.5` → `gpt-6-*`、`glm-5.1` → `glm-5.3` 等，默认模型改为 `deepseek-flash`）；新增**出厂模型清单托管**（`models` / `imageModels` 中未标 `custom: true` 的条目会被出厂定义替换，悬空 `defaultModel` / `defaultMigrationModel` 回退到出厂默认；`endpoints` 不受影响）；`maxContextTokens` 语义澄清为「任务迁移触发阈值」；`Model` / `ImageModel` 新增可选 `custom?: boolean`。CLI 侧代码零改动，仅测试夹具需标 `custom: true`。
-- 新增依赖：`ink`、`react`（运行时），`ink-testing-library`、`@types/react`（开发）。
+- 新增依赖：`ink`、`react`（运行时），`ink-testing-library`、`@types/react`（开发）；**语法高亮**新增 `highlight.js` / `lowlight`（运行时）与 `@types/hast`（开发）—— 高亮**数据**委托专业库（190+ 语言），CLI 仅实现渲染（见「语法高亮」）。
 - **移除依赖**：`inquirer`、`@types/inquirer`、`chalk` —— 三者均已从代码中彻底移除：inquirer 的确认改由调用方注入（TUI 走 Ink 确认框）；着色改用 Ink `<Text color>`（随 SDK 升级到 `1.0.0-alpha.1`，chalk / inquirer 已从依赖树中彻底消失）。
 - **TUI 输出统一走 Ink**：迁移进度、跳过迁移、会话落盘失败等提示不再 `console.log` / `console.warn` 直写终端（会撕裂 Ink 帧），改为经回调上报、由对话屏渲染为 notice 块；启动 Logo 渐变也由 chalk 字符串改为 Ink 逐字符 `<Text color>`。
 - **配置向导改为「吸底」布局（修复 VS Code 终端里被裁切）**：此前配置中心 / 凭据设置屏是**顶对齐短帧**，从对话屏（整帧高 = 终端行数 − 1）切过来时，Ink 的擦除 / 滚动会错位，内容被顶出视口、渲染不全。现在向导与对话屏统一为「顶部留白 + 内容贴底」，整帧高度一致、内容不再飘出可视区：
@@ -68,7 +69,8 @@
 - `config-wizard.test.tsx` 新增吸底布局用例：`promptLayout` 的顶部留白与硬件光标坐标（含宽字符列宽）、内容超帧时留白为 0；菜单屏与列表屏的整帧高度、顶部留白与「内容贴底」断言。
 - `src/config-editor.test.ts` 扩展至 **20 例**：在原有查询/掩码/厂商指引/不可变改写/端点 id 派生之外，新增 `update{Endpoint,Model,ImageModel}`、`remove*`（含悬空默认引用修正）、`addModel`/`addImageModel`、`setDefault*` / `setMaxToolOutput`、`uniqueModelId`/`uniqueImageModelId`。
 - 新增 `src/tui/config-wizard.test.tsx`（**27 例**：掩码输入不回显明文、`Tab` 切明文、`Esc` 取消、`Backspace`/`Home` 编辑、菜单 → 端点管理 → 选中端点就地编辑并写盘、端点详情字段切换/URL 校验/未改动不写盘、空 Key/非法 URL 校验、`closeOnSave` 保存即关闭、新建端点三步、默认模型切换，以及**新建模型自动 `custom: true`、模型详情布尔切换、托管模型编辑自动转自定义、删除端点引用守卫、默认 Agent 枚举选择、工具输出上限**）。
-- 全量单测 12 文件 / 213 例通过；`tsc --noEmit` 与 `npm run build` 零错误；e2e 12 例通过；真实 PTY 实测「启动→直达对话→流式→`/load`→`/clear`→退出交还 shell」全链路正常。
+- 新增 `src/tui/highlight.test.ts`（9 例）：JSON / 代码的 scope 归类、语言别名（`ts` → `typescript`）、未注册语言回退（原样不着色）、空串、围栏切分；`screens.test.tsx` 新增「工具调用参数带 JSON 高亮分段」「正文围栏代码块按语言高亮且不显示裸围栏」两例。
+- 全量单测 13 文件 / 224 例通过；`tsc --noEmit` 与 `npm run build` 零错误；e2e 12 例通过；真实 PTY 实测「启动→直达对话→流式→`/load`→`/clear`→退出交还 shell」全链路正常。
 - 用「假 TTY」探针向 Ink 捕获实际写出的字节：`kittyKeyboard: auto` 每个实例写 1 次 `ESC[?u` 查询，`disabled` 为 0 次（对照实验，确认根因已消除）；真实 PTY 中手工注入 `[?0u` 应答不再落入输入框。
 - 真实 PTY 实测首启凭据链路：`AI_ZEN_DIR` 指向空目录启动 → 弹出凭据设置屏 → 输入 Key 后写盘并直接进入对话（仅目标端点的 `apiKey` 被写入）→ `/config` 改「非当前端点」凭据（回菜单并提示，不重建会话）→ `/key` 改当前端点凭据（保存后自动重建会话）→ 退出后二次启动跳过凭据引导；`/help` 正确列出 `/config` 与 `/key`。
 

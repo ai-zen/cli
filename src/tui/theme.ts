@@ -24,6 +24,48 @@ export const theme = {
   highlight: "#c4b5fd",
 };
 
+/** 语法高亮：一段文本的样式覆盖（缺省字段沿用所在行的基础色） */
+export interface TextStyle {
+  color?: string;
+  dim?: boolean;
+  bold?: boolean;
+  italic?: boolean;
+}
+
+/**
+ * 语法高亮色板 —— 键为 highlight.js 的 scope（`highlight.ts` 已去掉 `hljs-` 前缀），
+ * 供工具调用参数（JSON）与围栏代码块共用。暗色主题友好（tailwind 近似色）。
+ */
+export const syntax: Record<string, TextStyle> = {
+  keyword: { color: "#c4b5fd", bold: true },
+  built_in: { color: "#67e8f9" },
+  type: { color: "#5eead4" },
+  literal: { color: "#c4b5fd" },
+  number: { color: "#fca5a5" },
+  string: { color: "#86efac" },
+  comment: { color: "#64748b", italic: true, dim: true },
+  attr: { color: "#7dd3fc" },
+  attribute: { color: "#7dd3fc" },
+  property: { color: "#7dd3fc" },
+  variable: { color: "#cbd5e1" },
+  params: { color: "#cbd5e1" },
+  title: { color: "#fbbf24" },
+  function: { color: "#fbbf24" },
+  selector: { color: "#fbbf24" },
+  tag: { color: "#f472b6" },
+  name: { color: "#f472b6" },
+  punctuation: { color: "#64748b" },
+  operator: { color: "#94a3b8" },
+  meta: { color: "#94a3b8" },
+  addition: { color: "#86efac" },
+  deletion: { color: "#f87171" },
+};
+
+/** 把 highlight.js 的 scope 映射为具体样式；未知 scope 返回空（沿用基础色） */
+export function syntaxStyle(scope: string): TextStyle {
+  return scope ? (syntax[scope] ?? {}) : {};
+}
+
 // ==================== 颜色工具 ====================
 
 type RGB = [number, number, number];

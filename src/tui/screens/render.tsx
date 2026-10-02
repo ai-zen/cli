@@ -2,12 +2,46 @@
 import { Text } from "ink";
 import { AgentNS } from "@ai-zen/agents-core";
 import { theme } from "../theme.js";
-import { RLine, ToolLine, Block } from "./lines.js";
+import { RLine, ToolLine, Block, type LineKind } from "./lines.js";
 import { nextId } from "./state.js";
 
 // ==================== 行渲染 ====================
 
+/** 行 kind → 基础色（分段渲染时作默认色） */
+function baseColor(kind: LineKind): string | undefined {
+  switch (kind) {
+    case "user-header":
+      return theme.user;
+    case "ai-header":
+      return theme.brand[2];
+    case "reasoning":
+      return theme.reasoning;
+    case "tool":
+      return theme.tool;
+    case "content":
+      return theme.assistant;
+    case "notice":
+      return theme.dim;
+    case "error":
+      return theme.error;
+    default:
+      return undefined;
+  }
+}
+
 export function LineView({ line }: { line: RLine }) {
+  // 语法高亮行：逐段渲染（外层给基础色，分段各自覆盖色）
+  if (line.spans && line.spans.length) {
+    return (
+      <Text color={baseColor(line.kind)} italic={line.kind === "reasoning"} wrap="truncate">
+        {line.spans.map((span, i) => (
+          <Text key={i} color={span.color} dimColor={span.dim} bold={span.bold} italic={span.italic}>
+            {span.text}
+          </Text>
+        ))}
+      </Text>
+    );
+  }
   switch (line.kind) {
     case "gap":
       return <Text>{line.text}</Text>;

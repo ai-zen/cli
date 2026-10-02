@@ -6,8 +6,8 @@
 // 文本度量 / 折行 / 整帧高度：仍位于 ../text.js，此处转发（历史引用与测试依赖）。
 export { displayWidth, wrapText, layoutInput, INPUT_PREFIX_WIDTH, usableFrameRows } from "../text.js";
 
-export { blockToLines, liveToLines } from "./lines.js";
-export type { LineKind, RLine, ToolLine, Block, LiveAssistant } from "./lines.js";
+export { blockToLines, liveToLines, contentLines, toolSpans, clipSpans } from "./lines.js";
+export type { LineKind, RLine, Span, ToolLine, Block, LiveAssistant } from "./lines.js";
 
 export { inputLines, computeInputCursorPosition, isWordChar, wordLeft, wordRight } from "./input.js";
 
