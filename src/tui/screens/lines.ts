@@ -1,5 +1,5 @@
 // 由 src/tui/screens.tsx 拆分而来 —— 行模型与预折行
-import { wrapText } from "../text.js";
+import { wrapText, clipWidth } from "../text.js";
 
 // ==================== 行模型（对话区按行渲染，精确控高）====================
 
@@ -55,6 +55,17 @@ export function indentLines(kind: LineKind, key: string, text: string, width: nu
   return wrapText(text, width).map((line, i) => ({ key: `${key}-${i}`, kind, text: `  ${line}` }));
 }
 
+/**
+ * 工具调用行的单行文本：`  ⚙ name(args)`。
+ *
+ * 参数（`args`，流式累积的 JSON 片段）折叠空白后内联展示；无参数时省略括号。
+ * 调用方按显示宽度 `clipWidth` 裁剪，保证**严格单行**（折行会顶高吸底整帧）。
+ */
+export function toolLineText(name: string, args: string): string {
+  const inline = args.replace(/\s+/g, " ").trim();
+  return inline ? `  ⚙ ${name}(${inline})` : `  ⚙ ${name}`;
+}
+
 /** 单个对话块 → 若干预折行 */
 export function blockToLines(block: Block, columns: number): RLine[] {
   const width = innerWidth(columns);
@@ -82,7 +93,13 @@ export function blockToLines(block: Block, columns: number): RLine[] {
     lines.push(...indentLines("reasoning", `${id}-r`, block.reasoning.trim(), width));
   }
   for (const tool of block.tools) {
-    if (tool.name) lines.push({ key: `${id}-t${lines.length}`, kind: "tool", text: `  ⚙ ${tool.name}` });
+    if (tool.name) {
+      lines.push({
+        key: `${id}-t${lines.length}`,
+        kind: "tool",
+        text: clipWidth(toolLineText(tool.name, tool.args), columns - 2),
+      });
+    }
   }
   if (block.content.trim()) {
     // 思考 / 工具与正文之间留一个空行，便于区分「过程」与「结论」
@@ -104,7 +121,13 @@ export function liveToLines(live: LiveAssistant, columns: number): RLine[] {
     lines.push(...indentLines("reasoning", `${id}-r`, live.reasoning.trim(), width));
   }
   for (const tool of live.tools) {
-    if (tool.name) lines.push({ key: `${id}-t${lines.length}`, kind: "tool", text: `  ⚙ ${tool.name}` });
+    if (tool.name) {
+      lines.push({
+        key: `${id}-t${lines.length}`,
+        kind: "tool",
+        text: clipWidth(toolLineText(tool.name, tool.args), columns - 2),
+      });
+    }
   }
   if (live.content.trim()) {
     // 思考 / 工具与正文之间留一个空行，便于区分「过程」与「结论」

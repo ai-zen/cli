@@ -275,7 +275,34 @@ describe("吸底布局：块 → 行", () => {
     expect(kinds).toContain("reasoning");
     expect(kinds).toContain("tool");
     expect(kinds).toContain("content");
-    expect(lines.find((line) => line.kind === "tool")?.text).toBe("  ⚙ read");
+    expect(lines.find((line) => line.kind === "tool")?.text).toBe("  ⚙ read({})");
+  });
+
+  it("工具调用行内联展示参数：折叠空白、超宽裁剪为单行", () => {
+    const line = blockToLines(
+      {
+        id: 8,
+        kind: "assistant",
+        reasoning: "",
+        content: "",
+        tools: [{ name: "exec", args: '{\n  "command": "npm test"\n}' }],
+      },
+      80,
+    ).find((l) => l.kind === "tool");
+    expect(line?.text).toBe('  ⚙ exec({ "command": "npm test" })');
+
+    const narrow = blockToLines(
+      {
+        id: 9,
+        kind: "assistant",
+        reasoning: "",
+        content: "",
+        tools: [{ name: "exec", args: `{"command":"${"x".repeat(200)}"}` }],
+      },
+      20,
+    ).find((l) => l.kind === "tool");
+    expect(displayWidth(narrow?.text ?? "")).toBeLessThanOrEqual(18);
+    expect(narrow?.text.endsWith("…")).toBe(true);
   });
 
   it("思考 / 工具与正文之间有空行（完成态与流式一致）", () => {
