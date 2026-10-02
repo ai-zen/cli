@@ -17,7 +17,7 @@ outline: deep
   - `@ai-zen/agents-core` `^4.3.0`
   - `@ai-zen/agents-sdk` `1.0.0-alpha.2`
   - `@modelcontextprotocol/sdk` `^1.29.0`
-  - `dayjs`、`ink`、`react`、`zod`
+  - `dayjs`、`ink`、`react`、`zod`、`highlight.js`、`lowlight`
 - **平台**：底层工具与 Shell 钩子依赖 Unix shell（`bash`/`zsh`）与 `process.env.SHELL`；在 Windows 上 Shell 钩子不可用（`hook` 会报“不支持的 shell”）。
 
 ## 安装
@@ -66,7 +66,7 @@ cat README.md | ai "用三句话总结"
 
 启动后先呈现动画渐变的 ASCII 启动界面，随后**直接进入对话界面**（由 Ink/React 渲染）——若存在「上一轮会话」则自动续接，否则新建对话。对话界面采用**底部固定**布局：分隔线、输入行与状态栏始终贴在终端底部，对话内容在其上方滚动。
 
-对话界面提供流式输出区、多行输入（`Enter` 发送 / `Ctrl+N` 换行 / `← →` 移动光标 / `Ctrl+← →` 跨词）与内联 `/` 命令菜单。
+对话界面提供流式输出区、多行输入（`Enter` 发送 / `Ctrl+N` 换行 / `← →` 移动光标 / `Ctrl+← →` 跨词）与内联 `/` 命令菜单；工具调用以 `⚙ 名称(参数)` 展示并带 **JSON 高亮**，正文与思考里的围栏代码块按语言高亮。
 
 ### 首次配置（API Key）
 
@@ -94,7 +94,7 @@ cat README.md | ai "用三句话总结"
 
 | 命令 | 说明 |
 |------|------|
-| `/exit` `/quit` | 退出对话（提示是否保存） |
+| `/exit` `/quit` | 退出对话 |
 | `/save` | 保存当前对话 |
 | `/new` | 重置会话（清空历史，替换为 Agent 定义的初始消息） |
 | `/back` | 撤回消息（选中用户消息可修改重发，选中工具结果可继续追问） |

@@ -16,6 +16,7 @@ outline: deep
 
 - **双模式运行**：无参数 + 交互终端进入 TUI；带参数或管道 / 重定向走纯 stdio（结果写 stdout、日志走 stderr，退出码语义明确）。
 - **现代交互界面（TUI）**：基于 Ink/React 的全屏界面——动画渐变 ASCII 启动界面、启动即直达对话、底部固定输入区与状态栏、内联 `/` 命令菜单。
+- **语法高亮**：工具调用参数按 **JSON** 高亮、正文与思考里的围栏代码块按语言高亮（高亮数据来自 `highlight.js` / `lowlight`，CLI 仅负责渲染）。
 - **命令提示**：对话中键入 `/` 即在输入行下方列出可用命令及说明，继续输入按前缀收敛候选。
 - **20 种内置工具**：由 `@ai-zen/agents-sdk` 提供的文件系统与图片处理工具集，详见 [内置工具](./tools.md)。
 - **5 种动态加载工具**：`load_skill`、`call_skill_sub_agent`、`load_mcp`、`call_mcp_tool`、`read_mcp_resource`。

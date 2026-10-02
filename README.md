@@ -71,7 +71,7 @@ When run with no arguments on an interactive terminal, the CLI opens a full-scre
 
 After the splash, you land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and the status bar (model · agent · token usage · generating) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line.
 
-The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word), and an inline `/` command menu (↑↓ to choose, `Tab` to complete). `Ctrl+C` cancels the current request while generating, and exits when idle.
+The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word), and an inline `/` command menu (↑↓ to choose, `Tab` to complete). Tool calls render as `⚙ name(args)` with **JSON syntax highlighting**, and fenced code blocks in the answer / reasoning are **syntax-highlighted by language** (highlight data from `highlight.js` via `lowlight`). `Ctrl+C` cancels the current request while generating, and exits when idle.
 
 ### First-run setup (API Key)
 
@@ -112,6 +112,8 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 | `/back` | Undo messages (roll back to a specific point and resend) |
 | `/editor` | Open system editor for long-form input |
 | `/clear` | Clear the screen |
+| `/config` | Open the configuration center (endpoints / models / image models / MCP servers / agent definitions / defaults / tool-output cap) |
+| `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
 | `/migrate` | Manually trigger task migration (generate handoff doc & start a new session) |
 | `/help` | Show available commands |
 

@@ -17,7 +17,7 @@ outline: deep
   - `@ai-zen/agents-core` `^4.3.0`
   - `@ai-zen/agents-sdk` `1.0.0-alpha.2`
   - `@modelcontextprotocol/sdk` `^1.29.0`
-  - `dayjs`, `ink`, `react`, `zod`
+  - `dayjs`, `ink`, `react`, `zod`, `highlight.js`, `lowlight`
 - **Platform**: the underlying tools and the Shell hook depend on a Unix shell (`bash`/`zsh`) and `process.env.SHELL`; the Shell hook is unavailable on Windows (`hook` will report "unsupported shell").
 
 ## Installation
@@ -66,7 +66,7 @@ cat README.md | ai "summarize in three sentences"
 
 On start, an animated gradient ASCII splash appears, then you land **directly in the chat screen** (rendered with Ink/React) — resuming the last session if there is one, otherwise starting a new conversation. The chat screen is **bottom-pinned**: a divider, the input line, and the status bar always sit at the bottom of the terminal, while the conversation scrolls above them.
 
-The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word), and an inline `/` command menu.
+The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word), and an inline `/` command menu. Tool calls render as `⚙ name(args)` with **JSON highlighting**, and fenced code blocks are highlighted by language.
 
 ### First-run setup (API Key)
 
@@ -94,7 +94,7 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 
 | Command | Description |
 |---------|-------------|
-| `/exit` `/quit` | Exit the conversation (prompts to save) |
+| `/exit` `/quit` | Exit the conversation |
 | `/save` | Save the current conversation |
 | `/new` | Reset the session (clear history, replace with the Agent-defined initial message) |
 | `/back` | Undo a message (select a user message to edit and resend, or select a tool result to continue asking) |
