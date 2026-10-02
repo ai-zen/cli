@@ -33,7 +33,7 @@
   "license": "MIT",
   "dependencies": {
     "@ai-zen/agents-core": "^4.3.0",
-    "@ai-zen/agents-sdk": "1.0.0-alpha.0",
+    "@ai-zen/agents-sdk": "1.0.0-alpha.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dayjs": "^1.11.21",
     "ink": "^7.1.1",

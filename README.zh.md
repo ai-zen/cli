@@ -176,11 +176,12 @@ ai hook uninstall
   ],
   "models": [
     {
-      "id": "gpt-5.5",
-      "name": "GPT-5.5",
+      "id": "gpt-6.1-sol",
+      "name": "GPT-6.1 Sol",
       "endpointId": "openai",
-      "modelName": "gpt-5.5",
-      "maxContextTokens": 250000
+      "modelName": "gpt-6.1-sol",
+      "maxContextTokens": 250000,
+      "custom": true
     }
   ],
   "imageModels": [
@@ -192,12 +193,14 @@ ai hook uninstall
       "defaultSize": "1024x1024"
     }
   ],
-  "defaultModel": "deepseek-v4-flash",
+  "defaultModel": "deepseek-flash",
   "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
-  "defaultMigrationModel": "deepseek-v4-flash"
+  "defaultMigrationModel": "deepseek-flash"
 }
 ```
+
+> 说明：`models` / `imageModels` 中**未标 `custom: true`** 的条目属于**出厂托管**——每次启动会与 SDK 出厂清单对齐、被替换为最新定义；自建模型请加 `"custom": true`。`endpoints` 始终保留用户配置，不受影响。
 
 ### 环境变量
 
@@ -354,13 +357,14 @@ OAuth 2.0 授权流程（`mcp.json` 中的 `oauth` 字段）已定义类型和�
 
 | ID | 名称 | 端点 |
 |----|------|------|
-| `gpt-5.5` | GPT-5.5 | OpenAI |
-| `glm-5.1` | GLM-5.1 | 智谱AI |
-| `glm-5v-turbo` | GLM-5V-Turbo（视觉） | 智谱AI |
+| `gpt-6-astra` | GPT-6 Astra | OpenAI |
+| `gpt-6.1-sol` | GPT-6.1 Sol | OpenAI |
+| `gpt-6-luna` | GPT-6 Luna | OpenAI |
+| `glm-5.3` | GLM-5.3 | 智谱AI |
+| `glm-5.3-flash` | GLM-5.3-Flash（视觉） | 智谱AI |
+| `glm-5.3-flashx` | GLM-5.3-FlashX（视觉） | 智谱AI |
 | `glm-4.7-flash` | GLM-4.7-Flash | 智谱AI |
-| `deepseek-v4-pro` | DeepSeek-V4-Pro | DeepSeek |
-| `deepseek-v4-flash` | DeepSeek-V4-Flash | DeepSeek（**默认模型**） |
-| `deepseek-v4-flash-vision-exp` | DeepSeek-V4-Flash-Vision-Exp（视觉） | DeepSeek |
+| `deepseek-flash` | DeepSeek-V4.1-Flash（视觉） | DeepSeek（**默认模型**） |
 
 ## 开发
 

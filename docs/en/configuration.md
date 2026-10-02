@@ -46,11 +46,12 @@ Key paths defined in `src/config.ts`:
   ],
   "models": [
     {
-      "id": "gpt-5.5",
-      "name": "GPT-5.5",
+      "id": "gpt-6.1-sol",
+      "name": "GPT-6.1 Sol",
       "endpointId": "openai",
-      "modelName": "gpt-5.5",
-      "maxContextTokens": 250000
+      "modelName": "gpt-6.1-sol",
+      "maxContextTokens": 250000,
+      "custom": true
     }
   ],
   "imageModels": [
@@ -62,10 +63,10 @@ Key paths defined in `src/config.ts`:
       "defaultSize": "1024x1024"
     }
   ],
-  "defaultModel": "deepseek-v4-flash",
+  "defaultModel": "deepseek-flash",
   "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
-  "defaultMigrationModel": "deepseek-v4-flash"
+  "defaultMigrationModel": "deepseek-flash"
 }
 ```
 
@@ -74,6 +75,7 @@ Fields (aligned with the SDK's `AppConfig` type):
 - `endpoints`: the list of API endpoints (`id`, `name`, `baseUrl`, `apiKey`, `description`).
 - `models`: the list of conversation models. Among these, `maxContextTokens` sets the **migration threshold** (the README suggests roughly 25% of the model's actual context window). `vision` indicates whether image input is supported (which determines whether `viewImage` is enabled).
 - `imageModels`: the list of image-generation models (`id`, `name`, `endpointId`, `modelName`, `defaultSize`, `defaultQuality`).
+- Entries in `models` / `imageModels` without `custom: true` are **factory-managed**: on every launch they are reconciled with (and replaced by) the SDK factory catalog; add `"custom": true` for your own entries (a dangling `defaultModel` / `defaultMigrationModel` falls back to the factory default). `endpoints` are never managed and always keep your configuration.
 - `defaultModel` / `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`: the various defaults.
 
 ## Filesystem layout
@@ -121,22 +123,24 @@ Industry-convention directories: `~/.agents/` and `<project>/.agents/` (`skills/
 
 | ID | Name | Endpoint |
 |----|------|----------|
-| `gpt-5.5` | GPT-5.5 | OpenAI |
-| `glm-5.1` | GLM-5.1 | ZhipuAI |
-| `glm-5v-turbo` | GLM-5V-Turbo (vision) | ZhipuAI |
+| `gpt-6-astra` | GPT-6 Astra | OpenAI |
+| `gpt-6.1-sol` | GPT-6.1 Sol | OpenAI |
+| `gpt-6-luna` | GPT-6 Luna | OpenAI |
+| `glm-5.3` | GLM-5.3 | ZhipuAI |
+| `glm-5.3-flash` | GLM-5.3-Flash (vision) | ZhipuAI |
+| `glm-5.3-flashx` | GLM-5.3-FlashX (vision) | ZhipuAI |
 | `glm-4.7-flash` | GLM-4.7-Flash | ZhipuAI |
-| `deepseek-v4-pro` | DeepSeek-V4-Pro | DeepSeek |
-| `deepseek-v4-flash` | DeepSeek-V4-Flash | DeepSeek (**default**) |
-| `deepseek-v4-flash-vision-exp` | DeepSeek-V4-Flash-Vision-Exp (vision) | DeepSeek |
+| `deepseek-flash` | DeepSeek-V4.1-Flash (vision) | DeepSeek (**default**) |
 
 > The preset endpoints/models come from the SDK (`@ai-zen/agents-sdk`) `config/constants`; the CLI keeps no preset list of its own (`src/config.ts` reuses the SDK factory defaults). This table matches the README's "Preset Models" table.
 
 ## Configuration management
 
-The in-TUI **interactive configuration screen has been removed** (tracked as a P1 TODO and to be reimplemented with native Ink components). For now, edit the config file directly:
+In the TUI, `/config` opens the **configuration center** for editing the common fields interactively — no need to hand-edit the JSON:
 
 - Config file path: `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json`).
-- What you can set: API endpoints (name, Base URL, API Key, description), the default conversation / image-generation model, the default Agent, MCP servers, etc.
-- MCP servers can also be maintained separately in `~/.ai-zen/mcp.json` (see [MCP Support](./mcp.md)).
+- What you can set: API endpoints (name, Base URL, API Key), the default conversation model, and new endpoints (custom OpenAI-compatible services) — the "Endpoint management" list is [add endpoint] + each endpoint; select one to edit its API Key / Base URL in place.
+- On first launch, if the endpoint bound to the model has no API Key, a credential screen appears first; `/key` in the chat changes the current endpoint's key (the session is rebuilt on save).
+- Models, image models, MCP servers, and other advanced fields still require editing the config file manually.
 
 > Note: the CLI entry only implements the `hook` subcommand (`ai hook install|uninstall`); there is **no `config` subcommand**. If an endpoint has no API Key, pure stdio mode fails fast with a non-zero exit code, and TUI mode reports it when starting a conversation.

@@ -174,11 +174,12 @@ The `maxContextTokens` field on each model sets the migration threshold (typical
   ],
   "models": [
     {
-      "id": "gpt-5.5",
-      "name": "GPT-5.5",
+      "id": "gpt-6.1-sol",
+      "name": "GPT-6.1 Sol",
       "endpointId": "openai",
-      "modelName": "gpt-5.5",
-      "maxContextTokens": 250000
+      "modelName": "gpt-6.1-sol",
+      "maxContextTokens": 250000,
+      "custom": true
     }
   ],
   "imageModels": [
@@ -190,12 +191,14 @@ The `maxContextTokens` field on each model sets the migration threshold (typical
       "defaultSize": "1024x1024"
     }
   ],
-  "defaultModel": "deepseek-v4-flash",
+  "defaultModel": "deepseek-flash",
   "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
-  "defaultMigrationModel": "deepseek-v4-flash"
+  "defaultMigrationModel": "deepseek-flash"
 }
 ```
+
+> Note: entries in `models` / `imageModels` **without `custom: true`** are **factory-managed** — on every launch they are reconciled with (and replaced by) the SDK factory catalog; add `"custom": true` for your own entries. `endpoints` are never managed and always keep your configuration.
 
 ### Environment Variable
 
@@ -352,13 +355,14 @@ The OAuth 2.0 authorization flow (the `oauth` field in `mcp.json`) has its types
 
 | ID | Name | Endpoint |
 |----|------|----------|
-| `gpt-5.5` | GPT-5.5 | OpenAI |
-| `glm-5.1` | GLM-5.1 | ZhipuAI |
-| `glm-5v-turbo` | GLM-5V-Turbo (vision) | ZhipuAI |
+| `gpt-6-astra` | GPT-6 Astra | OpenAI |
+| `gpt-6.1-sol` | GPT-6.1 Sol | OpenAI |
+| `gpt-6-luna` | GPT-6 Luna | OpenAI |
+| `glm-5.3` | GLM-5.3 | ZhipuAI |
+| `glm-5.3-flash` | GLM-5.3-Flash (vision) | ZhipuAI |
+| `glm-5.3-flashx` | GLM-5.3-FlashX (vision) | ZhipuAI |
 | `glm-4.7-flash` | GLM-4.7-Flash | ZhipuAI |
-| `deepseek-v4-pro` | DeepSeek-V4-Pro | DeepSeek |
-| `deepseek-v4-flash` | DeepSeek-V4-Flash | DeepSeek (**default**) |
-| `deepseek-v4-flash-vision-exp` | DeepSeek-V4-Flash-Vision-Exp (vision) | DeepSeek |
+| `deepseek-flash` | DeepSeek-V4.1-Flash (vision) | DeepSeek (**default**) |
 
 ## Development
 

@@ -46,11 +46,12 @@ outline: deep
   ],
   "models": [
     {
-      "id": "gpt-5.5",
-      "name": "GPT-5.5",
+      "id": "gpt-6.1-sol",
+      "name": "GPT-6.1 Sol",
       "endpointId": "openai",
-      "modelName": "gpt-5.5",
-      "maxContextTokens": 250000
+      "modelName": "gpt-6.1-sol",
+      "maxContextTokens": 250000,
+      "custom": true
     }
   ],
   "imageModels": [
@@ -62,10 +63,10 @@ outline: deep
       "defaultSize": "1024x1024"
     }
   ],
-  "defaultModel": "deepseek-v4-flash",
+  "defaultModel": "deepseek-flash",
   "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
-  "defaultMigrationModel": "deepseek-v4-flash"
+  "defaultMigrationModel": "deepseek-flash"
 }
 ```
 
@@ -74,6 +75,7 @@ outline: deep
 - `endpoints`：API 端点列表（`id`、`name`、`baseUrl`、`apiKey`、`description`）。
 - `models`：对话模型列表。其中 `maxContextTokens` 设定**迁移阈值**（README 建议约为模型实际上下文窗口的 25%）。`vision` 表示是否支持图片输入（决定 `viewImage` 是否启用）。
 - `imageModels`：图片生成模型列表（`id`、`name`、`endpointId`、`modelName`、`defaultSize`、`defaultQuality`）。
+- `models` / `imageModels` 中未标 `custom: true` 的条目属于**出厂托管**：每次启动会与 SDK 出厂清单对齐并被替换为最新定义；自建条目请加 `"custom": true`（悬空的 `defaultModel` / `defaultMigrationModel` 会回退到出厂默认）。`endpoints` 始终保留用户配置。
 - `defaultModel` / `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`：各默认项。
 
 ## 文件系统布局
@@ -121,22 +123,24 @@ outline: deep
 
 | ID | 名称 | 端点 |
 |----|------|------|
-| `gpt-5.5` | GPT-5.5 | OpenAI |
-| `glm-5.1` | GLM-5.1 | ZhipuAI |
-| `glm-5v-turbo` | GLM-5V-Turbo（视觉） | ZhipuAI |
+| `gpt-6-astra` | GPT-6 Astra | OpenAI |
+| `gpt-6.1-sol` | GPT-6.1 Sol | OpenAI |
+| `gpt-6-luna` | GPT-6 Luna | OpenAI |
+| `glm-5.3` | GLM-5.3 | ZhipuAI |
+| `glm-5.3-flash` | GLM-5.3-Flash（视觉） | ZhipuAI |
+| `glm-5.3-flashx` | GLM-5.3-FlashX（视觉） | ZhipuAI |
 | `glm-4.7-flash` | GLM-4.7-Flash | ZhipuAI |
-| `deepseek-v4-pro` | DeepSeek-V4-Pro | DeepSeek |
-| `deepseek-v4-flash` | DeepSeek-V4-Flash | DeepSeek（**默认**） |
-| `deepseek-v4-flash-vision-exp` | DeepSeek-V4-Flash-Vision-Exp（视觉） | DeepSeek |
+| `deepseek-flash` | DeepSeek-V4.1-Flash（视觉） | DeepSeek（**默认**） |
 
 > 预设端点/模型来自 SDK（`@ai-zen/agents-sdk`）的 `config/constants`；CLI 不维护自己的预置列表（`src/config.ts` 直接复用 SDK 的出厂默认）。上表与 README 的「预置模型」表一致。
 
 ## 配置管理
 
-TUI 内的**交互式配置管理界面已移除**（列为 P1 待办，将以 Ink 原生组件重新实现）。当前请直接编辑配置文件：
+TUI 内可用 `/config` 打开**配置中心**交互式编辑常用项，无需手改 JSON：
 
 - 配置文件路径：`~/.ai-zen/config.json`（或 `$AI_ZEN_DIR/config.json`）。
-- 可设置：API 端点（名称、Base URL、API Key、描述）、默认对话模型 / 默认图片生成模型、默认 Agent、MCP 服务器等。
-- MCP 服务器也可单独维护于 `~/.ai-zen/mcp.json` 等（见 [MCP 支持](./mcp.md)）。
+- 可设置：API 端点（名称、Base URL、API Key）、默认对话模型、新建端点（自定义 OpenAI 兼容服务）——「端点管理」列表 = [新建端点] + 各端点，选中端点后就地编辑其 API Key / Base URL。
+- 首次启动若模型绑定的端点缺 API Key，会先弹出凭据设置屏；对话内 `/key` 可改当前端点的 Key（保存后自动重建会话）。
+- 模型的增删改、图片模型、MCP 服务器等高级项暂时仍需手动编辑配置文件。
 
 > 说明：CLI 入口只实现了 `hook` 子命令（`ai hook install|uninstall`）；**没有 `config` 子命令**。若端点缺少 API Key，纯 stdio 模式会直接报错退出（非 0），TUI 模式会在启动对话时提示。

@@ -30,8 +30,9 @@
 
 ### 🔧 变更
 
+- **升级 `@ai-zen/agents-sdk` 到 `1.0.0-alpha.1`**：出厂模型目录刷新（`deepseek-v4-flash` → `deepseek-flash`、`gpt-5.5` → `gpt-6-*`、`glm-5.1` → `glm-5.3` 等，默认模型改为 `deepseek-flash`）；新增**出厂模型清单托管**（`models` / `imageModels` 中未标 `custom: true` 的条目会被出厂定义替换，悬空 `defaultModel` / `defaultMigrationModel` 回退到出厂默认；`endpoints` 不受影响）；`maxContextTokens` 语义澄清为「任务迁移触发阈值」；`Model` / `ImageModel` 新增可选 `custom?: boolean`。CLI 侧代码零改动，仅测试夹具需标 `custom: true`。
 - 新增依赖：`ink`、`react`（运行时），`ink-testing-library`、`@types/react`（开发）。
-- **移除依赖**：`inquirer`、`@types/inquirer`、`chalk` —— 三者均已从代码中彻底移除：inquirer 的确认改由调用方注入（TUI 走 Ink 确认框）；着色改用 Ink `<Text color>`（chalk 仅作为 Ink 的间接依赖保留在依赖树中）。
+- **移除依赖**：`inquirer`、`@types/inquirer`、`chalk` —— 三者均已从代码中彻底移除：inquirer 的确认改由调用方注入（TUI 走 Ink 确认框）；着色改用 Ink `<Text color>`（随 SDK 升级到 `1.0.0-alpha.1`，chalk / inquirer 已从依赖树中彻底消失）。
 - **TUI 输出统一走 Ink**：迁移进度、跳过迁移、会话落盘失败等提示不再 `console.log` / `console.warn` 直写终端（会撕裂 Ink 帧），改为经回调上报、由对话屏渲染为 notice 块；启动 Logo 渐变也由 chalk 字符串改为 Ink 逐字符 `<Text color>`。
 - **配置向导改为「吸底」布局（修复 VS Code 终端里被裁切）**：此前配置中心 / 凭据设置屏是**顶对齐短帧**，从对话屏（整帧高 = 终端行数 − 1）切过来时，Ink 的擦除 / 滚动会错位，内容被顶出视口、渲染不全。现在向导与对话屏统一为「顶部留白 + 内容贴底」，整帧高度一致、内容不再飘出可视区：
   - 新增纯函数 `bottomPadding()` 与 `WizardFrame` 外壳（菜单 / 列表 / 输入屏全部套用）；输入屏的硬件光标 y 随留白一起算（`promptLayout()`，IME 仍精确跟随）；
