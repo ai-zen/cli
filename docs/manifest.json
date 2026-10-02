@@ -5,7 +5,7 @@
     "zh": "双模式 AI Agent 终端（纯 stdio 管道 + 交互式 TUI，内置 20 种工具，支持 MCP、Skill 与任务迁移）",
     "en": "Dual-mode AI Agent terminal (pure stdio pipelines + interactive TUI, ships with 20 built-in tools, with MCP, Skill, and task migration support)"
   },
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "docsRoot": "docs",
   "locales": ["zh", "en"],
   "defaultLocale": "zh",

@@ -1,3 +1,20 @@
+## [1.0.0-alpha.2] - 2026-10-03
+
+### ⚠️ 依赖升级
+
+- **`@ai-zen/agents-sdk` 升至 `1.0.0-alpha.3`** — 拉取 SDK 对内置工具 `generateImage` 参数描述的修正。原描述写着「配置中的图片模型可通过 `aiz config show` 查看」，等于**指路让模型去执行宿主 CLI 命令**；而**工具描述会随每次请求的 `tools` 字段进入每一层 agent 的上下文**——模型据此 `exec("aiz config show")`，CLI 又把这条命令解析为**纯 stdio 模式**、以 `config show` 为提示词**再拉起一个 agent**，其工具描述里又是同一句指引，遂形成**自指型递归**（每层都真连 API，越套越深）。SDK 现已把该描述改为「若指定的模型不存在，本工具会返回当前可用的模型列表」，与 `call()` 的实际行为一致，且不再引导模型去执行宿主 CLI。该版本**无破坏性变更**，CLI 源码无需适配（类型 / 默认配置全量委托 SDK，版本横幅由实际安装版本读取，工具清单由 SDK 静态注册表自动发现）。
+
+### 📝 文档
+
+- `docs/zh|en/getting-started.md`：运行时依赖版本同步为 `@ai-zen/agents-sdk` `1.0.0-alpha.3`
+- `docs/manifest.json`：版本号同步为 `1.0.0-alpha.2`
+- 中英 README 启动横幅示例版本同步为 `v1.0.0-alpha.2`
+
+### ✅ 测试
+
+- `tsc --noEmit`（`tsconfig.test.json`）与 `npm run build` 零错误
+- 全量单测 13 文件 / 224 用例通过
+
 ## [1.0.0-alpha.1] - 2026-09-30
 
 > 本版本汇总**相对上一发布版本 `0.9.0`** 的全部变化。
