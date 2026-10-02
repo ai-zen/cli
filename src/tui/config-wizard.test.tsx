@@ -204,7 +204,7 @@ describe("ConfigWizard（吸底布局）", () => {
     const { lastFrame, unmount } = render(
       <ConfigWizard
         config={makeConfig()}
-        initialStep={{ kind: "pick-endpoint", field: "apiKey" }}
+        initialStep={{ kind: "endpoints" }}
         onSave={makeOnSave()}
         onClose={noop}
       />,
@@ -212,7 +212,7 @@ describe("ConfigWizard（吸底布局）", () => {
     await tick();
     const lines = (lastFrame() ?? "").split("\n");
     expect(lines.length).toBeLessThanOrEqual(24);
-    const titleIndex = lines.findIndex((line) => line.includes("选择端点"));
+    const titleIndex = lines.findIndex((line) => line.includes("端点管理"));
     expect(titleIndex).toBeGreaterThan(0); // 顶部留白，而非顶格
     unmount();
   });
@@ -228,12 +228,12 @@ describe("ConfigWizard（配置中心）", () => {
     expect(frame).toContain("配置中心");
     expect(frame).toContain("config.json");
     expect(frame).toContain("默认模型");
-    expect(frame).toContain("端点凭据（API Key）");
+    expect(frame).toContain("端点管理");
     expect(frame).toContain("DeepSeek ✗");
     unmount();
   });
 
-  it("菜单 → 端点凭据 → 选中端点 → 输入 Key：写盘并回菜单，Esc 关闭时上报变更", async () => {
+  it("菜单 → 端点管理 → 选中端点 → 就地编辑 API Key：写盘并回列表，Esc 关闭时上报变更", async () => {
     const onSave = makeOnSave();
     const onClose = vi.fn();
     const { stdin, lastFrame, unmount } = render(
@@ -241,20 +241,25 @@ describe("ConfigWizard（配置中心）", () => {
     );
     await tick();
 
-    stdin.write(DOWN); // → 端点凭据（API Key）
+    stdin.write(DOWN); // → 端点管理
     await tick();
     stdin.write(ENTER);
     await tick();
-    expect(lastFrame()).toContain("选择端点 · API Key");
+    expect(lastFrame()).toContain("端点管理");
+    expect(lastFrame()).toContain("＋ 新建端点");
     expect(lastFrame()).toContain("未设置");
 
-    stdin.write(ENTER); // 选中第一个端点（DeepSeek）
-    await tick();
-    expect(lastFrame()).toContain("设置 API Key · DeepSeek");
-
-    stdin.write("sk-new-key");
+    stdin.write(DOWN); // → DeepSeek（跳过「新建端点」）
     await tick();
     stdin.write(ENTER);
+    await tick();
+    expect(lastFrame()).toContain("◆ 端点 · DeepSeek");
+
+    stdin.write(ENTER); // 选中 API Key 字段 → 进入就地编辑
+    await tick();
+    stdin.write("sk-new-key");
+    await tick();
+    stdin.write(ENTER); // 保存
     await tick();
     await tick();
 
@@ -262,9 +267,13 @@ describe("ConfigWizard（配置中心）", () => {
     const saved = onSave.mock.calls[0]![0];
     expect(saved.endpoints[0]!.apiKey).toBe("sk-new-key");
     expect(saved.endpoints[1]!.apiKey).toBe("sk-old-key-123456");
-    // 回到菜单，概览已更新
-    expect(lastFrame()).toContain("DeepSeek ✓");
+    // 原地停留并给出提示
+    expect(lastFrame()).toContain("API Key 已更新");
 
+    stdin.write(ESC); // 回到端点列表
+    await tick();
+    stdin.write(ESC); // 回到菜单
+    await tick();
     stdin.write(ESC); // 关闭
     await tick();
     expect(onClose).toHaveBeenCalledWith({
@@ -396,6 +405,102 @@ describe("ConfigWizard（配置中心）", () => {
     stdin.write(ENTER);
     await tick();
     expect(onSave.mock.calls[0]![0].defaultModel).toBe("gpt-5.5");
+    unmount();
+  });
+});
+
+describe("ConfigWizard（端点详情 · 就地编辑）", () => {
+  it("↑ ↓ 切换字段后 Enter 就地编辑 Base URL 并写盘", async () => {
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "endpoint", endpointId: "deepseek" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    expect(lastFrame()).toContain("◆ 端点 · DeepSeek");
+    expect(lastFrame()).toContain("API Key");
+    expect(lastFrame()).toContain("Base URL");
+
+    stdin.write(DOWN); // → Base URL
+    await tick();
+    stdin.write(ENTER); // 进入编辑（预填现有地址）
+    await tick();
+    stdin.write("\u0015"); // Ctrl+U 清空
+    await tick();
+    stdin.write("https://new.example/v1");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(onSave.mock.calls[0]![0].endpoints[0]!.baseUrl).toBe("https://new.example/v1");
+    unmount();
+  });
+
+  it("就地编辑 Base URL：非 http(s) 前缀被拒绝，不写盘", async () => {
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "endpoint", endpointId: "deepseek" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write(DOWN); // → Base URL
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("\u0015");
+    await tick();
+    stdin.write("ftp://x");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(lastFrame()).toContain("Base URL 需以 http:// 或 https:// 开头");
+    unmount();
+  });
+
+  it("就地编辑 API Key：预填现有密钥，未改动直接退出（不写盘）", async () => {
+    const onSave = makeOnSave();
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "endpoint", endpointId: "openai" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write(ENTER); // API Key 字段 → 编辑（预填 sk-old-key-123456）
+    await tick();
+    stdin.write(ENTER); // 未改动，保存应被跳过
+    await tick();
+    expect(onSave).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it("就地编辑 API Key：Tab 切明文后可见完整密钥", async () => {
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "endpoint", endpointId: "openai" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write(ENTER); // 编辑 API Key
+    await tick();
+    expect(lastFrame()).not.toContain("sk-old-key-123456"); // 掩码态
+    stdin.write("\t"); // Tab 切明文
+    await tick();
+    expect(lastFrame()).toContain("sk-old-key-123456");
     unmount();
   });
 });

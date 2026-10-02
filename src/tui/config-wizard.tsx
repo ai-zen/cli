@@ -4,7 +4,8 @@
  * 三种入口，共用同一套渲染与步骤机：
  *   1. 首启引导（`onboarding`）：启动时发现模型绑定的端点缺 API Key，直接进入「输入 Key」步骤；
  *   2. `/key`：会话内快速设置**当前模型所用端点**的 API Key（`initialStep` 直达编辑步骤）；
- *   3. `/config`：会话内打开配置中心（默认模型 / 端点凭据 / 端点地址 / 新建端点）。
+ *   3. `/config`：会话内打开配置中心（默认模型 / 端点管理 / 完成）。端点管理列表 = [新建端点] + 各端点，
+ *      选中端点后进入详情屏，一屏内就地编辑其 API Key / Base URL。
  *
  * 设计要点：
  *   - 只做渲染与键盘分发，配置的读取与不可变改写全部委托 `../config-editor.js`；
@@ -15,7 +16,7 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import { Box, Text, useCursor, useInput, useWindowSize } from "ink";
-import type { AppConfig } from "@ai-zen/agents-sdk";
+import type { AppConfig, Endpoint } from "@ai-zen/agents-sdk";
 import { theme } from "./theme.js";
 import { SelectList, KeyHints, type SelectItem } from "./components.js";
 import {
@@ -36,6 +37,7 @@ import {
   findModel,
   isApiKeySet,
   maskApiKey,
+  modelsUsingEndpoint,
   setDefaultModel,
   setEndpointApiKey,
   setEndpointBaseUrl,
@@ -51,9 +53,13 @@ export type EndpointField = "apiKey" | "baseUrl";
 export type WizardStep =
   | { kind: "menu" }
   | { kind: "pick-model" }
-  | { kind: "pick-endpoint"; field: EndpointField }
+  | { kind: "endpoints" }
+  | { kind: "endpoint"; endpointId: string }
   | { kind: "edit"; field: EndpointField; endpointId: string }
   | { kind: "new-endpoint"; field: "name" | "baseUrl" | "apiKey"; draft: NewEndpointDraft };
+
+/** 端点列表里「新建端点」哨兵值（端点 id 由名称派生、不含下划线，故不会冲突） */
+const NEW_ENDPOINT = "__new_endpoint__";
 
 export interface NewEndpointDraft {
   name: string;
@@ -456,19 +462,9 @@ function MenuStep({ columns, rows, config, savedCount, notice, onPick, onClose }
       hint: defaultModel?.name ?? config.defaultModel ?? "未设置",
     },
     {
-      label: "端点凭据（API Key）",
-      value: "apiKey",
+      label: "端点管理",
+      value: "endpoints",
       hint: summarizeEndpoints(config),
-    },
-    {
-      label: "端点地址（Base URL）",
-      value: "baseUrl",
-      hint: `${config.endpoints.length} 个端点`,
-    },
-    {
-      label: "新建端点",
-      value: "new",
-      hint: "自定义 OpenAI 兼容服务",
     },
     {
       label: "完成",
@@ -492,6 +488,260 @@ function MenuStep({ columns, rows, config, savedCount, notice, onPick, onClose }
         <SelectList items={items} onSelect={onPick} columns={columns} />
       </Box>
       <KeyHints hints={[["↑ ↓", "选择"], ["Enter", "确认"], ["Esc", "完成返回"]]} />
+    </WizardFrame>
+  );
+}
+
+// ==================== 端点详情（就地编辑）====================
+
+/** 端点详情的可编辑字段（数组顺序即界面上下顺序） */
+const ENDPOINT_FIELDS = [
+  { key: "apiKey", label: "API Key" },
+  { key: "baseUrl", label: "Base URL" },
+] as const;
+
+type EndpointFieldKey = (typeof ENDPOINT_FIELDS)[number]["key"];
+
+/** 字段名固定宽度（让两行的值起始列对齐） */
+const FIELD_LABEL_WIDTH = 9;
+/** 值起始列 = 光标前缀（宽 2）+ 字段名（9）+ 间隔（2） */
+const FIELD_VALUE_X = 2 + FIELD_LABEL_WIDTH + 2;
+
+interface EndpointStepProps {
+  columns: number;
+  rows: number;
+  config: AppConfig;
+  endpoint: Endpoint;
+  /** 最近一次保存提示（由宿主维护） */
+  notice?: string | null;
+  /** 提交一次字段修改：成功返回 `null`，失败返回错误信息（原地停留） */
+  onCommit: (next: AppConfig, message: string, endpointId: string) => Promise<string | null>;
+  /** 返回端点列表 */
+  onBack: () => void;
+}
+
+/**
+ * 端点详情屏 —— 一屏同时列出该端点的 `API Key` 与 `Base URL`：
+ *   - 导航态：`↑ ↓` 在字段间移动，`Enter` 进入编辑，`Esc` 返回列表；
+ *   - 编辑态：`Enter` 写盘并退出编辑，`Esc` 取消，`Tab` 切换密钥明文/掩码。
+ *
+ * 编辑时光标「就地」落在所选字段的值上（硬件光标同步，IME 候选框跟随）；
+ * 帧高仍恒为「终端行数 − 1」，与其它屏一致。
+ */
+function EndpointStep({ columns, rows, config, endpoint, notice, onCommit, onBack }: EndpointStepProps) {
+  const { setCursorPosition } = useCursor();
+  const [index, setIndex] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [cursor, setCursor] = useState(0);
+  const [revealed, setRevealed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const name = endpoint.name || endpoint.id;
+  const field = ENDPOINT_FIELDS[index];
+  const isKey = field.key === "apiKey";
+  const chars = Array.from(value);
+  const caret = Math.max(0, Math.min(cursor, chars.length));
+
+  const beginEdit = () => {
+    const current = isKey ? (endpoint.apiKey ?? "") : endpoint.baseUrl;
+    setValue(current);
+    setCursor(Array.from(current).length);
+    setRevealed(false);
+    setError(null);
+    setEditing(true);
+  };
+  const update = (next: string, nextCursor: number) => {
+    setValue(next);
+    setCursor(nextCursor);
+  };
+  const insert = (text: string) =>
+    update(chars.slice(0, caret).join("") + text + chars.slice(caret).join(""), caret + Array.from(text).length);
+  const deleteBefore = () => {
+    if (caret === 0) return;
+    update(chars.slice(0, caret - 1).join("") + chars.slice(caret).join(""), caret - 1);
+  };
+  const deleteAfter = () => {
+    if (caret >= chars.length) return;
+    update(chars.slice(0, caret).join("") + chars.slice(caret + 1).join(""), caret);
+  };
+
+  const submit = async () => {
+    const next = value.trim();
+    const current = isKey ? (endpoint.apiKey ?? "") : endpoint.baseUrl;
+    if (next === current) {
+      // 未改动：直接退出编辑，不产生无谓写盘 / dirty
+      setEditing(false);
+      setError(null);
+      return;
+    }
+    if (isKey && !next) {
+      setError("API Key 不能为空");
+      return;
+    }
+    if (!isKey && !/^https?:\/\//i.test(next)) {
+      setError("Base URL 需以 http:// 或 https:// 开头");
+      return;
+    }
+    const nextConfig = isKey
+      ? setEndpointApiKey(config, endpoint.id, next)
+      : setEndpointBaseUrl(config, endpoint.id, next);
+    const message = isKey ? `端点 ${name} 的 API Key 已更新` : `端点 ${name} 的 Base URL 已更新`;
+    const failure = await onCommit(nextConfig, message, endpoint.id);
+    if (failure) {
+      setError(failure);
+      return;
+    }
+    setEditing(false);
+    setError(null);
+  };
+
+  useInput((char, key) => {
+    if (isTerminalReply(char)) return;
+    if (!editing) {
+      if (key.escape) {
+        onBack();
+        return;
+      }
+      if (key.upArrow) {
+        setIndex((i) => (i - 1 + ENDPOINT_FIELDS.length) % ENDPOINT_FIELDS.length);
+        return;
+      }
+      if (key.downArrow) {
+        setIndex((i) => (i + 1) % ENDPOINT_FIELDS.length);
+        return;
+      }
+      if (key.return) beginEdit();
+      return;
+    }
+    if (key.escape) {
+      setEditing(false);
+      setError(null);
+      return;
+    }
+    if (key.return) {
+      void submit();
+      return;
+    }
+    if (key.tab && isKey) {
+      setRevealed((r) => !r);
+      return;
+    }
+    if (char === "u" && key.ctrl) {
+      update("", 0);
+      return;
+    }
+    if (key.leftArrow) {
+      setCursor(Math.max(0, caret - 1));
+      return;
+    }
+    if (key.rightArrow) {
+      setCursor(Math.min(chars.length, caret + 1));
+      return;
+    }
+    if (key.home) {
+      setCursor(0);
+      return;
+    }
+    if (key.end) {
+      setCursor(chars.length);
+      return;
+    }
+    if (key.backspace) {
+      deleteBefore();
+      return;
+    }
+    if (key.delete) {
+      deleteAfter();
+      return;
+    }
+    if (char && !key.ctrl && !key.meta) insert(char);
+  });
+
+  /** 字段值：编辑中的字段返回「光标前 / 光标处 / 光标后」三段（自绘光标） */
+  const renderValue = (fieldKey: EndpointFieldKey) => {
+    const keyField = fieldKey === "apiKey";
+    if (editing && fieldKey === field.key) {
+      const shown = keyField && !revealed ? "•".repeat(chars.length) : value;
+      const shownChars = Array.from(shown);
+      return {
+        before: shownChars.slice(0, caret).join(""),
+        at: shownChars[caret] ?? " ",
+        after: shownChars.slice(caret + 1).join(""),
+        editing: true,
+      };
+    }
+    const raw = keyField ? (endpoint.apiKey ?? "") : endpoint.baseUrl;
+    return { before: keyField ? maskApiKey(raw) : raw, at: "", after: "", editing: false };
+  };
+
+  const modelCount = modelsUsingEndpoint(config, endpoint.id).length;
+  const headerRows: Row[] = [
+    ...textRows(`◆ 端点 · ${name}`, columns, theme.highlight, true),
+    ...textRows(`${endpoint.id}${modelCount > 0 ? ` · ${modelCount} 个模型引用` : ""}`, columns, theme.faint),
+    ...textRows("↑ ↓ 切换字段 · Enter 编辑 · 改动即时写入磁盘", columns, theme.dim),
+    ...(notice ? textRows(`✔ ${notice}`, columns, theme.ok) : []),
+    ...(error ? textRows(`✖ ${error}`, columns, theme.error) : []),
+  ];
+  const contentLines = headerRows.length + 1 + ENDPOINT_FIELDS.length + 1;
+
+  // 硬件光标：仅编辑态可见，就地落在所选字段的值上（顶部留白 + 标题行数 + 字段行偏移）
+  if (editing) {
+    setCursorPosition({
+      x: FIELD_VALUE_X + displayWidth(renderValue(field.key).before),
+      y: bottomPadding(rows, contentLines) + headerRows.length + 1 + index,
+    });
+  } else {
+    setCursorPosition(undefined);
+  }
+
+  const hints: [string, string][] = editing
+    ? isKey
+      ? [
+          ["Enter", "保存"],
+          ["Tab", "明文/掩码"],
+          ["Esc", "取消"],
+        ]
+      : [
+          ["Enter", "保存"],
+          ["Esc", "取消"],
+        ]
+    : [
+        ["↑ ↓", "切换"],
+        ["Enter", "编辑"],
+        ["Esc", "返回"],
+      ];
+
+  return (
+    <WizardFrame columns={columns} rows={rows} contentLines={contentLines}>
+      <Header rows={headerRows} />
+      <Box marginTop={1} flexDirection="column">
+        {ENDPOINT_FIELDS.map((f, i) => {
+          const selected = i === index;
+          const part = renderValue(f.key);
+          return (
+            <Text key={f.key} wrap="truncate">
+              <Text color={selected ? theme.brand[0] : theme.faint}>{selected ? "❯ " : "  "}</Text>
+              <Text bold={selected} color={selected ? theme.highlight : theme.assistant}>
+                {f.label.padEnd(FIELD_LABEL_WIDTH)}
+              </Text>
+              <Text>{"  "}</Text>
+              {part.editing ? (
+                <>
+                  <Text>{part.before}</Text>
+                  <Text inverse color={theme.brand[0]}>
+                    {part.at}
+                  </Text>
+                  <Text>{part.after}</Text>
+                </>
+              ) : (
+                <Text color={f.key === "apiKey" ? theme.dim : theme.assistant}>{part.before}</Text>
+              )}
+            </Text>
+          );
+        })}
+      </Box>
+      <KeyHints hints={hints} />
     </WizardFrame>
   );
 }
@@ -523,15 +773,8 @@ export function ConfigWizard(props: ConfigWizardProps) {
     setStep(next);
   };
 
-  /** 写盘 + 记录变更；成功且 `closeOnSave` 时直接关闭 */
-  const commit = async (next: AppConfig, message: string, endpointId?: string) => {
-    setError(null);
-    try {
-      await props.onSave(next);
-    } catch (cause: any) {
-      setError(`写入配置失败：${cause?.message ?? cause}`);
-      return;
-    }
+  /** 记录一次成功写盘：更新配置快照、累加变更、刷新提示 */
+  const record = (next: AppConfig, message: string, endpointId?: string) => {
     setConfig(next);
     acc.current.dirty = true;
     acc.current.summary.push(message);
@@ -539,13 +782,46 @@ export function ConfigWizard(props: ConfigWizardProps) {
       acc.current.changedEndpointIds.push(endpointId);
     }
     setNotice(message);
-    if (props.closeOnSave) props.onClose(snapshot());
-    else go({ kind: "menu" });
   };
 
-  // 端点可能在向导打开期间被外部删除：渲染前收敛回菜单，避免空指针
+  /** 写盘 + 记录变更；成功且 `closeOnSave` 时直接关闭，否则跳到 `after` 步骤（默认回菜单） */
+  const commit = async (
+    next: AppConfig,
+    message: string,
+    endpointId?: string,
+    after: WizardStep | "stay" = { kind: "menu" },
+  ) => {
+    setError(null);
+    try {
+      await props.onSave(next);
+    } catch (cause: any) {
+      setError(`写入配置失败：${cause?.message ?? cause}`);
+      return;
+    }
+    record(next, message, endpointId);
+    if (props.closeOnSave) props.onClose(snapshot());
+    else if (after !== "stay") go(after);
+  };
+
+  /**
+   * 端点详情页「就地编辑」的提交：写盘 + 记录变更，但**原地停留**（不跳转），
+   * 返回错误信息或 `null`，由 `EndpointStep` 决定是否退出编辑态。
+   */
+  const commitInline = async (next: AppConfig, message: string, endpointId: string): Promise<string | null> => {
+    try {
+      await props.onSave(next);
+    } catch (cause: any) {
+      return `写入配置失败：${cause?.message ?? cause}`;
+    }
+    record(next, message, endpointId);
+    return null;
+  };
+
+  // 端点可能在向导打开期间被外部删除：渲染前收敛回端点列表，避免空指针
   const activeStep: WizardStep =
-    step.kind === "edit" && !findEndpoint(config, step.endpointId) ? { kind: "menu" } : step;
+    (step.kind === "edit" || step.kind === "endpoint") && !findEndpoint(config, step.endpointId)
+      ? { kind: "endpoints" }
+      : step;
 
   // ---------- 配置中心菜单 ----------
   if (activeStep.kind === "menu") {
@@ -559,9 +835,7 @@ export function ConfigWizard(props: ConfigWizardProps) {
         onClose={() => props.onClose(snapshot())}
         onPick={(action) => {
           if (action === "model") go({ kind: "pick-model" });
-          else if (action === "apiKey") go({ kind: "pick-endpoint", field: "apiKey" });
-          else if (action === "baseUrl") go({ kind: "pick-endpoint", field: "baseUrl" });
-          else if (action === "new") go({ kind: "new-endpoint", field: "name", draft });
+          else if (action === "endpoints") go({ kind: "endpoints" });
           else props.onClose(snapshot());
         }}
       />
@@ -594,23 +868,45 @@ export function ConfigWizard(props: ConfigWizardProps) {
     );
   }
 
-  // ---------- 选择端点 ----------
-  if (activeStep.kind === "pick-endpoint") {
-    const field = activeStep.field;
-    const items: SelectItem<string>[] = config.endpoints.map((endpoint) => ({
-      label: endpoint.name || endpoint.id,
-      value: endpoint.id,
-      hint: field === "apiKey" ? maskApiKey(endpoint.apiKey) : endpoint.baseUrl,
-    }));
+  // ---------- 端点管理（[新建端点] + 端点列表）----------
+  if (activeStep.kind === "endpoints") {
+    const items: SelectItem<string>[] = [
+      { label: "＋ 新建端点", value: NEW_ENDPOINT, hint: "自定义 OpenAI 兼容服务" },
+      ...config.endpoints.map((endpoint) => ({
+        label: endpoint.name || endpoint.id,
+        value: endpoint.id,
+        hint: `${maskApiKey(endpoint.apiKey)} · ${endpoint.baseUrl}`,
+      })),
+    ];
     return (
       <ListStep
         columns={cols}
         rows={rows}
-        title={field === "apiKey" ? "选择端点 · API Key" : "选择端点 · Base URL"}
-        subtitle={`共 ${config.endpoints.length} 个端点`}
+        title="端点管理"
+        subtitle={`共 ${config.endpoints.length} 个端点 · 选中后可就地编辑其 API Key / Base URL`}
         items={items}
-        onPick={(endpointId) => go({ kind: "edit", field, endpointId })}
+        onPick={(value) =>
+          value === NEW_ENDPOINT
+            ? go({ kind: "new-endpoint", field: "name", draft })
+            : go({ kind: "endpoint", endpointId: value })
+        }
         onCancel={() => go({ kind: "menu" })}
+      />
+    );
+  }
+
+  // ---------- 端点详情（一屏就地编辑 API Key / Base URL）----------
+  if (activeStep.kind === "endpoint") {
+    const endpoint = findEndpoint(config, activeStep.endpointId)!;
+    return (
+      <EndpointStep
+        columns={cols}
+        rows={rows}
+        config={config}
+        endpoint={endpoint}
+        notice={notice}
+        onCommit={commitInline}
+        onBack={() => go({ kind: "endpoints" })}
       />
     );
   }
@@ -705,7 +1001,7 @@ export function ConfigWizard(props: ConfigWizardProps) {
           setError(null);
           setStep({ kind: "new-endpoint", field: "baseUrl", draft: next });
         }}
-        onCancel={() => go({ kind: "menu" })}
+        onCancel={() => go({ kind: "endpoints" })}
       />
     );
   }
@@ -763,6 +1059,7 @@ export function ConfigWizard(props: ConfigWizardProps) {
           next,
           `已添加端点 ${endpoint.name}（${endpoint.id}）${apiKey ? "" : " · API Key 待补充"}`,
           endpoint.id,
+          { kind: "endpoints" },
         );
       }}
       onCancel={() => {

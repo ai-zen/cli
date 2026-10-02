@@ -86,7 +86,7 @@ On first launch, if the endpoint bound to the selected model has no API Key yet,
  ❯ ▏
 ```
 
-`Enter` saves it (to `~/.ai-zen/config.json`) and drops you straight into the chat; `Tab` toggles plaintext, `Esc` aborts. Inside the chat, `/key` changes the **current endpoint's** key (the session is rebuilt on save, so it applies immediately) and `/config` opens the configuration center (default model / endpoint credentials / base URLs / add endpoint).
+`Enter` saves it (to `~/.ai-zen/config.json`) and drops you straight into the chat; `Tab` toggles plaintext, `Esc` aborts. Inside the chat, `/key` changes the **current endpoint's** key (the session is rebuilt on save, so it applies immediately) and `/config` opens the configuration center (default model / endpoint management: a list of [add endpoint] plus each endpoint; select one to edit its API key / base URL in place).
 
 ### Session Recovery
 
@@ -157,7 +157,7 @@ Configuration is stored in `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json`
 |----------|-----|
 | First launch, endpoint has no key | The **credential screen** appears automatically |
 | Change the current model's endpoint key | `/key` in the chat (session rebuilt on save) |
-| Endpoint key / base URL, default model, add endpoint | `/config` (configuration center) |
+| Endpoint key / base URL, default model, add endpoint | `/config` → "Endpoint management" |
 | Models, MCP servers, and other advanced fields | Edit `config.json` manually |
 
 The `maxContextTokens` field on each model sets the migration threshold (typically ~25% of the model's actual context window, e.g. 250,000 for a 1M-token model).

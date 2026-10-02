@@ -100,7 +100,7 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 | `/back` | Undo a message (select a user message to edit and resend, or select a tool result to continue asking) |
 | `/editor` | Use the system editor to enter a long message |
 | `/clear` | Clear the screen |
-| `/config` | Open the configuration center (default model / endpoint credentials / base URLs / add endpoint) |
+| `/config` | Open the configuration center (default model / endpoint management) |
 | `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
 | `/migrate` | Manually trigger task migration (generate a handoff document and start a new session) |
 | `/load` | Load a saved conversation (replaces the current session) |
@@ -134,7 +134,7 @@ ai hook uninstall
 |----------|-----|
 | First launch, endpoint has no key | The **credential screen** appears automatically; entering a key saves it and enters the chat |
 | Change the key of the **endpoint used by the current model** | `/key` in the chat (the session is rebuilt on save, so it takes effect immediately) |
-| Endpoint key / base URL, default model, add endpoint | `/config` (the configuration center) |
+| Endpoint key / base URL, default model, add endpoint | `/config` → "Endpoint management" |
 | Models, MCP servers, and other advanced fields | Edit `~/.ai-zen/config.json` manually |
 
 > Note: the CLI entry only implements the `hook` subcommand (`ai hook install|uninstall`); there is **no `config` subcommand** — configuration editing happens inside the TUI. Adding/removing models and MCP servers is still a P1 TODO (edit `config.json` manually for now). See [Configuration](./configuration.md).

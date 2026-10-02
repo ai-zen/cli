@@ -21,7 +21,7 @@
 - ✅ **直达对话 + 底部固定输入（1.0.0-alpha.1）**：启动后直接进入对话；输入行/状态栏吸附终端底部（行级预折行 + 底部截取 + 顶部补齐，整帧高度恒小于终端行数）。
 - ✅ **干净退出（1.0.0-alpha.1）**：Ink 卸载后显式暂停 stdin 并终止进程，避免残留句柄导致「返回 shell 却不退出」。
 - ✅ **死代码清理（1.0.0-alpha.1）**：移除旧行式对话链路（`conversation-runner` / `slash-hint-prompt` / `delta-renderer` / `config-wizard` / `conversation-commands` 处理器），保留 `registry.ts` 作为命令清单唯一来源。（注：删除的是 **inquirer 版** `config-wizard`；同版本后续以**纯 Ink** 重写为 `src/tui/config-wizard.tsx`。）
-- ✅ **首启凭据引导 + 配置中心（1.0.0-alpha.1）**：端点缺 API Key 时启动先弹出**凭据设置屏**（端点 / Base URL / 厂商申请链接 / 掩码输入，`Tab` 切明文）；对话内 `/key` 改当前端点 Key（保存后自动重建会话）；`/config` 配置中心（默认模型 / 端点凭据 / 端点地址 / 新建端点），改动即时写入 `config.json`。配置查询与不可变改写集中在纯函数层 `src/config-editor.ts`。
+- ✅ **首启凭据引导 + 配置中心（1.0.0-alpha.1）**：端点缺 API Key 时启动先弹出**凭据设置屏**（端点 / Base URL / 厂商申请链接 / 掩码输入，`Tab` 切明文）；对话内 `/key` 改当前端点 Key（保存后自动重建会话）；`/config` 配置中心（默认模型 / 端点管理：列表含「＋ 新建端点」+ 各端点，选中端点后一屏就地编辑 API Key / Base URL），改动即时写入 `config.json`。配置查询与不可变改写集中在纯函数层 `src/config-editor.ts`。
 - ✅ **移除主菜单（1.0.0-alpha.1）**：删除 `MainMenu` 屏幕、`/menu` 命令、`ConversationPicker` 及整个 `src/menus/*`（inquirer 流程）；对话内 `/load` 所需的列表函数迁为 `conversation-repository.ts` 的 `listConversations()`。菜单功能转为 P1 待办（见下）。
 
 ## P1：主菜单（已移除，待重新实现）
@@ -34,7 +34,7 @@
 - [ ] **继续已保存的对话**（当前已有 `/load` 命令，可复用）
 - [ ] **管理已保存的对话**：列出 / 查看详情 / 删除
 - [ ] **管理 Agents**：Agent 的列表 / 新建 / 编辑 / 删除（含模型绑定）
-- [ ] **配置管理（部分完成）**：端点凭据 / Base URL、默认模型、新建端点已由 `/config`、`/key` 与首启引导支持；**待补**：模型增删改、端点删除、MCP 服务器管理（当前手动编辑 `config.json`）
+- [ ] **配置管理（部分完成）**：端点 API Key / Base URL、默认模型、新建端点已由 `/config`（配置中心 →「端点管理」）、`/key` 与首启引导支持；**待补**：模型增删改、端点删除、MCP 服务器管理（当前手动编辑 `config.json`）
 - [ ] **退出**
 
 > 移除原因：原实现是 Ink 与 inquirer 混用 —— 进菜单需先卸载 Ink 再交给 inquirer，交互与样式割裂；统一到 Ink 原生组件后再回归。
