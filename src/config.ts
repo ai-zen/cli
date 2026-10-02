@@ -40,7 +40,7 @@
  */
 
 import { promises as fs } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { ConfigManager as SdkConfigManager } from "@ai-zen/agents-sdk";
 import type { AppConfig } from "@ai-zen/agents-sdk";
 
@@ -135,16 +135,33 @@ export async function saveConfig(config: AppConfig): Promise<void> {
 
 // ==================== MCP 配置读写 ====================
 
+/** MCP 配置的作用域：全局（~/.ai-zen/mcp.json） / 项目（<cwd>/.ai-zen/mcp.json） */
+export type McpScope = "global" | "project";
+
+/**
+ * 单个 MCP 服务器条目（业界标准字段，外加保留未知字段）。
+ * 与 SDK `discoverMcpServers` 的解析一致：`type` 缺省时按 command/url 推断，`disabled: true` 会被跳过。
+ */
+export interface McpServerEntry {
+  /** 传输方式，业界标准字段名 `type`（与 SDK normalizeConfig 一致，缺省按 command/url 推断） */
+  type?: "stdio" | "http" | "sse";
+  /** 是否禁用（true 时 SDK 会跳过该服务器） */
+  disabled?: boolean;
+  /** 描述（供 load_mcp 呈现给 LLM，非连接必需） */
+  description?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  /** OAuth 配置（本 CLI 暂不单独编辑，读写时原样保留） */
+  oauth?: Record<string, unknown>;
+  /** 其它未知字段原样保留，避免写回时丢字段（如 oauth 展开字段、厂商扩展） */
+  [key: string]: unknown;
+}
+
 export interface McpServersMap {
-  [name: string]: {
-    /** 传输方式，业界标准字段名 `type`（与 SDK normalizeConfig 一致） */
-    type?: "stdio" | "http" | "sse";
-    command?: string;
-    args?: string[];
-    env?: Record<string, string>;
-    url?: string;
-    headers?: Record<string, string>;
-  };
+  [name: string]: McpServerEntry;
 }
 
 export interface McpConfig {
@@ -152,18 +169,23 @@ export interface McpConfig {
   mcpServers: McpServersMap;
 }
 
+/** 作用域对应的 mcp.json 路径 */
+export function mcpConfigPath(scope: McpScope): string {
+  return scope === "project" ? PROJECT_MCP_CONFIG_FILE : MCP_CONFIG_FILE;
+}
+
 /**
- * 读取全局 ~/.ai-zen/mcp.json，不存在时返回空结构。
+ * 读取指定路径的 mcp.json，不存在 / 解析失败时返回空结构。
  * 采用业界标准 `mcpServers` 顶层字段（与 SDK discoverMcpServers 一致）。
  */
-export async function readMcpConfig(): Promise<McpConfig> {
+export async function readMcpConfigAt(path: string): Promise<McpConfig> {
   try {
-    await fs.access(MCP_CONFIG_FILE);
+    await fs.access(path);
   } catch {
     return { mcpServers: {} };
   }
   try {
-    const raw = JSON.parse(await fs.readFile(MCP_CONFIG_FILE, "utf-8")) as Partial<McpConfig>;
+    const raw = JSON.parse(await fs.readFile(path, "utf-8")) as Partial<McpConfig>;
     // 兼容并归一：以 mcpServers 为准，缺失时回退到空的 mcpServers
     return { mcpServers: raw.mcpServers ?? {} };
   } catch {
@@ -172,25 +194,30 @@ export async function readMcpConfig(): Promise<McpConfig> {
 }
 
 /**
- * 原子写入全局 ~/.ai-zen/mcp.json。
+ * 原子写入指定路径的 mcp.json（必要时创建父目录）。
  */
-export async function writeMcpConfig(mcpConfig: McpConfig): Promise<void> {
-  const tmp = MCP_CONFIG_FILE + ".tmp";
+export async function writeMcpConfigAt(path: string, mcpConfig: McpConfig): Promise<void> {
+  await fs.mkdir(dirname(path), { recursive: true });
+  const tmp = path + ".tmp";
   await fs.writeFile(tmp, JSON.stringify(mcpConfig, null, 2), "utf-8");
-  await fs.rename(tmp, MCP_CONFIG_FILE);
+  await fs.rename(tmp, path);
 }
 
+/**
+ * 读取某个作用域的 mcp.json（默认全局 ~/.ai-zen/mcp.json）。
+ */
+export async function readMcpConfig(scope: McpScope = "global"): Promise<McpConfig> {
+  return readMcpConfigAt(mcpConfigPath(scope));
+}
+
+/**
+ * 原子写入某个作用域的 mcp.json（默认全局 ~/.ai-zen/mcp.json）。
+ */
+export async function writeMcpConfig(mcpConfig: McpConfig, scope: McpScope = "global"): Promise<void> {
+  await writeMcpConfigAt(mcpConfigPath(scope), mcpConfig);
+}
+
+/** 读取项目级 <cwd>/.ai-zen/mcp.json（等价于 readMcpConfig("project")） */
 export async function readProjectMcpConfig(): Promise<McpConfig> {
-  const path = PROJECT_MCP_CONFIG_FILE;
-  try {
-    await fs.access(path);
-  } catch {
-    return { mcpServers: {} };
-  }
-  try {
-    const raw = JSON.parse(await fs.readFile(path, "utf-8")) as Partial<McpConfig>;
-    return { mcpServers: raw.mcpServers ?? {} };
-  } catch {
-    return { mcpServers: {} };
-  }
+  return readMcpConfigAt(PROJECT_MCP_CONFIG_FILE);
 }

@@ -61,9 +61,11 @@ MCP 的 OAuth 2.0 授权流程（`mcp.json` 中的 `oauth` 字段）在 SDK 类�
 
 ## 管理
 
-TUI 内的交互式 MCP 管理界面（原经 `/menu` → 配置管理）**已移除**，列为 P1 待办。当前请直接编辑 `mcp.json`：
+TUI 内可用 `/config` →「MCP 服务器」交互式管理 `mcp.json`，无需手改 JSON：
 
-- 新增 MCP 服务器（stdio 或 HTTP/SSE）。
-- 编辑/删除 MCP 服务器、重命名。
+- **作用域切换**：屏内可在「全局」`~/.ai-zen/mcp.json` 与「项目」`<cwd>/.ai-zen/mcp.json` 之间切换。
+- 新增 / 删除 / 重命名 MCP 服务器；编辑传输方式（stdio / http / sse）、启用·禁用、描述。
+- 按传输方式编辑对应字段：stdio → 命令、参数（按空白切分为 argv）、环境变量；http·sse → URL、请求头。环境变量与请求头为 `KEY=VALUE` 键值编辑。
+- 改动即时写盘；关闭配置中心后会话会重建，使新服务器 / 工具立即生效。
 
-相关文件：`~/.ai-zen/mcp.json`（全局）与项目级 `./.mcp.json`、`./.ai-zen/mcp.json`、`./.agents/mcp.json`。
+其余来源（项目共享 `./.mcp.json`、项目规范 `./.agents/mcp.json`、用户规范 `~/.agents/mcp.json`）仍以文件为准。

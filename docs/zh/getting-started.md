@@ -135,9 +135,9 @@ ai hook uninstall
 | 首次启动、端点缺 Key | 启动时自动弹出**凭据设置屏**，输入即存盘并进入对话 |
 | 修改**当前模型所用端点**的 Key | 对话内 `/key`（保存后自动重建会话，立即生效） |
 | 端点 Key / Base URL、默认模型、新建端点 | 对话内 `/config` →「端点管理」 |
-| 模型、MCP 服务器等高级项 | 手动编辑 `~/.ai-zen/config.json` |
+| 模型 / 图片模型 / MCP 服务器 / 默认项 / 工具上限 | 对话内 `/config` → 配置中心 |
 
-> 说明：CLI 入口只实现 `hook` 子命令（`ai hook install|uninstall`），**没有 `config` 子命令**；配置编辑在 TUI 内完成。MCP 服务器与模型的增删改仍在 P1 待办（当前手动编辑 `config.json`）。详见 [配置](./configuration.md)。
+> 说明：CLI 入口只实现 `hook` 子命令（`ai hook install|uninstall`），**没有 `config` 子命令**；配置编辑在 TUI 内完成（端点、模型、图片模型、MCP 服务器、默认项与工具上限均已可在 `/config` 内增删改）。详见 [配置](./configuration.md)。
 
 > 纯 stdio 模式（带参数 / 管道）没有交互通道：端点缺 Key 时会向 stderr 报错并以非 0 退出；请先在 TUI 或直接编辑 `config.json` 完成配置。
 

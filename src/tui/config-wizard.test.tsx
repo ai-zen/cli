@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "ink-testing-library";
 import type { AppConfig } from "@ai-zen/agents-sdk";
+import type { McpConfig, McpScope } from "../config.js";
 import { ConfigWizard, PromptScreen, promptLayout } from "./config-wizard.js";
 
 const tick = () => new Promise((r) => setTimeout(r, 25));
@@ -30,6 +31,21 @@ const noop = () => {
 
 /** 带类型的持久化 mock：`calls[0][0]` 即写盘的配置 */
 const makeOnSave = () => vi.fn<(config: AppConfig) => Promise<void>>(async () => undefined);
+
+/** MCP 快照夹具：全局两个服务器、项目为空 */
+const makeMcp = () => ({
+  global: {
+    mcpServers: {
+      "socket-pty": { type: "stdio" as const, command: "npx", args: ["-y", "@ai-zen/socket-pty", "mcp"] },
+      slack: { type: "http" as const, url: "https://slack.example.com" },
+    },
+  },
+  project: { mcpServers: {} },
+});
+
+/** 带类型的 MCP 持久化 mock：`calls[0]` 即 `[scope, config]` */
+const makeOnSaveMcp = () =>
+  vi.fn<(scope: McpScope, config: McpConfig) => Promise<void>>(async () => undefined);
 
 describe("PromptScreen（凭据输入屏）", () => {
   it("掩码显示：不把明文回显到屏幕，Enter 提交原值", async () => {
@@ -409,6 +425,8 @@ describe("ConfigWizard（配置中心）", () => {
     await tick();
     stdin.write(DOWN); // → 图片模型
     await tick();
+    stdin.write(DOWN); // → MCP 服务器
+    await tick();
     stdin.write(DOWN); // → 默认项
     await tick();
     stdin.write(ENTER); // 打开默认项
@@ -657,6 +675,8 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     await tick();
     stdin.write(DOWN);
     await tick();
+    stdin.write(DOWN); // → MCP 服务器
+    await tick();
     stdin.write(DOWN); // → 默认项
     await tick();
     stdin.write(ENTER);
@@ -690,6 +710,264 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     stdin.write(ENTER);
     await tick();
     expect(onSave.mock.calls[0]![0].maxToolOutput).toBe(4096);
+    unmount();
+  });
+});
+
+describe("ConfigWizard（MCP 服务器管理）", () => {
+  it("配置中心菜单列出「MCP 服务器」并显示全局/项目数量", async () => {
+    const { lastFrame, unmount } = render(
+      <ConfigWizard config={makeConfig()} mcp={makeMcp()} onSave={makeOnSave()} onClose={noop} />,
+    );
+    await tick();
+    const frame = lastFrame()!;
+    expect(frame).toContain("MCP 服务器");
+    expect(frame).toContain("全局 2 · 项目 0");
+    unmount();
+  });
+
+  it("菜单 → MCP 服务器：显示作用域切换 / 新建 / 列表；可切换作用域", async () => {
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard config={makeConfig()} mcp={makeMcp()} onSave={makeOnSave()} onClose={noop} />,
+    );
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN); // → MCP 服务器
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    const frame = lastFrame()!;
+    expect(frame).toContain("MCP 服务器 · 全局");
+    expect(frame).toContain("＋ 新建服务器");
+    expect(frame).toContain("socket-pty");
+    expect(frame).toContain("https://slack.example.com"); // http 服务器摘要显示 URL（而非 command）
+    expect(frame).toContain("切换到「项目」作用域");
+
+    stdin.write(ENTER); // 首项 = 切换到项目
+    await tick();
+    expect(lastFrame()).toContain("MCP 服务器 · 项目");
+    expect(lastFrame()).toContain("切换到「全局」作用域");
+    unmount();
+  });
+
+  it("新建服务器：名称 → 进入详情并写盘", async () => {
+    const onSaveMcp = makeOnSaveMcp();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "mcp-new", scope: "global" }}
+        mcp={makeMcp()}
+        onSave={makeOnSave()}
+        onSaveMcp={onSaveMcp}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    expect(lastFrame()).toContain("新建 MCP 服务器 · 名称（全局）");
+    stdin.write("My Server");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(onSaveMcp).toHaveBeenCalledTimes(1);
+    expect(onSaveMcp.mock.calls[0]![0]).toBe("global");
+    expect(onSaveMcp.mock.calls[0]![1].mcpServers["my-server"]).toEqual({ type: "stdio", disabled: false });
+    expect(lastFrame()).toContain("◆ MCP · my-server");
+    unmount();
+  });
+
+  it("详情：编辑参数写入解析后的 argv", async () => {
+    const onSaveMcp = makeOnSaveMcp();
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "mcp-server", scope: "global", serverId: "socket-pty" }}
+        mcp={makeMcp()}
+        onSave={makeOnSave()}
+        onSaveMcp={onSaveMcp}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    for (let i = 0; i < 5; i += 1) {
+      stdin.write(DOWN); // → 参数（第 6 行）
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("\u0015"); // Ctrl+U 清空
+    await tick();
+    stdin.write("-y new-pkg chcp 65001");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(onSaveMcp.mock.calls[0]![1].mcpServers["socket-pty"]!.args).toEqual(["-y", "new-pkg", "chcp", "65001"]);
+    unmount();
+  });
+
+  it("详情：切换启用状态写入 disabled: true", async () => {
+    const onSaveMcp = makeOnSaveMcp();
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "mcp-server", scope: "global", serverId: "socket-pty" }}
+        mcp={makeMcp()}
+        onSave={makeOnSave()}
+        onSaveMcp={onSaveMcp}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write(DOWN); // → 传输
+    await tick();
+    stdin.write(DOWN); // → 启用
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(onSaveMcp.mock.calls[0]![1].mcpServers["socket-pty"]!.disabled).toBe(true);
+    unmount();
+  });
+
+  it("详情：重命名服务器改 key 并进入新详情", async () => {
+    const onSaveMcp = makeOnSaveMcp();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "mcp-server", scope: "global", serverId: "slack" }}
+        mcp={makeMcp()}
+        onSave={makeOnSave()}
+        onSaveMcp={onSaveMcp}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write(ENTER); // 名称字段
+    await tick();
+    stdin.write("\u0015"); // Ctrl+U 清空
+    await tick();
+    stdin.write("slack-old");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    const saved = onSaveMcp.mock.calls[0]![1];
+    expect(saved.mcpServers["slack-old"]).toBeDefined();
+    expect(saved.mcpServers.slack).toBeUndefined();
+    expect(lastFrame()).toContain("◆ MCP · slack-old");
+    unmount();
+  });
+
+  it("详情：删除服务器需二次确认", async () => {
+    const onSaveMcp = makeOnSaveMcp();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "mcp-server", scope: "global", serverId: "slack" }}
+        mcp={makeMcp()}
+        onSave={makeOnSave()}
+        onSaveMcp={onSaveMcp}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    for (let i = 0; i < 6; i += 1) {
+      stdin.write(DOWN); // → 删除服务器
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame()).toContain("删除服务器？");
+    stdin.write(ENTER); // 确认删除
+    await tick();
+    await tick();
+    expect(onSaveMcp).toHaveBeenCalledTimes(1);
+    expect(onSaveMcp.mock.calls[0]![1].mcpServers.slack).toBeUndefined();
+    unmount();
+  });
+
+  it("环境变量子屏：新增 KEY=VALUE 写入 env", async () => {
+    const onSaveMcp = makeOnSaveMcp();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "mcp-kv", scope: "global", serverId: "socket-pty", field: "env" }}
+        mcp={makeMcp()}
+        onSave={makeOnSave()}
+        onSaveMcp={onSaveMcp}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    expect(lastFrame()).toContain("环境变量");
+    stdin.write(ENTER); // 首项 = 新增
+    await tick();
+    stdin.write("PATH=/usr/bin");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(onSaveMcp.mock.calls[0]![1].mcpServers["socket-pty"]!.env).toEqual({ PATH: "/usr/bin" });
+    unmount();
+  });
+
+  it("环境变量子屏：非 KEY=VALUE 报错且不写盘", async () => {
+    const onSaveMcp = makeOnSaveMcp();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "mcp-kv", scope: "global", serverId: "socket-pty", field: "env" }}
+        mcp={makeMcp()}
+        onSave={makeOnSave()}
+        onSaveMcp={onSaveMcp}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("noequals");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(onSaveMcp).not.toHaveBeenCalled();
+    expect(lastFrame()).toContain("格式应为 KEY=VALUE");
+    unmount();
+  });
+
+  it("关闭时上报 mcpChanged（供宿主重建会话）", async () => {
+    const onSaveMcp = makeOnSaveMcp();
+    const onClose = vi.fn();
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "mcp-server", scope: "global", serverId: "socket-pty" }}
+        mcp={makeMcp()}
+        onSave={makeOnSave()}
+        onSaveMcp={onSaveMcp}
+        onClose={onClose}
+      />,
+    );
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(ENTER); // 切换启用
+    await tick();
+    await tick();
+    stdin.write(ESC); // → MCP 列表
+    await tick();
+    stdin.write(ESC); // → 菜单
+    await tick();
+    stdin.write(ESC); // 关闭
+    await tick();
+    expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ dirty: true, mcpChanged: true }));
     unmount();
   });
 });

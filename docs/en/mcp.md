@@ -61,9 +61,11 @@ The MCP OAuth 2.0 authorization flow (the `oauth` field in `mcp.json`) is define
 
 ## Management
 
-The in-TUI interactive MCP management screen (previously via `/menu` → Configuration) **has been removed**, tracked as a P1 TODO. For now, edit `mcp.json` directly:
+In the TUI, `/config` → "MCP servers" lets you manage `mcp.json` interactively — no hand-editing needed:
 
-- Add a new MCP server (stdio or HTTP/SSE).
-- Edit/delete MCP servers, and rename them.
+- **Scope switch**: toggle in-screen between "global" `~/.ai-zen/mcp.json` and "project" `<cwd>/.ai-zen/mcp.json`.
+- Add / delete / rename MCP servers; edit transport (stdio / http / sse), enable·disable, and description.
+- Edit the fields for the chosen transport: stdio → command, args (split on whitespace into argv), env; http·sse → URL, headers. Env and headers use a `KEY=VALUE` editor.
+- Changes are written immediately; closing the configuration center rebuilds the session so new servers / tools take effect at once.
 
-Relevant files: `~/.ai-zen/mcp.json` (global) and the project-level `./.mcp.json`, `./.ai-zen/mcp.json`, `./.agents/mcp.json`.
+The other sources (project-shared `./.mcp.json`, project convention `./.agents/mcp.json`, user convention `~/.agents/mcp.json`) still follow the files.

@@ -5,7 +5,7 @@
  *   1. 首启引导（`onboarding`）：启动时发现模型绑定的端点缺 API Key，直接进入「输入 Key」步骤；
  *   2. `/key`：会话内快速设置**当前模型所用端点**的 API Key（`initialStep` 直达编辑步骤）；
  *   3. `/config`：会话内打开配置中心，尽可能全面地管理 `config.json`：
- *      端点管理 / 模型管理 / 图片模型 / 默认项（默认模型·图片模型·Agent·迁移模型）/ 工具输出上限。
+ *      端点管理 / 模型管理 / 图片模型 / MCP 服务器 / 默认项（默认模型·图片模型·Agent·迁移模型）/ 工具输出上限。
  *      列表 = [＋ 新建…] + 各条目；选中条目后进入**详情屏**，一屏内就地编辑其字段（含删除）。
  *
  * 设计要点：
@@ -30,20 +30,31 @@ import {
   wrapText,
   isTerminalReply,
 } from "./text.js";
-import { CONFIG_FILE } from "../config.js";
+import { CONFIG_FILE, mcpConfigPath, writeMcpConfigAt } from "../config.js";
+import type { McpConfig, McpScope, McpServerEntry } from "../config.js";
 import {
   addEndpoint,
   addImageModel,
+  addMcpServer,
   addModel,
   apiKeyGuide,
   findEndpoint,
+  findMcpServer,
   findModel,
+  formatArgs,
   isApiKeySet,
+  kvEntries,
+  kvSummary,
   maskApiKey,
+  mcpServerIdTaken,
   modelsUsingEndpoint,
+  parseArgs,
+  parseKvInput,
   removeEndpoint,
   removeImageModel,
+  removeMcpServer,
   removeModel,
+  renameMcpServer,
   setDefaultAgent,
   setDefaultImageModel,
   setDefaultMigrationModel,
@@ -54,6 +65,7 @@ import {
   summarizeEndpoints,
   updateEndpoint,
   updateImageModel,
+  updateMcpServer,
   updateModel,
 } from "../config-editor.js";
 
@@ -80,12 +92,20 @@ export type WizardStep =
   | { kind: "new-endpoint"; field: "name" | "baseUrl" | "apiKey"; draft: NewEndpointDraft }
   | { kind: "new-model" }
   | { kind: "new-image-model" }
+  | { kind: "mcp"; scope: McpScope }
+  | { kind: "mcp-server"; scope: McpScope; serverId: string }
+  | { kind: "mcp-new"; scope: McpScope }
+  | { kind: "mcp-kv"; scope: McpScope; serverId: string; field: "env" | "headers" }
   | { kind: "edit"; field: EndpointField; endpointId: string };
 
 /** 列表里「新建…」哨兵值（实例 id 由名称派生、不含下划线，故不会冲突） */
 const NEW_ENDPOINT = "__new_endpoint__";
 const NEW_MODEL = "__new_model__";
 const NEW_IMAGE_MODEL = "__new_image_model__";
+/** MCP 屏的「切换作用域」哨兵值 */
+const SWITCH_SCOPE = "__mcp_switch_scope__";
+/** MCP 屏的「新建服务器」哨兵值 */
+const NEW_MCP_SERVER = "__new_mcp_server__";
 
 export interface NewEndpointDraft {
   name: string;
@@ -101,6 +121,14 @@ export interface WizardCloseResult {
   summary: string[];
   /** 被改动的端点 id（宿主据此判断是否需要重建 Agent） */
   changedEndpointIds: string[];
+  /** 是否有 MCP 配置改动（宿主据此重建会话，让新工具生效） */
+  mcpChanged?: boolean;
+}
+
+/** MCP 配置快照：全局 + 项目两个作用域 */
+export interface McpSnapshot {
+  global: McpConfig;
+  project: McpConfig;
 }
 
 export interface ConfigWizardProps {
@@ -114,8 +142,12 @@ export interface ConfigWizardProps {
   closeOnSave?: boolean;
   /** 可用于「默认 Agent」选择的 Agent 清单（可选） */
   agents?: { id: string; name: string }[];
+  /** MCP 配置初始快照（全局 + 项目）；缺省视为两个空配置 */
+  mcp?: McpSnapshot;
   /** 持久化配置（通常是 `saveConfig`） */
   onSave: (config: AppConfig) => Promise<void>;
+  /** 持久化 MCP 配置（缺省写入 scope 对应的 mcp.json） */
+  onSaveMcp?: (scope: McpScope, config: McpConfig) => Promise<void>;
   /** 关闭向导 */
   onClose: (result: WizardCloseResult) => void;
 }
@@ -468,6 +500,28 @@ function ListStep<T>({ columns, rows, title, subtitle, items, onPick, onCancel }
   );
 }
 
+// ==================== MCP 展示辅助 ====================
+
+/** 作用域中文名 */
+function scopeLabel(scope: McpScope): string {
+  return scope === "global" ? "全局" : "项目";
+}
+
+/** 某作用域下的服务器数量 */
+function mcpCount(mcp: McpSnapshot, scope: McpScope): number {
+  return Object.keys(mcp[scope].mcpServers).length;
+}
+
+/** MCP 服务器列表项的一行摘要（stdio 显示命令 + 参数，http/sse 显示 URL） */
+function mcpServerHint(entry: McpServerEntry): string {
+  const type = entry.type ?? "auto";
+  const remote = entry.type === "http" || entry.type === "sse";
+  const target = remote ? entry.url ?? "（未配置 URL）" : entry.command ?? "（未配置命令）";
+  const extra = !remote && entry.args?.length ? ` ${entry.args.join(" ")}` : "";
+  const off = entry.disabled === true ? " · 已禁用" : "";
+  return `${type} · ${target}${extra}${off}`;
+}
+
 // ==================== 配置中心菜单 ====================
 
 interface MenuStepProps {
@@ -475,6 +529,7 @@ interface MenuStepProps {
   /** 终端行数（吸底布局用） */
   rows: number;
   config: AppConfig;
+  mcp: McpSnapshot;
   savedCount: number;
   /** 最近一次保存提示 */
   notice?: string | null;
@@ -482,7 +537,7 @@ interface MenuStepProps {
   onClose: () => void;
 }
 
-function MenuStep({ columns, rows, config, savedCount, notice, onPick, onClose }: MenuStepProps) {
+function MenuStep({ columns, rows, config, mcp, savedCount, notice, onPick, onClose }: MenuStepProps) {
   const { setCursorPosition } = useCursor();
   setCursorPosition(undefined); // 无文本编辑：隐藏硬件光标
   useInput((_char, key) => {
@@ -506,6 +561,11 @@ function MenuStep({ columns, rows, config, savedCount, notice, onPick, onClose }
       label: "图片模型",
       value: "imageModels",
       hint: `${config.imageModels?.length ?? 0} 个 · 默认 ${defaultImage?.name ?? config.defaultImageModel ?? "未设置"}`,
+    },
+    {
+      label: "MCP 服务器",
+      value: "mcp",
+      hint: `全局 ${mcpCount(mcp, "global")} · 项目 ${mcpCount(mcp, "project")}`,
     },
     {
       label: "默认项",
@@ -545,7 +605,7 @@ function MenuStep({ columns, rows, config, savedCount, notice, onPick, onClose }
 
 // ==================== 通用详情屏（就地编辑）====================
 
-export type DetailFieldKind = "text" | "secret" | "number" | "enum" | "bool";
+export type DetailFieldKind = "text" | "secret" | "number" | "enum" | "bool" | "map";
 
 /** 详情屏的一个可编辑字段 */
 export interface DetailField {
@@ -562,6 +622,8 @@ export interface DetailField {
   commit?: (raw: string) => Promise<string | null>;
   /** bool 切换 */
   toggle?: () => Promise<string | null>;
+  /** map 类型：按 Enter 进入子屏（键值编辑） */
+  open?: () => void;
 }
 
 /** 详情屏底部的整体动作（如「删除」），危险动作以红色呈现并可二次确认 */
@@ -736,6 +798,10 @@ function DetailStep({ columns, rows, title, details, fields, notice, action, onB
           setChoosing(true);
           return;
         }
+        if (field.kind === "map") {
+          field.open?.();
+          return;
+        }
         beginEdit();
       }
     },
@@ -893,6 +959,174 @@ function DetailStep({ columns, rows, title, details, fields, notice, action, onB
   );
 }
 
+// ==================== 键值编辑屏（MCP env / headers）====================
+
+interface KvEditorScreenProps {
+  columns: number;
+  rows: number;
+  title: string;
+  subtitle?: string;
+  map: Record<string, string>;
+  notice?: string | null;
+  onCommit: (next: Record<string, string>) => Promise<string | null>;
+  onBack: () => void;
+}
+
+/**
+ * 键值映射编辑屏（MCP 的环境变量 / 请求头）：
+ *   - 首行为「＋ 新增」，其后为各 `KEY = VALUE`；
+ *   - `Enter` 新增 / 编辑（弹出 KEY=VALUE 输入屏，首个 = 分割）；
+ *   - `Ctrl+D` 或 `Delete` 删除高亮项；`↑ ↓` 移动；`Esc` 返回。
+ */
+function KvEditorScreen({ columns, rows, title, subtitle, map, notice, onCommit, onBack }: KvEditorScreenProps) {
+  const { setCursorPosition } = useCursor();
+  const [index, setIndex] = useState(0);
+  const [editing, setEditing] = useState<{ mode: "add" | "edit"; initial: string; key?: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const entries = kvEntries(map);
+  const rowCount = entries.length + 1;
+
+  const commit = async (next: Record<string, string>) => {
+    const failure = await onCommit(next);
+    if (failure) setError(failure);
+    return failure;
+  };
+
+  const remove = async (key: string) => {
+    const next: Record<string, string> = {};
+    for (const [k, v] of Object.entries(map)) if (k !== key) next[k] = v;
+    await commit(next);
+  };
+
+  const submit = async (raw: string) => {
+    const parsed = parseKvInput(raw);
+    if (!parsed) {
+      setError("格式应为 KEY=VALUE");
+      return;
+    }
+    const target = editing!;
+    if (target.mode === "add" && Object.prototype.hasOwnProperty.call(map, parsed.key)) {
+      setError(`已存在 ${parsed.key}`);
+      return;
+    }
+    const next: Record<string, string> = {};
+    for (const [k, v] of Object.entries(map)) {
+      if (target.mode === "edit" && target.key === k) next[parsed.key] = parsed.value;
+      else next[k] = v;
+    }
+    if (target.mode === "add") next[parsed.key] = parsed.value;
+    const failure = await commit(next);
+    if (failure) return;
+    setEditing(null);
+    setError(null);
+  };
+
+  useInput(
+    (char, key) => {
+      if (key.escape) {
+        onBack();
+        return;
+      }
+      if (key.upArrow) {
+        setIndex((i) => (i - 1 + rowCount) % rowCount);
+        return;
+      }
+      if (key.downArrow) {
+        setIndex((i) => (i + 1) % rowCount);
+        return;
+      }
+      if (key.delete || (char === "d" && key.ctrl)) {
+        if (index >= 1 && entries[index - 1]) void remove(entries[index - 1]!.key);
+        return;
+      }
+      if (key.return) {
+        setError(null);
+        if (index === 0) {
+          setEditing({ mode: "add", initial: "" });
+        } else {
+          const entry = entries[index - 1]!;
+          setEditing({ mode: "edit", initial: `${entry.key}=${entry.value}`, key: entry.key });
+        }
+      }
+    },
+    { isActive: !editing },
+  );
+
+  if (editing) {
+    return (
+      <PromptScreen
+        key={`kv:${editing.mode}:${editing.key ?? "new"}`}
+        columns={columns}
+        rows={rows}
+        title={`${title} · ${editing.mode === "add" ? "新增" : "编辑"}`}
+        details={["格式：KEY=VALUE（键与值以首个 = 分隔）", "例如 PATH=/usr/bin 或 Authorization=Bearer xxx"]}
+        initialValue={editing.initial}
+        error={error}
+        hints={[["Enter", "保存"], ["Esc", "取消"]]}
+        onSubmit={(value) => void submit(value)}
+        onCancel={() => {
+          setEditing(null);
+          setError(null);
+        }}
+      />
+    );
+  }
+
+  setCursorPosition(undefined);
+
+  const headerRows: Row[] = [
+    ...textRows(title, columns, theme.highlight, true),
+    ...(subtitle ? textRows(subtitle, columns, theme.dim) : []),
+    ...(notice ? textRows(`✔ ${notice}`, columns, theme.ok) : []),
+    ...(error ? textRows(`✖ ${error}`, columns, theme.error) : []),
+  ];
+  const maxEntries = Math.max(1, usableFrameRows(rows) - (headerRows.length + 4));
+  const shown = entries.slice(0, maxEntries);
+  const truncated = entries.length > shown.length;
+  const listLines = 1 + Math.max(shown.length, 1) + (truncated ? 1 : 0);
+  const contentLines = headerRows.length + 1 + listLines + 1;
+  const safeIndex = Math.min(index, rowCount - 1);
+
+  return (
+    <WizardFrame columns={columns} rows={rows} contentLines={contentLines}>
+      <Header rows={headerRows} />
+      <Box marginTop={1} flexDirection="column">
+        <Text wrap="truncate">
+          <Text color={safeIndex === 0 ? theme.brand[0] : theme.faint}>{safeIndex === 0 ? "❯ " : "  "}</Text>
+          <Text bold={safeIndex === 0} color={safeIndex === 0 ? theme.highlight : theme.assistant}>
+            ＋ 新增
+          </Text>
+        </Text>
+        {shown.length === 0 ? (
+          <Text color={theme.faint} wrap="truncate">
+            {"  （暂无，按 Enter 新增）"}
+          </Text>
+        ) : (
+          shown.map((entry, i) => {
+            const selected = safeIndex === i + 1;
+            return (
+              <Text key={entry.key} wrap="truncate">
+                <Text color={selected ? theme.brand[0] : theme.faint}>{selected ? "❯ " : "  "}</Text>
+                <Text bold={selected} color={selected ? theme.highlight : theme.assistant}>
+                  {entry.key}
+                </Text>
+                <Text color={theme.dim}> = {entry.value}</Text>
+              </Text>
+            );
+          })
+        )}
+        {truncated ? (
+          <Text color={theme.faint} wrap="truncate">
+            {`  （共 ${entries.length} 项，仅显示前 ${shown.length} 项）`}
+          </Text>
+        ) : null}
+      </Box>
+      <KeyHints hints={[["Enter", "编辑/新增"], ["Ctrl+D", "删除"], ["↑ ↓", "移动"], ["Esc", "返回"]]} />
+    </WizardFrame>
+  );
+}
+
 // ==================== 向导主体 ====================
 
 export function ConfigWizard(props: ConfigWizardProps) {
@@ -903,17 +1137,24 @@ export function ConfigWizard(props: ConfigWizardProps) {
   const [config, setConfig] = useState(props.config);
   const [step, setStep] = useState<WizardStep>(props.initialStep ?? { kind: "menu" });
   const [draft, setDraft] = useState<NewEndpointDraft>({ name: "", baseUrl: "", apiKey: "" });
+  const [mcp, setMcp] = useState<McpSnapshot>(
+    props.mcp ?? { global: { mcpServers: {} }, project: { mcpServers: {} } },
+  );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   // 累加器放 ref：`commit()` 后需要立刻读到最新值再决定是否关闭
   const acc = useRef<WizardCloseResult>({ dirty: false, summary: [], changedEndpointIds: [] });
 
-  const snapshot = (): WizardCloseResult => ({
-    dirty: acc.current.dirty,
-    summary: [...acc.current.summary],
-    changedEndpointIds: [...acc.current.changedEndpointIds],
-  });
+  const snapshot = (): WizardCloseResult => {
+    const result: WizardCloseResult = {
+      dirty: acc.current.dirty,
+      summary: [...acc.current.summary],
+      changedEndpointIds: [...acc.current.changedEndpointIds],
+    };
+    if (acc.current.mcpChanged) result.mcpChanged = true;
+    return result;
+  };
 
   const go = (next: WizardStep) => {
     setError(null);
@@ -939,6 +1180,22 @@ export function ConfigWizard(props: ConfigWizardProps) {
       return `写入配置失败：${cause?.message ?? cause}`;
     }
     record(next, message, changedEndpointIds);
+    return null;
+  };
+
+  /** 写盘 MCP 配置 + 记录变更，**原地停留**；返回错误信息或 `null` */
+  const persistMcp = async (scope: McpScope, next: McpConfig, message: string): Promise<string | null> => {
+    try {
+      if (props.onSaveMcp) await props.onSaveMcp(scope, next);
+      else await writeMcpConfigAt(mcpConfigPath(scope), next);
+    } catch (cause: any) {
+      return `写入 MCP 配置失败：${cause?.message ?? cause}`;
+    }
+    setMcp((prev) => ({ ...prev, [scope]: next }));
+    acc.current.dirty = true;
+    acc.current.mcpChanged = true;
+    acc.current.summary.push(message);
+    setNotice(message);
     return null;
   };
 
@@ -970,6 +1227,12 @@ export function ConfigWizard(props: ConfigWizardProps) {
       !(config.imageModels ?? []).some((model) => model.id === current.modelId)
     ) {
       return { kind: "image-models" };
+    }
+    if (
+      (current.kind === "mcp-server" || current.kind === "mcp-kv") &&
+      !findMcpServer(mcp[current.scope], current.serverId)
+    ) {
+      return { kind: "mcp", scope: current.scope };
     }
     return current;
   };
@@ -1149,6 +1412,114 @@ export function ConfigWizard(props: ConfigWizardProps) {
     ];
   };
 
+  /** MCP 服务器详情字段（依 transport 呈现 stdio 或 http/sse 字段） */
+  const mcpServerFields = (scope: McpScope, id: string, entry: McpServerEntry): DetailField[] => {
+    const scopeName = scopeLabel(scope);
+    const save = (patch: Partial<McpServerEntry>, label: string) =>
+      persistMcp(scope, updateMcpServer(mcp[scope], id, patch), `MCP ${id} 的${label}已更新（${scopeName}）`);
+    const type = entry.type ?? "stdio";
+    const fields: DetailField[] = [
+      {
+        key: "id",
+        label: "名称",
+        kind: "text",
+        value: id,
+        initial: id,
+        commit: (raw) => {
+          const name = raw.trim();
+          if (!name) return Promise.resolve("名称不能为空");
+          if (name === id) return Promise.resolve(null);
+          if (mcpServerIdTaken(mcp[scope], name, id)) return Promise.resolve(`已存在名为 ${name} 的服务器`);
+          return persistMcp(
+            scope,
+            renameMcpServer(mcp[scope], id, name),
+            `MCP ${id} 已重命名为 ${name}（${scopeName}）`,
+          ).then((failure) => {
+            if (!failure) go({ kind: "mcp-server", scope, serverId: name });
+            return failure;
+          });
+        },
+      },
+      {
+        key: "type",
+        label: "传输",
+        kind: "enum",
+        value: type,
+        options: [
+          { label: "stdio（本地子进程）", value: "stdio" },
+          { label: "http（Streamable HTTP）", value: "http" },
+          { label: "sse（Server-Sent Events）", value: "sse" },
+        ],
+        commit: (raw) =>
+          raw === type ? Promise.resolve(null) : save({ type: raw as McpServerEntry["type"] }, "传输方式"),
+      },
+      {
+        key: "enabled",
+        label: "启用",
+        kind: "bool",
+        value: entry.disabled === true ? "否（已禁用）" : "是",
+        toggle: () => save({ disabled: entry.disabled === true ? undefined : true }, "启用状态"),
+      },
+      {
+        key: "description",
+        label: "描述",
+        kind: "text",
+        value: entry.description ?? "（空）",
+        initial: entry.description ?? "",
+        commit: (raw) => save({ description: raw.trim() || undefined }, "描述"),
+      },
+    ];
+    if (type === "stdio") {
+      fields.push(
+        {
+          key: "command",
+          label: "命令",
+          kind: "text",
+          value: entry.command ?? "（空）",
+          initial: entry.command ?? "",
+          commit: (raw) => save({ command: raw.trim() || undefined }, "命令"),
+        },
+        {
+          key: "args",
+          label: "参数",
+          kind: "text",
+          value: formatArgs(entry.args) || "（空）",
+          initial: formatArgs(entry.args),
+          commit: (raw) => {
+            const args = parseArgs(raw.trim());
+            return save({ args: args.length ? args : undefined }, "参数");
+          },
+        },
+        {
+          key: "env",
+          label: "环境变量",
+          kind: "map",
+          value: kvSummary(entry.env),
+          open: () => go({ kind: "mcp-kv", scope, serverId: id, field: "env" }),
+        },
+      );
+    } else {
+      fields.push(
+        {
+          key: "url",
+          label: "URL",
+          kind: "text",
+          value: entry.url ?? "（空）",
+          initial: entry.url ?? "",
+          commit: (raw) => save({ url: raw.trim() || undefined }, "URL"),
+        },
+        {
+          key: "headers",
+          label: "请求头",
+          kind: "map",
+          value: kvSummary(entry.headers),
+          open: () => go({ kind: "mcp-kv", scope, serverId: id, field: "headers" }),
+        },
+      );
+    }
+    return fields;
+  };
+
   // ---------- 配置中心菜单 ----------
   if (activeStep.kind === "menu") {
     return (
@@ -1156,6 +1527,7 @@ export function ConfigWizard(props: ConfigWizardProps) {
         columns={cols}
         rows={rows}
         config={config}
+        mcp={mcp}
         savedCount={acc.current.summary.length}
         notice={notice}
         onClose={() => props.onClose(snapshot())}
@@ -1163,6 +1535,7 @@ export function ConfigWizard(props: ConfigWizardProps) {
           if (action === "endpoints") go({ kind: "endpoints" });
           else if (action === "models") go({ kind: "models" });
           else if (action === "imageModels") go({ kind: "image-models" });
+          else if (action === "mcp") go({ kind: "mcp", scope: "global" });
           else if (action === "defaults") go({ kind: "defaults" });
           else if (action === "maxToolOutput") go({ kind: "max-tool-output" });
           else props.onClose(snapshot());
@@ -1404,6 +1777,142 @@ export function ConfigWizard(props: ConfigWizardProps) {
           },
         }}
         onBack={() => go({ kind: "image-models" })}
+      />
+    );
+  }
+
+  // ---------- MCP 服务器列表（含作用域切换）----------
+  if (activeStep.kind === "mcp") {
+    const scope = activeStep.scope;
+    const other: McpScope = scope === "global" ? "project" : "global";
+    const items: SelectItem<string>[] = [
+      {
+        label: `⇄ 切换到「${scopeLabel(other)}」作用域`,
+        value: SWITCH_SCOPE,
+        hint: `${mcpCount(mcp, other)} 个服务器`,
+      },
+      { label: "＋ 新建服务器", value: NEW_MCP_SERVER, hint: "stdio / http / sse" },
+      ...Object.entries(mcp[scope].mcpServers).map(([id, entry]) => ({
+        label: id,
+        value: id,
+        hint: mcpServerHint(entry),
+      })),
+    ];
+    return (
+      <ListStep
+        columns={cols}
+        rows={rows}
+        title={`◆ MCP 服务器 · ${scopeLabel(scope)}`}
+        subtitle={`${mcpCount(mcp, scope)} 个 · ${mcpConfigPath(scope)}`}
+        items={items}
+        onPick={(value) => {
+          if (value === SWITCH_SCOPE) go({ kind: "mcp", scope: other });
+          else if (value === NEW_MCP_SERVER) go({ kind: "mcp-new", scope });
+          else go({ kind: "mcp-server", scope, serverId: value });
+        }}
+        onCancel={() => go({ kind: "menu" })}
+      />
+    );
+  }
+
+  // ---------- MCP 服务器详情 ----------
+  if (activeStep.kind === "mcp-server") {
+    const { scope, serverId } = activeStep;
+    const entry = findMcpServer(mcp[scope], serverId)!;
+    return (
+      <DetailStep
+        columns={cols}
+        rows={rows}
+        title={`◆ MCP · ${serverId}`}
+        details={[
+          `${scopeLabel(scope)} · ${mcpConfigPath(scope)}`,
+          `传输 ${entry.type ?? "stdio"} · ↑ ↓ 移动 · Enter 编辑/切换`,
+        ]}
+        fields={mcpServerFields(scope, serverId, entry)}
+        notice={notice}
+        action={{
+          label: "删除服务器",
+          run: async () => {
+            const failure = await persistMcp(
+              scope,
+              removeMcpServer(mcp[scope], serverId),
+              `已删除 MCP 服务器 ${serverId}（${scopeLabel(scope)}）`,
+            );
+            if (!failure) go({ kind: "mcp", scope });
+            return failure;
+          },
+        }}
+        onBack={() => go({ kind: "mcp", scope })}
+      />
+    );
+  }
+
+  // ---------- MCP 键值编辑（env / headers）----------
+  if (activeStep.kind === "mcp-kv") {
+    const { scope, serverId, field } = activeStep;
+    const entry = findMcpServer(mcp[scope], serverId)!;
+    const label = field === "env" ? "环境变量" : "请求头";
+    const current = (entry[field] as Record<string, string> | undefined) ?? {};
+    return (
+      <KvEditorScreen
+        columns={cols}
+        rows={rows}
+        title={`◆ MCP · ${serverId} · ${label}`}
+        subtitle={`${scopeLabel(scope)} · ${Object.keys(current).length} 项`}
+        map={current}
+        notice={notice}
+        onCommit={(next) => {
+          const patch: Partial<McpServerEntry> =
+            field === "env"
+              ? { env: Object.keys(next).length ? next : undefined }
+              : { headers: Object.keys(next).length ? next : undefined };
+          return persistMcp(
+            scope,
+            updateMcpServer(mcp[scope], serverId, patch),
+            `MCP ${serverId} 的${label}已更新（${scopeLabel(scope)}）`,
+          );
+        }}
+        onBack={() => go({ kind: "mcp-server", scope, serverId })}
+      />
+    );
+  }
+
+  // ---------- 新建 MCP 服务器 ----------
+  if (activeStep.kind === "mcp-new") {
+    const scope = activeStep.scope;
+    return (
+      <PromptScreen
+        key={`new:mcp:${scope}`}
+        columns={cols}
+        rows={rows}
+        title={`新建 MCP 服务器 · 名称（${scopeLabel(scope)}）`}
+        details={[
+          "作为 mcpServers 的键，例如 github / chrome-devtools",
+          "创建后默认 stdio，可编辑传输方式 / 命令 / 参数 / 环境变量等",
+        ]}
+        error={error}
+        hints={[["Enter", "创建并编辑"], ["Esc", "返回"]]}
+        onSubmit={(value) => {
+          const name = value.trim();
+          if (!name) {
+            setError("名称不能为空");
+            return;
+          }
+          if (mcpServerIdTaken(mcp[scope], name)) {
+            setError(`已存在名为 ${name} 的服务器`);
+            return;
+          }
+          const { mcp: next, id } = addMcpServer(mcp[scope], name);
+          void (async () => {
+            const failure = await persistMcp(scope, next, `已新建 MCP 服务器 ${id}（${scopeLabel(scope)}）`);
+            if (failure) {
+              setError(failure);
+              return;
+            }
+            go({ kind: "mcp-server", scope, serverId: id });
+          })();
+        }}
+        onCancel={() => go({ kind: "mcp", scope })}
       />
     );
   }

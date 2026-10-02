@@ -85,3 +85,31 @@ describe("readProjectMcpConfig", () => {
     expect(result).toEqual({ mcpServers: {} });
   });
 });
+
+describe("MCP 作用域化读写", () => {
+  it("mcpConfigPath 返回各作用域路径", () => {
+    expect(config.mcpConfigPath("global")).toBe(config.MCP_CONFIG_FILE);
+    expect(config.mcpConfigPath("project")).toBe(config.PROJECT_MCP_CONFIG_FILE);
+  });
+
+  it("按显式路径读写，且自动创建父目录", async () => {
+    const path = join(testDir, "nested", "mcp.json");
+    await config.writeMcpConfigAt(path, { mcpServers: { a: { type: "stdio", command: "x" } } });
+    const read = await config.readMcpConfigAt(path);
+    expect(read.mcpServers.a!.command).toBe("x");
+  });
+
+  it("readMcpConfig(\"global\") 等价于默认作用域", async () => {
+    await config.writeMcpConfig({ mcpServers: { g: { type: "http", url: "https://g" } } });
+    expect(await config.readMcpConfig("global")).toEqual({ mcpServers: { g: { type: "http", url: "https://g" } } });
+  });
+
+  it("作用域化写入保留 disabled / description 等字段", async () => {
+    await config.writeMcpConfig(
+      { mcpServers: { s: { type: "stdio", disabled: true, description: "d" } } },
+      "global",
+    );
+    const read = await config.readMcpConfig("global");
+    expect(read.mcpServers.s).toMatchObject({ disabled: true, description: "d" });
+  });
+});

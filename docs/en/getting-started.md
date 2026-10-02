@@ -135,9 +135,9 @@ ai hook uninstall
 | First launch, endpoint has no key | The **credential screen** appears automatically; entering a key saves it and enters the chat |
 | Change the key of the **endpoint used by the current model** | `/key` in the chat (the session is rebuilt on save, so it takes effect immediately) |
 | Endpoint key / base URL, default model, add endpoint | `/config` → "Endpoint management" |
-| Models, MCP servers, and other advanced fields | Edit `~/.ai-zen/config.json` manually |
+| Models / image models / MCP servers / defaults / tool-output cap | `/config` → configuration center |
 
-> Note: the CLI entry only implements the `hook` subcommand (`ai hook install|uninstall`); there is **no `config` subcommand** — configuration editing happens inside the TUI. Adding/removing models and MCP servers is still a P1 TODO (edit `config.json` manually for now). See [Configuration](./configuration.md).
+> Note: the CLI entry only implements the `hook` subcommand (`ai hook install|uninstall`); there is **no `config` subcommand** — configuration editing happens inside the TUI (endpoints, models, image models, MCP servers, defaults and the tool-output cap can all be added/edited/deleted under `/config`). See [Configuration](./configuration.md).
 
 > Pure stdio mode (arguments / pipes) has no interactive channel: a missing API Key fails fast on stderr with a non-zero exit code. Configure it in the TUI or edit `config.json` first.
 

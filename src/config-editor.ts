@@ -10,6 +10,7 @@
  */
 
 import type { AppConfig, Endpoint, ImageModel, Model } from "@ai-zen/agents-sdk";
+import type { McpConfig, McpServerEntry, McpServersMap } from "./config.js";
 
 // ==================== 查询 ====================
 
@@ -298,4 +299,128 @@ export function setDefaultMigrationModel(config: AppConfig, modelId: string | un
 /** 设置工具输出上限（字符数） */
 export function setMaxToolOutput(config: AppConfig, value: number): AppConfig {
   return { ...config, maxToolOutput: value };
+}
+
+// ==================== MCP 配置改写 ====================
+
+/**
+ * 解析参数串为 argv：支持单 / 双引号包裹，以及反斜杠转义空白。
+ * 例如 `-y chrome-devtools-mcp@latest` → `["-y", "chrome-devtools-mcp@latest"]`。
+ */
+export function parseArgs(raw: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let started = false;
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i]!;
+    if (quote) {
+      if (ch === quote) quote = null;
+      else if (ch === "\\" && quote === '"' && i + 1 < raw.length) {
+        cur += raw[i + 1];
+        i += 1;
+      } else cur += ch;
+      started = true;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      started = true;
+      continue;
+    }
+    if (ch === "\\" && i + 1 < raw.length && /\s/.test(raw[i + 1]!)) {
+      cur += raw[i + 1];
+      i += 1;
+      started = true;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (started) {
+        out.push(cur);
+        cur = "";
+        started = false;
+      }
+      continue;
+    }
+    cur += ch;
+    started = true;
+  }
+  if (started) out.push(cur);
+  return out;
+}
+
+/** argv → 单行文本（含空白 / 引号 / 反斜杠的参数用双引号包裹并转义） */
+export function formatArgs(args: string[] | undefined): string {
+  if (!args || args.length === 0) return "";
+  return args
+    .map((arg) => (arg === "" || /[\s"'\\]/.test(arg) ? `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : arg))
+    .join(" ");
+}
+
+/** 解析 `KEY=VALUE`（以首个 `=` 分割；KEY 去空白，VALUE 原样保留）；不含 `=` 或 KEY 为空返回 null */
+export function parseKvInput(raw: string): { key: string; value: string } | null {
+  const at = raw.indexOf("=");
+  if (at < 0) return null;
+  const key = raw.slice(0, at).trim();
+  if (!key) return null;
+  return { key, value: raw.slice(at + 1) };
+}
+
+/** 键值映射 → 有序数组（保持插入顺序） */
+export function kvEntries(map: Record<string, string> | undefined): { key: string; value: string }[] {
+  return Object.entries(map ?? {}).map(([key, value]) => ({ key, value }));
+}
+
+/** 键值映射的展示摘要，如 `2 项（PATH, HOME）` / `（空）` */
+export function kvSummary(map: Record<string, string> | undefined): string {
+  const keys = Object.keys(map ?? {});
+  if (keys.length === 0) return "（空）";
+  return `${keys.length} 项（${keys.join(", ")}）`;
+}
+
+/** 按 id 查找 MCP 服务器 */
+export function findMcpServer(mcp: McpConfig, id: string | undefined): McpServerEntry | undefined {
+  if (!id) return undefined;
+  return mcp.mcpServers[id];
+}
+
+/** id 是否已被占用（`except` 用于重命名时排除自身） */
+export function mcpServerIdTaken(mcp: McpConfig, id: string, except?: string): boolean {
+  return id !== except && Object.prototype.hasOwnProperty.call(mcp.mcpServers, id);
+}
+
+/** 由名称派生唯一的 MCP 服务器 id */
+export function uniqueMcpServerId(mcp: McpConfig, name: string): string {
+  return deriveUniqueId(new Set(Object.keys(mcp.mcpServers)), name, "server");
+}
+
+/** 新增 MCP 服务器（id 由名称派生；默认 stdio、启用） */
+export function addMcpServer(mcp: McpConfig, name: string): { mcp: McpConfig; id: string } {
+  const id = uniqueMcpServerId(mcp, name);
+  const entry: McpServerEntry = { type: "stdio", disabled: false };
+  return { mcp: { ...mcp, mcpServers: { ...mcp.mcpServers, [id]: entry } }, id };
+}
+
+/** 改写某 MCP 服务器的字段（不可变；未列出的字段原样保留） */
+export function updateMcpServer(mcp: McpConfig, id: string, patch: Partial<McpServerEntry>): McpConfig {
+  const current = mcp.mcpServers[id];
+  if (!current) return mcp;
+  return { ...mcp, mcpServers: { ...mcp.mcpServers, [id]: { ...current, ...patch } } };
+}
+
+/** 删除 MCP 服务器 */
+export function removeMcpServer(mcp: McpConfig, id: string): McpConfig {
+  if (!Object.prototype.hasOwnProperty.call(mcp.mcpServers, id)) return mcp;
+  const mcpServers: McpServersMap = { ...mcp.mcpServers };
+  delete mcpServers[id];
+  return { ...mcp, mcpServers };
+}
+
+/** 重命名 MCP 服务器（改 key；保持原有顺序；假定新名已通过唯一性校验） */
+export function renameMcpServer(mcp: McpConfig, oldId: string, newId: string): McpConfig {
+  const mcpServers: McpServersMap = {};
+  for (const [key, value] of Object.entries(mcp.mcpServers)) {
+    mcpServers[key === oldId ? newId : key] = value;
+  }
+  return { ...mcp, mcpServers };
 }

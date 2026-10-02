@@ -1,18 +1,29 @@
 import { describe, it, expect } from "vitest";
 import type { AppConfig } from "@ai-zen/agents-sdk";
+import type { McpConfig } from "./config.js";
 import {
   addEndpoint,
   addImageModel,
+  addMcpServer,
   addModel,
   apiKeyGuide,
   findEndpoint,
+  findMcpServer,
   findModel,
+  formatArgs,
   isApiKeySet,
+  kvEntries,
+  kvSummary,
   maskApiKey,
+  mcpServerIdTaken,
   modelsUsingEndpoint,
+  parseArgs,
+  parseKvInput,
   removeEndpoint,
   removeImageModel,
+  removeMcpServer,
   removeModel,
+  renameMcpServer,
   resolveCredential,
   setDefaultAgent,
   setDefaultImageModel,
@@ -24,9 +35,11 @@ import {
   summarizeEndpoints,
   uniqueEndpointId,
   uniqueImageModelId,
+  uniqueMcpServerId,
   uniqueModelId,
   updateEndpoint,
   updateImageModel,
+  updateMcpServer,
   updateModel,
 } from "./config-editor.js";
 
@@ -211,5 +224,88 @@ describe("config-editor / 通用改写（配置中心）", () => {
     expect(setDefaultImageModel(config, undefined).defaultImageModel).toBeUndefined();
     expect(setDefaultMigrationModel(config, "glm-5.1").defaultMigrationModel).toBe("glm-5.1");
     expect(setMaxToolOutput(config, 4096).maxToolOutput).toBe(4096);
+  });
+});
+
+// ==================== MCP 配置改写 ====================
+
+function makeMcp(): McpConfig {
+  return {
+    mcpServers: {
+      "socket-pty": { type: "stdio", command: "npx", args: ["-y", "@ai-zen/socket-pty", "mcp"] },
+      slack: { type: "http", url: "https://slack.example.com", headers: { Authorization: "Bearer x" } },
+    },
+  };
+}
+
+describe("parseArgs / formatArgs", () => {
+  it("按空白切分，支持引号包裹与转义空格", () => {
+    expect(parseArgs("-y chrome-devtools-mcp@latest")).toEqual(["-y", "chrome-devtools-mcp@latest"]);
+    expect(parseArgs('"a b" c')).toEqual(["a b", "c"]);
+    expect(parseArgs("a\\ b c")).toEqual(["a b", "c"]);
+    expect(parseArgs("")).toEqual([]);
+    expect(parseArgs("   ")).toEqual([]);
+  });
+
+  it("formatArgs 与 parseArgs 互逆（含空白的参数加引号）", () => {
+    const args = ["-y", "a b", 'q"x'];
+    expect(parseArgs(formatArgs(args))).toEqual(args);
+    expect(formatArgs([])).toBe("");
+    expect(formatArgs(undefined)).toBe("");
+  });
+});
+
+describe("parseKvInput / kvSummary", () => {
+  it("以首个 = 分割，KEY 去空白", () => {
+    expect(parseKvInput("PATH=/usr/bin")).toEqual({ key: "PATH", value: "/usr/bin" });
+    expect(parseKvInput("A=b=c")).toEqual({ key: "A", value: "b=c" });
+    expect(parseKvInput("noequals")).toBeNull();
+    expect(parseKvInput("=v")).toBeNull();
+  });
+
+  it("kvSummary 展示项数与键名", () => {
+    expect(kvSummary(undefined)).toBe("（空）");
+    expect(kvSummary({ PATH: "/x", HOME: "/y" })).toBe("2 项（PATH, HOME）");
+  });
+});
+
+describe("MCP 服务器增删改", () => {
+  it("addMcpServer 由名称派生唯一 id，默认 stdio 且启用", () => {
+    const { mcp, id } = addMcpServer(makeMcp(), "My Server");
+    expect(id).toBe("my-server");
+    expect(mcp.mcpServers["my-server"]).toEqual({ type: "stdio", disabled: false });
+    expect(uniqueMcpServerId(makeMcp(), "Slack")).toBe("slack-2");
+  });
+
+  it("updateMcpServer 不可变改写且保留未列出的字段", () => {
+    const base = makeMcp();
+    const next = updateMcpServer(base, "slack", { disabled: true });
+    expect(base.mcpServers.slack!.disabled).toBeUndefined();
+    expect(next.mcpServers.slack).toEqual({ ...base.mcpServers.slack, disabled: true });
+  });
+
+  it("removeMcpServer 删除指定项且不改动其它项", () => {
+    const next = removeMcpServer(makeMcp(), "slack");
+    expect(Object.keys(next.mcpServers)).toEqual(["socket-pty"]);
+  });
+
+  it("renameMcpServer 改 key 且保持顺序", () => {
+    const next = renameMcpServer(makeMcp(), "slack", "slack-http");
+    expect(Object.keys(next.mcpServers)).toEqual(["socket-pty", "slack-http"]);
+    expect(findMcpServer(next, "slack-http")!.url).toBe("https://slack.example.com");
+  });
+
+  it("mcpServerIdTaken 支持排除自身", () => {
+    const mcp = makeMcp();
+    expect(mcpServerIdTaken(mcp, "slack")).toBe(true);
+    expect(mcpServerIdTaken(mcp, "slack", "slack")).toBe(false);
+    expect(mcpServerIdTaken(mcp, "new")).toBe(false);
+  });
+
+  it("kvEntries 保持插入顺序", () => {
+    expect(kvEntries({ B: "2", A: "1" })).toEqual([
+      { key: "B", value: "2" },
+      { key: "A", value: "1" },
+    ]);
   });
 });
