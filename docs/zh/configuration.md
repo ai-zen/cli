@@ -12,7 +12,7 @@ outline: deep
 
 - **全局配置**：`$AI_ZEN_DIR/config.json`（默认 `~/.ai-zen/config.json`，当未设置 `AI_ZEN_DIR` 时为 `~/.ai-zen/config.json`）。
 
-> 配置目录与 CLI/Desktop **共享**：配置文件在共享根目录（`src/config.ts` 的 `CONFIG_FILE = join(AI_ZEN_DIR, "config.json")`），而 `~/.ai-zen/cli/` 下存放的是 `conversations/` 与 `drafts/` 这类 CLI 运行时数据。
+> 配置目录与 CLI/Desktop **共享**：配置文件在共享根目录（`src/config.ts` 的 `CONFIG_FILE = join(AI_ZEN_DIR, "config.json")`），而 `~/.ai-zen/cli/` 下存放的是 `conversations/` 与 `last-session.json`（「上一轮会话 id」指针）这类 CLI 运行时数据。
 
 `src/config.ts` 定义的关键路径：
 
@@ -22,7 +22,6 @@ outline: deep
 | `CLI_DIR` | `$AI_ZEN_DIR/cli` | CLI 运行时目录 |
 | `CONFIG_FILE` | `$AI_ZEN_DIR/config.json` | 全局配置（CLI/Desktop 共享） |
 | `CONVERSATIONS_DIR` | `$AI_ZEN_DIR/cli/conversations` | 对话记录 |
-| `DRAFTS_DIR` | `$AI_ZEN_DIR/cli/drafts` | 草稿 |
 | `AGENTS_DIR` | `$AI_ZEN_DIR/agents` | Agent 定义（共享） |
 | `SUB_AGENTS_DIR` | `$AI_ZEN_DIR/sub-agents` | SubAgent 定义（共享） |
 | `SKILLS_DIR` | `$AI_ZEN_DIR/skills` | Skill 目录（共享） |
@@ -83,7 +82,7 @@ outline: deep
 ~/.ai-zen/                    ← 共享根（AI_ZEN_DIR）
 ├── cli/                      ← CLI 运行时数据
 │   ├── conversations/        ← CLI 对话
-│   └── drafts/               ← CLI 草稿
+│   └── last-session.json     ← 「上一轮会话 id」指针
 ├── config.json               ← 全局配置（端点、模型等，CLI/Desktop 共享）
 ├── agents/                   ← Agent 定义（共享）
 │   ├── default.json
@@ -132,15 +131,12 @@ outline: deep
 
 > 预设端点/模型来自 SDK（`@ai-zen/agents-sdk`）的 `config/constants`；CLI 不维护自己的预置列表（`src/config.ts` 直接复用 SDK 的出厂默认）。上表与 README 的「预置模型」表一致。
 
-## 交互式配置管理
+## 配置管理
 
-在主菜单选择 **配置管理**，可进行：
+TUI 内的**交互式配置管理界面已移除**（列为 P1 待办，将以 Ink 原生组件重新实现）。当前请直接编辑配置文件：
 
-- 查看当前配置总览（端点、默认模型、默认图片模型、默认 Agent、MCP 服务器、配置文件路径）。
-- 设置默认对话模型 / 默认图片生成模型。
-- 设置 API Key（交互式密码输入）。
-- 编辑 API 端点（名称、Base URL、API Key、描述）。
-- 查看所有 API、对话模型、图片生成模型。
-- 管理 MCP 服务器（新增/编辑/删除）。
+- 配置文件路径：`~/.ai-zen/config.json`（或 `$AI_ZEN_DIR/config.json`）。
+- 可设置：API 端点（名称、Base URL、API Key、描述）、默认对话模型 / 默认图片生成模型、默认 Agent、MCP 服务器等。
+- MCP 服务器也可单独维护于 `~/.ai-zen/mcp.json` 等（见 [MCP 支持](./mcp.md)）。
 
-> 注意：CLI 的入口（`src/index.ts`）只实现了 `hook` 子命令；**没有 `config` 子命令**。源码中的一句提示文案引用了 `aiz config set-key`，当前并未实现，请使用交互式主菜单完成配置。首次遇到未设置 API Key 的端点也会弹出交互式输入向导。
+> 说明：CLI 入口只实现了 `hook` 子命令（`ai hook install|uninstall`）；**没有 `config` 子命令**。若端点缺少 API Key，纯 stdio 模式会直接报错退出（非 0），TUI 模式会在启动对话时提示。

@@ -78,8 +78,21 @@ export async function getScope(): Promise<Scope> {
   return _scope;
 }
 
-export function resetScope(): void {
+/**
+ * 重置 Scope 单例：释放当前 Scope（断开 MCP 连接等），下次 `getScope()` 按磁盘配置重建。
+ *
+ * 配置变更后（如 TUI 的 `/config` 改了端点凭据）必须调用：Scope 的 `config` 只在创建时
+ * 读取一次，不重建则新配置不生效。`_scope` 是同步置空的，便于并发调用方立刻拿到新实例。
+ */
+export async function resetScope(): Promise<void> {
+  const scope = _scope;
   _scope = null;
+  if (!scope) return;
+  try {
+    await scope.dispose();
+  } catch {
+    /* 释放失败不影响后续重建 */
+  }
 }
 
 // ==================== Agent 创建 ====================

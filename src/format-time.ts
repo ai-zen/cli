@@ -2,7 +2,7 @@
  * 统一时间格式化工具
  *
  * 所有用户可见的时间文案统一使用 dayjs + zh-cn locale，
- * 确保各种场景（主菜单、对话列表、Agent 列表、草稿保存等）显示一致。
+ * 确保各种场景（会话列表、会话标签等）显示一致。
  */
 
 import dayjs from "dayjs";
@@ -53,7 +53,7 @@ export function formatShortTime(isoString: string): string {
 }
 
 /**
- * 格式化消息数量+时间（用于主菜单草稿提示）
+ * 格式化消息数量+时间（用于会话标签；当前暂无调用点，保留供 P1 主菜单复用）
  * 例：12 条消息, 今天 14:30
  */
 export function formatMessageTime(messageCount: number, isoString: string): string {

@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "esnext",
     "module": "nodenext",
+    "jsx": "react-jsx",
     "lib": ["ESNext"],
     "outDir": "./dist",
     "rootDir": "./src",
@@ -17,5 +18,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/**/*.test.tsx"]
 }

@@ -1,5 +1,97 @@
 # Changelog
 
+## [1.0.0-alpha.1] - 2026-09-30
+
+### ✨ 新增 — TUI 全屏交互界面（Ink + React）
+
+- **以 Ink（React）重写交互界面**，取代原 inquirer 行式对话。启动呈现**动画渐变 ASCII 启动界面**（对角渐变 + 扫光 + 逐行揭示），结束后**直接进入对话界面**（存在上一轮会话则自动续接，否则新建对话）。
+- **对话界面底部固定**：分隔线 / 输入行 / 状态栏始终吸附终端底部，对话历史在其上方滚动 —— 按显示宽度**预折行** + 自底部截取 + 顶部补齐。整帧高度**预留末行**、恒小于终端行数：既避免单条回复远超一屏时撑破帧，也规避 Ink 在「帧高 ≥ 终端行数」时走全屏分支（渲染串不补末尾换行却仍按「光标停在末行之后」定位）导致硬件光标整体上移一行、IME 候选框偏上的问题。
+- 对话界面：
+  - 流式输出区（思考过程、回答正文、工具调用分行展示），历史按行裁剪、自底部滚动；
+  - **多行输入**（`Enter` 发送、`Ctrl+N` 换行；`Ctrl+J` 亦可）；
+  - **光标编辑**：`←`/`→`、`Home`/`End`、`Backspace`/`Delete`、光标处插入，及 `Ctrl`/`Meta` + `←`/`→` 跨词移动；反显光标 + 硬件光标同步；
+  - **应用内翻页**：`PgUp`/`PgDn` 翻页、`Shift`/`Alt` + `↑`/`↓` 单行滚动、发送自动回底、`Esc` 清输入并回底（翻页时内容冻结，新内容追加不漂移）；
+  - 输入历史（`↑`/`↓`）；
+  - **内联 `/` 命令菜单**（↑↓ 选择、`Tab` 补全、`Enter` 确认），取代原 `src/slash-hint-prompt.ts` 底栏提示；
+  - 状态栏（模型 · Agent · token 用量 · 生成状态）；
+  - 确认框（是/否，支持 y/n / ←→ / Esc）。
+- 对话命令（TUI 内）：`/help`、`/load`（加载已保存的对话）、`/clear`、`/new`、`/save`、`/config`、`/key`、`/migrate`、`/back`（撤回并预填输入）、`/editor`（借助 Ink `suspendTerminal` 调用系统编辑器）、`/exit` `/quit`。
+- **首启凭据引导 + 配置中心（Ink 原生）**：此前端点缺 API Key 时只有一行报错随即退出，**没有任何输入入口**（旧 inquirer 向导随主菜单一并移除）。现在：
+  - **启动预检**：所选模型绑定的端点缺 API Key 时，先弹出**凭据设置屏**（端点名 / Base URL / 厂商申请链接 / 掩码输入，`Tab` 切明文核对），保存后立即进入对话；`Esc` 放弃即退出；
+  - **`/key`**：对话内直达「当前模型所用端点」的 API Key 编辑，保存后**自动重建会话**（消息与上下文保留，新凭据立即生效）；
+  - **`/config` 配置中心**：默认模型 / 端点凭据 / 端点地址 / 新建端点（自定义 OpenAI 兼容服务），每次确认即时写入 `config.json`；
+  - **启动失败不再只能退出**：出错屏提示「按 `k` 打开配置中心」，改完自动重试（仅对话框无会话时重挂载重试）。
+- 命令清单新增 `/config`、`/key`（`registry.ts` 仍是唯一来源，`/help` 与输入补全自动生效）。
+- **IME 候选框跟随光标**：用 Ink `useCursor()` 把终端硬件光标同步到编辑光标（`computeInputCursorPosition`），中文输入法候选框正确定位；生成中 / 覆盖层弹出时隐藏硬件光标。
+- **会话持久化改革：会话即文件 + 单指针**：每轮结束把会话落盘、并在 `cli/last-session.json` 记录上一轮会话 id；首条消息后才落盘（不留空会话）；`/save` 幂等；旧 `drafts/_current.json` 不迁移。
+- 继续 / 加载已保存的对话时，会**按消息重建历史记录**显示。
+- **终端状态安全**：`SIGINT` / `SIGTERM` / 未捕获异常均卸载 Ink，恢复 raw mode 与光标；`Ctrl+C` 语义为「忙时取消本轮、空闲时退出」。
+- **干净退出**：Ink 卸载后显式暂停 stdin 并终止进程（`farewell()`），避免残留句柄（TTY flowing、SDK 定时器）导致「返回 shell 却不退出、终端不归还」。
+
+### 🔧 变更
+
+- 新增依赖：`ink`、`react`（运行时），`ink-testing-library`、`@types/react`（开发）。
+- **移除依赖**：`inquirer`、`@types/inquirer`、`chalk` —— 三者均已从代码中彻底移除：inquirer 的确认改由调用方注入（TUI 走 Ink 确认框）；着色改用 Ink `<Text color>`（chalk 仅作为 Ink 的间接依赖保留在依赖树中）。
+- **TUI 输出统一走 Ink**：迁移进度、跳过迁移、会话落盘失败等提示不再 `console.log` / `console.warn` 直写终端（会撕裂 Ink 帧），改为经回调上报、由对话屏渲染为 notice 块；启动 Logo 渐变也由 chalk 字符串改为 Ink 逐字符 `<Text color>`。
+- **配置向导改为「吸底」布局（修复 VS Code 终端里被裁切）**：此前配置中心 / 凭据设置屏是**顶对齐短帧**，从对话屏（整帧高 = 终端行数 − 1）切过来时，Ink 的擦除 / 滚动会错位，内容被顶出视口、渲染不全。现在向导与对话屏统一为「顶部留白 + 内容贴底」，整帧高度一致、内容不再飘出可视区：
+  - 新增纯函数 `bottomPadding()` 与 `WizardFrame` 外壳（菜单 / 列表 / 输入屏全部套用）；输入屏的硬件光标 y 随留白一起算（`promptLayout()`，IME 仍精确跟随）；
+  - 列表项与键位提示统一裁成**严格单行**（新增 `clipWidth()`，`SelectList` 接受 `columns`），列表过长时自动截断并提示，避免折行把帧高撞破；
+  - `/load`、`/back` 的覆盖层同样传入列宽裁剪条目。
+- **修复「输入框偶尔自动填入 `[?0u`」**：Ink 的 `kittyKeyboard: auto` 会在**每个实例创建时**向终端发送一次 `CSI ? u` 查询，终端回 `CSI ? 0 u`（flags=0，不支持）；本 TUI 反复挂载（启动界面 → 对话 → 配置向导 …），应答源源不断。应答一旦被**拆包**（前导 ESC 被 Ink 的「待定转义刷新」当作一次独立的 Escape 键消费），残留在后一个 chunk 里的 `[?0u` 会退化成普通文本、被当作输入插入对话框（已实测重现）。修法两层：
+  - 渲染选项改为 `kittyKeyboard: { mode: "disabled" }`，**不再发查询**（根因消除；该协议在本环境本就不生效，换行由不依赖终端协议的 `Ctrl+N` / `Ctrl+J` 承担）；
+  - 新增纯函数 `isTerminalReply()`，在输入层丢弃整段终端应答（Kitty 协议应答 / 光标位置报告 / 设备状态报告），逐字键入同样字符不受影响。
+- `tsconfig.json` 启用 `jsx: react-jsx`。
+- **移除旧行式对话链路（死代码）**：`src/conversation-runner.ts`、`src/slash-hint-prompt.ts`、`src/delta-renderer.ts`、`src/config-wizard.ts`、`src/draft-repository.ts`、`src/draft-plugin.ts` 及 `src/conversation-commands/` 下的命令处理器（保留 `registry.ts` 作为命令清单唯一来源，供 TUI 复用）。注：其中被删除的是 **inquirer 版** `src/config-wizard.ts`；同版本新增的 `src/tui/config-wizard.tsx` 是**纯 Ink 重写**，二者无关。
+- **移除主菜单**：删除 `MainMenu` 次级屏幕、`/menu` 命令与整个 `src/menus/*`（inquirer 流程）；对话内 `/load` 所需的列表函数迁为 `conversation-repository.ts` 的 `listConversations()`。菜单功能（管理 Agents / 管理已保存对话等）转为 P1 待办，将以 Ink 原生组件重新实现；其中**配置管理**已在同版本以 Ink 原生的 `/config` 配置中心回归（见上）。
+- 新增 `src/session-pointer.ts`（上一轮会话 id 指针，原子写）与 `src/conversation-persist-plugin.ts`（每轮落盘会话 + 更新指针）。
+- 新增 `src/config-editor.ts`：配置查询与**不可变改写**的纯函数层（模型/端点解析、凭据状态、密钥掩码、厂商申请指引、新增端点），供 TUI 与单测共用。
+- 新增 `src/tui/config-wizard.tsx`：**纯 Ink** 的凭据设置屏 / 配置中心 / 单行输入屏（自带硬件光标同步，IME 候选框跟随）。
+- 文本度量与折行（`displayWidth` / `wrapText` / `layoutInput` / `INPUT_PREFIX_WIDTH` / `usableFrameRows`）抽到 `src/tui/text.ts`，消除 `screens.tsx` 与向导之间的循环依赖（`screens.tsx` 保留 re-export，既有引用与测试不变）。
+- `resetScope()` 改为 `async` 并 `dispose()` 旧 Scope；新增 `ChatSession.reload()`。**Scope 持有配置快照**，改了端点凭据 / 地址后必须连同 Scope 一起重建才会生效（这也是 `/config`、`/key` 保存后能立刻生效的原因）。
+- `src/index.ts` 的 TUI 分支改调 `runTui()`；`src/tui/` 为新的界面实现（`theme` / `components` / `screens` / `chat-session` / `index`）。
+
+### ✅ 测试
+
+- 新增 `src/tui/theme.test.ts`、`src/tui/screens.test.tsx`：颜色/渐变/Logo、组件渲染、`chatReducer` 流式拼接、`messagesToBlocks`、`stripCwdNote`，以及吸底布局的文本测量/折行、块 → 行、`computeChatLayout`（行数守恒 + 应用内翻页视口 + 内容冻结）、`layoutInput` 光标定位、`computeInputCursorPosition`（IME 光标）、`wordLeft`/`wordRight` 跨词移动、`usableFrameRows` 预留末行。
+- `src/agent-creator.test.ts` 改为「临时 `AI_ZEN_DIR` + 动态 import」，不再依赖 `vi.mock`（在某些环境中 `vi.mock` 会静默失效）。
+- `screens.test.tsx` 新增 `isTerminalReply`（终端应答识别与不误伤普通输入）与 `RENDER_OPTIONS` 决策锁定（断言 kitty 查询已关闭）；`config-wizard.test.tsx` 新增「终端应答不写进输入框 / 逐字键入不受影响」用例。
+- `config-wizard.test.tsx` 新增吸底布局用例：`promptLayout` 的顶部留白与硬件光标坐标（含宽字符列宽）、内容超帧时留白为 0；菜单屏与列表屏的整帧高度、顶部留白与「内容贴底」断言。
+- 新增 `src/config-editor.test.ts`（13 例：模型/端点查询、密钥掩码、厂商指引、不可变改写、端点 id 派生与避让）。
+- 新增 `src/tui/config-wizard.test.tsx`（10 例：掩码输入不回显明文、`Tab` 切明文、`Esc` 取消、`Backspace`/`Home` 编辑、菜单 → 端点凭据 → 写盘并回菜单、空 Key/非法 URL 校验、`closeOnSave` 保存即关闭、新建端点三步、默认模型切换）。
+- 全量单测 11 文件 / 141 例通过；`tsc --noEmit` 与 `npm run build` 零错误；e2e 12 例通过；真实 PTY 实测「启动→直达对话→流式→`/load`→`/clear`→退出交还 shell」全链路正常。
+- 用「假 TTY」探针向 Ink 捕获实际写出的字节：`kittyKeyboard: auto` 每个实例写 1 次 `ESC[?u` 查询，`disabled` 为 0 次（对照实验，确认根因已消除）；真实 PTY 中手工注入 `[?0u` 应答不再落入输入框。
+- 真实 PTY 实测首启凭据链路：`AI_ZEN_DIR` 指向空目录启动 → 弹出凭据设置屏 → 输入 Key 后写盘并直接进入对话（仅目标端点的 `apiKey` 被写入）→ `/config` 改「非当前端点」凭据（回菜单并提示，不重建会话）→ `/key` 改当前端点凭据（保存后自动重建会话）→ 退出后二次启动跳过凭据引导；`/help` 正确列出 `/config` 与 `/key`。
+
+## [0.10.0] - 2026-09-30
+
+### 💥 破坏性变更
+
+- **启动命令由 `aiz` / `zen` 改为 `ai`** — `package.json` 的 `bin` 改为 `{ "ai", "aiz", "zen" }`。`aiz` / `zen` 作为**过渡别名**在当前版本保留，未来版本移除。
+- **引入双模式运行，两种模式互不混合** — 此前「有参数 = 快速对话后继续进入交互循环」的行为被废除，改为：
+  - **纯 stdio 模式**：带位置参数，**或** stdin/stdout 非 TTY（管道、重定向、CI）时启用。**无任何额外交互**，把最终 assistant 文本以纯文本写入 `stdout`（零 ANSI / emoji 前缀 / spinner），日志、进度、工具过程与错误摘要一律走 `stderr`；成功退出码 `0`，失败非 `0`；默认**不落盘**。
+  - **TUI 模式**：仅在**无参数且 stdin/stdout 均为 TTY** 时进入（原交互式主菜单）。
+
+### ✨ 新增
+
+- `src/mode.ts` — 运行模式判定与启动参数解析（纯函数，单测覆盖）：`decideMode` / `resolveInvocation`。
+- `src/stdio-runner.ts` — 纯 stdio 运行器：读取 stdin、合并「参数指令 + stdin 内容」、单轮发送、提取最终文本写 stdout。
+- 新增启动选项与子命令：`ai --help` / `-h`、`ai --version` / `-v`、`ai --save`。
+- 通过 SDK 的 `setLogger` 将 SDK 日志与 `console.log` 统一改道 `stderr`，保证 stdout 纯净。
+
+### 🔧 变更
+
+- `src/index.ts` 重构为「模式路由 + 两套入口分发」，业务逻辑下移到 `mode.ts` / `stdio-runner.ts`。
+- shell 兜底钩子函数体由 `aiz "$@"` 改为 `ai "$@"`；标记由 `aiz hook` 改为 `ai hook`，`ai hook install` 会自动识别并升级旧的 `aiz` 钩子块（`ai hook uninstall` 同时清理两代标记）。
+- 修正 `src/conversation-runner.ts` 中过时提示文案（`aiz config set-key` → 运行 `ai` 进入交互界面配置）。
+- 文档：中英 README 与 `docs/zh|en/{index,getting-started,configuration}.md` 补充「运行模式」说明并全量改用 `ai` 命令名；`docs/manifest.json` 版本与描述同步。
+
+### ✅ 测试
+
+- 新增 `src/mode.test.ts`（14 例）：模式判定与参数路由。
+- 新增 `src/stdio-runner.test.ts`（9 例）：`mergePrompt` 合并语义与 `extractText` 文本提取。
+- e2e 重写为双模式场景（12 例）：子命令、stdio 纯净性（无 ANSI）、退出码、`--save` 落盘、真实 API 管道对话。
+- `tsc --noEmit`（`tsconfig.test.json`）与 `npm run build` 零错误。
+
 ## [0.9.0] - 2026-09-30
 
 ### 💥 破坏性变更

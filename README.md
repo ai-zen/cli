@@ -1,6 +1,6 @@
 # @ai-zen/cli
 
-A command-line interface for AI agents, built on `@ai-zen/agents-sdk` and `@ai-zen/agents-core`. Provides an interactive conversation terminal with built-in file system tools, sub-agent orchestration, and skill management.
+A command-line interface for AI agents, built on `@ai-zen/agents-sdk` and `@ai-zen/agents-core`. It runs in **two modes**: an interactive terminal (TUI) for conversations with the AI, and a pure stdio mode for scripts, pipes, and the shell fallback hook. It ships built-in file system tools and supports MCP integration, sub-agent orchestration, and skill management.
 
 ## Installation
 
@@ -20,41 +20,77 @@ pnpm build
 npm install -g .
 ```
 
+## Run Modes
+
+The CLI has two **non-mixing** run modes, chosen automatically from the launch arguments and the terminal environment:
+
+| Mode | Trigger | Audience | Behavior |
+|------|---------|----------|----------|
+| **Pure stdio** | Arguments present, **or** stdin/stdout is not a TTY (pipe, redirect, CI) | Scripts, pipes, shell fallback hook | No extra interaction; reads input and writes the **final answer as plain text to stdout** |
+| **TUI** | No arguments and both stdin/stdout are TTYs | Human users | Interactive chat UI |
+
+In pure stdio mode, logs / progress / tool activity / error summaries all go to **stderr**; stdout carries the result only (no ANSI, no emoji prefix, no spinner). Exit code is `0` on success and non-zero on failure. Nothing is persisted by default (no conversation archive).
+
 ## Quick Start
 
 ```bash
-# Interactive main menu
-zen
+# TUI: no arguments, interactive terminal
+ai
 
-# Quick chat (pass message as argument)
-zen Hello, introduce yourself.
+# Pure stdio: argument is the prompt, result goes to stdout
+ai Hello, introduce yourself.
+
+# Pipe: stdin is the content, the argument is the instruction
+cat README.md | ai "summarize in three sentences"
+
+# Persist: off by default, opt in with --save
+ai --save "name this function for me"
+
+# Help / version
+ai --help
+ai --version
 ```
 
-## Main Menu
+> The legacy command names `aiz` / `zen` still work as transition aliases in this version and will be removed in a future release.
 
-Run `zen` to enter the main menu:
+## Interface (TUI)
 
-```
-🤖 Welcome to AI-Zen CLI
-
-? Select an action:
-  ▶️  Continue last unfinished conversation  (if draft exists)
-  💬  Start a new conversation
-  📂  Continue a saved conversation
-  📋  Manage saved conversations
-  🤖  Manage Agents
-  ⚙️   Configuration
-  ❌  Exit
-```
-
-### Draft Recovery
-
-If you exit a conversation without saving (or the process is killed), the conversation is **automatically saved as a draft**. Next time you start `zen`, you'll see:
+When run with no arguments on an interactive terminal, the CLI opens a full-screen interface built with **Ink (React)**. It starts with an animated, gradient ASCII splash:
 
 ```
-▶️  Continue last unfinished conversation (12 messages, 2025/1/1 12:00:00)
-💬  Start a new conversation (discard draft)
+ █████╗ ██╗    ███████╗███████╗███╗   ██╗
+██╔══██╗██║    ╚══███╔╝██╔════╝████╗  ██║
+███████║██║      ███╔╝ █████╗  ██╔██╗ ██║
+██╔══██║██║     ███╔╝  ██╔══╝  ██║╚██╗██║
+██║  ██║██║    ███████╗███████╗██║ ╚████║
+╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
+
+              AI workbench in your terminal
+              v1.0.0-alpha.1 · sdk x · core y
 ```
+
+After the splash, you land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and the status bar (model · agent · token usage · generating) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line.
+
+The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word), and an inline `/` command menu (↑↓ to choose, `Tab` to complete). `Ctrl+C` cancels the current request while generating, and exits when idle.
+
+### First-run setup (API Key)
+
+On first launch, if the endpoint bound to the selected model has no API Key yet, a **credential screen** appears instead of an error:
+
+```
+ ? First-run setup · Set the API Key for DeepSeek
+ Endpoint: DeepSeek · https://api.deepseek.com/v1
+ Current: not set
+ Get a key at: https://platform.deepseek.com/api_keys
+ Saving enters the chat immediately (Esc aborts and exits).
+ ❯ ▏
+```
+
+`Enter` saves it (to `~/.ai-zen/config.json`) and drops you straight into the chat; `Tab` toggles plaintext, `Esc` aborts. Inside the chat, `/key` changes the **current endpoint's** key (the session is rebuilt on save, so it applies immediately) and `/config` opens the configuration center (default model / endpoint credentials / base URLs / add endpoint).
+
+### Session Recovery
+
+Every conversation is persisted directly as its own file (`cli/conversations/<id>.json`) while you chat — there is no separate draft store. A single pointer (`cli/last-session.json`) remembers the **last session id**; next time you start `ai`, that session is **resumed automatically** so you pick up where you left off.
 
 ### Conversation Commands
 
@@ -65,12 +101,13 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
   /back         Undo messages (roll back to a specific point and resend)
 ```
 
-> Hints are display-only and do not change submission semantics: Enter always submits exactly what you typed, and commands are matched by their full names. An unrecognized `/xxx` command reports "Unknown command".
+> Typing `/` lists candidate commands below the input line (↑↓ to choose, `Tab` to complete, `Enter` to submit/run). Commands are matched by their full names; an unrecognized `/xxx` reports "Unknown command".
 
 | Command | Description |
 |---------|-------------|
-| `/exit` `/quit` | Exit the conversation (prompts to save) |
-| `/save` | Save the current conversation |
+| `/exit` `/quit` | Exit the conversation |
+| `/save` | Save the current conversation (it is already flushed on every turn) |
+| `/load` | Load a saved conversation (replaces the current session) |
 | `/new` | Reset the conversation (clear history) |
 | `/back` | Undo messages (roll back to a specific point and resend) |
 | `/editor` | Open system editor for long-form input |
@@ -100,19 +137,30 @@ When you type an unrecognized command in your terminal, it can be automatically 
 
 ```bash
 # Install the hook
-zen hook install
+ai hook install
 
 # After that, try typing something random:
 > what's the weather today?
 # This will be forwarded to AI instead of showing "command not found"
 
 # Uninstall
-zen hook uninstall
+ai hook uninstall
 ```
+
+The hook calls `ai "$@"` (pure stdio mode) so the answer is printed in your current shell session. If you previously installed the legacy `aiz` hook, re-running `ai hook install` upgrades it automatically; you can also run `ai hook uninstall` first.
 
 ## Configuration
 
-Configuration is stored in `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json` if set), shared with other AI-Zen clients. The `maxContextTokens` field on each model sets the migration threshold (typically ~25% of the model's actual context window, e.g. 250,000 for a 1M-token model).
+Configuration is stored in `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json` if set), shared with other AI-Zen clients and used as the **single source of truth**. The TUI can edit the common fields for you:
+
+| Scenario | How |
+|----------|-----|
+| First launch, endpoint has no key | The **credential screen** appears automatically |
+| Change the current model's endpoint key | `/key` in the chat (session rebuilt on save) |
+| Endpoint key / base URL, default model, add endpoint | `/config` (configuration center) |
+| Models, MCP servers, and other advanced fields | Edit `config.json` manually |
+
+The `maxContextTokens` field on each model sets the migration threshold (typically ~25% of the model's actual context window, e.g. 250,000 for a 1M-token model).
 
 ```jsonc
 {
@@ -160,7 +208,7 @@ Configuration is stored in `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json`
 ├── config.json               ← Endpoints & models (shared with other AI-Zen clients)
 ├── cli/                      ← CLI runtime data
 │   ├── conversations/        ← CLI conversations
-│   └── drafts/               ← CLI drafts
+│   └── last-session.json     ← Pointer to the last session id
 ├── agents/                   ← Agent definitions (shared)
 │   ├── default.json          ← Default agent (created on first run)
 │   └── my-custom-agent.json

@@ -1,39 +1,38 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, afterAll } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
-vi.mock("./config.js", () => ({
-  readConfig: vi.fn(() => ({
-    defaultModel: "gpt4",
-    endpoints: [],
-    models: [],
-    defaultAgent: "default",
-    agents: [],
-    subAgents: [],
-    imageModels: [],
-  })),
-  AI_ZEN_DIR: "/mock/.ai-zen",
-  CLI_DIR: "/mock/.ai-zen/cli",
-  AGENTS_DIR: "/mock/.ai-zen/agents",
-  SUB_AGENTS_DIR: "/mock/.ai-zen/sub-agents",
-  SKILLS_DIR: "/mock/.ai-zen/skills",
-  TOOLS_DIR: "/mock/.ai-zen/tools",
-  CONVERSATIONS_DIR: "/mock/.ai-zen/cli/conversations",
-  DRAFTS_DIR: "/mock/.ai-zen/cli/drafts",
-  PROJECT_SUB_AGENTS_DIR: "/mock/project/.ai-zen/sub-agents",
-  PROJECT_SKILLS_DIR: "/mock/project/.ai-zen/skills",
-  PROJECT_TOOLS_DIR: "/mock/project/.ai-zen/tools",
-  USER_AGENTS_SKILLS_DIR: "/mock/.agents/skills",
-  USER_AGENTS_MCP_CONFIG_FILE: "/mock/.agents/mcp.json",
-  PROJECT_AGENTS_DIR: "/mock/project/.agents",
-  PROJECT_AGENTS_SKILLS_DIR: "/mock/project/.agents/skills",
-  PROJECT_AGENTS_MCP_CONFIG_FILE: "/mock/project/.agents/mcp.json",
-}));
+/**
+ * 说明：本套件不使用 `vi.mock`。
+ *
+ * 在部分环境（如 vite 8 + vitest 4）下 `vi.mock` 的模块拦截会静默失效，
+ * 导致被测模块读到真实用户配置、测试结果依赖机器状态。这里改用
+ * 「临时 AI_ZEN_DIR + 动态 import」的方式，测试更贴近真实且完全隔离。
+ */
 
-import { getScope, resetScope, createAgent } from "./agent-creator.js";
+const dir = mkdtempSync(join(tmpdir(), "aizen-agent-creator-"));
+mkdirSync(join(dir, "agents"), { recursive: true });
+writeFileSync(
+  join(dir, "config.json"),
+  JSON.stringify(
+    { endpoints: [], models: [], defaultModel: "gpt4", version: 4 },
+    null,
+    2,
+  ),
+);
+
+// 必须在加载 config.ts 之前设置：AI_ZEN_DIR 在模块加载时读取
+process.env.AI_ZEN_DIR = dir;
+
+const { getScope, resetScope, createAgent } = await import("./agent-creator.js");
+
+afterAll(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
 
 describe("getScope", () => {
-  afterEach(() => {
-    resetScope();
-  });
+  afterEach(() => resetScope());
 
   it("返回 Scope 单例", async () => {
     const s1 = await getScope();
@@ -48,19 +47,17 @@ describe("getScope", () => {
     expect(s1).not.toBe(s2);
   });
 
-  it("Scope 包含配置信息", async () => {
+  it("Scope 携带配置与 agents 目录", async () => {
     const scope = await getScope();
     expect(scope.config.defaultModel).toBe("gpt4");
-    expect(scope.agentsDir).toBe("/mock/.ai-zen/agents");
+    expect(scope.agentsDir).toBe(join(dir, "agents"));
   });
 });
 
 describe("createAgent", () => {
-  afterEach(() => {
-    resetScope();
-  });
+  afterEach(() => resetScope());
 
-  it("磁盘文件不存在时抛出错误", async () => {
-    await expect(createAgent({})).rejects.toThrow();
+  it("Agent 定义不存在时抛出错误", async () => {
+    await expect(createAgent({ agentId: "does-not-exist" })).rejects.toThrow();
   });
 });

@@ -12,7 +12,7 @@ Configuration is stored under the shared root directory (determined by `AI_ZEN_D
 
 - **Global config**: `$AI_ZEN_DIR/config.json` (default `~/.ai-zen/config.json` when `AI_ZEN_DIR` is not set).
 
-> The config directory is **shared** with other AI-Zen clients: the config file lives in the shared root (`CONFIG_FILE = join(AI_ZEN_DIR, "config.json")` in `src/config.ts`), while `~/.ai-zen/cli/` holds CLI runtime data such as `conversations/` and `drafts/`.
+> The config directory is **shared** with other AI-Zen clients: the config file lives in the shared root (`CONFIG_FILE = join(AI_ZEN_DIR, "config.json")` in `src/config.ts`), while `~/.ai-zen/cli/` holds CLI runtime data such as `conversations/` and `last-session.json` (the "last session id" pointer).
 
 Key paths defined in `src/config.ts`:
 
@@ -22,7 +22,6 @@ Key paths defined in `src/config.ts`:
 | `CLI_DIR` | `$AI_ZEN_DIR/cli` | CLI runtime directory |
 | `CONFIG_FILE` | `$AI_ZEN_DIR/config.json` | Global config (shared by CLI/Desktop) |
 | `CONVERSATIONS_DIR` | `$AI_ZEN_DIR/cli/conversations` | Conversation records |
-| `DRAFTS_DIR` | `$AI_ZEN_DIR/cli/drafts` | Drafts |
 | `AGENTS_DIR` | `$AI_ZEN_DIR/agents` | Agent definitions (shared) |
 | `SUB_AGENTS_DIR` | `$AI_ZEN_DIR/sub-agents` | SubAgent definitions (shared) |
 | `SKILLS_DIR` | `$AI_ZEN_DIR/skills` | Skill directory (shared) |
@@ -83,7 +82,7 @@ Fields (aligned with the SDK's `AppConfig` type):
 ~/.ai-zen/                    ← Shared root (AI_ZEN_DIR)
 ├── cli/                      ← CLI runtime data
 │   ├── conversations/        ← CLI conversations
-│   └── drafts/               ← CLI drafts
+│   └── last-session.json     ← Pointer to the last session id
 ├── config.json               ← Global config (endpoints, models, etc., shared by CLI/Desktop)
 ├── agents/                   ← Agent definitions (shared)
 │   ├── default.json
@@ -132,15 +131,12 @@ Industry-convention directories: `~/.agents/` and `<project>/.agents/` (`skills/
 
 > The preset endpoints/models come from the SDK (`@ai-zen/agents-sdk`) `config/constants`; the CLI keeps no preset list of its own (`src/config.ts` reuses the SDK factory defaults). This table matches the README's "Preset Models" table.
 
-## Interactive configuration management
+## Configuration management
 
-At the main menu, choose **Configuration** to:
+The in-TUI **interactive configuration screen has been removed** (tracked as a P1 TODO and to be reimplemented with native Ink components). For now, edit the config file directly:
 
-- View the current configuration overview (endpoints, default model, default image model, default Agent, MCP servers, config file path).
-- Set the default conversation model / default image-generation model.
-- Set the API Key (interactive password input).
-- Edit API endpoints (name, Base URL, API Key, description).
-- View all API, conversation, and image-generation models.
-- Manage MCP servers (add/edit/delete).
+- Config file path: `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json`).
+- What you can set: API endpoints (name, Base URL, API Key, description), the default conversation / image-generation model, the default Agent, MCP servers, etc.
+- MCP servers can also be maintained separately in `~/.ai-zen/mcp.json` (see [MCP Support](./mcp.md)).
 
-> Note: the CLI entry (`src/index.ts`) only implements the `hook` subcommand; there is **no `config` subcommand**. A hint text in the source refers to `aiz config set-key`, which is currently not implemented — use the interactive main menu for configuration. When you first encounter an endpoint without an API Key set, an interactive input wizard will appear.
+> Note: the CLI entry only implements the `hook` subcommand (`ai hook install|uninstall`); there is **no `config` subcommand**. If an endpoint has no API Key, pure stdio mode fails fast with a non-zero exit code, and TUI mode reports it when starting a conversation.

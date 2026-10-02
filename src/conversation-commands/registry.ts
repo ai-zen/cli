@@ -1,13 +1,12 @@
 /**
  * 对话命令元数据 — 对话命令清单的唯一来源
  *
- * 命令名、别名与说明集中声明于此，由三类消费方共用：
- *   - 分发：`./index.ts` 按主命令名装配处理函数表，并按别名自动展开
- *   - 帮助：`./help.ts` 渲染 `/help` 输出
- *   - 提示：`../slash-hint-prompt.ts` 渲染输入 `/` 时的实时候选提示
+ * 命令名、别名与说明集中声明于此，由 TUI 层复用：
+ *   - 提示/补全：`src/tui/screens.tsx` 渲染输入 `/` 时的实时候选菜单
+ *   - 帮助：`/help` 命令按本清单渲染
  *
  * 新增、改名或调整说明只需改动本文件。本模块为纯数据与纯函数，
- * 不依赖 inquirer / chalk，可直接单测。
+ * 不依赖 chalk / React 等 UI 依赖，可直接单测。
  */
 
 /** 单个对话命令的元数据 */
@@ -24,10 +23,13 @@ export interface CommandMeta {
 export const COMMAND_REGISTRY: readonly CommandMeta[] = [
   { name: "exit", aliases: ["quit"], description: "退出对话（会提示是否保存）" },
   { name: "save", description: "保存当前对话" },
+  { name: "load", description: "加载已保存的对话（替换当前会话）" },
   { name: "new", description: "重置会话（清空历史）" },
   { name: "back", description: "撤回消息（可修改后重发）" },
   { name: "editor", description: "使用系统编辑器输入长消息" },
   { name: "clear", description: "清屏" },
+  { name: "config", description: "打开配置中心（默认模型 / 端点凭据 / 端点地址）" },
+  { name: "key", description: "设置当前端点的 API Key" },
   { name: "migrate", description: "手动任务迁移（生成交接文档并开启新会话）" },
   { name: "help", description: "显示此帮助" },
 ];

@@ -35,7 +35,7 @@ The command first confirms (migration will: generate a handoff document → save
 Automatic and manual migration **reuse the same migration service instance** (`ConversationContext.migrationService`, created by `createMigrationService(ctx)` in `src/migration-service.ts`):
 
 1. **`onBeforeMigrate`**: save the old conversation (at this point `agent.messages` is still the full old history) to `conversations/`. Automatic migration passes `promptTokens`/`maxTokens`; manual migration passes `undefined`.
-2. **`onMigrated`**: generate a new name for the new session, immediately persist the migrated opening line as a draft (`_current.json`), and print a completion message.
+2. **`onMigrated`**: generate a new id and name for the new session, immediately persist the migrated opening line as its own conversation file, update the "last session id" pointer, and print a completion message.
 
 Migration is **non-destructive**: the old conversation has already been saved in `onBeforeMigrate`, so even if generation fails you can retry or continue the current conversation at any time.
 

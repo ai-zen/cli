@@ -15,7 +15,7 @@
  *   ├── mcp-oauth/                ← MCP OAuth token（共享）
  *   └── cli/                      ← CLI 运行时数据
  *       ├── conversations/        ← 对话记录
- *       └── drafts/               ← 草稿
+ *       └── last-session.json     ← 「上一轮会话 id」指针
  *
  *   ~/.agents/                    ← 业界通用规范（如 Cursor、Windsurf、Cline）
  *   ├── skills/                   ← 用户级 Skill
@@ -41,7 +41,6 @@
 
 import { promises as fs } from "fs";
 import { join } from "path";
-import chalk from "chalk";
 import { ConfigManager as SdkConfigManager } from "@ai-zen/agents-sdk";
 import type { AppConfig } from "@ai-zen/agents-sdk";
 
@@ -57,7 +56,6 @@ export const AI_ZEN_DIR = process.env.AI_ZEN_DIR || join(
 export const CLI_DIR = join(AI_ZEN_DIR, "cli");
 export const CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
 export const CONVERSATIONS_DIR = join(CLI_DIR, "conversations");
-export const DRAFTS_DIR = join(CLI_DIR, "drafts");
 
 // ==================== 共享目录 ====================
 
@@ -104,7 +102,7 @@ const sdkConfigMgr = new SdkConfigManager(CONFIG_FILE);
  * 确保配置目录和默认文件存在。
  *
  * 共享实体（Agent、SubAgent、Skill 目录等）委托给 SDK 的 ConfigManager.bootstrap()。
- * CLI 自身的运行时目录（conversations/、drafts/）由本函数额外创建。
+ * CLI 自身的运行时目录（conversations/）由本函数额外创建。
  * SDK 的出厂默认配置会自动写入 config.json（如果不存在）。
  */
 export async function ensureConfigDir(): Promise<void> {
@@ -112,13 +110,13 @@ export async function ensureConfigDir(): Promise<void> {
   await sdkConfigMgr.bootstrap();
 
   // CLI 运行时目录
-  const cliDirs = [CLI_DIR, CONVERSATIONS_DIR, DRAFTS_DIR];
+  const cliDirs = [CLI_DIR, CONVERSATIONS_DIR];
   for (const dir of cliDirs) {
     try {
       await fs.access(dir);
     } catch {
       try { await fs.mkdir(dir, { recursive: true }); }
-      catch { console.warn(chalk.yellow(`⚠️  无法创建目录: ${dir}`)); }
+      catch { console.warn(`⚠️  无法创建目录: ${dir}`); }
     }
   }
 }

@@ -1,20 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TaskMigrationService } from "@ai-zen/agents-sdk";
 import type { SendContext } from "@ai-zen/agents-sdk";
-import {
-  AutoMigrateConfirmPlugin,
-  canPromptUser,
-  confirmAutoMigrate,
-} from "./auto-migrate-confirm-plugin.js";
-
-// Mock inquirer（与 src/conversation-commands/back.test.ts 一致的做法）
-vi.mock("inquirer", () => ({
-  default: {
-    prompt: vi.fn(),
-  },
-}));
-
-import inquirer from "inquirer";
+import { AutoMigrateConfirmPlugin, canPromptUser } from "./auto-migrate-confirm-plugin.js";
 
 const MAX_TOKENS = 100;
 
@@ -24,7 +11,7 @@ interface PluginFixture {
   migrateSpy: ReturnType<typeof vi.spyOn>;
   confirm: ReturnType<typeof vi.fn>;
   shouldConfirm: ReturnType<typeof vi.fn>;
-  logSpy: ReturnType<typeof vi.spyOn>;
+  log: ReturnType<typeof vi.fn>;
 }
 
 /**
@@ -48,13 +35,14 @@ function createFixture(options: {
 
   const confirm = vi.fn(async () => confirmed);
   const shouldConfirm = vi.fn(() => interactive);
-  const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  const log = vi.fn();
 
   const plugin = new AutoMigrateConfirmPlugin({
     service,
     maxTokens: MAX_TOKENS,
     confirm,
     shouldConfirm,
+    log,
   });
 
   const ctx = {
@@ -66,7 +54,7 @@ function createFixture(options: {
     messages: [],
   } as unknown as SendContext;
 
-  return { plugin, ctx, migrateSpy, confirm, shouldConfirm, logSpy };
+  return { plugin, ctx, migrateSpy, confirm, shouldConfirm, log };
 }
 
 describe("AutoMigrateConfirmPlugin", () => {
@@ -117,8 +105,8 @@ describe("AutoMigrateConfirmPlugin", () => {
     );
   });
 
-  it("超阈值但用户拒绝时，跳过本次迁移并给出提示", async () => {
-    const { plugin, ctx, migrateSpy, confirm, logSpy } = createFixture({
+  it("超阈值但用户拒绝时，跳过本次迁移并经 log 上报提示", async () => {
+    const { plugin, ctx, migrateSpy, confirm, log } = createFixture({
       promptTokens: 150,
       confirmed: false,
     });
@@ -128,9 +116,7 @@ describe("AutoMigrateConfirmPlugin", () => {
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(migrateSpy).not.toHaveBeenCalled();
 
-    const output = logSpy.mock.calls
-      .map((call: unknown[]) => String(call[0]))
-      .join("\n");
+    const output = log.mock.calls.map((call: unknown[]) => String(call[0])).join("\n");
     expect(output).toContain("已跳过本次任务迁移");
     expect(output).toContain("/migrate");
   });
@@ -188,38 +174,5 @@ describe("canPromptUser", () => {
     setTTY(process.stdin, true);
     setTTY(process.stdout, false);
     expect(canPromptUser()).toBe(false);
-  });
-});
-
-describe("confirmAutoMigrate", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("默认「是」，回车即迁移，并在文案中展示用量", async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValueOnce({ confirmed: true });
-
-    const result = await confirmAutoMigrate({
-      promptTokens: 260000,
-      maxTokens: 250000,
-    });
-
-    expect(result).toBe(true);
-    const [questions] = vi.mocked(inquirer.prompt).mock.calls[0];
-    const question = (questions as any[])[0];
-    expect(question.type).toBe("confirm");
-    expect(question.default).toBe(true);
-    expect(question.message).toContain("260000/250000");
-  });
-
-  it("用户选择「否」时返回 false", async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValueOnce({ confirmed: false });
-
-    const result = await confirmAutoMigrate({
-      promptTokens: 260000,
-      maxTokens: 250000,
-    });
-
-    expect(result).toBe(false);
   });
 });

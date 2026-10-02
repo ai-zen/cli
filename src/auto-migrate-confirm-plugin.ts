@@ -19,8 +19,6 @@
  *     会再次询问；跳过不影响当前对话（历史未被剔除，语义与迁移前一致）。
  */
 
-import chalk from "chalk";
-import inquirer from "inquirer";
 import { AutoMigratePlugin } from "@ai-zen/agents-sdk";
 import type { SendContext, TaskMigrationService } from "@ai-zen/agents-sdk";
 
@@ -39,34 +37,18 @@ export interface AutoMigrateConfirmOptions {
   maxTokens: number;
   /** 是否需要向用户确认；默认「stdin 与 stdout 均为 TTY」。可注入，便于单测 */
   shouldConfirm?: () => boolean;
-  /** 确认实现；默认为 inquirer 确认框。可注入，便于单测 */
-  confirm?: (info: AutoMigrateTriggerInfo) => Promise<boolean>;
+  /**
+   * 确认实现，由调用方注入（例如 TUI 的 Ink 确认框）。本模块不再内置任何交互 UI；
+   * 仅当 `shouldConfirm()` 为真时才会被调用。
+   */
+  confirm: (info: AutoMigrateTriggerInfo) => Promise<boolean>;
+  /** 输出信息（如「已跳过本次迁移」）；由调用方注入（TUI 走 Ink notice），默认丢弃 */
+  log?: (text: string) => void;
 }
 
 /** 默认交互判定：仅当 stdin 与 stdout 均为 TTY 时才具备确认通道 */
 export function canPromptUser(): boolean {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
-}
-
-/**
- * 默认确认实现：inquirer 确认框。
- * 默认「是」——回车即迁移，保持自动迁移的既有默认行为不被阻塞。
- */
-export async function confirmAutoMigrate(
-  info: AutoMigrateTriggerInfo,
-): Promise<boolean> {
-  const { confirmed } = await inquirer.prompt<{ confirmed: boolean }>([
-    {
-      type: "confirm",
-      name: "confirmed",
-      message:
-        `检测到上下文即将超限（${info.promptTokens}/${info.maxTokens} tokens），是否立即执行任务迁移？\n` +
-        "迁移将：生成交接文档 → 保存当前对话 → 开启新会话继续。",
-      default: true,
-    },
-  ]);
-
-  return Boolean(confirmed);
 }
 
 /**
@@ -84,11 +66,7 @@ export class AutoMigrateConfirmPlugin extends AutoMigratePlugin {
   }
 
   async onAfterSend(ctx: SendContext): Promise<void> {
-    const {
-      maxTokens,
-      shouldConfirm = canPromptUser,
-      confirm = confirmAutoMigrate,
-    } = this.confirmOptions;
+    const { maxTokens, shouldConfirm = canPromptUser, confirm, log = () => {} } = this.confirmOptions;
 
     const promptTokens = ctx.agent.lastUsage?.prompt_tokens;
 
@@ -106,12 +84,8 @@ export class AutoMigrateConfirmPlugin extends AutoMigratePlugin {
 
     const confirmed = await confirm({ promptTokens, maxTokens });
     if (!confirmed) {
-      console.log(chalk.yellow("\n⏭️ 已跳过本次任务迁移，继续当前对话。\n"));
-      console.log(
-        chalk.gray(
-          "💡 上下文仍接近上限：可随时输入 /migrate 手动迁移；若继续增长至严重超限，对话会被安全护栏中断。\n",
-        ),
-      );
+      log("⏭️ 已跳过本次任务迁移，继续当前对话。");
+      log("💡 上下文仍接近上限：可随时输入 /migrate 手动迁移；若继续增长至严重超限，对话会被安全护栏中断。");
       return;
     }
 

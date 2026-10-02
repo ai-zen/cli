@@ -59,11 +59,10 @@ MCP server configurations are merged from multiple sources **high to low**, with
 
 The MCP OAuth 2.0 authorization flow (the `oauth` field in `mcp.json`) is defined in the SDK types and a `mcp-oauth/` storage directory is reserved, but it is **not yet implemented**. Currently, an HTTP MCP server configured with `oauth` will fail to connect because a token is missing.
 
-## Interactive management
+## Management
 
-At main menu → **Configuration** → **Manage MCP Servers**, you can:
+The in-TUI interactive MCP management screen (previously via `/menu` → Configuration) **has been removed**, tracked as a P1 TODO. For now, edit `mcp.json` directly:
 
-- View all MCP servers (including transport and command/URL).
 - Add a new MCP server (stdio or HTTP/SSE).
 - Edit/delete MCP servers, and rename them.
 

@@ -35,7 +35,7 @@ outline: deep
 自动迁移与手动迁移**复用同一套迁移服务实例**（`ConversationContext.migrationService`，由 `src/migration-service.ts` 的 `createMigrationService(ctx)` 创建）：
 
 1. **`onBeforeMigrate`**：保存旧对话（此时 `agent.messages` 仍是完整旧历史）到 `conversations/`。自动迁移会带 `promptTokens`/`maxTokens`，手动迁移则为 `undefined`。
-2. **`onMigrated`**：为新会话生成新名称，把迁移后的开场白立即落盘为草稿（`_current.json`），并输出完成提示。
+2. **`onMigrated`**：为新会话生成新 id 与名称，把迁移后的开场白立即落盘为独立会话文件，并更新「上一轮会话 id」指针，随后输出完成提示。
 
 迁移**非破坏性**：旧对话在 `onBeforeMigrate` 中已保存，即使生成失败也可随时重试或继续当前对话。
 

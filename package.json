@@ -1,11 +1,12 @@
 {
   "name": "@ai-zen/cli",
-  "version": "0.9.0",
-  "description": "AI-ZEN CLI - interactive conversation terminal with file tools and draft recovery",
+  "version": "1.0.0-alpha.1",
+  "description": "AI-ZEN CLI - dual-mode AI terminal: pure stdio pipelines and an interactive TUI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
   "bin": {
+    "ai": "dist/index.js",
     "aiz": "dist/index.js",
     "zen": "dist/index.js"
   },
@@ -34,15 +35,16 @@
     "@ai-zen/agents-core": "^4.3.0",
     "@ai-zen/agents-sdk": "1.0.0-alpha.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "chalk": "^5.3.0",
     "dayjs": "^1.11.21",
-    "inquirer": "^9.2.12",
+    "ink": "^7.1.1",
+    "react": "^19.3.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/inquirer": "^9.0.7",
     "@types/node": "^24.12.2",
+    "@types/react": "^19.3.0",
     "dotenv": "^17.4.2",
+    "ink-testing-library": "^4.0.0",
     "rimraf": "^6.0.0",
     "typescript": "^5.3.3",
     "vitest": "^4.1.9"
