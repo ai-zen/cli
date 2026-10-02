@@ -35,6 +35,15 @@ export interface LiveAssistant {
   content: string;
   tools: ToolLine[];
   sub: string | null;
+  /**
+   * 本轮（一次 API 请求）工具调用在 `tools` 中的起始下标。
+   *
+   * AI 一轮回复里可并行调用多个工具，且**工具执行后会在同一轮对话内继续下一轮**
+   * （每次请求 SDK 都 `emit("open")`）；每轮的 `tool_calls.index` 都会从 `0` 重新
+   * 计数。用它分段，避免新一轮与上一轮同 index 的工具调用被拼到同一行
+   * （如 `read` + `edit` → `readedit`）。
+   */
+  roundBase?: number;
 }
 
 /** 缩进 2 列后的可用文本宽度 */

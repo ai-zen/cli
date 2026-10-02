@@ -184,6 +184,19 @@ describe("chatReducer 流式拼接", () => {
     expect(s.live?.tools[0]).toEqual({ name: "readFile", args: "{}" });
   });
 
+  it("多轮工具调用按轮分段：新一轮 index 从 0 起，不与上一轮拼接", () => {
+    let s = chatReducer(initial, { type: "user", text: "x" });
+    s = chatReducer(s, { type: "assistant-start" });
+    // 第一轮：并行两个工具（index 0 / 1）
+    s = chatReducer(s, { type: "tool", index: 0, name: "read" });
+    s = chatReducer(s, { type: "tool", index: 1, name: "grep" });
+    // 第二轮：index 又从 0 重新计数
+    s = chatReducer(s, { type: "assistant-start" });
+    s = chatReducer(s, { type: "tool", index: 0, name: "edit" });
+    s = chatReducer(s, { type: "tool", index: 1, name: "write" });
+    expect(s.live?.tools.map((t) => t.name)).toEqual(["read", "grep", "edit", "write"]);
+  });
+
   it("clear 清空全部", () => {
     let s = chatReducer(initial, { type: "user", text: "x" });
     s = chatReducer(s, { type: "clear" });
@@ -500,6 +513,18 @@ describe("liveToLines（流式 AI 块）", () => {
     expect(block[0].kind).toBe("gap");
     expect(live[1].kind).toBe("ai-header");
     expect(block[1].kind).toBe("ai-header");
+  });
+
+  it("并行 / 多轮工具调用各占一行，不拼接", () => {
+    const tools = [
+      { name: "read", args: "" },
+      { name: "grep", args: "" },
+      { name: "edit", args: "" },
+      { name: "write", args: "" },
+    ];
+    const lines = liveToLines({ reasoning: "", content: "", tools, sub: null }, 80);
+    const toolTexts = lines.filter((line) => line.kind === "tool").map((line) => line.text);
+    expect(toolTexts).toEqual(["  ⚙ read", "  ⚙ grep", "  ⚙ edit", "  ⚙ write"]);
   });
 });
 

@@ -45,6 +45,7 @@
 - **配置中心新增「Agent 定义」管理**：`/config` 新增 Agent 定义管理屏，管理顶层 Agent（`~/.ai-zen/agents/*.json`）与子 Agent（`~/.ai-zen/sub-agents/*.json`）的增删改 —— 列表区分两类并各带「＋ 新建」；详情屏可编辑名称 / 标识（改文件名 = 重命名）/ 描述 / 模型（枚举自 `config.models`）/ 四维权限（`tools`·`skills`·`mcps`·`subagents`，紧凑语法 `allow: a, b` / `deny: x`）/ 自定义开关；Sub-agent 另有 `function`（函数名 / 说明 / 参数 schema，带 JSON 校验）。**提示词**为多行内容，`Enter` 调起**系统编辑器**（复用 `/editor` 的 `suspendTerminal` 模式：`$EDITOR`，Windows 默认 `notepad`）编辑后回写首条 system 消息。编辑「出厂托管」的 `default` Agent 会自动标记 `custom: true`，避免改动被 SDK 同步覆盖；改动即时写盘，关闭配置中心后**重建会话**。新增 `src/agents-store.ts`（`AgentKind` / `AgentStore` / `readAgentStore` / `createAgentStore`）与纯函数 `createAgentDefinition` / `createSubAgentDefinition` / `getAgentPrompt` / `setAgentPrompt` / `parsePermission` / `formatPermission` / `setAgentPermission` / `summarizePermissions` / `parseFunctionParameters` / `formatFunctionParameters` / `updateAgentFunction` / `uniqueAgentId` 等。
 - **多行文本统一走系统编辑器**：配置中心里 Agent 提示词、Sub-agent **函数说明 / 参数 schema** 等**多行字段**均按 `Enter` 调起系统编辑器（`$EDITOR`，Windows 默认 `notepad`）；参数 schema 以 `.json` 打开、保存后即时校验（非法 JSON 被拒，且**保留改动**便于继续修改），内容未改动则不写盘。
 - **修复「详情屏字段高亮越界」**：`DetailStep` 现按当前行数收敛高亮索引 —— Agent 详情屏与权限子屏共用该组件，切换时索引可能超出新屏行数而无可高亮项；现进入后自动收敛到有效行。
+- **修复「多轮工具调用在对话区被拼到同一行」**：AI 一轮里可**并行**调用多个工具，且**工具执行后会在同一轮对话内继续下一轮**（每次请求 SDK 都 `emit("open")`）；每轮的 `tool_calls.index` 都会从 `0` 重新计数，而流式渲染此前**按 index 归并不分轮**，导致第二轮的工具名被追加到上一轮同一行上（`read` + `edit` → `readedit`，参数同理混在一起）。现为 `live` 增加「本轮起始下标 `roundBase`」，每轮开始（`assistant-start`）时锚定当前工具数，新一轮的 index 落到**新的一行** —— 并行与多轮工具调用各自独立成行。
 - **修复「输入框偶尔自动填入 `[?0u`」**：Ink 的 `kittyKeyboard: auto` 会在**每个实例创建时**向终端发送一次 `CSI ? u` 查询，终端回 `CSI ? 0 u`（flags=0，不支持）；本 TUI 反复挂载（启动界面 → 对话 → 配置向导 …），应答源源不断。应答一旦被**拆包**（前导 ESC 被 Ink 的「待定转义刷新」当作一次独立的 Escape 键消费），残留在后一个 chunk 里的 `[?0u` 会退化成普通文本、被当作输入插入对话框（已实测重现）。修法两层：
   - 渲染选项改为 `kittyKeyboard: { mode: "disabled" }`，**不再发查询**（根因消除；该协议在本环境本就不生效，换行由不依赖终端协议的 `Ctrl+N` / `Ctrl+J` 承担）；
   - 新增纯函数 `isTerminalReply()`，在输入层丢弃整段终端应答（Kitty 协议应答 / 光标位置报告 / 设备状态报告），逐字键入同样字符不受影响。
@@ -67,7 +68,7 @@
 - `config-wizard.test.tsx` 新增吸底布局用例：`promptLayout` 的顶部留白与硬件光标坐标（含宽字符列宽）、内容超帧时留白为 0；菜单屏与列表屏的整帧高度、顶部留白与「内容贴底」断言。
 - `src/config-editor.test.ts` 扩展至 **20 例**：在原有查询/掩码/厂商指引/不可变改写/端点 id 派生之外，新增 `update{Endpoint,Model,ImageModel}`、`remove*`（含悬空默认引用修正）、`addModel`/`addImageModel`、`setDefault*` / `setMaxToolOutput`、`uniqueModelId`/`uniqueImageModelId`。
 - 新增 `src/tui/config-wizard.test.tsx`（**27 例**：掩码输入不回显明文、`Tab` 切明文、`Esc` 取消、`Backspace`/`Home` 编辑、菜单 → 端点管理 → 选中端点就地编辑并写盘、端点详情字段切换/URL 校验/未改动不写盘、空 Key/非法 URL 校验、`closeOnSave` 保存即关闭、新建端点三步、默认模型切换，以及**新建模型自动 `custom: true`、模型详情布尔切换、托管模型编辑自动转自定义、删除端点引用守卫、默认 Agent 枚举选择、工具输出上限**）。
-- 全量单测 11 文件 / 163 例通过；`tsc --noEmit` 与 `npm run build` 零错误；e2e 12 例通过；真实 PTY 实测「启动→直达对话→流式→`/load`→`/clear`→退出交还 shell」全链路正常。
+- 全量单测 12 文件 / 212 例通过；`tsc --noEmit` 与 `npm run build` 零错误；e2e 12 例通过；真实 PTY 实测「启动→直达对话→流式→`/load`→`/clear`→退出交还 shell」全链路正常。
 - 用「假 TTY」探针向 Ink 捕获实际写出的字节：`kittyKeyboard: auto` 每个实例写 1 次 `ESC[?u` 查询，`disabled` 为 0 次（对照实验，确认根因已消除）；真实 PTY 中手工注入 `[?0u` 应答不再落入输入框。
 - 真实 PTY 实测首启凭据链路：`AI_ZEN_DIR` 指向空目录启动 → 弹出凭据设置屏 → 输入 Key 后写盘并直接进入对话（仅目标端点的 `apiKey` 被写入）→ `/config` 改「非当前端点」凭据（回菜单并提示，不重建会话）→ `/key` 改当前端点凭据（保存后自动重建会话）→ 退出后二次启动跳过凭据引导；`/help` 正确列出 `/config` 与 `/key`。
 

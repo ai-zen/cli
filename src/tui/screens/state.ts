@@ -21,12 +21,16 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "user":
       return {
         blocks: [...state.blocks, { id: nextId(), kind: "user", text: action.text }],
-        live: { reasoning: "", content: "", tools: [], sub: null },
+        live: { reasoning: "", content: "", tools: [], sub: null, roundBase: 0 },
       };
     case "assistant-start":
+      // 每次 API 请求（含一轮内并行调用后的后续轮次）都会触发：把本轮工具调用的
+      // 起始下标锚到当前已收集的工具数，使新一轮 index 从 0 起也落到新的一行。
       return {
         ...state,
-        live: state.live ?? { reasoning: "", content: "", tools: [], sub: null },
+        live: state.live
+          ? { ...state.live, roundBase: state.live.tools.length }
+          : { reasoning: "", content: "", tools: [], sub: null, roundBase: 0 },
       };
     case "reasoning":
       return state.live
@@ -38,9 +42,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         : state;
     case "tool": {
       if (!state.live) return state;
+      // 落到「本轮起始下标 + 本轮内 index」：同一轮内的分片按 index 归并（并行调用
+      // 各占一行），跨轮的同 index 因 roundBase 不同而分段，不再相互拼接。
+      const pos = (state.live.roundBase ?? 0) + Math.max(0, action.index ?? 0);
       const tools = [...state.live.tools];
-      const prev = tools[action.index] ?? { name: "", args: "" };
-      tools[action.index] = {
+      // 保持数组稠密（避免稀疏空位在渲染时被 for...of 迭代为 undefined）
+      while (tools.length < pos) tools.push({ name: "", args: "" });
+      const prev = tools[pos] ?? { name: "", args: "" };
+      tools[pos] = {
         name: prev.name + (action.name ?? ""),
         args: prev.args + (action.args ?? ""),
       };
@@ -73,4 +82,3 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return state;
   }
 }
-
