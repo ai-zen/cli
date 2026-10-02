@@ -1,12 +1,20 @@
 import { AgentDefinition, AppConfig, Endpoint, ImageModel, Model } from "@ai-zen/agents-sdk";
 import { McpConfig, McpScope, McpServerEntry } from "../../config.js";
 import { agentKindLabel, agentList, AgentKind, AgentStore } from "../../agents-store.js";
-import { findEndpoint, findModel, formatAgentPermission, formatArgs, formatFunctionParameters, getAgentPrompt, kvSummary, maskApiKey, mcpServerIdTaken, parseArgs, parseFunctionParameters, parsePermission, PERMISSION_DIMENSIONS, renameMcpServer, setAgentPermission, summarizePermissions, updateAgentDefinition, updateAgentFunction, updateEndpoint, updateImageModel, updateMcpServer, updateModel } from "../../config-editor.js";
+import { findEndpoint, findModel, formatAgentPermission, formatArgs, getAgentPrompt, kvSummary, maskApiKey, mcpServerIdTaken, parseArgs, parsePermission, PERMISSION_DIMENSIONS, renameMcpServer, setAgentPermission, summarizePermissions, updateAgentDefinition, updateAgentFunction, updateEndpoint, updateImageModel, updateMcpServer, updateModel } from "../../config-editor.js";
 import { WizardStep, McpSnapshot } from "./types.js";
 import { DetailField } from "./detail.js";
 import { scopeLabel } from "./mcp-helpers.js";
 
 // 由 src/tui/config-wizard.tsx 拆分而来 —— 详情屏字段构造器（工厂）
+
+/** 多行文本在详情屏的**单行摘要**（避免换行撑破吸底布局）；内容一律走外部编辑器编辑 */
+function summarizeMultiline(text: string): string {
+  const body = text.replace(/\r\n/g, "\n").trim();
+  if (!body) return "（空）· Enter 打开编辑器";
+  const lines = body.split("\n");
+  return lines.length > 1 ? `${lines.length} 行 · Enter 打开编辑器` : `${body} · Enter 打开编辑器`;
+}
 
 export interface FieldBuilderContext {
   config: AppConfig;
@@ -368,8 +376,8 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         key: "prompt",
         label: "提示词",
         kind: "map",
-        value: `${getAgentPrompt(def).split("\n").length} 行 · Enter 打开编辑器`,
-        open: () => go({ kind: "agent-prompt", agentKind: kind, agentId: def.id }),
+        value: summarizeMultiline(getAgentPrompt(def)),
+        open: () => go({ kind: "agent-text", agentKind: kind, agentId: def.id, field: "prompt" }),
       },
       {
         key: "permissions",
@@ -403,23 +411,16 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         {
           key: "fnDesc",
           label: "函数说明",
-          kind: "text",
-          value: def.function?.description ?? "（空）",
-          initial: def.function?.description ?? "",
-          commit: (raw) => save(updateAgentFunction(def, { description: raw }), "函数说明"),
+          kind: "map",
+          value: summarizeMultiline(def.function?.description ?? ""),
+          open: () => go({ kind: "agent-text", agentKind: kind, agentId: def.id, field: "fnDesc" }),
         },
         {
           key: "fnParams",
           label: "参数 schema",
-          kind: "text",
-          value: formatFunctionParameters(def.function),
-          initial: formatFunctionParameters(def.function),
-          commit: (raw) => {
-            const parsed = parseFunctionParameters(raw);
-            return typeof parsed === "string"
-              ? Promise.resolve(parsed)
-              : save(updateAgentFunction(def, { parameters: parsed }), "参数 schema");
-          },
+          kind: "map",
+          value: summarizeMultiline(JSON.stringify(def.function?.parameters ?? {}, null, 2)),
+          open: () => go({ kind: "agent-text", agentKind: kind, agentId: def.id, field: "fnParams" }),
         },
       );
     }

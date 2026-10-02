@@ -307,7 +307,13 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
               ["↑ ↓", "移动"],
               ["Esc", "返回"],
             ]
-          : [
+          : field?.kind === "map"
+            ? [
+                ["Enter", "打开"],
+                ["↑ ↓", "移动"],
+                ["Esc", "返回"],
+              ]
+            : [
               ["Enter", "编辑"],
               ["↑ ↓", "移动"],
               ["Esc", "返回"],

@@ -186,7 +186,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
       return { kind: "mcp", scope: current.scope };
     }
     if (
-      (current.kind === "agent" || current.kind === "agent-perms" || current.kind === "agent-prompt") &&
+      (current.kind === "agent" || current.kind === "agent-perms" || current.kind === "agent-text") &&
       !findAgentDefinition(store, current.agentKind, current.agentId)
     ) {
       return { kind: "agents" };

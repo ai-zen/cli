@@ -46,7 +46,7 @@ describe("Agent 提示词（系统编辑器）", () => {
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
         config={makeConfig()}
-        initialStep={{ kind: "agent-prompt", agentKind: "agent", agentId: "default" }}
+        initialStep={{ kind: "agent-text", agentKind: "agent", agentId: "default", field: "prompt" }}
         agentStore={store}
         onSave={vi.fn(async () => undefined)}
         onClose={() => undefined}
@@ -80,7 +80,7 @@ describe("Agent 提示词（系统编辑器）", () => {
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
         config={makeConfig()}
-        initialStep={{ kind: "agent-prompt", agentKind: "agent", agentId: "default" }}
+        initialStep={{ kind: "agent-text", agentKind: "agent", agentId: "default", field: "prompt" }}
         agentStore={store}
         onSave={vi.fn(async () => undefined)}
         onClose={() => undefined}

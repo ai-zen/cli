@@ -33,7 +33,7 @@ export type WizardStep =
   | { kind: "agents" }
   | { kind: "agent"; agentKind: AgentKind; agentId: string }
   | { kind: "agent-perms"; agentKind: AgentKind; agentId: string }
-  | { kind: "agent-prompt"; agentKind: AgentKind; agentId: string }
+  | { kind: "agent-text"; agentKind: AgentKind; agentId: string; field: "prompt" | "fnParams" | "fnDesc" }
   | { kind: "agent-new"; agentKind: AgentKind }
   | { kind: "edit"; field: EndpointField; endpointId: string };
 

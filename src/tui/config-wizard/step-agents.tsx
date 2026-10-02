@@ -2,7 +2,7 @@
 import { ReactNode } from "react";
 import { SelectItem } from "../components.js";
 import { agentKindLabel, agentList, AgentKind, findAgentDefinition } from "../../agents-store.js";
-import { createAgentDefinition, createSubAgentDefinition, getAgentPrompt, setAgentPrompt, uniqueAgentId } from "../../config-editor.js";
+import { createAgentDefinition, createSubAgentDefinition, getAgentPrompt, parseFunctionParameters, setAgentPrompt, uniqueAgentId, updateAgentFunction } from "../../config-editor.js";
 import { NEW_AGENT, NEW_SUBAGENT } from "./types.js";
 import { WizardContext } from "./engine.js";
 import { ListStep } from "./list.js";
@@ -96,24 +96,61 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
   }
 
 
-  // ---------- Agent 提示词编辑（系统编辑器）----------
-  if (activeStep.kind === "agent-prompt") {
-    const { agentKind, agentId } = activeStep;
+  // ---------- Agent / Sub-agent 多行文本编辑（提示词 / 函数说明 / 参数 schema，系统编辑器）----------
+  if (activeStep.kind === "agent-text") {
+    const { agentKind, agentId, field } = activeStep;
     const def = findAgentDefinition(store, agentKind, agentId)!;
+    const managed = agentKind === "agent" && !def.custom;
+    const target = managed ? { ...def, custom: true } : def;
+    const name = `${agentKindLabel(agentKind)} ${def.id}`;
+    const back = () => go({ kind: "agent", agentKind, agentId });
+
+    if (field === "fnParams") {
+      return (
+        <PromptEditorScreen
+          columns={cols}
+          rows={rows}
+          title={`◆ ${agentKindLabel(agentKind)} · ${def.id} · 参数 schema`}
+          subtitle="JSON 对象；Enter 打开系统编辑器，保存后立即校验并写盘"
+          text={JSON.stringify(def.function?.parameters ?? {}, null, 2)}
+          ext="json"
+          notice={notice}
+          onSave={(value) => {
+            const parsed = parseFunctionParameters(value);
+            if (typeof parsed === "string") return Promise.resolve(parsed);
+            return saveAgent(agentKind, updateAgentFunction(target, { parameters: parsed }), `${name} 的参数 schema 已更新`);
+          }}
+          onBack={back}
+        />
+      );
+    }
+
+    if (field === "fnDesc") {
+      return (
+        <PromptEditorScreen
+          columns={cols}
+          rows={rows}
+          title={`◆ ${agentKindLabel(agentKind)} · ${def.id} · 函数说明`}
+          subtitle="Enter 打开系统编辑器（$EDITOR / notepad）；改完保存即写盘"
+          text={def.function?.description ?? ""}
+          notice={notice}
+          onSave={(value) => saveAgent(agentKind, updateAgentFunction(target, { description: value }), `${name} 的函数说明已更新`)}
+          onBack={back}
+        />
+      );
+    }
+
+    // field === "prompt"
     return (
       <PromptEditorScreen
         columns={cols}
         rows={rows}
         title={`◆ ${agentKindLabel(agentKind)} · ${def.id} · 提示词`}
         subtitle="Enter 打开系统编辑器（$EDITOR / notepad）；改完保存即写盘"
-        prompt={getAgentPrompt(def)}
+        text={getAgentPrompt(def)}
         notice={notice}
-        onSave={(text) => {
-          const managed = agentKind === "agent" && !def.custom;
-          const next = setAgentPrompt(managed ? { ...def, custom: true } : def, text);
-          return saveAgent(agentKind, next, `${agentKindLabel(agentKind)} ${def.id} 的提示词已更新`);
-        }}
-        onBack={() => go({ kind: "agent", agentKind, agentId })}
+        onSave={(value) => saveAgent(agentKind, setAgentPrompt(target, value), `${name} 的提示词已更新`)}
+        onBack={back}
       />
     );
   }

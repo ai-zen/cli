@@ -33,8 +33,8 @@
 - [ ] **开始新对话**（当前已有 `/new` 命令，可复用）
 - [ ] **继续已保存的对话**（当前已有 `/load` 命令，可复用）
 - [ ] **管理已保存的对话**：列出 / 查看详情 / 删除
-- [x] **管理 Agents（已完成）**：`/config` →「Agent 定义」管理 `agents/*.json`（顶层 Agent）与 `sub-agents/*.json`（子 Agent）的列表 / 新建 / 编辑 / 删除（名称 / 标识 / 描述 / 模型绑定 / 提示词【系统编辑器】/ 四维权限 / 自定义；Sub-agent 另含 function）。
-- [x] **配置管理（已完成）**：`/config` 配置中心已全面管理 `config.json` 与 `mcp.json` —— 端点（增删改）、模型（增删改，自动 `custom: true`）、图片模型（增删改）、**MCP 服务器（全局 / 项目两作用域，增删改 + 启用·禁用 + stdio/http/sse 全部传输字段）**、默认项（模型 / 图片模型 / Agent / 迁移模型）、**Agent 定义（`agents/` + `sub-agents/`：增删改 + 提示词系统编辑器 / 四维权限 / Sub-agent function）**、工具输出上限；`/key` 与首启引导负责端点凭据。
+- [x] **管理 Agents（已完成）**：`/config` →「Agent 定义」管理 `agents/*.json`（顶层 Agent）与 `sub-agents/*.json`（子 Agent）的列表 / 新建 / 编辑 / 删除（名称 / 标识 / 描述 / 模型绑定 / 提示词 · 函数说明 · 参数 schema【系统编辑器】/ 四维权限 / 自定义；Sub-agent 另含 function）。
+- [x] **配置管理（已完成）**：`/config` 配置中心已全面管理 `config.json` 与 `mcp.json` —— 端点（增删改）、模型（增删改，自动 `custom: true`）、图片模型（增删改）、**MCP 服务器（全局 / 项目两作用域，增删改 + 启用·禁用 + stdio/http/sse 全部传输字段）**、默认项（模型 / 图片模型 / Agent / 迁移模型）、**Agent 定义（`agents/` + `sub-agents/`：增删改 + 提示词 · 参数 schema 系统编辑器 / 四维权限 / Sub-agent function）**、工具输出上限；`/key` 与首启引导负责端点凭据。
 - [ ] **退出**
 
 > 移除原因：原实现是 Ink 与 inquirer 混用 —— 进菜单需先卸载 Ink 再交给 inquirer，交互与样式割裂；统一到 Ink 原生组件后再回归。

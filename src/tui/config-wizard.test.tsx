@@ -5,6 +5,14 @@ import { Message } from "@ai-zen/agents-core";
 import type { McpConfig, McpScope } from "../config.js";
 import type { AgentKind, AgentStore } from "../agents-store.js";
 import { ConfigWizard, PromptScreen, promptLayout } from "./config-wizard/index.js";
+import { spawnSync } from "child_process";
+import { writeFileSync } from "fs";
+
+// 拦截系统编辑器：把「打开编辑器」替换为向临时文件写入指定内容（用例内自行 mockImplementation）
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>();
+  return { ...actual, spawnSync: vi.fn(() => ({ status: 0 })) };
+});
 
 const tick = () => new Promise((r) => setTimeout(r, 25));
 const DOWN = "\u001B[B";
@@ -1193,10 +1201,16 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     unmount();
   });
 
-  it("Sub-agent 详情：编辑函数名 / 参数 schema（非法 JSON 被拒）", async () => {
+  it("Sub-agent 详情：进入参数 schema 多行编辑屏，非法 JSON 被拒", async () => {
     const { store, save } = makeAgentStore([], [
       makeAgentDef({ id: "helper", name: "Helper", function: { name: "sub_agent_helper", description: "d", parameters: { type: "object" } } }),
     ]);
+    const spawnMock = vi.mocked(spawnSync);
+    spawnMock.mockImplementation(((_editor: string, args: string[]) => {
+      writeFileSync(args[0]!, "{ not json", "utf-8");
+      return { status: 0 } as never;
+    }) as never);
+
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
         config={makeConfig()}
@@ -1207,22 +1221,57 @@ describe("ConfigWizard（Agent 定义管理）", () => {
       />,
     );
     await tick();
-    // 参数 schema 是 index 8
+    // 参数 schema 是 index 8 → Enter 进入多行文本编辑屏（外部编辑器）
     for (let i = 0; i < 8; i += 1) {
       stdin.write(DOWN);
       await tick();
     }
     stdin.write(ENTER);
     await tick();
-    stdin.write("\u0015");
-    await tick();
-    stdin.write("{ not json");
-    await tick();
-    stdin.write(ENTER);
+    expect(lastFrame()).toContain("JSON 对象"); // 已进入「参数 schema」编辑屏
+    stdin.write(ENTER); // 调起系统编辑器（mock 写入非法 JSON）
     await tick();
     await tick();
+    await tick();
+    expect(spawnMock).toHaveBeenCalledTimes(1);
     expect(save).not.toHaveBeenCalled();
     expect(lastFrame()).toContain("JSON 解析失败");
+    unmount();
+  });
+
+  it("Sub-agent 参数 schema：外部编辑器保存合法 JSON 后写盘", async () => {
+    const { store, save } = makeAgentStore([], [
+      makeAgentDef({ id: "helper2", name: "Helper2", function: { name: "sub_agent_helper2", description: "d", parameters: { type: "object" } } }),
+    ]);
+    const spawnMock = vi.mocked(spawnSync);
+    spawnMock.mockImplementation(((_editor: string, args: string[]) => {
+      writeFileSync(args[0]!, '{"type":"object","properties":{"q":{"type":"string"}}}', "utf-8");
+      return { status: 0 } as never;
+    }) as never);
+
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent", agentKind: "subagent", agentId: "helper2" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    for (let i = 0; i < 8; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER); // 进入参数 schema 编辑屏
+    await tick();
+    stdin.write(ENTER); // 调起系统编辑器（mock 写入合法 JSON）
+    await tick();
+    await tick();
+    await tick();
+    expect(save).toHaveBeenCalledTimes(1);
+    const def = save.mock.calls[0]![1];
+    expect(def.function!.parameters).toEqual({ type: "object", properties: { q: { type: "string" } } });
     unmount();
   });
 
