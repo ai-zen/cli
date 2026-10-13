@@ -46,7 +46,7 @@ export class ConversationPersistPlugin implements AgentPlugin {
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       });
-      await writeLastSession(id);
+      await writeLastSession(cwd ?? process.cwd(), id);
     } catch (err: any) {
       onError?.(`⚠️ 会话落盘失败：${err?.message ?? err}`);
     }

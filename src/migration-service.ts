@@ -61,7 +61,7 @@ export function createMigrationService(
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
         });
-        await writeLastSession(id);
+        await writeLastSession(process.cwd(), id);
       } catch (err: any) {
         log(`⚠️ 迁移后会话落盘失败：${err?.message ?? err}`);
       }

@@ -153,7 +153,7 @@ async function modelExists(modelId: string): Promise<boolean> {
 
 /** 读取「上一轮会话 id」指针，续接该会话（指针缺失或会话不存在时返回 null） */
 async function resumeLastSession(): Promise<ChatTarget | null> {
-  const pointer = await readLastSession();
+  const pointer = await readLastSession(process.cwd());
   if (!pointer) return null;
   const conversation = await conversationRepository.read(pointer.id);
   if (!conversation) return null;

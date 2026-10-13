@@ -54,7 +54,7 @@ export async function saveConversation(ctx: ConversationContext): Promise<string
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   });
-  await writeLastSession(id);
+  await writeLastSession(process.cwd(), id);
   return id;
 }
 

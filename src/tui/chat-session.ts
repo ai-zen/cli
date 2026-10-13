@@ -150,8 +150,17 @@ export class ChatSession {
     this.agent.abort();
   }
 
-  /** 重置会话（/new）：清空历史并重建 Agent */
-  async reset(): Promise<void> {
+  /**
+   * 重置会话（/new）：先把当前对话归档（有内容才存），再清空历史并重建 Agent。
+   *
+   * 归档必须先于 `currentId` 切换：`save()` 按 `this.currentId` 落盘，若先换 id
+   * 会把旧内容写到新会话文件上（等于旧对话丢失）。返回被归档的会话 id，
+   * 无内容可存时返回 null。
+   */
+  async reset(): Promise<string | null> {
+    const hasContent = this.agent.messages.some((m) => m.role === AgentNS.Role.User);
+    const archivedId = hasContent ? await this.save() : null;
+
     this.dispose();
     const agent = await createAgent({
       agentId: this.agentId === "default" ? undefined : this.agentId,
@@ -163,6 +172,8 @@ export class ChatSession {
     this.currentName = this.currentId;
     this.ctx.currentName = this.currentName;
     await this.attach(agent);
+
+    return archivedId;
   }
 
   /**
@@ -219,7 +230,7 @@ export class ChatSession {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     });
-    await writeLastSession(id);
+    await writeLastSession(process.cwd(), id);
     return id;
   }
 

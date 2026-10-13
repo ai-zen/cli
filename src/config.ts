@@ -15,7 +15,7 @@
  *   ├── mcp-oauth/                ← MCP OAuth token（共享）
  *   └── cli/                      ← CLI 运行时数据
  *       ├── conversations/        ← 对话记录
- *       └── last-session.json     ← 「上一轮会话 id」指针
+ *       └── last-session.json     ← 「各 cwd 上一轮会话 id」指针（cwd → id）
  *
  *   ~/.agents/                    ← 业界通用规范（如 Cursor、Windsurf、Cline）
  *   ├── skills/                   ← 用户级 Skill

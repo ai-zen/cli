@@ -69,11 +69,13 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       // 清屏但保留上下文：重挂载对话屏且不重建历史
       exit({ restart: true, messages: session.messages, clearTranscript: true });
       break;
-    case "new":
-      await session.reset();
+    case "new": {
+      // reset 会先归档当前对话（有内容才存），返回存档 id（无内容为 null）
+      const archivedId = await session.reset();
       dispatch({ type: "clear" });
-      push("已开始新对话");
+      push(archivedId ? `旧对话已存档：${archivedId}\n已开始新对话` : "已开始新对话");
       break;
+    }
     case "save": {
       try {
         const id = await session.save();
