@@ -20,7 +20,6 @@ import { messageToLines, transcriptLines } from "./messages-view.js";
 import { PickerOverlay, Confirm } from "./overlays.js";
 import { runCommand } from "./chat-commands.js";
 import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
-import { LineRenderer } from "../line-renderer.js";
 
 // ==================== 对话屏幕 ====================
 
@@ -32,8 +31,6 @@ export interface ChatScreenProps {
   conversationName?: string;
   /** 重挂载时的初始输入（/back 撤回后用于预填） */
   initialInput?: string;
-  /** SSH / 弱网：流式阶段改用行式渲染（suspend Ink），避免整屏重绘拖断连接 */
-  suspendStreaming?: boolean;
 }
 
 /**
@@ -113,8 +110,6 @@ export function Chat(props: ChatScreenProps) {
   if (frameBufferRef.current == null) {
     frameBufferRef.current = new FrameBuffer<null>(() => setTick((t) => t + 1));
   }
-  /** 行式直播渲染器（SSH/弱网时非 null）：内容变更直接增量打印，而不触发 Ink 重绘 */
-  const streamRendererRef = useRef<LineRenderer | null>(null);
 
   // 创建会话
   useEffect(() => {
@@ -122,13 +117,6 @@ export function Chat(props: ChatScreenProps) {
     const notifier: ChatSessionNotifier = {
       onChange: (immediate) => {
         if (disposed) return;
-        const renderer = streamRendererRef.current;
-        if (renderer) {
-          const msgs = sessionRef.current?.messages ?? [];
-          const last = msgs[msgs.length - 1];
-          if (last) renderer.update(last);
-          return;
-        }
         frameBufferRef.current?.push(null, immediate);
       },
       onNotice: (text, tone) => {
@@ -314,36 +302,6 @@ export function Chat(props: ChatScreenProps) {
   const slash = input.startsWith("/") && !input.includes("\n") && !input.includes(" ");
   const hints: CommandHint[] = slash ? matchCommandHints(input.slice(1)) : [];
 
-  /**
-   * SSH / 弱网下的流式：挂起 Ink，清屏后用行式渲染器直播本轮输出；结束后 resume
-   * （Ink 强制全量重绘完整 TUI）。挂起期间 Ctrl+C 走 SIGINT，临时接管为「中止本轮」
-   * —— 否则会命中主进程的退出 handler。
-   *
-   * ⚠️ 已停用：入口不再下发 `suspendStreaming`（弱网改由 Ink `incrementalRendering`
-   * 承接，实测稳定）。保留备查，勿新增调用。
-   */
-  const runStreaming = async (text: string) => {
-    const session = sessionRef.current!;
-    const savedSigint = process.listeners("SIGINT") as Array<(...args: any[]) => void>;
-    await suspendTerminal(async () => {
-      process.stdout.write("\x1b[2J\x1b[H");
-      process.stdout.write(`❯ 你\n  ${text.replace(/\n/g, "\n  ")}\n`);
-      process.removeAllListeners("SIGINT");
-      const onInt = () => session.abort();
-      process.on("SIGINT", onInt);
-      streamRendererRef.current = new LineRenderer();
-      try {
-        await session.send(text);
-      } finally {
-        streamRendererRef.current = null;
-        process.removeListener("SIGINT", onInt);
-        for (const listener of savedSigint) process.on("SIGINT", listener);
-        // resume 前清屏，让 Ink 从干净屏重绘
-        process.stdout.write("\x1b[2J\x1b[H");
-      }
-    });
-  };
-
   const runSubmit = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || !sessionRef.current || busy) return;
@@ -376,8 +334,7 @@ export function Chat(props: ChatScreenProps) {
     setPendingUser({ text: trimmed, base });
     setBusy(true);
     try {
-      if (props.suspendStreaming) await runStreaming(trimmed);
-      else await sessionRef.current!.send(trimmed);
+      await sessionRef.current!.send(trimmed);
     } finally {
       setBusy(false);
       setPendingUser(null);

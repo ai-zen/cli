@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { installHook, uninstallHook } from "./hook.js";
-import { detectSsh, resolveInvocation } from "./mode.js";
+import { resolveInvocation } from "./mode.js";
 import { runStdio } from "./stdio-runner.js";
 import { runTui } from "./tui/index.js";
 import { CLI_VERSION } from "./version.js";
@@ -18,16 +18,6 @@ import { CLI_VERSION } from "./version.js";
  *
  * 模式判定与参数解析集中在 ./mode.ts（纯函数，单测覆盖），本文件只做分发。
  */
-
-/**
- * SSH 行式渲染（suspend Ink）开关 —— 已**永久关闭**。
- *
- * 实测结论：Ink 开启 `RENDER_OPTIONS.incrementalRendering`（只重绘变化的行）后，
- * 流式在 SSH / 弱网下稳定流畅，不必再降级到「挂起 Ink + 行式直播」。故此处永久置
- * `false` —— 整条行式渲染链路（`line-renderer.ts` / `chat.tsx` 的 `runStreaming`）
- * 保留在库中备查，但不再接入主流程。
- */
-const ENABLE_INLINE_STREAMING = false;
 
 const HELP_TEXT = `ai — AI-Zen CLI v${CLI_VERSION}
 
@@ -82,10 +72,8 @@ async function main(): Promise<void> {
     case "tui": {
       // 无参数且均为 TTY：进入全屏交互界面（Ink）。
       // 流式统一走 Ink —— 由 `RENDER_OPTIONS.incrementalRendering`（只重绘变化的行）
-      // 压低输出量，SSH / 弱网下实测稳定。行式渲染降级已永久停用（见上方开关）。
-      const suspendStreaming =
-        ENABLE_INLINE_STREAMING && !invocation.forceInline && detectSsh(process.env);
-      await runTui({ suspendStreaming });
+      // 压低输出量，SSH / 弱网下实测稳定。
+      await runTui();
       return;
     }
   }

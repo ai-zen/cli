@@ -192,7 +192,7 @@ function targetFromMessages(input: {
  * 运行对话屏；`/clear`、`/back`、`/load` 通过重挂载（新 Ink 实例 + 原生清屏）实现，
  * 其余退出（退出）直接结束。
  */
-async function runChat(target: ChatTarget, suspendStreaming: boolean): Promise<void> {
+async function runChat(target: ChatTarget): Promise<void> {
   let current = target;
   let messages = target.messages;
   let initialInput: string | undefined;
@@ -206,7 +206,6 @@ async function runChat(target: ChatTarget, suspendStreaming: boolean): Promise<v
         conversationId={current.conversationId}
         conversationName={current.conversationName}
         initialInput={initialInput}
-        suspendStreaming={suspendStreaming}
       />,
     );
 
@@ -249,12 +248,7 @@ async function runChat(target: ChatTarget, suspendStreaming: boolean): Promise<v
 
 // ==================== 入口 ====================
 
-export interface RunTuiOptions {
-  /** SSH / 弱网：流式阶段改用行式渲染（suspend Ink），避免整屏重绘拖断连接 */
-  suspendStreaming?: boolean;
-}
-
-export async function runTui(options: RunTuiOptions = {}): Promise<void> {
+export async function runTui(): Promise<void> {
   const uninstallSignals = installSignalSafety();
 
   try {
@@ -293,7 +287,7 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
       return;
     }
 
-    await runChat(target, Boolean(options.suspendStreaming));
+    await runChat(target);
     farewell();
   } finally {
     uninstallSignals();

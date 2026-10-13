@@ -2,7 +2,7 @@
 
 ### ⚡ 变更（实测定案）
 
-- **本地 TUI 增量渲染转正，SSH 行式渲染永久停用** —— 实测在 SSH / 弱网下，Ink `RENDER_OPTIONS.incrementalRendering: true`（从 `createStandard`「每帧 erase 整屏 + 重写整屏」切到 `createIncremental`「只重绘变化的行」，每帧输出量从 O(屏幕大小) 降到 O(变化量)）流式稳定流畅，无需「挂起 Ink + 行式直播」降级。故 `src/index.ts` 的 `ENABLE_INLINE_STREAMING` 永久置 `false`，行式渲染链路（`line-renderer.ts` / `chat.tsx#runStreaming` / `detectSsh` 路由）保留在库中备查、不再接入主流程。
+- **本地 TUI 增量渲染转正，SSH 行式渲染链路移除** —— 实测在 SSH / 弱网下，Ink `RENDER_OPTIONS.incrementalRendering: true`（从 `createStandard`「每帧 erase 整屏 + 重写整屏」切到 `createIncremental`「只重绘变化的行」，每帧输出量从 O(屏幕大小) 降到 O(变化量)）流式稳定流畅，无需「挂起 Ink + 行式直播」降级。故移除整条行式渲染链路：`line-renderer.ts`（含测试）、`chat.tsx` 的 `runStreaming`/`streamRendererRef`/`suspendStreaming`、`tui/index.tsx` 的 `suspendStreaming` 透传、`index.ts` 的 `ENABLE_INLINE_STREAMING` 与 `detectSsh` 路由、`mode.ts` 的 `detectSsh` 与 `--tui`/`forceInline`；需要时从 Git 历史恢复。
 
 ### 🚀 新功能
 

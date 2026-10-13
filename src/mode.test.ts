@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decideMode, detectSsh, resolveInvocation, type TtyState } from "./mode.js";
+import { decideMode, resolveInvocation, type TtyState } from "./mode.js";
 
 const TTY: TtyState = { stdinIsTTY: true, stdoutIsTTY: true };
 const PIPE_IN: TtyState = { stdinIsTTY: false, stdoutIsTTY: true };
@@ -100,24 +100,5 @@ describe("resolveInvocation", () => {
       instruction: "hook 是什么",
       save: false,
     });
-  });
-
-  it("--tui 强制内联流式（不做 SSH 降级）", () => {
-    expect(resolveInvocation(["--tui"], TTY)).toEqual({ kind: "tui", forceInline: true });
-    // 无该选项时保持既有形状（forceInline 缺省不出现）
-    expect(resolveInvocation([], TTY)).toEqual({ kind: "tui" });
-  });
-});
-
-describe("detectSsh", () => {
-  it("命中 SSH_CONNECTION / SSH_CLIENT / SSH_TTY 任一即视为 SSH", () => {
-    expect(detectSsh({ SSH_CONNECTION: "1 2 3 4" })).toBe(true);
-    expect(detectSsh({ SSH_CLIENT: "1 2 3" })).toBe(true);
-    expect(detectSsh({ SSH_TTY: "/dev/pts/0" })).toBe(true);
-  });
-
-  it("本地环境判为非 SSH", () => {
-    expect(detectSsh({})).toBe(false);
-    expect(detectSsh({ TERM: "xterm-256color" })).toBe(false);
   });
 });
