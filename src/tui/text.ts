@@ -210,3 +210,11 @@ export function usableFrameRows(terminalRows: number): number {
 export function bottomPadding(terminalRows: number, contentLines: number): number {
   return Math.max(0, usableFrameRows(terminalRows) - Math.max(0, contentLines));
 }
+
+/**
+ * 去掉 CwdTrackerPlugin 追加在用户消息末尾的工作目录提示。
+ * 该提示是喂给模型的上下文，不该显示给用户。
+ */
+export function stripCwdNote(text: string): string {
+  return text.replace(/\n+(?:\[工作目录变更\]\n)?当前工作目录: [^\n]*$/, "");
+}

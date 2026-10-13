@@ -1,12 +1,12 @@
-// 由 src/tui/screens.tsx 拆分而来 —— 对话屏幕 Chat
-import { useEffect, useReducer, useRef, useState } from "react";
+// 对话屏幕 —— 以 SDK 的 `agent.messages` 为唯一数据源渲染（无自定义中间模型）
+import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
 import { AgentNS } from "@ai-zen/agents-core";
 import { AppConfig } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
 import { Spinner, StatusBar, SlashMenu, SelectItem } from "../components.js";
 import { layoutInput, usableFrameRows, isTerminalReply } from "../text.js";
-import { ChatSession } from "../chat-session.js";
+import { ChatSession, type ChatSessionNotifier } from "../chat-session.js";
 import { CommandHint, matchCommandHints } from "../../conversation-commands/registry.js";
 import { readConfig, readMcpConfig, saveConfig, writeMcpConfig } from "../../config.js";
 import { readAgentStore, AgentStore } from "../../agents-store.js";
@@ -14,10 +14,13 @@ import { resolveCredential } from "../../config-editor.js";
 import { ConfigWizard, McpSnapshot, WizardCloseResult, WizardStep } from "../config-wizard/index.js";
 import { computeInputCursorPosition, wordLeft, wordRight } from "./input.js";
 import { ChatLayout, computeChatLayout } from "./layout.js";
-import { chatReducer, trimTranscript } from "./state.js";
-import { LineView, messagesToBlocks } from "./render.js";
+import { FrameBuffer } from "./frame-buffer.js";
+import { LineView } from "./render.js";
+import { messageToLines, transcriptLines } from "./messages-view.js";
 import { PickerOverlay, Confirm } from "./overlays.js";
 import { runCommand } from "./chat-commands.js";
+import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
+import { LineRenderer } from "../line-renderer.js";
 
 // ==================== 对话屏幕 ====================
 
@@ -29,8 +32,8 @@ export interface ChatScreenProps {
   conversationName?: string;
   /** 重挂载时的初始输入（/back 撤回后用于预填） */
   initialInput?: string;
-  /** 重挂载时是否清空记录显示（/clear：清屏但保留上下文） */
-  clearTranscript?: boolean;
+  /** SSH / 弱网：流式阶段改用行式渲染（suspend Ink），避免整屏重绘拖断连接 */
+  suspendStreaming?: boolean;
 }
 
 /**
@@ -39,8 +42,6 @@ export interface ChatScreenProps {
  * 斜杠候选菜单可见时（输入以 `/` 开头且尚未输入参数），回车应**直接执行高亮命令**，
  * 而不是提交半截输入 —— 否则用户只输入 `/` 或未补全的命令名时，回车会落到
  * 「未知命令」报错（体验很差）。非命令输入原样返回。
- *
- * `menuIndex` 越界时回落到最后一项，避免菜单看似有选中却回车落空。
  */
 export function resolveSubmitText(input: string, hints: CommandHint[], menuIndex: number): string {
   const slash = input.startsWith("/") && !input.includes("\n") && !input.includes(" ");
@@ -54,19 +55,15 @@ export function Chat(props: ChatScreenProps) {
   const { exit, suspendTerminal } = useApp();
   const { setCursorPosition } = useCursor();
   const { columns, rows } = useWindowSize();
-  const [state, dispatch] = useReducer(chatReducer, {
-    // 载入 / 恢复会话时也封顶：避免把落盘的超大会话整段读进内存
-    blocks: trimTranscript(props.clearTranscript ? [] : messagesToBlocks(props.messages ?? [])),
-    live: null,
-  });
+
   const [input, setInput] = useState(props.initialInput ?? "");
   /** 光标位置：以 code point 计的字符索引（0..len） */
   const [cursor, setCursor] = useState(Array.from(props.initialInput ?? "").length);
   const [menuIndex, setMenuIndex] = useState(0);
-  // 输入变化后候选集随之改变：高亮重置回首项，避免索引越界（看似选中实为无高亮 / 回车落空）
   useEffect(() => {
     setMenuIndex(0);
   }, [input]);
+
   const [confirmState, setConfirmState] = useState<{ question: string; resolve: (v: boolean) => void } | null>(null);
   const [pickerState, setPickerState] = useState<{
     title: string;
@@ -76,14 +73,11 @@ export function Chat(props: ChatScreenProps) {
   /** 配置向导：非 null 时整屏接管（凭据设置 / 配置中心） */
   const [wizardStep, setWizardStep] = useState<WizardStep | null>(null);
   const [wizardConfig, setWizardConfig] = useState<AppConfig | null>(null);
-  /** 可用 Agent 列表（供配置中心「默认 Agent」选择） */
   const [wizardAgents, setWizardAgents] = useState<{ id: string; name: string }[]>([]);
-  /** MCP 配置快照（全局 + 项目），打开向导时刷新 */
   const [wizardMcp, setWizardMcp] = useState<McpSnapshot | null>(null);
-  /** Agent / Sub-agent 定义仓储（快照 + 读写），打开向导时刷新 */
   const [wizardAgentStore, setWizardAgentStore] = useState<AgentStore | null>(null);
-  /** 当前会话所用端点 id（打开向导时刷新，用于判断改动是否影响本会话） */
   const currentEndpointRef = useRef<string | null>(null);
+
   const [history, setHistory] = useState<string[]>([]);
   const historyIndex = useRef<number>(-1);
   const sessionRef = useRef<ChatSession | null>(null);
@@ -94,11 +88,53 @@ export function Chat(props: ChatScreenProps) {
   /** 最近一次布局，供键盘回调读取总行数 / 视口高度（应用内翻页） */
   const layoutRef = useRef<ChatLayout | null>(null);
 
-  const busy = state.live != null;
+  /** 本轮是否在生成中（spinner / 输入禁用） */
+  const [busy, setBusy] = useState(false);
+  /** 乐观回显：提交后、真实 user 消息落进 messages 之前，先显示用户提问 */
+  const [pendingUser, setPendingUser] = useState<{ text: string; base: number } | null>(null);
+  /** 转录显示起点（/clear 清屏用：隐藏此索引之前的消息，但不改上下文） */
+  const [transcriptFrom, setTranscriptFrom] = useState(0);
+
+  /**
+   * 通知通道：notice / error 走独立栏位，绝不进对话转录（messages）。
+   */
+  const noticeChannelRef = useRef<NoticeChannel | null>(null);
+  if (noticeChannelRef.current == null) noticeChannelRef.current = new NoticeChannel();
+  const noticeChannel = noticeChannelRef.current;
+  const [notice, setNotice] = useState<Notice | null>(null);
+  useEffect(() => noticeChannel.subscribe(setNotice), [noticeChannel]);
+
+  /**
+   * 渲染信号 + 合帧：SDK 内容变更 → FrameBuffer 合帧 → setTick 触发重渲染。
+   * 转录内容始终从 `agent.messages` 现取，tick 只负责「告诉 React 该重画了」。
+   */
+  const [, setTick] = useState(0);
+  const frameBufferRef = useRef<FrameBuffer<null> | null>(null);
+  if (frameBufferRef.current == null) {
+    frameBufferRef.current = new FrameBuffer<null>(() => setTick((t) => t + 1));
+  }
+  /** 行式直播渲染器（SSH/弱网时非 null）：内容变更直接增量打印，而不触发 Ink 重绘 */
+  const streamRendererRef = useRef<LineRenderer | null>(null);
 
   // 创建会话
   useEffect(() => {
     let disposed = false;
+    const notifier: ChatSessionNotifier = {
+      onChange: (immediate) => {
+        if (disposed) return;
+        const renderer = streamRendererRef.current;
+        if (renderer) {
+          const msgs = sessionRef.current?.messages ?? [];
+          const last = msgs[msgs.length - 1];
+          if (last) renderer.update(last);
+          return;
+        }
+        frameBufferRef.current?.push(null, immediate);
+      },
+      onNotice: (text, tone) => {
+        if (!disposed) noticeChannel.push(text, tone);
+      },
+    };
     ChatSession.create(
       {
         modelId: props.modelId,
@@ -109,9 +145,7 @@ export function Chat(props: ChatScreenProps) {
         requestConfirm: (question) =>
           new Promise<boolean>((resolve) => setConfirmState({ question, resolve })),
       },
-      (event) => {
-        if (!disposed) dispatch(event);
-      },
+      notifier,
     )
       .then((session) => {
         if (disposed) {
@@ -120,10 +154,12 @@ export function Chat(props: ChatScreenProps) {
         }
         sessionRef.current = session;
         setReady(true);
+        setTick((t) => t + 1);
       })
       .catch((error: any) => setBootError(error?.message ?? String(error)));
     return () => {
       disposed = true;
+      frameBufferRef.current?.dispose();
       sessionRef.current?.dispose();
     };
   }, [
@@ -150,7 +186,6 @@ export function Chat(props: ChatScreenProps) {
 
   // ---- 配置向导（凭据 / 配置中心）----
 
-  /** 打开配置向导：先取配置 / MCP / Agent 快照，再切入指定步骤 */
   const openWizard = async (step: WizardStep) => {
     try {
       const config = await readConfig();
@@ -162,7 +197,7 @@ export function Chat(props: ChatScreenProps) {
       setWizardMcp({ global: await readMcpConfig("global"), project: await readMcpConfig("project") });
       setWizardStep(step);
     } catch (error: any) {
-      dispatch({ type: "error", text: `读取配置失败：${error?.message ?? error}` });
+      noticeChannel.push(`读取配置失败：${error?.message ?? error}`, "error");
     }
   };
 
@@ -172,17 +207,14 @@ export function Chat(props: ChatScreenProps) {
       const config = await readConfig();
       const credential = resolveCredential(config, props.modelId);
       if (!credential) {
-        dispatch({
-          type: "error",
-          text: `模型 ${props.modelId} 未绑定可用端点，请用 /config 检查配置`,
-        });
+        noticeChannel.push(`模型 ${props.modelId} 未绑定可用端点，请用 /config 检查配置`, "error");
         return;
       }
       currentEndpointRef.current = credential.endpointId;
       setWizardConfig(config);
       setWizardStep({ kind: "edit", field: "apiKey", endpointId: credential.endpointId });
     } catch (error: any) {
-      dispatch({ type: "error", text: `读取配置失败：${error?.message ?? error}` });
+      noticeChannel.push(`读取配置失败：${error?.message ?? error}`, "error");
     }
   };
 
@@ -192,10 +224,9 @@ export function Chat(props: ChatScreenProps) {
     setWizardConfig(null);
     setWizardMcp(null);
     setWizardAgentStore(null);
-    for (const line of result.summary) dispatch({ type: "notice", text: `配置已更新：${line}` });
+    for (const line of result.summary) noticeChannel.push(`配置已更新：${line}`);
     if (!result.dirty) return;
 
-    // 会话尚未建立（启动失败进入向导）：重挂载对话屏重试
     if (!sessionRef.current) {
       exit({ restart: true, messages: props.messages });
       return;
@@ -205,13 +236,12 @@ export function Chat(props: ChatScreenProps) {
     if (endpointChanged || result.mcpChanged || result.agentsChanged) {
       sessionRef.current
         .reload()
-        .then(() => dispatch({ type: "notice", text: "已按新配置重建会话（消息与上下文保留）" }))
-        .catch((error: any) => dispatch({ type: "error", text: `重建会话失败：${error?.message ?? error}` }));
+        .then(() => noticeChannel.push("已按新配置重建会话（消息与上下文保留）"))
+        .catch((error: any) => noticeChannel.push(`重建会话失败：${error?.message ?? error}`, "error"));
     }
   };
 
   // ---- 滚动视口控制（应用内翻页，回看历史）----
-  /** 跳到指定顶部行；越界钳制；一旦贴到底部则恢复「自动跟随」 */
   const scrollTo = (nextTop: number) => {
     const L = layoutRef.current;
     if (!L) return;
@@ -219,35 +249,35 @@ export function Chat(props: ChatScreenProps) {
     const clamped = Math.max(0, Math.min(maxTop, nextTop));
     setViewTop(clamped >= maxTop ? null : clamped);
   };
-  /** 翻页滚动（dir：-1 上翻 / +1 下翻） */
   const scrollByPage = (dir: -1 | 1) => {
     const L = layoutRef.current;
     if (!L) return;
     scrollTo(L.viewTop + dir * Math.max(1, L.budget - 1));
   };
-  /** 单行滚动（dir：-1 上 / +1 下） */
   const scrollByLine = (dir: -1 | 1) => {
     const L = layoutRef.current;
     if (!L) return;
     scrollTo(L.viewTop + dir);
   };
-  /** 回到最新（贴底，恢复自动跟随） */
   const scrollToBottom = () => setViewTop(null);
 
+  /** 清屏但保留上下文：把显示起点推到当前消息末尾 */
+  const clearTranscript = () => {
+    setTranscriptFrom(sessionRef.current?.messages.length ?? 0);
+    setNotice(null);
+  };
+
   // ---- 输入编辑（光标感知）----
-  /** 替换整个输入并把光标移到末尾 */
   const setInputText = (text: string) => {
     setInput(text);
     setCursor(Array.from(text).length);
   };
-  /** 在光标处插入文本 */
   const insertAtCursor = (text: string) => {
     const chars = Array.from(input);
     const cp = Math.max(0, Math.min(cursor, chars.length));
     setInput(chars.slice(0, cp).join("") + text + chars.slice(cp).join(""));
     setCursor(cp + Array.from(text).length);
   };
-  /** 删除光标前一个字符（Backspace） */
   const deleteBeforeCursor = () => {
     const chars = Array.from(input);
     const cp = Math.max(0, Math.min(cursor, chars.length));
@@ -255,19 +285,16 @@ export function Chat(props: ChatScreenProps) {
     setInput(chars.slice(0, cp - 1).join("") + chars.slice(cp).join(""));
     setCursor(cp - 1);
   };
-  /** 删除光标后一个字符（Delete） */
   const deleteAfterCursor = () => {
     const chars = Array.from(input);
     const cp = Math.max(0, Math.min(cursor, chars.length));
     if (cp >= chars.length) return;
     setInput(chars.slice(0, cp).join("") + chars.slice(cp + 1).join(""));
   };
-  /** 以字符为单位移动光标 */
   const moveCursor = (delta: number) => {
     const len = Array.from(input).length;
     setCursor((c) => Math.max(0, Math.min(len, c + delta)));
   };
-  /** 光标移到当前逻辑行行首（Home） */
   const moveCursorToLineStart = () => {
     const chars = Array.from(input);
     const cp = Math.max(0, Math.min(cursor, chars.length));
@@ -275,7 +302,6 @@ export function Chat(props: ChatScreenProps) {
     while (i > 0 && chars[i - 1] !== "\n") i -= 1;
     setCursor(i);
   };
-  /** 光标移到当前逻辑行行尾（End） */
   const moveCursorToLineEnd = () => {
     const chars = Array.from(input);
     const cp = Math.max(0, Math.min(cursor, chars.length));
@@ -288,18 +314,50 @@ export function Chat(props: ChatScreenProps) {
   const slash = input.startsWith("/") && !input.includes("\n") && !input.includes(" ");
   const hints: CommandHint[] = slash ? matchCommandHints(input.slice(1)) : [];
 
+  /**
+   * SSH / 弱网下的流式：挂起 Ink，清屏后用行式渲染器直播本轮输出；结束后 resume
+   * （Ink 强制全量重绘完整 TUI）。挂起期间 Ctrl+C 走 SIGINT，临时接管为「中止本轮」
+   * —— 否则会命中主进程的退出 handler。
+   *
+   * ⚠️ 已停用：入口不再下发 `suspendStreaming`（弱网改由 Ink `incrementalRendering`
+   * 承接，实测稳定）。保留备查，勿新增调用。
+   */
+  const runStreaming = async (text: string) => {
+    const session = sessionRef.current!;
+    const savedSigint = process.listeners("SIGINT") as Array<(...args: any[]) => void>;
+    await suspendTerminal(async () => {
+      process.stdout.write("\x1b[2J\x1b[H");
+      process.stdout.write(`❯ 你\n  ${text.replace(/\n/g, "\n  ")}\n`);
+      process.removeAllListeners("SIGINT");
+      const onInt = () => session.abort();
+      process.on("SIGINT", onInt);
+      streamRendererRef.current = new LineRenderer();
+      try {
+        await session.send(text);
+      } finally {
+        streamRendererRef.current = null;
+        process.removeListener("SIGINT", onInt);
+        for (const listener of savedSigint) process.on("SIGINT", listener);
+        // resume 前清屏，让 Ink 从干净屏重绘
+        process.stdout.write("\x1b[2J\x1b[H");
+      }
+    });
+  };
+
   const runSubmit = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || !sessionRef.current || busy) return;
     setInputText("");
     historyIndex.current = -1;
     scrollToBottom();
+    setNotice(null);
 
     if (trimmed.startsWith("/")) {
       const name = trimmed.slice(1).toLowerCase();
       await runCommand(name, trimmed, {
         session: sessionRef.current!,
-        dispatch,
+        notice: (text, tone) => noticeChannel.push(text, tone),
+        clearTranscript,
         rows: rows ?? 24,
         exit,
         suspendTerminal,
@@ -312,18 +370,26 @@ export function Chat(props: ChatScreenProps) {
       });
       return;
     }
+
     setHistory((h) => [...h, trimmed]);
-    await sessionRef.current.send(trimmed);
+    const base = sessionRef.current!.messages.filter((m) => m.role === AgentNS.Role.User).length;
+    setPendingUser({ text: trimmed, base });
+    setBusy(true);
+    try {
+      if (props.suspendStreaming) await runStreaming(trimmed);
+      else await sessionRef.current!.send(trimmed);
+    } finally {
+      setBusy(false);
+      setPendingUser(null);
+    }
   };
   const doExit = () => {
-    // 会话已由 ConversationPersistPlugin 实时落盘，退出无需再询问是否保存
     exit("done");
   };
 
   // 输入处理
   useInput(
     (char, key) => {
-      // 启动失败：给出「按 k 打开配置中心」的出路，而不是只能退出
       if (bootError) {
         if (char === "k" || char === "K") {
           void openWizard({ kind: "menu" });
@@ -332,9 +398,7 @@ export function Chat(props: ChatScreenProps) {
         if (key.return || key.escape) exit("done");
         return;
       }
-      // 终端应答序列（如 Kitty 查询应答 `[?0u`）不是用户输入，丢弃
       if (isTerminalReply(char)) return;
-      // 翻页滚动（回看历史）
       if (key.pageUp) {
         scrollByPage(-1);
         return;
@@ -343,9 +407,6 @@ export function Chat(props: ChatScreenProps) {
         scrollByPage(1);
         return;
       }
-      // 换行：Ctrl+Enter / Alt+Enter / Shift+Enter
-      // （仅当终端**原生**以 Kitty CSI-u 序列上报这些组合键时才生效 —— 本 CLI 不再
-      //   主动查询/开启该协议，见 tui/index.tsx 的 RENDER_OPTIONS；换行主推 Ctrl+N）
       if (key.return && (key.ctrl || key.meta || key.shift)) {
         insertAtCursor("\n");
         return;
@@ -360,7 +421,7 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if (char === "l" && key.ctrl) {
-        exit({ restart: true, messages: sessionRef.current?.messages, clearTranscript: true });
+        clearTranscript();
         return;
       }
       if (char === "u" && key.ctrl) {
@@ -371,13 +432,11 @@ export function Chat(props: ChatScreenProps) {
         insertAtCursor("\n");
         return;
       }
-      // 换行：Ctrl+N（不依赖终端协议，兼容性最好）
       if (char === "n" && key.ctrl) {
         insertAtCursor("\n");
         return;
       }
       if (key.return) {
-        // 斜杠候选菜单可见时回车直接执行高亮命令，避免把半截输入（如仅 `/`）当命令提交
         void runSubmit(resolveSubmitText(input, hints, menuIndex));
         return;
       }
@@ -386,7 +445,6 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if (key.upArrow || key.downArrow) {
-        // Shift / Alt + ↑↓：单行滚动（优先于历史召回）
         if (key.shift || key.meta) {
           scrollByLine(key.upArrow ? -1 : 1);
           return;
@@ -397,7 +455,6 @@ export function Chat(props: ChatScreenProps) {
           );
           return;
         }
-        // 历史召回
         if (key.upArrow && history.length > 0) {
           const idx = historyIndex.current < 0 ? history.length - 1 : Math.max(0, historyIndex.current - 1);
           historyIndex.current = idx;
@@ -414,7 +471,6 @@ export function Chat(props: ChatScreenProps) {
         }
         return;
       }
-      // 光标移动：← → 单字符，Ctrl/Alt+← → 跨词，Home / End 到行首 / 行尾
       if (key.leftArrow) {
         if (key.ctrl || key.meta) setCursor(wordLeft(input, cursor));
         else moveCursor(-1);
@@ -490,14 +546,29 @@ export function Chat(props: ChatScreenProps) {
   const tokens = session?.lastUsage?.total_tokens;
   const cols = columns ?? 80;
 
+  const messages = session?.messages ?? [];
+  const userCount = messages.filter((m) => m.role === AgentNS.Role.User).length;
+  const showPending = pendingUser != null && userCount <= pendingUser.base;
+
+  const transcript = transcriptLines(messages.slice(transcriptFrom), cols);
+  if (showPending) {
+    transcript.push(
+      ...messageToLines(
+        { id: "__pending_user", role: AgentNS.Role.User, content: pendingUser!.text },
+        cols,
+      ),
+    );
+  }
+
+  const noticeTextLines = notice ? noticeLines(notice, cols) : [];
   const layout = computeChatLayout({
     columns: cols,
     rows: usableFrameRows(rows ?? 24),
-    blocks: state.blocks,
-    live: state.live,
+    transcript,
     input,
     busy,
     hintCount: hints.length,
+    noticeCount: noticeTextLines.length,
     overlay: confirmState ? "confirm" : pickerState ? "picker" : "none",
     pickerItems: pickerState?.items.length ?? 0,
     viewTop,
@@ -539,6 +610,15 @@ export function Chat(props: ChatScreenProps) {
         <PickerOverlay title={pickerState.title} items={pickerState.items} columns={cols} onPick={resolvePicker} />
       ) : (
         <Box flexDirection="column">
+          {noticeTextLines.length > 0 ? (
+            <Box flexDirection="column" paddingX={1}>
+              {noticeTextLines.map((line, i) => (
+                <Text key={i} color={notice?.tone === "error" ? theme.error : theme.dim} wrap="truncate">
+                  {line}
+                </Text>
+              ))}
+            </Box>
+          ) : null}
           {hints.length > 0 ? <SlashMenu hints={hints} selected={menuIndex} /> : null}
           <Box paddingX={1}>
             <Text color={theme.border} wrap="truncate">
@@ -613,4 +693,3 @@ export function Chat(props: ChatScreenProps) {
     </Box>
   );
 }
-

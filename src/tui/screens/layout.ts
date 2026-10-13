@@ -1,5 +1,5 @@
-// 由 src/tui/screens.tsx 拆分而来 —— 吸底布局 computeChatLayout + 覆盖层高度
-import { RLine, Block, LiveAssistant, blockToLines, liveToLines } from "./lines.js";
+// 对话屏布局 —— 吸底 + 应用内翻页（只做截取 / 补白，不自建转录内容）
+import { RLine } from "./lines.js";
 import { inputLines } from "./input.js";
 
 /** 确认框固定高度（外 marginTop 1 + 上下边框 2 + 问题 1 + marginTop 1 + 选项 1） */
@@ -12,11 +12,13 @@ export function pickerLines(itemCount: number): number {
 export interface ChatLayoutInput {
   columns: number;
   rows: number;
-  blocks: Block[];
-  live: LiveAssistant | null;
+  /** 已折行的对话行（由 messages-view 依 agent.messages 产出） */
+  transcript: RLine[];
   input: string;
   busy: boolean;
   hintCount: number;
+  /** 通知栏行数（notice / error 独立栏位），缺省 0 */
+  noticeCount?: number;
   overlay: "none" | "confirm" | "picker";
   pickerItems: number;
   /** 视口顶部行索引（相对整个对话行）；null / undefined = 贴底（自动跟随最新） */
@@ -47,9 +49,7 @@ export interface ChatLayout {
  * 传入具体值时按 [0, totalLines - budget] 钳制，用于「应用内翻页」回看更早的历史。
  */
 export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
-  const transcript: RLine[] = [];
-  for (const block of input.blocks) transcript.push(...blockToLines(block, input.columns));
-  if (input.live) transcript.push(...liveToLines(input.live, input.columns));
+  const transcript = input.transcript;
 
   const inputHeight = input.busy ? 1 : inputLines(input.input, input.columns).length;
   const overlayHeight =
@@ -58,9 +58,10 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
       : input.overlay === "picker"
         ? pickerLines(input.pickerItems)
         : 0;
+  const noticeCount = input.noticeCount ?? 0;
   const bottomLines =
     input.overlay === "none"
-      ? 1 /* 分隔线 */ + input.hintCount + inputHeight + 1 /* 状态栏 */
+      ? noticeCount /* 通知栏 */ + 1 /* 分隔线 */ + input.hintCount + inputHeight + 1 /* 状态栏 */
       : overlayHeight + 1 /* 状态栏 */;
 
   const budget = Math.max(0, input.rows - bottomLines);
@@ -75,4 +76,3 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
   ];
   return { lines, bottomLines, totalLines, budget, viewTop: top, scrolled: top < maxTop };
 }
-

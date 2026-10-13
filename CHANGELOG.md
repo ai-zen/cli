@@ -1,3 +1,29 @@
+## [Unreleased]
+
+### ⚡ 变更（实测定案）
+
+- **本地 TUI 增量渲染转正，SSH 行式渲染永久停用** —— 实测在 SSH / 弱网下，Ink `RENDER_OPTIONS.incrementalRendering: true`（从 `createStandard`「每帧 erase 整屏 + 重写整屏」切到 `createIncremental`「只重绘变化的行」，每帧输出量从 O(屏幕大小) 降到 O(变化量)）流式稳定流畅，无需「挂起 Ink + 行式直播」降级。故 `src/index.ts` 的 `ENABLE_INLINE_STREAMING` 永久置 `false`，行式渲染链路（`line-renderer.ts` / `chat.tsx#runStreaming` / `detectSsh` 路由）保留在库中备查、不再接入主流程。
+
+### 🚀 新功能
+
+- **SSH / 弱网自动降级：流式阶段改用「行式渲染」** —— 检测到 SSH 会话（`SSH_CONNECTION` / `SSH_CLIENT` / `SSH_TTY` 任一）时，对话屏在**回复阶段**挂起 Ink（`suspendTerminal`）、清屏后用「只追加、不重绘」的行式渲染器直播本轮输出，结束后恢复 TUI（Ink 会强制全量重绘完整界面）。这彻底避开了 Ink 的「整屏 erase + 重写」——它才是弱网下填满 pty 缓冲、拖断连接的根因。`--tui` 可强制回到内联流式（给「SSH 但网络好」的人）。
+
+### ♻️ 重构
+
+- **TUI 渲染直接以 `agent.messages` 为唯一数据源** —— 移除 `ChatEvent` / `chatReducer` / `LiveAssistant` / `Block` / `messagesToBlocks` 等自定义中间模型。SDK 在流式期间会**实时更新 `agent.messages`**（`Agent.parseStreamData` 把每个 delta 增量写进当前那条 message），因此跨消息顺序（数组序）与单条 assistant 内部顺序（`思考 → 工具 → 正文`）天然保持，直接渲染即可，杜绝「第二套真相」的失真与维护负担。已完成消息的折行 / 高亮按「消息 + 列宽 + 内容签名」缓存（`cachedMessageToLines`），流式中那条靠内容签名自动失效。
+- **notice / error 改为独立栏位** —— 系统级提示（命令反馈 / 迁移进度 / 报错）不再混入对话转录，也**绝不写进 `agent.messages`**（那会被 `formatHistory()` 原样发给模型、污染上下文）；改在输入框上方的独立一行渲染（`src/tui/screens/notice.ts`）。
+
+### 🎯 优化
+
+- **流式合帧**（`src/tui/screens/frame-buffer.ts`）：内容变更先攒入缓冲，按 60ms（约 16fps，低于 Ink 默认 30fps 输出节流）批量触发重渲染，把上屏频率从「每个 delta 一次」降到固定帧率。
+- **渲染缓存**：长对话下历史消息的折行 / 高亮免于每帧重算，成本不再随对话增长而恶化。
+
+### ✅ 测试
+
+- 新增 `frame-buffer.test.ts`、`notice.test.ts`、`line-renderer.test.ts`；`screens.test.tsx` 重写为基于 `messageToLines` / `transcriptLines` / `computeChatLayout(transcript)`
+- `tsc` 零错误；全量单测 **17 文件 / 233 用例**通过
+- 真机验证（pty）：SSH 模式下提交消息 → 清屏 → 行式直播 → resume 后 TUI 完整重绘且新消息并入转录
+
 ## [1.0.0-alpha.3] - 2026-10-13
 
 ### 💥 破坏性变更

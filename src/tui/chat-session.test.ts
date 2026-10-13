@@ -29,7 +29,10 @@ describe("ChatSession.reset（/new 归档旧对话）", () => {
   it("空对话不落盘；有内容则归档到原 id，且不误写到新 id", async () => {
     const dir = state.dir;
     const convFile = (id: string) => join(dir, "cli", "conversations", `${id}.json`);
-    const session = await ChatSession.create({ modelId: "m1" }, () => {});
+    const session = await ChatSession.create(
+      { modelId: "m1" },
+      { onChange: () => {}, onNotice: () => {} },
+    );
 
     // 情形 1：空对话 → 不落盘，仅切换到新 id
     session.currentId = "会话_旧对话A";

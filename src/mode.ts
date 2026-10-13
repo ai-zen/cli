@@ -32,10 +32,23 @@ export type Invocation =
   | { kind: "help" }
   | { kind: "version" }
   | { kind: "stdio"; instruction: string; save: boolean }
-  | { kind: "tui" };
+  | { kind: "tui"; /** 强制内联流式（不做 SSH 降级），由 `--tui` 触发 */ forceInline?: boolean };
 
 /** shell 兜底钩子的子动作 */
 const HOOK_ACTIONS = new Set(["install", "uninstall"]);
+
+/**
+ * 是否处于 SSH 远程会话（含继承环境变量的 mosh）。
+ *
+ * 判据取 sshd 注入的三个环境变量之一：`SSH_TTY` 仅交互式登录（分配了 pty）才有，
+ * `SSH_CONNECTION` / `SSH_CLIENT` 覆盖面更广。纯函数，注入 env 便于单测。
+ *
+ * 坑：tmux / screen 会「继承」启动时的这些变量，本地 attach 远程起的 tmux 可能误判；
+ * 届时用 `--tui` 覆盖。
+ */
+export function detectSsh(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env.SSH_CONNECTION || env.SSH_CLIENT || env.SSH_TTY);
+}
 
 /**
  * 模式判定（纯函数）。
@@ -61,6 +74,7 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
   let save = false;
   let wantHelp = false;
   let wantVersion = false;
+  let forceInline = false;
   let passthrough = false;
 
   for (const arg of argv) {
@@ -74,6 +88,10 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
     }
     if (arg === "--save") {
       save = true;
+      continue;
+    }
+    if (arg === "--tui") {
+      forceInline = true;
       continue;
     }
     if (arg === "--help" || arg === "-h") {
@@ -100,6 +118,6 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
 
   const instruction = positional.join(" ").trim();
   const mode = decideMode(tty, positional.length > 0);
-  if (mode === "tui") return { kind: "tui" };
+  if (mode === "tui") return forceInline ? { kind: "tui", forceInline: true } : { kind: "tui" };
   return { kind: "stdio", instruction, save };
 }

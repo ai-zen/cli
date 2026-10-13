@@ -66,6 +66,9 @@ let activeInstance: Instance | null = null;
 export const RENDER_OPTIONS = {
   exitOnCtrlC: false,
   alternateScreen: false,
+  // 只重绘「变化的行」，而不是每帧擦除 + 重写整屏（Ink 默认 false，走 createStandard）。
+  // 流式高频下把每帧输出量从 O(屏幕大小) 降到 O(变化量)，显著减轻 SSH 带宽 / 背压压力。
+  incrementalRendering: true,
   kittyKeyboard: { mode: "disabled" },
 } as const;
 
@@ -189,11 +192,10 @@ function targetFromMessages(input: {
  * 运行对话屏；`/clear`、`/back`、`/load` 通过重挂载（新 Ink 实例 + 原生清屏）实现，
  * 其余退出（退出）直接结束。
  */
-async function runChat(target: ChatTarget): Promise<void> {
+async function runChat(target: ChatTarget, suspendStreaming: boolean): Promise<void> {
   let current = target;
   let messages = target.messages;
   let initialInput: string | undefined;
-  let clearTranscript = false;
 
   while (true) {
     const result = await mount(
@@ -204,7 +206,7 @@ async function runChat(target: ChatTarget): Promise<void> {
         conversationId={current.conversationId}
         conversationName={current.conversationName}
         initialInput={initialInput}
-        clearTranscript={clearTranscript}
+        suspendStreaming={suspendStreaming}
       />,
     );
 
@@ -220,7 +222,6 @@ async function runChat(target: ChatTarget): Promise<void> {
         };
         messages?: AgentNS.Message[];
         initialInput?: string;
-        clearTranscript?: boolean;
         conversationId?: string;
         conversationName?: string;
       };
@@ -234,13 +235,11 @@ async function runChat(target: ChatTarget): Promise<void> {
         };
         messages = value.load.messages;
         initialInput = undefined;
-        clearTranscript = false;
         continue;
       }
       if (value.restart) {
         messages = value.messages ?? messages;
         initialInput = value.initialInput;
-        clearTranscript = Boolean(value.clearTranscript);
         continue;
       }
     }
@@ -250,7 +249,12 @@ async function runChat(target: ChatTarget): Promise<void> {
 
 // ==================== 入口 ====================
 
-export async function runTui(): Promise<void> {
+export interface RunTuiOptions {
+  /** SSH / 弱网：流式阶段改用行式渲染（suspend Ink），避免整屏重绘拖断连接 */
+  suspendStreaming?: boolean;
+}
+
+export async function runTui(options: RunTuiOptions = {}): Promise<void> {
   const uninstallSignals = installSignalSafety();
 
   try {
@@ -289,7 +293,7 @@ export async function runTui(): Promise<void> {
       return;
     }
 
-    await runChat(target);
+    await runChat(target, Boolean(options.suspendStreaming));
     farewell();
   } finally {
     uninstallSignals();

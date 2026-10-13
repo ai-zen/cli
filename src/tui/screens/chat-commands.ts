@@ -11,12 +11,14 @@ import { matchCommandHints } from "../../conversation-commands/registry.js";
 import { conversationRepository, listConversations } from "../../conversation-repository.js";
 import { formatShortTime } from "../../format-time.js";
 import { WizardStep } from "../config-wizard/index.js";
-import { ChatAction } from "./state.js";
 import { truncate } from "./render.js";
 
 export interface ChatCommandHost {
   session: ChatSession;
-  dispatch: Dispatch<ChatAction>;
+  /** 通知通道：命令反馈（保存 / 清除 / 迁移结果 …）走独立栏位，不进 messages */
+  notice: (text: string, tone?: "info" | "error") => void;
+  /** 清屏（保留上下文）：把转录显示起点推到最新 */
+  clearTranscript: () => void;
   rows: number;
   exit: (arg?: any) => void;
   suspendTerminal: (fn: () => void | Promise<void>) => Promise<void>;
@@ -33,7 +35,8 @@ export interface ChatCommandHost {
 export async function runCommand(name: string, raw: string, host: ChatCommandHost): Promise<void> {
   const {
     session,
-    dispatch,
+    notice,
+    clearTranscript,
     rows,
     exit,
     suspendTerminal,
@@ -46,8 +49,7 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
   } = host;
 
   const push = (text: string, tone: "info" | "error" = "info") => {
-    if (tone === "error") dispatch({ type: "error", text });
-    else dispatch({ type: "notice", text });
+    notice(text, tone);
   };
 
   switch (name) {
@@ -66,13 +68,13 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       break;
     }
     case "clear":
-      // 清屏但保留上下文：重挂载对话屏且不重建历史
-      exit({ restart: true, messages: session.messages, clearTranscript: true });
+      // 清屏但保留上下文：仅把转录显示起点推到最新
+      clearTranscript();
       break;
     case "new": {
       // reset 会先归档当前对话（有内容才存），返回存档 id（无内容为 null）
       const archivedId = await session.reset();
-      dispatch({ type: "clear" });
+      clearTranscript();
       push(archivedId ? `旧对话已存档：${archivedId}\n已开始新对话` : "已开始新对话");
       break;
     }
