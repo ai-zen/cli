@@ -66,12 +66,12 @@ When run with no arguments on an interactive terminal, the CLI opens a full-scre
 ╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
 
               AI workbench in your terminal
-              v1.0.0-alpha.2 · sdk x · core y
+              v1.0.0-alpha.3 · sdk x · core y
 ```
 
 After the splash, you land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and the status bar (model · agent · token usage · generating) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line.
 
-The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word), and an inline `/` command menu (↑↓ to choose, `Tab` to complete). Tool calls render as `⚙ name(args)` with **JSON syntax highlighting**, and fenced code blocks in the answer / reasoning are **syntax-highlighted by language** (highlight data from `highlight.js` via `lowlight`). `Ctrl+C` cancels the current request while generating, and exits when idle.
+The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word), and an inline `/` command menu (↑↓ to choose, `Tab` to complete). Tool calls render as `⚙ name(args)` with **JSON syntax highlighting**; the answer / reasoning is **Markdown-source-colored** (headings, bold, italic, inline code, lists, quotes, links), and fenced code blocks are **syntax-highlighted by language with the fence markers kept** (highlight data from `highlight.js` via `lowlight`). `Ctrl+C` cancels the current request while generating, and exits when idle.
 
 ### First-run setup (API Key)
 
@@ -262,25 +262,25 @@ The CLI provides 20 built-in tools, implemented by `@ai-zen/agents-sdk`. Tool av
 | Tool | Description |
 |------|-------------|
 | `cwd` | Get current working directory |
-| `readFile` | Read file contents (supports `range` for partial reads) |
-| `inspectFile` | Inspect file structure (lines, chars, column widths, line-ending style) without reading content |
-| `writeFile` | Write content to file |
+| `read` | Read file contents (supports `range` for partial reads) |
+| `inspect_file` | Inspect file structure (lines, chars, column widths, line-ending style) without reading content |
+| `write` | Write content to file |
 | `edit` | Replace text in files (single replacement) |
-| `batchEdit` | Batch replace text in files |
+| `batch_edit` | Batch replace text in files |
 | `exec` | Execute shell commands |
-| `exec_async` | Execute a shell command asynchronously (returns immediately) |
+| `spawn` | Execute a shell command asynchronously (returns immediately) |
 | `mkdir` | Create directories |
 | `rm` | Delete files or directories |
 | `glob` | Scan files with glob patterns |
 | `ls` | List directory contents |
 | `exist` | Check if path exists |
-| `findText` | Search text in files |
-| `downloadFile` | Download file from URL |
+| `find_text` | Search text in files |
+| `download_file` | Download file from URL |
 | `rename` | Rename or move files |
 | `copy` | Copy files or directories |
 | `sleep` | Wait for a specified number of milliseconds |
-| `viewImage` | View/analyze an image — vision models only (`Model.vision`). A network URL is returned as an `image_url` content block; a local path is auto-uploaded via the Files API and returned as a `file` content block |
-| `generateImage` | Generate images from text — requires `defaultImageModel`; always returns a plain string (JSON with the image URLs plus `viewImage` / `downloadFile` hints) instead of forcing image content blocks |
+| `view_image` | View/analyze an image — vision models only (`Model.vision`). A network URL is returned as an `image_url` content block; a local path is auto-uploaded via the Files API and returned as a `file` content block |
+| `generate_image` | Generate images from text — requires `defaultImageModel`; always returns a plain string (JSON with the image URLs plus `view_image` / `download_file` hints) instead of forcing image content blocks |
 
 ### Dynamic Tools
 
@@ -299,7 +299,7 @@ In addition to built-in tools, the SDK provides 5 dynamic loading tools that are
 Tools are assembled in three phases by the SDK's `Scope` capability pipeline:
 
 1. **Discovery** — Scan filesystem for built-in tools, user tools, SubAgents, Skills, and MCP servers. All 20 built-in tools are discovered unconditionally (no filtering at this stage)
-2. **Filtering** — Apply permissions (`allow`/`deny`), security exclusions (recursion protection), and each tool's self-declared `isAvailable(config, definition)` (availability is decided at build time when the model is known; e.g. `viewImage` only for vision models, `generateImage` requires `defaultImageModel`)
+2. **Filtering** — Apply permissions (`allow`/`deny`), security exclusions (recursion protection), and each tool's self-declared `isAvailable(config, definition)` (availability is decided at build time when the model is known; e.g. `view_image` only for vision models, `generate_image` requires `defaultImageModel`)
 3. **Instantiation** — Map filtered names to `Tool` instances and register dynamic loaders
 
 Each Agent has independent permissions — no inheritance between parent Agent and SubAgent. The only exception is the temporary Skill sub-agent (created by `call_skill_sub_agent`), which reuses the caller's tool set without a second permission pass, as a transient conversation proxy rather than an independent entity.

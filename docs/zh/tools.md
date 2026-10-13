@@ -15,31 +15,31 @@ outline: deep
 | 工具 | 说明 |
 |------|------|
 | `cwd` | 获取当前工作目录 |
-| `readFile` | 读取文件内容（支持 `range` 分批读取） |
-| `inspectFile` | 勘察文件结构概况（行数、字符数、列宽分布、行尾风格），不读取内容 |
-| `writeFile` | 写入文件内容 |
+| `read` | 读取文件内容（支持 `range` 分批读取） |
+| `inspect_file` | 勘察文件结构概况（行数、字符数、列宽分布、行尾风格），不读取内容 |
+| `write` | 写入文件内容 |
 | `edit` | 在文件中替换文本（单次替换） |
-| `batchEdit` | 批量替换文件中的文本 |
+| `batch_edit` | 批量替换文件中的文本 |
 | `exec` | 执行 Shell 命令 |
-| `exec_async` | 异步执行 Shell 命令（立即返回） |
+| `spawn` | 异步执行 Shell 命令（立即返回） |
 | `mkdir` | 创建目录 |
 | `rm` | 删除文件或目录 |
 | `glob` | 用 glob 模式扫描文件 |
 | `ls` | 列出目录内容 |
 | `exist` | 检查路径是否存在 |
-| `findText` | 在文件中检索文本 |
-| `downloadFile` | 从 URL 下载文件 |
+| `find_text` | 在文件中检索文本 |
+| `download_file` | 从 URL 下载文件 |
 | `rename` | 重命名或移动文件/目录 |
 | `copy` | 复制文件或目录 |
 | `sleep` | 等待指定毫秒数 |
-| `viewImage` | 查看/分析图片（仅视觉模型可用） |
-| `generateImage` | 根据文字描述生成图片 |
+| `view_image` | 查看/分析图片（仅视觉模型可用） |
+| `generate_image` | 根据文字描述生成图片 |
 
 ### 视觉与图片工具的可用性
 
-- **`viewImage`**：仅对视觉模型启用。`isAvailable(config, definition)` 从 `definition.modelId` 解析当前模型并检查 `Model.vision`，因此**非视觉模型不会拿到该工具**（无需运行时重复校验）。
+- **`view_image`**：仅对视觉模型启用。`isAvailable(config, definition)` 从 `definition.modelId` 解析当前模型并检查 `Model.vision`，因此**非视觉模型不会拿到该工具**（无需运行时重复校验）。
   - 输入 `path_or_url`：`http(s)` URL 直接以 `image_url` 内容块返回；本地路径自动通过 Files API（DeepSeek）上传，以 `file` 内容块（`file_id`）返回。不使用 base64 内联。
-- **`generateImage`**：依赖配置中的 `imageModels` 与 `defaultImageModel`，未配置时由 `isAvailable` 过滤掉。**统一返回字符串**（JSON，含图片 URL 列表 + `viewImage`/`downloadFile` 提示），而不是强制返回图片内容块。
+- **`generate_image`**：依赖配置中的 `imageModels` 与 `defaultImageModel`，未配置时由 `isAvailable` 过滤掉。**统一返回字符串**（JSON，含图片 URL 列表 + `view_image`/`download_file` 提示），而不是强制返回图片内容块。
 
 > 具体字段名、声明与返回类型均以 SDK 的 `.d.ts` 为准（如 `ViewImageTool` / `GenerateImageTool`）。
 
@@ -47,8 +47,8 @@ outline: deep
 
 工具返回给模型的内容超过 `maxToolOutput`（`AppConfig` 配置项，缺省 32768 字符）时，SDK 不再原样回传，而是给出警告与预览，以免单次工具结果撑爆上下文：
 
-- **落盘并警告**：`exec`（stdout / stderr 分文件落盘）、`findText`、`glob`、`ls` 超限时写入 `<系统临时目录>/ai-zen/tool-output/<工具名>-<时间戳>-<随机串>/`（每次调用独立目录），返回警告 + 头部预览（`exec` 为各流头尾各 1000 字符）与统计信息，并提示缩小范围的方式；
-- **仅警告不落盘**：`readFile` 超限时提示改用 `range` 分批读取；`inspectFile` 的明细超限时仅返回概况与提示。
+- **落盘并警告**：`exec`（stdout / stderr 分文件落盘）、`find_text`、`glob`、`ls` 超限时写入 `<系统临时目录>/ai-zen/tool-output/<工具名>-<时间戳>-<随机串>/`（每次调用独立目录），返回警告 + 头部预览（`exec` 为各流头尾各 1000 字符）与统计信息，并提示缩小范围的方式；
+- **仅警告不落盘**：`read` 超限时提示改用 `range` 分批读取；`inspect_file` 的明细超限时仅返回概况与提示。
 
 > `maxToolOutput` 为 CONFIG 层配置项，不暴露为工具参数，亦不支持按 Agent 覆盖。
 
@@ -75,7 +75,7 @@ SDK 的 `createSubAgentTool` 会把**带 `function` 字段的 Agent** 注册为�
 工具通过 SDK `Scope` 的能力流水线分三个阶段装配：
 
 1. **发现（Discovery）**：扫描文件系统，发现内置工具、用户工具、SubAgent、Skill 与 MCP 服务器。20 种内置工具无条件注册（本阶段不过滤）。
-2. **过滤（Filtering）**：应用权限（`allow`/`deny`）、安全排除（递归保护）以及每个工具自行声明的 `isAvailable(config, definition)`。可用性在**模型已知的构建期**决定，例如 `viewImage` 仅视觉模型可用、`generateImage` 需配置 `defaultImageModel`。
+2. **过滤（Filtering）**：应用权限（`allow`/`deny`）、安全排除（递归保护）以及每个工具自行声明的 `isAvailable(config, definition)`。可用性在**模型已知的构建期**决定，例如 `view_image` 仅视觉模型可用、`generate_image` 需配置 `defaultImageModel`。
 3. **实例化（Instantiation）**：将过滤后的名称映射到 `Tool` 实例，并注册动态加载器。
 
 ## 权限模型

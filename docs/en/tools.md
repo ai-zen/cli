@@ -15,31 +15,31 @@ These tools are instantiated by the SDK's static registry (`discoverBuiltinTools
 | Tool | Description |
 |------|-------------|
 | `cwd` | Get the current working directory |
-| `readFile` | Read file contents (supports `range` for partial reads) |
-| `inspectFile` | Inspect file structure (lines, chars, column widths, line-ending style) without reading content |
-| `writeFile` | Write content to a file |
+| `read` | Read file contents (supports `range` for partial reads) |
+| `inspect_file` | Inspect file structure (lines, chars, column widths, line-ending style) without reading content |
+| `write` | Write content to a file |
 | `edit` | Replace text in a file (single replacement) |
-| `batchEdit` | Batch-replace text in files |
+| `batch_edit` | Batch-replace text in files |
 | `exec` | Execute a shell command |
-| `exec_async` | Execute a shell command asynchronously (returns immediately) |
+| `spawn` | Execute a shell command asynchronously (returns immediately) |
 | `mkdir` | Create directories |
 | `rm` | Delete files or directories |
 | `glob` | Scan files with glob patterns |
 | `ls` | List directory contents |
 | `exist` | Check whether a path exists |
-| `findText` | Search for text inside files |
-| `downloadFile` | Download a file from a URL |
+| `find_text` | Search for text inside files |
+| `download_file` | Download a file from a URL |
 | `rename` | Rename or move files/directories |
 | `copy` | Copy files or directories |
 | `sleep` | Wait for the specified number of milliseconds |
-| `viewImage` | View/analyze an image (vision models only) |
-| `generateImage` | Generate images from a text description |
+| `view_image` | View/analyze an image (vision models only) |
+| `generate_image` | Generate images from a text description |
 
 ### Availability of the vision and image tools
 
-- **`viewImage`**: enabled only for vision models. `isAvailable(config, definition)` resolves the current model from `definition.modelId` and checks `Model.vision`, so **non-vision models will not get this tool** (no need for repeated runtime validation).
+- **`view_image`**: enabled only for vision models. `isAvailable(config, definition)` resolves the current model from `definition.modelId` and checks `Model.vision`, so **non-vision models will not get this tool** (no need for repeated runtime validation).
   - Input `path_or_url`: an `http(s)` URL is returned directly as an `image_url` content block; a local path is auto-uploaded via the Files API (DeepSeek) and returned as a `file` content block (`file_id`). Base64 inline is not used.
-- **`generateImage`**: depends on `imageModels` and `defaultImageModel` in the config; if not configured, it is filtered out by `isAvailable`. It **always returns a string** (JSON, containing the image URL list plus `viewImage`/`downloadFile` hints) rather than forcing an image content block.
+- **`generate_image`**: depends on `imageModels` and `defaultImageModel` in the config; if not configured, it is filtered out by `isAvailable`. It **always returns a string** (JSON, containing the image URL list plus `view_image`/`download_file` hints) rather than forcing an image content block.
 
 > The exact field names, declarations, and return types should be confirmed against the SDK's `.d.ts` (e.g. `ViewImageTool` / `GenerateImageTool`).
 
@@ -47,8 +47,8 @@ These tools are instantiated by the SDK's static registry (`discoverBuiltinTools
 
 When a tool's result exceeds `maxToolOutput` (an `AppConfig` option, 32768 characters by default), the SDK no longer returns it verbatim but replies with a warning plus a preview, so that a single tool result cannot blow up the context:
 
-- **Dumped to disk with a warning**: `exec` (stdout / stderr written to separate files), `findText`, `glob`, and `ls` write the payload to `<system temp dir>/ai-zen/tool-output/<tool>-<timestamp>-<random>/` (a fresh directory per call) and return a warning, a head preview (`exec` gets 1000 characters each from the head and tail of every stream) plus statistics, along with hints on narrowing the scope;
-- **Warning only, no dump**: `readFile` suggests reading in chunks via `range`; `inspectFile` returns just the overview plus a hint when its detail payload exceeds the limit.
+- **Dumped to disk with a warning**: `exec` (stdout / stderr written to separate files), `find_text`, `glob`, and `ls` write the payload to `<system temp dir>/ai-zen/tool-output/<tool>-<timestamp>-<random>/` (a fresh directory per call) and return a warning, a head preview (`exec` gets 1000 characters each from the head and tail of every stream) plus statistics, along with hints on narrowing the scope;
+- **Warning only, no dump**: `read` suggests reading in chunks via `range`; `inspect_file` returns just the overview plus a hint when its detail payload exceeds the limit.
 
 > `maxToolOutput` is a CONFIG-layer option: it is not exposed as a tool argument and cannot be overridden per Agent.
 
@@ -75,7 +75,7 @@ The SDK's `createSubAgentTool` registers Agents that have a **`function` field**
 Tools are assembled through the SDK `Scope` capability pipeline in three phases:
 
 1. **Discovery**: scan the filesystem to discover built-in tools, user tools, SubAgents, Skills, and MCP servers. All 20 built-in tools are registered unconditionally (no filtering at this stage).
-2. **Filtering**: apply permissions (`allow`/`deny`), security exclusions (recursion protection), and each tool's self-declared `isAvailable(config, definition)`. Availability is decided at build time when the model is known — e.g. `viewImage` is only available for vision models, and `generateImage` requires `defaultImageModel` to be configured.
+2. **Filtering**: apply permissions (`allow`/`deny`), security exclusions (recursion protection), and each tool's self-declared `isAvailable(config, definition)`. Availability is decided at build time when the model is known — e.g. `view_image` is only available for vision models, and `generate_image` requires `defaultImageModel` to be configured.
 3. **Instantiation**: map the filtered names to `Tool` instances and register the dynamic loaders.
 
 ## Permission model

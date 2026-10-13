@@ -14,8 +14,8 @@ outline: deep
 
 - **Node.js**：包以 ESM（`"type": "module"`）发布。`package.json` 未声明 `engines` 字段，实际所需版本以 Node 生态为准（建议使用较新的 LTS）。
 - **运行时依赖**（由 `package.json` 声明）：
-  - `@ai-zen/agents-core` `^4.3.0`
-  - `@ai-zen/agents-sdk` `1.0.0-alpha.3`
+  - `@ai-zen/agents-core` `^4.3.2`
+  - `@ai-zen/agents-sdk` `1.0.0-alpha.6`
   - `@modelcontextprotocol/sdk` `^1.29.0`
   - `dayjs`、`ink`、`react`、`zod`、`highlight.js`、`lowlight`
 - **平台**：底层工具与 Shell 钩子依赖 Unix shell（`bash`/`zsh`）与 `process.env.SHELL`；在 Windows 上 Shell 钩子不可用（`hook` 会报“不支持的 shell”）。
@@ -66,7 +66,7 @@ cat README.md | ai "用三句话总结"
 
 启动后先呈现动画渐变的 ASCII 启动界面，随后**直接进入对话界面**（由 Ink/React 渲染）——若存在「上一轮会话」则自动续接，否则新建对话。对话界面采用**底部固定**布局：分隔线、输入行与状态栏始终贴在终端底部，对话内容在其上方滚动。
 
-对话界面提供流式输出区、多行输入（`Enter` 发送 / `Ctrl+N` 换行 / `← →` 移动光标 / `Ctrl+← →` 跨词）与内联 `/` 命令菜单；工具调用以 `⚙ 名称(参数)` 展示并带 **JSON 高亮**，正文与思考里的围栏代码块按语言高亮。
+对话界面提供流式输出区、多行输入（`Enter` 发送 / `Ctrl+N` 换行 / `← →` 移动光标 / `Ctrl+← →` 跨词）与内联 `/` 命令菜单；工具调用以 `⚙ 名称(参数)` 展示并带 **JSON 高亮**，正文与思考按 **Markdown 源码着色**（标题 / 粗体 / 斜体 / 行内代码 / 列表 / 引用 / 链接），围栏代码块按语言高亮并**保留围栏标记**。
 
 ### 首次配置（API Key）
 

@@ -1,3 +1,30 @@
+## [1.0.0-alpha.3] - 2026-10-13
+
+### 💥 破坏性变更
+
+- **内置工具改名（统一 `snake_case`：多词收敛、单词简化）** —— 随 `@ai-zen/agents-sdk` `1.0.0-alpha.6` 落地：SDK 将内置工具名统一为 `snake_case`，并把单词工具简化为单词 —— `readFile` → `read`、`writeFile` → `write`、`exec_async` → `spawn`、`findText` → `find_text`、`batchEdit` → `batch_edit`、`inspectFile` → `inspect_file`、`downloadFile` → `download_file`、`generateImage` → `generate_image`、`viewImage` → `view_image`、`indexedSearch` → `indexed_search`；工具类名同步为 `ReadTool` / `WriteTool` / `SpawnTool`。**若你在 Agent 定义、权限白名单（`tools.allow` / `tools.deny`）或自定义提示词里引用了旧工具名，请同步更新为 `snake_case` 新名**（旧名仅保留在 CHANGELOG 历史条目中）。
+
+### 🚀 新功能
+
+- **正文 / 思考按 Markdown 源码着色** —— AI 回答本身即 Markdown，现交给 `highlight.js` 的 `markdown` 词法着色：标题（`#`）、粗体、斜体、行内代码、列表、引用、链接各有配色；**围栏代码块保留围栏行**（开 / 闭围栏以低调暗灰渲染）并继续按标注语言做语法高亮。标记符（`#` / `**` / 反引号 等）**原样保留、只染色**（源码着色，非语义渲染）。正文用**空格优先折行**，避免把英文单词从中间切断。
+
+### 🎯 优化
+
+- **正文默认文本色改用终端默认前景色** —— 此前正文基础色写死近白 `#e2e8f0`，在**亮色主题终端**里会「白底白字」看不见。现正文（含未指定颜色的默认分段）一律回落**终端默认前景色**，绝对色只留给标题 / 代码等强调项；同步移除语法色板里两处近白 token 色（`variable` / `params`）。
+
+### ⚠️ 依赖升级
+
+- **`@ai-zen/agents-core` 升至 `^4.3.2`、`@ai-zen/agents-sdk` 升至 `1.0.0-alpha.6`** ——
+  - core `4.3.1`：**中断的并行工具轮次归一化** —— 一轮回复里并行调用的多个工具若被中断（`Ctrl+C`），未完成的工具结果会在历史里被补齐 / 归一，避免下一轮因 `tool_calls` 数量与实际工具结果数量不匹配而被服务端拒绝（默认 `fill`：保留 assistant 正文并补齐未完成结果）。
+  - core `4.3.2` / sdk `1.0.0-alpha.4…6`：内置工具统一 `snake_case` + 单词简化、`exec_async` → `spawn`、类名对齐（见「破坏性变更」）。
+  - CLI 侧仅同步工具名（文档 / 测试 fixture / 提示语），运行时行为全量委托 SDK，无需其它适配。
+
+### ✅ 测试
+
+- `tsc --noEmit`（`tsconfig.test.json`）零错误；全量单测 **15 文件 / 235 用例**通过
+- 修复 `config-wizard.test.tsx` 两个预存失败：为向导注入终端尺寸（新增可选 `terminalSize` prop），消除 `ink-testing-library` 假 stdout 缺 `rows` 时 `terminal-size` 探测本机行数、把吸底帧撑到 38 行的干扰
+- 渲染核验：标题 / 粗体 / 行内代码 / 列表 / 引用 / 链接与围栏代码块均按预期着色，普通正文无颜色（回落终端默认）
+
 ## [1.0.0-alpha.2] - 2026-10-03
 
 ### ⚠️ 依赖升级

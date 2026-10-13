@@ -179,10 +179,10 @@ describe("chatReducer 流式拼接", () => {
 
   it("工具调用按 index 归并", () => {
     let s = chatReducer(initial, { type: "user", text: "x" });
-    s = chatReducer(s, { type: "tool", index: 0, name: "read" });
-    s = chatReducer(s, { type: "tool", index: 0, name: "File" });
+    s = chatReducer(s, { type: "tool", index: 0, name: "inspect" });
+    s = chatReducer(s, { type: "tool", index: 0, name: "_file" });
     s = chatReducer(s, { type: "tool", index: 0, args: "{}" });
-    expect(s.live?.tools[0]).toEqual({ name: "readFile", args: "{}" });
+    expect(s.live?.tools[0]).toEqual({ name: "inspect_file", args: "{}" });
   });
 
   it("多轮工具调用按轮分段：新一轮 index 从 0 起，不与上一轮拼接", () => {
@@ -322,7 +322,7 @@ describe("吸底布局：块 → 行", () => {
     expect(line?.spans?.some((s) => s.text === "1" && s.color === syntax.number?.color)).toBe(true);
   });
 
-  it("正文里的围栏代码块按语言高亮，且不显示裸围栏", () => {
+  it("正文里的围栏代码块按语言高亮，并保留围栏行", () => {
     const lines = blockToLines(
       {
         id: 11,
@@ -334,10 +334,57 @@ describe("吸底布局：块 → 行", () => {
       80,
     );
     const texts = lines.map((l) => l.text);
+    expect(texts).toContain("  ```typescript"); // 开围栏（含语言标注）
     expect(texts).toContain("  const a = 1;");
-    expect(texts.some((t) => t.includes("```"))).toBe(false);
+    expect(texts).toContain("  ```"); // 闭围栏
     const codeLine = lines.find((l) => l.text === "  const a = 1;");
     expect(codeLine?.spans?.some((s) => s.text === "const" && s.color === syntax.keyword?.color)).toBe(true);
+    // 围栏行以低调暗灰渲染，且同样缩进
+    const fence = lines.find((l) => l.text === "  ```typescript");
+    expect(fence?.spans?.find((s) => s.text === "```typescript")?.color).toBeDefined();
+  });
+
+  it("正文按 markdown 源码着色：标记符原样保留、只染色", () => {
+    const lines = blockToLines(
+      { id: 12, kind: "assistant", reasoning: "", content: "看 **重点** 和 `x` 结束", tools: [] },
+      80,
+    );
+    const content = lines.find((l) => l.kind === "content");
+    // 标记符 ** 与 ` 保留在文本里（源码着色，非语义渲染）
+    expect(content?.text).toBe("  看 **重点** 和 `x` 结束");
+    expect(content?.spans?.some((s) => s.text === "**重点**" && s.bold === true)).toBe(true);
+    expect(content?.spans?.some((s) => s.text === "`x`" && s.color === syntax.code?.color)).toBe(true);
+  });
+
+  it("正文 markdown 标题按 section 着色", () => {
+    const lines = blockToLines(
+      { id: 13, kind: "assistant", reasoning: "", content: "# 标题", tools: [] },
+      80,
+    );
+    const content = lines.find((l) => l.kind === "content");
+    expect(
+      content?.spans?.some((s) => s.text === "# 标题" && s.bold === true && s.color === syntax.section?.color),
+    ).toBe(true);
+  });
+
+  it("正文默认不写死颜色：纯文本回落终端默认前景色", () => {
+    const lines = blockToLines(
+      { id: 14, kind: "assistant", reasoning: "", content: "普通一段文字", tools: [] },
+      80,
+    );
+    const content = lines.find((l) => l.kind === "content");
+    expect(content?.text).toBe("  普通一段文字");
+    expect(content?.spans?.find((s) => s.text.includes("普通"))?.color).toBeUndefined();
+  });
+
+  it("正文按空格优先折行：不把英文单词从中间切断", () => {
+    // innerWidth = columns − 4 → 12 列时可用宽 8
+    const lines = blockToLines(
+      { id: 15, kind: "assistant", reasoning: "", content: "hello world", tools: [] },
+      12,
+    );
+    const texts = lines.filter((l) => l.kind === "content").map((l) => l.text);
+    expect(texts).toEqual(["  hello", "  world"]);
   });
 
   it("思考 / 工具与正文之间有空行（完成态与流式一致）", () => {

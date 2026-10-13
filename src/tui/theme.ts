@@ -34,7 +34,13 @@ export interface TextStyle {
 
 /**
  * 语法高亮色板 —— 键为 highlight.js 的 scope（`highlight.ts` 已去掉 `hljs-` 前缀），
- * 供工具调用参数（JSON）与围栏代码块共用。暗色主题友好（tailwind 近似色）。
+ * 供工具调用参数（JSON）、围栏代码块与**正文 markdown 源码着色**共用。
+ *
+ * 约定：
+ *   - **不写死近白 / 近黑**（如 #e2e8f0 / #000000）——在亮色或暗色终端之一里会看不见字；
+ *     无颜色的 token 一律回落到**终端默认前景色**，需要区分时用 `bold` / `italic` / `dim` 等
+ *     **终端相对属性**（`strong` / `emphasis` / `quote` 即如此）。
+ *   - 绝对色只用于**强调**（关键字、字符串、标题等），且尽量取中间调。
  */
 export const syntax: Record<string, TextStyle> = {
   keyword: { color: "#c4b5fd", bold: true },
@@ -47,8 +53,6 @@ export const syntax: Record<string, TextStyle> = {
   attr: { color: "#7dd3fc" },
   attribute: { color: "#7dd3fc" },
   property: { color: "#7dd3fc" },
-  variable: { color: "#cbd5e1" },
-  params: { color: "#cbd5e1" },
   title: { color: "#fbbf24" },
   function: { color: "#fbbf24" },
   selector: { color: "#fbbf24" },
@@ -59,6 +63,14 @@ export const syntax: Record<string, TextStyle> = {
   meta: { color: "#94a3b8" },
   addition: { color: "#86efac" },
   deletion: { color: "#f87171" },
+  // ---- markdown 源码着色（highlight.js 的 markdown 词法）----
+  section: { color: "#a78bfa", bold: true }, // 标题（#）
+  strong: { bold: true }, // 粗体 **x**（无颜色 → 终端默认前景色 + 加粗）
+  emphasis: { italic: true }, // 斜体 *x*
+  bullet: { color: "#a78bfa" }, // 列表标记 -
+  quote: { dim: true }, // 引用 >（终端相对变暗）
+  code: { color: "#7dd3fc" }, // 行内代码 `x`
+  link: { color: "#7dd3fc" }, // 链接地址
 };
 
 /** 把 highlight.js 的 scope 映射为具体样式；未知 scope 返回空（沿用基础色） */

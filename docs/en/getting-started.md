@@ -14,8 +14,8 @@ outline: deep
 
 - **Node.js**: the package is published as ESM (`"type": "module"`). `package.json` does not declare an `engines` field, so the actual required version follows the Node ecosystem (a recent LTS is recommended).
 - **Runtime dependencies** (declared in `package.json`):
-  - `@ai-zen/agents-core` `^4.3.0`
-  - `@ai-zen/agents-sdk` `1.0.0-alpha.3`
+  - `@ai-zen/agents-core` `^4.3.2`
+  - `@ai-zen/agents-sdk` `1.0.0-alpha.6`
   - `@modelcontextprotocol/sdk` `^1.29.0`
   - `dayjs`, `ink`, `react`, `zod`, `highlight.js`, `lowlight`
 - **Platform**: the underlying tools and the Shell hook depend on a Unix shell (`bash`/`zsh`) and `process.env.SHELL`; the Shell hook is unavailable on Windows (`hook` will report "unsupported shell").
@@ -66,7 +66,7 @@ cat README.md | ai "summarize in three sentences"
 
 On start, an animated gradient ASCII splash appears, then you land **directly in the chat screen** (rendered with Ink/React) — resuming the last session if there is one, otherwise starting a new conversation. The chat screen is **bottom-pinned**: a divider, the input line, and the status bar always sit at the bottom of the terminal, while the conversation scrolls above them.
 
-The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word), and an inline `/` command menu. Tool calls render as `⚙ name(args)` with **JSON highlighting**, and fenced code blocks are highlighted by language.
+The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word), and an inline `/` command menu. Tool calls render as `⚙ name(args)` with **JSON highlighting**; the answer/reasoning is **Markdown-source-colored** (headings / bold / italic / inline code / lists / quotes / links), and fenced code blocks are highlighted by language with the **fence markers kept**.
 
 ### First-run setup (API Key)
 

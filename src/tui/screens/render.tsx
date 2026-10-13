@@ -7,7 +7,7 @@ import { nextId } from "./state.js";
 
 // ==================== 行渲染 ====================
 
-/** 行 kind → 基础色（分段渲染时作默认色） */
+/** 行 kind → 基础色（分段渲染时作默认色；`undefined` = 终端默认前景色） */
 function baseColor(kind: LineKind): string | undefined {
   switch (kind) {
     case "user-header":
@@ -18,8 +18,10 @@ function baseColor(kind: LineKind): string | undefined {
       return theme.reasoning;
     case "tool":
       return theme.tool;
+    // 正文**不指定颜色**：用终端默认前景色渲染，避免写死近白（如 #e2e8f0）后
+    // 在亮色主题终端里「白底白字」看不见。绝对色只留给需要强调的分段（标题/代码等）。
     case "content":
-      return theme.assistant;
+      return undefined;
     case "notice":
       return theme.dim;
     case "error":
@@ -56,7 +58,7 @@ export function LineView({ line }: { line: RLine }) {
     case "tool":
       return <Text color={theme.tool} wrap="truncate">{line.text}</Text>;
     case "content":
-      return <Text color={theme.assistant} wrap="truncate">{line.text}</Text>;
+      return <Text wrap="truncate">{line.text}</Text>;
     case "notice":
       return <Text color={theme.dim} wrap="truncate">{line.text}</Text>;
     case "error":

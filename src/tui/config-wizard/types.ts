@@ -80,6 +80,12 @@ export interface ConfigWizardProps {
   config: AppConfig;
   /** 起始步骤（默认配置中心菜单） */
   initialStep?: WizardStep;
+  /**
+   * 终端尺寸覆盖（供测试固定帧高用）。
+   * 缺省时按真实窗口尺寸（`useWindowSize`），再退默认 80×24。
+   * 注入后「吸底」帧高不再依赖运行环境能否探测到终端高度。
+   */
+  terminalSize?: { columns: number; rows: number };
   /** 首启引导模式：文案更完整，Esc 语义为「放弃」 */
   onboarding?: boolean;
   /** 保存成功后直接关闭（首启引导 / `/key`），否则回到配置中心菜单 */

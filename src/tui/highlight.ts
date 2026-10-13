@@ -94,8 +94,9 @@ const FENCE_RE = /^\s*```(.*)$/;
 /**
  * 把正文切成「普通文本 / 围栏代码块」两类片段。
  *
- * 围栏行（``` 与 ```lang）本身作为分隔符**丢弃**，不进入任何片段 —— 渲染时代码块以
- * 高亮行呈现，无需再显示裸围栏。
+ * 围栏行（``` 与 ```lang）本身作为分隔符**不进入片段**，只解析出语言存进 `lang`；
+ * 渲染时由 `contentLines` 依据 `lang` 重新画出围栏行（`​```lang` / `​```），
+ * 从而既能按语言高亮代码、又能保留围栏边界。
  */
 export function splitFences(text: string): CodeSegment[] {
   const segments: CodeSegment[] = [];

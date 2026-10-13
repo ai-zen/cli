@@ -66,12 +66,12 @@ ai --version
 ╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
 
               终端里的 AI 协作台
-              v1.0.0-alpha.2 · sdk x · core y
+              v1.0.0-alpha.3 · sdk x · core y
 ```
 
 启动界面结束后**直接进入对话界面**（若存在「上一轮会话」则自动续接，否则新建对话）。对话界面采用**底部固定**布局：分隔线、输入行与状态栏（模型 · Agent · token 用量 · 生成状态）始终贴在终端底部，对话内容在其上方滚动；生成中时输入行位置显示进度指示。
 
-对话界面包含：流式输出区（思考过程 / 回答正文 / 工具调用分行展示）、多行输入（`Enter` 发送、`Ctrl+N` 换行、`← →` 移动光标、`Ctrl+← →` 跨词）与内联 `/` 命令菜单（↑↓ 选择、`Tab` 补全）。工具调用以 `⚙ 名称(参数)` 展示并带 **JSON 语法高亮**，正文与思考里的**围栏代码块按语言高亮**（高亮数据来自 `highlight.js` / `lowlight`）。`Ctrl+C` 在生成中取消本轮请求、空闲时退出。
+对话界面包含：流式输出区（思考过程 / 回答正文 / 工具调用分行展示）、多行输入（`Enter` 发送、`Ctrl+N` 换行、`← →` 移动光标、`Ctrl+← →` 跨词）与内联 `/` 命令菜单（↑↓ 选择、`Tab` 补全）。工具调用以 `⚙ 名称(参数)` 展示并带 **JSON 语法高亮**，正文与思考按 **Markdown 源码着色**（标题 / 粗体 / 斜体 / 行内代码 / 列表 / 引用 / 链接），**围栏代码块按语言高亮并保留围栏标记**（高亮数据来自 `highlight.js` / `lowlight`）。`Ctrl+C` 在生成中取消本轮请求、空闲时退出。
 
 ### 首次配置（API Key）
 
@@ -262,25 +262,25 @@ CLI 提供 20 个内置工具，由 `@ai-zen/agents-sdk` 实现。工具可用�
 | 工具 | 说明 |
 |------|------|
 | `cwd` | 获取当前工作目录 |
-| `readFile` | 读取文件内容（支持 `range` 分批读取） |
-| `inspectFile` | 勘察文件结构概况（行数、字符数、列宽分布、行尾风格），不读取内容 |
-| `writeFile` | 写入文件 |
+| `read` | 读取文件内容（支持 `range` 分批读取） |
+| `inspect_file` | 勘察文件结构概况（行数、字符数、列宽分布、行尾风格），不读取内容 |
+| `write` | 写入文件 |
 | `edit` | 替换文件中的文本（单次替换） |
-| `batchEdit` | 批量编辑文本 |
+| `batch_edit` | 批量编辑文本 |
 | `exec` | 执行 shell 命令 |
-| `exec_async` | 异步执行 shell 命令（立即返回，不等待结果） |
+| `spawn` | 异步执行 shell 命令（立即返回，不等待结果） |
 | `mkdir` | 创建目录 |
 | `rm` | 删除文件或目录 |
 | `glob` | 通配符扫描文件 |
 | `ls` | 列出目录 |
 | `exist` | 检查路径是否存在 |
-| `findText` | 在文件中查找文本 |
-| `downloadFile` | 从 URL 下载文件 |
+| `find_text` | 在文件中查找文本 |
+| `download_file` | 从 URL 下载文件 |
 | `rename` | 重命名或移动文件 |
 | `copy` | 复制文件或目录 |
 | `sleep` | 等待指定毫秒数 |
-| `viewImage` | 查看/分析图片 — 仅视觉模型可用（`Model.vision`）。网络图片直接以 `image_url` 内容块返回；本地图片经 Files API 自动上传后以 `file` 内容块返回 |
-| `generateImage` | 根据描述生成图片 — 需配置 `defaultImageModel`；统一返回字符串（含图片 URL 列表与 `viewImage` / `downloadFile` 提示的 JSON），不再强制返回图片内容块 |
+| `view_image` | 查看/分析图片 — 仅视觉模型可用（`Model.vision`）。网络图片直接以 `image_url` 内容块返回；本地图片经 Files API 自动上传后以 `file` 内容块返回 |
+| `generate_image` | 根据描述生成图片 — 需配置 `defaultImageModel`；统一返回字符串（含图片 URL 列表与 `view_image` / `download_file` 提示的 JSON），不再强制返回图片内容块 |
 
 ### 动态工具
 
@@ -299,7 +299,7 @@ CLI 提供 20 个内置工具，由 `@ai-zen/agents-sdk` 实现。工具可用�
 工具装配由 SDK 的 `Scope` 能力管线管理，分为三个阶段：
 
 1. **发现** — 扫描文件系统获取内置工具、用户工具、SubAgent、Skill 和 MCP 服务器。20 个内置工具全部无条件发现（此阶段不做过滤）
-2. **过滤** — 应用权限（`allow`/`deny`）、安全排除（递归保护），以及各工具自声明的 `isAvailable(config, definition)`（在模型已知的构建阶段判断可用性；如 `viewImage` 仅视觉模型、`generateImage` 需配置 `defaultImageModel`）
+2. **过滤** — 应用权限（`allow`/`deny`）、安全排除（递归保护），以及各工具自声明的 `isAvailable(config, definition)`（在模型已知的构建阶段判断可用性；如 `view_image` 仅视觉模型、`generate_image` 需配置 `defaultImageModel`）
 3. **实例化** — 将过滤后的名称映射为 `Tool` 实例，注册动态加载器
 
 每个 Agent 拥有独立的权限配置，父 Agent 与 SubAgent 之间不继承权限。唯一的例外是 `call_skill_sub_agent` 创建的临时 Skill 子 Agent——它是临时的对话分身而非独立实体，因此沿用调用者的工具能力（不再走第二遍权限过滤）。

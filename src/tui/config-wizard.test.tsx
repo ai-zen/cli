@@ -19,6 +19,13 @@ const DOWN = "\u001B[B";
 const ENTER = "\r";
 const ESC = "\u001B";
 
+/**
+ * 固定终端尺寸：`ConfigWizard` 的「吸底」帧高由终端行数决定，
+ * 而 ink-testing-library 的假 stdout 未提供 rows，ink 会回退探测真实终端
+ * （本机探测到 39 行 → 帧被补到 38 行）。固定尺寸后帧高确定，不依赖运行环境。
+ */
+const SIZE = { columns: 100, rows: 24 };
+
 function makeConfig(): AppConfig {
   return {
     endpoints: [
@@ -213,7 +220,7 @@ describe("promptLayout（吸底留白 + IME 光标）", () => {
 describe("ConfigWizard（吸底布局）", () => {
   it("整帧高度 = 终端行数 − 1，内容贴底（顶部为空白，不会飘到视口外）", async () => {
     const { lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} onSave={makeOnSave()} onClose={noop} />,
+      <ConfigWizard config={makeConfig()} terminalSize={SIZE} onSave={makeOnSave()} onClose={noop} />,
     );
     await tick();
     const lines = (lastFrame() ?? "").split("\n");
@@ -233,6 +240,7 @@ describe("ConfigWizard（吸底布局）", () => {
       <ConfigWizard
         config={makeConfig()}
         initialStep={{ kind: "endpoints" }}
+        terminalSize={SIZE}
         onSave={makeOnSave()}
         onClose={noop}
       />,

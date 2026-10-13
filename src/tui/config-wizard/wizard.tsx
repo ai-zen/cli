@@ -18,9 +18,10 @@ import { renderNewEndpointStep } from "./step-new-endpoint.js";
  * 引擎与各步骤模块共享同一个 `WizardContext`（引擎状态 + 尺寸 + props）。
  */
 export function ConfigWizard(props: ConfigWizardProps) {
-  const { columns, rows: terminalRows } = useWindowSize();
-  const cols = columns ?? 80;
-  const rows = terminalRows ?? 24;
+  const windowSize = useWindowSize();
+  // 优先用注入的尺寸（测试固定帧高），否则按真实窗口尺寸，再退默认 80×24
+  const cols = props.terminalSize?.columns ?? windowSize.columns ?? 80;
+  const rows = props.terminalSize?.rows ?? windowSize.rows ?? 24;
 
   const engine = useWizardEngine(props);
   const ctx: WizardContext = { ...engine, cols, rows, props };
