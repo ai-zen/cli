@@ -4,6 +4,33 @@ import { Block, LiveAssistant } from "./lines.js";
 
 // ==================== 对话状态与归约器 ====================
 
+/**
+ * 视图历史保留上限（块数）。
+ *
+ * 长对话里 `blocks` 会随每轮追加而单调增长：迁移（`strategy: "prune"`）虽会裁剪
+ * `agent.messages`，**却不会清理 `blocks`**，于是内存里累积的是「跨迁移的全程历史」
+ * —— 这正是长对话 OOM 的主要来源。
+ *
+ * 这里给内存中的视图封顶：超出即从**最旧的块**开始丢弃。更早的内容仍完整保存在
+ * `conversations/<id>.json`，可用 `/load` 找回。
+ *
+ * 注意：**不能**改在迁移时清空视图 —— 迁移发生在 `agent.send()` 内部（`onAfterSend`），
+ * 此时正在流式的 `live` 尚未被 `done` 定稿，清空会把刚生成的回答一并抹掉。封顶只丢最旧、
+ * 不碰 `live`，故安全。
+ */
+export const MAX_TRANSCRIPT_BLOCKS = 200;
+
+/** 追加块并封顶（丢弃最旧），保证内存有界；`live` 不在其中，不受影响 */
+export function trimTranscript(blocks: Block[]): Block[] {
+  return blocks.length > MAX_TRANSCRIPT_BLOCKS
+    ? blocks.slice(blocks.length - MAX_TRANSCRIPT_BLOCKS)
+    : blocks;
+}
+
+function appendBlocks(blocks: Block[], ...added: Block[]): Block[] {
+  return trimTranscript([...blocks, ...added]);
+}
+
 export interface ChatState {
   blocks: Block[];
   live: LiveAssistant | null;
@@ -20,7 +47,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { blocks: [], live: null };
     case "user":
       return {
-        blocks: [...state.blocks, { id: nextId(), kind: "user", text: action.text }],
+        blocks: appendBlocks(state.blocks, { id: nextId(), kind: "user", text: action.text }),
         live: { reasoning: "", content: "", tools: [], sub: null, roundBase: 0 },
       };
     case "assistant-start":
@@ -62,12 +89,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "notice":
       return {
         ...state,
-        blocks: [...state.blocks, { id: nextId(), kind: "notice", tone: "info", text: action.text }],
+        blocks: appendBlocks(state.blocks, { id: nextId(), kind: "notice", tone: "info", text: action.text }),
       };
     case "error":
       return {
         ...state,
-        blocks: [...state.blocks, { id: nextId(), kind: "notice", tone: "error", text: action.text }],
+        blocks: appendBlocks(state.blocks, { id: nextId(), kind: "notice", tone: "error", text: action.text }),
       };
     case "done": {
       if (!state.live) return state;
@@ -76,7 +103,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       const isEmpty = !reasoning.trim() && !content.trim() && !tools.some((t) => t.name);
       if (isEmpty) return { ...state, live: null };
       const finished: Block = { id: nextId(), kind: "assistant", reasoning, content, tools };
-      return { blocks: [...state.blocks, finished], live: null };
+      return { blocks: appendBlocks(state.blocks, finished), live: null };
     }
     default:
       return state;

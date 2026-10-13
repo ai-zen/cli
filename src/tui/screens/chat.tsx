@@ -14,7 +14,7 @@ import { resolveCredential } from "../../config-editor.js";
 import { ConfigWizard, McpSnapshot, WizardCloseResult, WizardStep } from "../config-wizard/index.js";
 import { computeInputCursorPosition, wordLeft, wordRight } from "./input.js";
 import { ChatLayout, computeChatLayout } from "./layout.js";
-import { chatReducer } from "./state.js";
+import { chatReducer, trimTranscript } from "./state.js";
 import { LineView, messagesToBlocks } from "./render.js";
 import { PickerOverlay, Confirm } from "./overlays.js";
 import { runCommand } from "./chat-commands.js";
@@ -55,7 +55,8 @@ export function Chat(props: ChatScreenProps) {
   const { setCursorPosition } = useCursor();
   const { columns, rows } = useWindowSize();
   const [state, dispatch] = useReducer(chatReducer, {
-    blocks: props.clearTranscript ? [] : messagesToBlocks(props.messages ?? []),
+    // 载入 / 恢复会话时也封顶：避免把落盘的超大会话整段读进内存
+    blocks: trimTranscript(props.clearTranscript ? [] : messagesToBlocks(props.messages ?? [])),
     live: null,
   });
   const [input, setInput] = useState(props.initialInput ?? "");
