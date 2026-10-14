@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@ai-zen/agents-core':
-        specifier: ^4.4.0
-        version: 4.4.0(ws@8.22.0)(zod@4.5.4)
+        specifier: ^4.5.0
+        version: 4.5.0(ws@8.22.0)(zod@4.5.4)
       '@ai-zen/agents-sdk':
-        specifier: 1.0.0-alpha.7
-        version: 1.0.0-alpha.7(ws@8.22.0)(zod@4.5.4)
+        specifier: 1.0.0-alpha.8
+        version: 1.0.0-alpha.8(ws@8.22.0)(zod@4.5.4)
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.30.0(zod@4.5.4)
@@ -63,11 +63,11 @@ importers:
 
 packages:
 
-  '@ai-zen/agents-core@4.4.0':
-    resolution: {integrity: sha512-Kyg6UfhaSEjYQUFBeLwYw9hGexGX7fhZZY/zi4T7rgHHOMgZGRHLLAbl9U6FcLim9TF3FCcut5zNQkKQStY8/g==}
+  '@ai-zen/agents-core@4.5.0':
+    resolution: {integrity: sha512-Ob6R8HWiyWVrjxrT3QxjjeGTF/MBdqdYajVZEl0NkeugUdFihsY9vBRXLMGr9xV+Q+DhQG8aVOtx1Or9jOxeKw==}
 
-  '@ai-zen/agents-sdk@1.0.0-alpha.7':
-    resolution: {integrity: sha512-KY46QIuoTTu7rhH7rsGOEzV5jd0s4tx5SNCEhXTbmoObyaz8AWQ1F5foVT4N7P0pf4P4GAq5g0nFAHewrUYpNw==}
+  '@ai-zen/agents-sdk@1.0.0-alpha.8':
+    resolution: {integrity: sha512-h9ZZktK1rANAsrsmDRyC/Q5ysRJCc2hwcwjP97oT5Ykdm/lWSqjOnc80n6ZvLDAePsBVWeJMp9/i8YtQDg4SeQ==}
 
   '@ai-zen/event-bus@1.1.0':
     resolution: {integrity: sha512-xjfQEmUMly++dOSrQMJkwrnBVl7bQHtiw8S09AW5jPuqnFV9OwBk0PsGFc/T+4eP4yWThBJo2X3cCdE5DkAr+Q==}
@@ -1136,7 +1136,7 @@ packages:
 
 snapshots:
 
-  '@ai-zen/agents-core@4.4.0(ws@8.22.0)(zod@4.5.4)':
+  '@ai-zen/agents-core@4.5.0(ws@8.22.0)(zod@4.5.4)':
     dependencies:
       '@ai-zen/event-bus': 1.1.0
       openai: 7.8.0(ws@8.22.0)(zod@4.5.4)
@@ -1148,9 +1148,9 @@ snapshots:
       - ws
       - zod
 
-  '@ai-zen/agents-sdk@1.0.0-alpha.7(ws@8.22.0)(zod@4.5.4)':
+  '@ai-zen/agents-sdk@1.0.0-alpha.8(ws@8.22.0)(zod@4.5.4)':
     dependencies:
-      '@ai-zen/agents-core': 4.4.0(ws@8.22.0)(zod@4.5.4)
+      '@ai-zen/agents-core': 4.5.0(ws@8.22.0)(zod@4.5.4)
       '@modelcontextprotocol/sdk': 1.30.0(zod@4.5.4)
       dayjs: 1.11.23
       openai: 7.8.0(ws@8.22.0)(zod@4.5.4)

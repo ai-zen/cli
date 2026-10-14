@@ -9,9 +9,8 @@
  * 本模块不依赖 React / Ink，可独立单测。
  */
 
-import { AgentNS } from "@ai-zen/agents-core";
+import { AgentNS, sumUsage } from "@ai-zen/agents-core";
 import type { SubAgentContext } from "@ai-zen/agents-core";
-import { addUsage, sumMessagesUsage, ZERO_USAGE } from "../usage.js";
 
 import {
   AutoRefreshToolsPlugin,
@@ -66,13 +65,6 @@ export class ChatSession {
   private readonly notifier: ChatSessionNotifier;
   private readonly requestConfirm?: (q: string) => Promise<boolean>;
   private readonly disposers: Array<() => void> = [];
-
-  /**
-   * 子 Agent 累计用量。
-   * 子 Agent 是独立 Agent 实例，其 messages 不在父 Agent 的 messages 中，
-   * 故在每次委派结束（onSubAgentEnd）时单独累加；会话重置（/new）时归零。
-   */
-  private subAgentUsage: AgentNS.Usage = { ...ZERO_USAGE };
 
   private constructor(
     migrationService: TaskMigrationService,
@@ -137,12 +129,14 @@ export class ChatSession {
   }
 
   /**
-   * 本会话累计 token 用量 = 父 Agent 全部 assistant 消息的 usage 之和 + 子 Agent 累计。
+   * 本会话累计 token 用量。
    *
-   * 每轮请求都会重发完整历史，故「各 assistant 消息 usage 之和」即计费口径的累计消耗。
+   * 逐消息求和（`sumUsage`）：含各 assistant 消息的 `usage`（自身响应）与工具消息的
+   * `subAgentUsage`（内部委派——含所有层级子 Agent）。每轮请求都会重发完整历史，
+   * 故求和即计费口径的累计消耗；且随消息持久化，续接 / `/load` 亦不丢。
    */
   get totalUsage(): AgentNS.Usage {
-    return addUsage(sumMessagesUsage(this.agent.messages), this.subAgentUsage);
+    return sumUsage(this.agent.messages);
   }
 
   /** 发送一条消息；内容变化经 `notifier.onChange` 通知，`resolve` 表示本轮结束 */
@@ -182,7 +176,6 @@ export class ChatSession {
     this.ctx.currentId = this.currentId;
     this.currentName = this.currentId;
     this.ctx.currentName = this.currentName;
-    this.subAgentUsage = { ...ZERO_USAGE };
     await this.attach(agent);
     this.notifier.onChange(true);
 
@@ -317,13 +310,10 @@ export class ChatSession {
       subAgent.events.on("error", onError);
       notify(true);
     };
-    const onSubEnd = ({ subAgent, toolCallContext }: SubAgentContext) => {
+    const onSubEnd = ({ toolCallContext }: SubAgentContext) => {
       const name = toolCallContext?.tool_call?.function?.name || "子任务";
-      // 子 Agent 的 messages 不在父 Agent 中，委派结束时把它的用量并入本会话累计
-      this.subAgentUsage = addUsage(
-        this.subAgentUsage,
-        sumMessagesUsage(subAgent.messages),
-      );
+      // 子 Agent 的用量由 core 在委派边界钉到父侧 tool 消息的 subAgentUsage 上，
+      // 故此处只需提示，累计经 sumUsage(agent.messages) 自然包含
       this.notifier.onNotice(`✓ 子任务 ${name} 完成`, "info");
       notify(true);
     };

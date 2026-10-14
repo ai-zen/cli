@@ -61,7 +61,7 @@ describe("ChatSession.reset（/new 归档旧对话）", () => {
 });
 
 describe("ChatSession.totalUsage（本会话累计用量）", () => {
-  it("对本会话全部 assistant 消息的 usage 求和", async () => {
+  it("逐消息求和：assistant 的 usage + 工具消息的 subAgentUsage（含子 Agent）", async () => {
     const session = await ChatSession.create(
       { modelId: "m1" },
       { onChange: () => {}, onNotice: () => {} },
@@ -74,6 +74,11 @@ describe("ChatSession.totalUsage（本会话累计用量）", () => {
         usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
       } as any,
       {
+        role: AgentNS.Role.Tool,
+        content: "子任务结果",
+        subAgentUsage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
+      } as any,
+      {
         role: AgentNS.Role.Assistant,
         content: "第二轮",
         usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
@@ -81,9 +86,9 @@ describe("ChatSession.totalUsage（本会话累计用量）", () => {
     );
 
     expect(session.totalUsage).toEqual({
-      prompt_tokens: 30,
-      completion_tokens: 13,
-      total_tokens: 43,
+      prompt_tokens: 130,
+      completion_tokens: 33,
+      total_tokens: 163,
     });
   });
 });

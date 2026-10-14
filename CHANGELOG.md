@@ -1,3 +1,17 @@
+## [1.0.0-alpha.6] - 2026-10-14
+
+### ♻️ 重构
+
+- **累计用量改用 SDK 的 `sumUsage`，移除 CLI 自建的内存累加器** —— 依赖 `@ai-zen/agents-sdk` `1.0.0-alpha.8` / `@ai-zen/agents-core` `4.5.0`：除助手消息的 `usage` 外，委派产生的用量现由 core 在委派边界钉到工具消息的 `subAgentUsage` 上。故 `ChatSession.totalUsage` 直接 `sumUsage(agent.messages)` 即可（含所有层级的子 Agent），删掉 `src/usage.ts` 与 `onSubAgentEnd` 内存回灌——子 Agent 开销随消息持久化，续接 / `/load` 亦不丢，且不再有双重计数风险。
+
+### ⚠️ 依赖
+
+- `@ai-zen/agents-sdk` `1.0.0-alpha.7 → 1.0.0-alpha.8`、`@ai-zen/agents-core` `^4.4.0 → ^4.5.0`
+
+### ✅ 测试
+
+- 移除 `src/usage.test.ts`（逻辑下沉 core，已由 core 覆盖）；`chat-session.test.ts` 的 `totalUsage` 用例改为覆盖「assistant 的 usage + 工具消息的 subAgentUsage」求和。全量单测 **16 文件 / 226 用例**通过，`tsc --noEmit` 与 `npm run build` 零错误。
+
 ## [1.0.0-alpha.5] - 2026-10-14
 
 ### 🚀 新功能
