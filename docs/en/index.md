@@ -16,6 +16,7 @@ When collaborating with AI in a bare terminal, you often have to manually switch
 
 - **Dual-mode execution**: no arguments on an interactive terminal enters the TUI; arguments or a pipe/redirect runs pure stdio (result on stdout, logs on stderr, clear exit codes).
 - **Modern TUI**: a full-screen Ink/React interface — animated gradient ASCII splash, straight into chat, a bottom-pinned input area and status bar, and an inline `/` command menu.
+- **Status-bar token usage**: the status bar shows `model · agent · this-round / cumulative tokens · generating`; the cumulative figure is `sumUsage(agent.messages)`, including every sub-agent level.
 - **Syntax highlighting**: tool-call arguments are **JSON**-highlighted, the answer/reasoning is **Markdown-source-colored**, and fenced code blocks are highlighted by language with the fence markers kept (highlight data from `highlight.js` / `lowlight`; the CLI only renders it).
 - **Command hints**: typing `/` in a conversation lists the available commands with descriptions below the input line, narrowing the candidates by prefix as you type.
 - **20 built-in tools**: the file-system and image-processing toolset provided by `@ai-zen/agents-sdk` — see [Built-in Tools](./tools.md).

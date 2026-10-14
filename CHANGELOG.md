@@ -1,3 +1,16 @@
+## [1.0.0-alpha.7] - 2026-10-14
+
+### 📄 文档
+
+- **状态栏 token 用量纳入文档** —— `docs/zh|en/index.md` 的「主要特性」补上「状态栏实时展示 模型 · Agent · 本轮/累计 token 用量 · 生成状态」（此前仅在 README 提及），累计口径为 `sumUsage(agent.messages)`（含所有层级的子 Agent）。
+- 修正 `TODO.md` 中已过时的路径引用（`src/tui/config-wizard.tsx` → 目录 `src/tui/config-wizard/`）。
+
+### ⚠️ 依赖
+
+- `@ai-zen/agents-core` `^4.5.0 → ^4.5.1`、`@ai-zen/agents-sdk` `1.0.0-alpha.8 → 1.0.0-alpha.9`
+
+> 纯文档修正，无代码变更。
+
 ## [1.0.0-alpha.6] - 2026-10-14
 
 ### ♻️ 重构
