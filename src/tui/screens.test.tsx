@@ -59,14 +59,15 @@ describe("RENDER_OPTIONS（终端协议决策锁定）", () => {
 });
 
 describe("StatusBar", () => {
-  it("展示模型、Agent 与 token", () => {
+  it("展示模型、Agent、本轮与累计 token", () => {
     const { lastFrame, unmount } = render(
-      <StatusBar model="deepseek-v4-flash" agent="default" tokens={123} />,
+      <StatusBar model="deepseek-v4-flash" agent="default" lastTokens={123} totalTokens={4567} />,
     );
     const frame = lastFrame() ?? "";
     expect(frame).toContain("deepseek-v4-flash");
     expect(frame).toContain("default");
-    expect(frame).toContain("123");
+    expect(frame).toContain("本轮 123");
+    expect(frame).toContain("累计 4567");
     unmount();
   });
 });

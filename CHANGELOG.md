@@ -1,3 +1,14 @@
+## [1.0.0-alpha.5] - 2026-10-14
+
+### 🚀 新功能
+
+- **状态栏展示 token 累计消耗** —— 依托 `@ai-zen/agents-sdk` `1.0.0-alpha.7` / `@ai-zen/agents-core` `4.4.0` 为每条 assistant 消息钉上的 `usage`，新增 `src/usage.ts`（`addUsage` / `sumMessagesUsage` 纯函数）与 `ChatSession.totalUsage`：对本会话全部 assistant 消息的 `usage` 求和即计费口径的累计消耗；子 Agent 的 messages 不在父 Agent 中，故在 `onSubAgentEnd` 单独累加并入、`/new` 时归零。状态栏由「`{tokens} tok`」升级为「`本轮 x · 累计 y tok`」（本轮 = `lastUsage.total_tokens`，累计 = `totalUsage.total_tokens`）。
+- **依赖升级** —— `@ai-zen/agents-sdk` `1.0.0-alpha.6 → 1.0.0-alpha.7`、`@ai-zen/agents-core` `^4.3.2 → ^4.4.0`（后者新增 `AgentNS.Message.usage` 逐条 token 用量）。
+
+### ✅ 测试
+
+- 新增 `src/usage.test.ts`（4 例）；`chat-session.test.ts` 增补 `totalUsage` 求和用例；`screens.test.tsx` 的 `StatusBar` 用例更新。全量单测 **17 文件 / 230 用例**通过，`tsc --noEmit` 与 `npm run build` 零错误。
+
 ## [1.0.0-alpha.4] - 2026-10-13
 
 ### ♻️ 重构

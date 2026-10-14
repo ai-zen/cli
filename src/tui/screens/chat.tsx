@@ -500,7 +500,8 @@ export function Chat(props: ChatScreenProps) {
   }
 
   const session = sessionRef.current;
-  const tokens = session?.lastUsage?.total_tokens;
+  const lastTokens = session?.lastUsage?.total_tokens;
+  const totalTokens = session?.totalUsage.total_tokens;
   const cols = columns ?? 80;
 
   const messages = session?.messages ?? [];
@@ -637,7 +638,8 @@ export function Chat(props: ChatScreenProps) {
       <StatusBar
         model={props.modelId}
         agent={props.agentId ?? "default"}
-        tokens={tokens}
+        lastTokens={lastTokens}
+        totalTokens={totalTokens}
         busy={busy}
         hint={
           !ready

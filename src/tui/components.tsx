@@ -105,12 +105,15 @@ export function SelectList<T>({ items, onSelect, isActive = true, initialIndex =
 export interface StatusBarProps {
   model: string;
   agent: string;
-  tokens?: number;
+  /** 最近一轮的 token 用量（lastUsage.total_tokens） */
+  lastTokens?: number;
+  /** 本会话累计 token 用量（含子 Agent） */
+  totalTokens?: number;
   busy?: boolean;
   hint?: string;
 }
 
-export function StatusBar({ model, agent, tokens, busy, hint }: StatusBarProps) {
+export function StatusBar({ model, agent, lastTokens, totalTokens, busy, hint }: StatusBarProps) {
   return (
     <Box paddingX={1} justifyContent="space-between" flexShrink={0} width="100%">
       <Text wrap="truncate">
@@ -118,7 +121,8 @@ export function StatusBar({ model, agent, tokens, busy, hint }: StatusBarProps) 
         <Text color={theme.accent}>{model}</Text>
         <Text color={theme.dim}> · agent </Text>
         <Text color={theme.assistant}>{agent}</Text>
-        {tokens != null ? <Text color={theme.dim}> · {tokens} tok</Text> : null}
+        {lastTokens != null ? <Text color={theme.dim}> · 本轮 {lastTokens}</Text> : null}
+        {totalTokens != null ? <Text color={theme.dim}> · 累计 {totalTokens} tok</Text> : null}
         {busy ? <Text color={theme.tool}> · ⏳ 生成中</Text> : null}
       </Text>
       <Text color={theme.faint} wrap="truncate">

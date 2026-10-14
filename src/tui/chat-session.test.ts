@@ -59,3 +59,31 @@ describe("ChatSession.reset（/new 归档旧对话）", () => {
     expect(existsSync(convFile(session.currentId))).toBe(false);
   });
 });
+
+describe("ChatSession.totalUsage（本会话累计用量）", () => {
+  it("对本会话全部 assistant 消息的 usage 求和", async () => {
+    const session = await ChatSession.create(
+      { modelId: "m1" },
+      { onChange: () => {}, onNotice: () => {} },
+    );
+    session.messages.push(
+      { role: AgentNS.Role.User, content: "你好" } as any,
+      {
+        role: AgentNS.Role.Assistant,
+        content: "第一轮",
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      } as any,
+      {
+        role: AgentNS.Role.Assistant,
+        content: "第二轮",
+        usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
+      } as any,
+    );
+
+    expect(session.totalUsage).toEqual({
+      prompt_tokens: 30,
+      completion_tokens: 13,
+      total_tokens: 43,
+    });
+  });
+});
