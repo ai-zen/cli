@@ -3,8 +3,20 @@
 import { installHook, uninstallHook } from "./hook.js";
 import { resolveInvocation } from "./mode.js";
 import { runStdio } from "./stdio-runner.js";
-import { runTui } from "./tui/index.js";
 import { CLI_VERSION } from "./version.js";
+
+// ⚠️ 必须在加载 React/Ink 之前把 NODE_ENV 定为 production。
+//
+// 背景（OOM 根因）：Node 官方分发版没有内置“production” React，react/react-reconciler
+// 的入口用 `process.env.NODE_ENV !== "production"` 决定引用哪个构建。若此变量为空，
+// 就会加载 *development* 版 reconciler —— 它每次渲染都会调用 `performance.measure()`
+// （User Timing API），而 Node 的 performance 条目缓冲**无界且从不逐出**。长时间流式
+// TUI 会话下条目数持续增长，约 55 分钟即把堆顶到 heap_size_limit（本机 ~1GB）触发 OOM。
+//
+// ESM 的静态 `import` 会被提升到模块体之前执行，若此处仍静态 `import "./tui/index.js"`，
+// 则 React 会在本行之前就被求值成 DEV 版。因此对 TUI 入口改用动态 import（见下方 tui 分支）。
+// 用 `||=` 而非 `??=`：空的 NODE_ENV 同样会被 React 视为非 production，需一并纠正。
+process.env.NODE_ENV ||= "production";
 
 /**
  * CLI 入口 —— 双模式路由
@@ -73,6 +85,10 @@ async function main(): Promise<void> {
       // 无参数且均为 TTY：进入全屏交互界面（Ink）。
       // 流式统一走 Ink —— 由 `RENDER_OPTIONS.incrementalRendering`（只重绘变化的行）
       // 压低输出量，SSH / 弱网下实测稳定。
+      //
+      // 动态 import：确保 React/Ink 的求值发生在上方 `process.env.NODE_ENV ||= "production"`
+      // 之后，从而加载 production 版 reconciler（避免 DEV 版 performance.measure 缓冲撑爆堆）。
+      const { runTui } = await import("./tui/index.js");
       await runTui();
       return;
     }

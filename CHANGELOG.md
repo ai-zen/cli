@@ -1,3 +1,13 @@
+## [1.0.0-alpha.8] - 2026-10-14
+
+### 🔧 修复
+
+- **修复长时间 TUI 会话内存无界增长导致的 OOM（崩溃）** —— CLI 入口此前从未设定 `NODE_ENV`，React 因而按 `process.env.NODE_ENV !== "production"` 载入 **development** 版 `react-reconciler`；该开发构建每次渲染都会调用 `performance.measure()`（User Timing API），而 Node 的 performance 条目缓冲**无上限、从不逐出**，长时间流式会话下条目持续累积，约 55 分钟即将堆顶到 `heap_size_limit`（本机 ~1GB）触发 OOM。现于 `src/index.ts` 顶部设 `process.env.NODE_ENV ||= "production"`；因 ESM 静态 `import` 会被提升到模块体之前执行，对 TUI 入口 `./tui/index.js` 改用动态 `import()`，确保 React/Ink 在 `NODE_ENV` 设定**之后**才被求值，从而加载 production 版 reconciler（该版不调用 `performance.measure`）。显式 `NODE_ENV=development` 仍保留开发构建，便于排查。
+
+### ✅ 测试
+
+- **端到端实证** —— 真实 ESM 下经入口加载 Ink 并连续重渲染 300 次：修复后 `performance.measure` 条目 **0 → 0**（production reconciler），显式 `NODE_ENV=development` 对照组 **0 → 905**（dev 埋点仍在）。全量单测 **16 文件 / 226 用例**通过，`tsc --noEmit` 与 `pnpm build` 零错误。
+
 ## [1.0.0-alpha.7] - 2026-10-14
 
 ### 📄 文档
