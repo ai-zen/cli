@@ -312,20 +312,27 @@ export function Chat(props: ChatScreenProps) {
 
     if (trimmed.startsWith("/")) {
       const name = trimmed.slice(1).toLowerCase();
-      await runCommand(name, trimmed, {
-        session: sessionRef.current!,
-        notice: (text, tone) => noticeChannel.push(text, tone),
-        clearTranscript,
-        rows: rows ?? 24,
-        exit,
-        suspendTerminal,
-        openWizard,
-        openKeyEditor,
-        doExit,
-        setPickerState,
-        setConfirmState,
-        setInputText,
-      });
+      // /migrate 会调用模型生成交接文档（较慢）：期间应像自动迁移一样拦住输入框。
+      const blocksInput = name === "migrate";
+      if (blocksInput) setBusy(true);
+      try {
+        await runCommand(name, trimmed, {
+          session: sessionRef.current!,
+          notice: (text, tone) => noticeChannel.push(text, tone),
+          clearTranscript,
+          rows: rows ?? 24,
+          exit,
+          suspendTerminal,
+          openWizard,
+          openKeyEditor,
+          doExit,
+          setPickerState,
+          setConfirmState,
+          setInputText,
+        });
+      } finally {
+        if (blocksInput) setBusy(false);
+      }
       return;
     }
 
@@ -463,7 +470,38 @@ export function Chat(props: ChatScreenProps) {
         insertAtCursor(char);
       }
     },
-    { isActive: !confirmState && !pickerState && !wizardStep },
+    // 生成 / 自动迁移期间主输入框整体失活：此时输入框已被 Spinner 顶替，若仍激活，
+    // 按键会被静默吞进隐藏的输入缓冲、待本轮结束后才冒出来（即「迁移过程中输入框
+    // 没被拦住」）。失活后改由下方「忙碌期」处理器只放行中止 / 退出 / 回看滚动。
+    { isActive: !busy && !confirmState && !pickerState && !wizardStep },
+  );
+
+  // 忙碌期（生成 / 迁移中）专用：输入框不可编辑，仅保留「中止(Ctrl+C) / 退出(Ctrl+D) / 回看滚动」。
+  useInput(
+    (char, key) => {
+      if (isTerminalReply(char)) return;
+      if (char === "c" && key.ctrl) {
+        sessionRef.current?.abort();
+        return;
+      }
+      if (char === "d" && key.ctrl) {
+        void doExit();
+        return;
+      }
+      if (key.pageUp) {
+        scrollByPage(-1);
+        return;
+      }
+      if (key.pageDown) {
+        scrollByPage(1);
+        return;
+      }
+      if ((key.upArrow || key.downArrow) && (key.shift || key.meta)) {
+        scrollByLine(key.upArrow ? -1 : 1);
+        return;
+      }
+    },
+    { isActive: busy && !confirmState && !pickerState && !wizardStep },
   );
 
   // 配置向导：整屏接管（凭据设置 / 配置中心），关闭后回到对话屏

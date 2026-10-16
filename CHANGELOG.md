@@ -1,3 +1,15 @@
+## [1.0.0-alpha.9] - 2026-10-14
+
+### 🔧 修复
+
+- **自动迁移与 CLI 的交互适配（两处）**：
+  - **迁移期间输入框未真正拦住** —— 主输入 `useInput` 的 `isActive` 此前只挡「确认框 / 选择器 / 配置向导」，未挡「生成中」态。自动迁移在 `send()` 内 `await onAfterSend` 执行（`busy` 为真、输入框已被 Spinner 顶替），但按键仍会被静默吞进隐藏的输入缓冲、待本轮结束才浮现。现令主输入在 `busy` 时整体失活，另设「忙碌期」处理器仅放行 `Ctrl+C` 中止 / `Ctrl+D` 退出 / `PgUp`·`Shift+↑↓` 回看；`/migrate` 手动迁移同样纳入 `busy`。
+  - **迁移完成后仍被总上下文护栏拦截** —— 迁移（prune）会物理重置上下文，却遗留 `agent.lastUsage`（迁移前那一次请求的 `prompt_tokens`）。`ContextGuardPlugin`（`onInnerLoopStart`，硬上限 `maxTokens × 1.5`）据此误判，迁移后第一条消息即被 `ContextOverflowError` 中断。现于迁移后清空 `agent.lastUsage`，护栏首轮无据可查而放行，待下一次响应以真实用量回填。
+
+### ✅ 测试
+
+- 新增 `src/migration-service.test.ts`：断言迁移后 `agent.lastUsage` 被清空（移除修复后该用例确会失败）。全量单测 **17 文件 / 227 用例**通过，`tsc --noEmit` 与 `pnpm build` 零错误。
+
 ## [1.0.0-alpha.8] - 2026-10-14
 
 ### 🔧 修复

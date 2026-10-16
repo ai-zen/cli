@@ -38,6 +38,14 @@ export function createMigrationService(
       log(`✅ 原对话已保存：${ctx.currentName}`);
     },
     onMigrated: async (mctx: MigrationContext) => {
+      // 清空「最近一次用量」：prune 策略已把上下文物理重置（仅留系统提示 + 交接文档），
+      // 但 lastUsage 仍保留迁移前那一次请求的 prompt_tokens。若不清理，下一次发送时
+      // ContextGuardPlugin（`onInnerLoopStart` 以 maxTokens × 1.5 为硬上限）会拿这个
+      // 陈旧值判定，立即抛出「上下文严重超限」而中断——用户表现为「迁移完成后第一条
+      // 消息就被总上下文保护插件拦截」。置空后护栏首轮无据可查而放行，待下一次响应
+      // 以真实（已大幅缩小的）用量回填。
+      mctx.agent.lastUsage = undefined;
+
       // 迁移开启新会话：分配新的会话 id 与名称
       const id = generateConversationId();
       ctx.currentId = id;
