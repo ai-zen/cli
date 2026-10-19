@@ -1,6 +1,6 @@
 {
   "name": "@ai-zen/cli",
-  "version": "1.0.0-alpha.11",
+  "version": "1.0.0-alpha.12",
   "description": "AI-ZEN CLI - dual-mode AI terminal: pure stdio pipelines and an interactive TUI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -26,7 +26,7 @@ export interface ConversationContext {
   input: string;
   currentName: string;
   modelId: string;
-  currentId: string | undefined;
+  currentId: string;
   agentId: string | undefined;
   running: boolean;
   shouldSend?: boolean;

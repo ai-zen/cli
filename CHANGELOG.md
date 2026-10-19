@@ -1,3 +1,21 @@
+## [1.0.0-alpha.12] - 2026-10-20
+
+### 🔧 修复
+
+- **自动迁移后旧会话被覆盖、历史丢失** —— `ChatSession` 曾把会话 id 存两份（`this.currentId` 与 `ctx.currentId`）。手动 `/migrate` 与 `/new` 会同步两份，但**自动迁移**由 SDK 的 `AutoMigratePlugin` 直接驱动 `HandoffService.migrate()`，**不经过 `ChatSession` 的任何方法**，新 id 只写进了 `ctx.currentId`。于是 `ConversationPersistPlugin.getId()` 仍返回旧 id，迁移后第一次落盘就把 `prune` 产生的「系统提示 + 交接断点」写进**旧会话文件**，把已保存的完整历史覆盖掉（用户表现为「交接之后历史全没了，只剩交接文档」）。
+  - 修法：`currentId` / `currentName` 改为**代理 `ctx` 的 getter/setter**，消灭双真相源——谁更新 `ctx` 都立刻生效。
+  - `ConversationContext.currentId` 由 `string | undefined` 收紧为 `string`；`reset()` 中两行冗余双写随之删除。
+- **测试污染**：`chat-session.test.ts` 的端到端用例会把交接文档写进 `<cwd>/.ai-zen/handoffs`，现改指临时目录并自动清理。
+
+### ✅ 测试
+
+- 新增 3 例：`ctx` 变更即时生效、赋值回写 `ctx`、端到端（真实 `handoffService.migrate()` 后 id 必须跟随；该用例在修复前会失败，已反向验证）。全量 **17 文件 / 232 用例**通过，`tsc`（含测试工程）与 `build` 零错误。
+
+### 📄 文档
+
+- `docs/{zh,en}/migration.md`「迁移链路」补充「会话 id 只有一个真相源」的约束与失效表现；`docs/manifest.json`、`README{,.zh}.md` 版本号同步。
+- 依赖仍为 `@ai-zen/agents-sdk` `1.0.0-alpha.11`（本次无 SDK 改动）。
+
 ## [1.0.0-alpha.11] - 2026-10-20
 
 ### ⚠️ 依赖

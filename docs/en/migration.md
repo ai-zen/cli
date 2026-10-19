@@ -105,6 +105,8 @@ Non-interactive environments (pipes, redirects, e2e scripts) have no picker: the
 
 The old conversation is always saved before pruning, so a failed handoff never costs you history: you can retry or keep chatting.
 
+> **The conversation id has exactly one source of truth.** The new id written by `onMigrated` must be visible to the persistence layer immediately (in the CLI, `ChatSession.currentId` proxies `ConversationContext.currentId` instead of holding its own copy). Otherwise the next auto-persist still uses the **old** id and writes the post-`prune` shell (system prompt + breakpoint) **over the old conversation file** — from the user's side, "after the handoff my history was gone and only the handoff doc was left".
+
 ## Cost notes
 
 - Each handoff writes the document **once**; the code never re-generates or re-summarizes it.

@@ -61,6 +61,84 @@ describe("ChatSession.reset（/new 归档旧对话）", () => {
   });
 });
 
+describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
+  it("只改 ctx.currentId 时 session.currentId 立即跟随（自动迁移换 id 的回归）", async () => {
+    const session = await ChatSession.create(
+      { modelId: "m1" },
+      { onChange: () => {}, onNotice: () => {} },
+    );
+    const before = session.currentId;
+
+    // 模拟 SDK 的 HandoffService.onMigrated：自动迁移由 AutoMigratePlugin 直接驱动，
+    // 只写 ctx.currentId，不经过 ChatSession 的任何方法。
+    // 旧实现另持一份 this.currentId，此处会停在旧值上，导致
+    // ConversationPersistPlugin.getId() 拿到旧 id，把 prune 后的空会话写回旧文件。
+    (session as any).ctx.currentId = "会话_迁移后";
+
+    expect(session.currentId).toBe("会话_迁移后");
+    expect(session.currentId).not.toBe(before);
+  });
+
+  it("赋值 session.currentId 会同步写回 ctx", async () => {
+    const session = await ChatSession.create(
+      { modelId: "m1" },
+      { onChange: () => {}, onNotice: () => {} },
+    );
+
+    session.currentId = "会话_手动";
+
+    expect((session as any).ctx.currentId).toBe("会话_手动");
+  });
+  it("端到端：handoffService.migrate() 之后 currentId 必须跟随新会话（自动迁移路径）", async () => {
+    const session = await ChatSession.create(
+      { modelId: "m1" },
+      { onChange: () => {}, onNotice: () => {} },
+    );
+    session.currentId = "会话_自动迁移前";
+    session.messages.push({ role: AgentNS.Role.User, content: "旧对话内容" } as any);
+
+    // 补齐 summary 模式所需的最小 agent 面（无 write 工具 → 走独立摘要，不触网）
+    const agent = (session as any).agent;
+    agent.client = {
+      chat: {
+        completions: {
+          create: async () => ({
+            choices: [{ message: { content: "# 交接文档\n".padEnd(600, "x") } }],
+          }),
+        },
+      },
+    };
+    agent.model = "m";
+    agent.modelConfig = {};
+    agent.tools = [];
+    agent.definition = { messages: [] };
+
+    // 交接文档目录固化自模块加载时的 cwd（`PROJECT_HANDOFFS_DIR`），
+    // 这里改指临时区，避免在仓库里留下 .ai-zen/handoffs（afterAll 会清理 state.dir）
+    (session as any).handoffService.handoffDirPath = join(state.dir, "handoffs");
+
+    // 模拟 AutoMigratePlugin：直接调 SDK 服务，不经过 ChatSession.migrate()
+    await (session as any).handoffService.migrate({
+      agent,
+      conversationId: "会话_自动迁移前",
+    });
+
+    // 修复前：currentId 停在旧值 → ConversationPersistPlugin 会把 prune 后的
+    // 「系统提示 + 交接断点」写回「会话_自动迁移前」，覆盖掉完整历史。
+    expect(session.currentId).not.toBe("会话_自动迁移前");
+
+    const archived = JSON.parse(
+      await fs.readFile(
+        join(state.dir, "cli", "conversations", "会话_自动迁移前.json"),
+        "utf-8",
+      ),
+    );
+    // 旧会话保住了原历史（含交接回合），没有被 prune 后的空壳覆盖
+    expect(archived.messages.length).toBeGreaterThanOrEqual(1);
+    expect(String(archived.messages[0].content)).toContain("旧对话内容");
+  });
+});
+
 describe("ChatSession.totalUsage（本会话累计用量）", () => {
   it("逐消息求和：assistant 的 usage + 工具消息的 subAgentUsage（含子 Agent）", async () => {
     const session = await ChatSession.create(

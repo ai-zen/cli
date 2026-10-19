@@ -61,8 +61,28 @@ export class ChatSession {
   readonly agentId: string;
   readonly maxTokens?: number;
 
-  currentName: string;
-  currentId: string;
+  /**
+   * 会话 id / 名称的**唯一真相源是 `ctx`**（`ConversationContext`）。
+   *
+   * 为什么必须代理而不是各存一份：自动迁移由 SDK 的 `AutoMigratePlugin` 直接驱动
+   * `HandoffService.migrate()`，**不经过本类任何方法**，新 id 只会写进 `ctx.currentId`
+   * （`onMigrated` 钩子）。若本类另持一份 `currentId`，自动迁移后它就停在旧值上，
+   * 而 `ConversationPersistPlugin.getId()` 读的正是这份旧值——于是 prune 之后的
+   * 「系统提示 + 交接断点」会被写进**旧会话文件**，把已保存的完整历史覆盖掉。
+   */
+  get currentId(): string {
+    return this.ctx.currentId;
+  }
+  set currentId(id: string) {
+    this.ctx.currentId = id;
+  }
+
+  get currentName(): string {
+    return this.ctx.currentName;
+  }
+  set currentName(name: string) {
+    this.ctx.currentName = name;
+  }
 
   private agent!: SdkAgent;
   private readonly ctx: ConversationContext;
@@ -178,9 +198,7 @@ export class ChatSession {
     this.agent = agent;
     this.ctx.agent = agent;
     this.currentId = generateConversationId();
-    this.ctx.currentId = this.currentId;
     this.currentName = this.currentId;
-    this.ctx.currentName = this.currentName;
     await this.attach(agent);
     this.notifier.onChange(true);
 
@@ -218,9 +236,8 @@ export class ChatSession {
       mode,
       conversationId: this.currentId,
     });
-    // 迁移后服务会开启新会话，同步会话元信息
-    this.currentName = this.ctx.currentName;
-    this.currentId = this.ctx.currentId ?? generateConversationId();
+    // 迁移后服务会开启新会话：新 id 已写进 ctx（唯一真相源），这里只需同步名称并刷新界面
+    this.currentName = this.currentId;
     this.notifier.onChange(true);
     return ctx.handoffPath;
   }
