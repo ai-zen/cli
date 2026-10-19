@@ -52,7 +52,7 @@ MCP 服务器配置会从多个来源**由高到低**合并，同名服务器以
 ## 动态加载工具
 
 - **`load_mcp`**：连接 MCP 服务器并列出其工具/资源/提示（幂等，重复调用跳过重复连接）。服务器枚举由 `filteredMcps` 自动推导。
-- **`call_mcp_tool`**：通过官方 `Client.callTool()` API 调用服务器上的工具。
+- **`call_mcp_tool`**：通过官方 `Client.callTool()` API 调用服务器上的工具。**仅对文本做输出保护**：超过 `maxToolOutput`（默认 32768 字符）时完整文本落盘为 `result.txt`，只返回警告和头尾预览，可用 `read` 分批读取；图片、音频等媒体转内容块原样返回，不受上限约束。
 - **`read_mcp_resource`**：读取服务器上的资源。
 
 ## OAuth（HTTP transport）— 暂不支持

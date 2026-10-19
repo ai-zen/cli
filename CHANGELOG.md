@@ -1,3 +1,18 @@
+## [1.0.0-alpha.11] - 2026-10-20
+
+### ⚠️ 依赖
+
+- `@ai-zen/agents-sdk` `1.0.0-alpha.10 → 1.0.0-alpha.11`（`createCallMcpTool` 新增 `env` 参数为破坏性变更；CLI 不直接调用该工厂，无代码改动）。
+
+### 🔧 变更（随 SDK）
+
+- **`call_mcp_tool` 输出保护**：调用 MCP 工具时，文本输出超过 `maxToolOutput`（默认 32768 字符）会完整落盘为 `result.txt`，只返回警告 + 头尾预览，可用 `read` 分批读取——不再一次把上万字符灌进上下文。
+- **图片 / 音频 / 二进制资源原样返回**：MCP 返回的 `image` / `audio` / `resource.blob` 转成 `image_url` / `file` 内容块透传（`resource.text` 并入正文、`resource_link` 转为可读线索），不再静默丢弃；媒体不受 `maxToolOutput` 约束。
+
+### 📄 文档
+
+- `docs/{zh,en}/mcp.md` 说明「仅文本受输出保护、媒体不受上限约束」；`docs/{zh,en}/getting-started.md`、`docs/manifest.json`、`README{,.zh}.md` 版本同步。
+
 ## [1.0.0-alpha.10] - 2026-10-20
 
 ### 💥 变更

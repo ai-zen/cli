@@ -52,7 +52,7 @@ MCP server configurations are merged from multiple sources **high to low**, with
 ## Dynamically loaded tools
 
 - **`load_mcp`**: connect to an MCP server and list its tools/resources/prompts (idempotent; repeated calls skip reconnection). The server enumeration is inferred automatically from `filteredMcps`.
-- **`call_mcp_tool`**: call a tool on the server via the official `Client.callTool()` API.
+- **`call_mcp_tool`**: call a tool on the server via the official `Client.callTool()` API. **Only text is output-guarded**: when it exceeds `maxToolOutput` (default 32768 chars), the full text is dumped to `result.txt` and only a warning plus head/tail previews are returned, readable in batches via `read`; images, audio and other media are returned as content blocks untouched, exempt from the limit.
 - **`read_mcp_resource`**: read a resource on the server.
 
 ## OAuth (HTTP transport) — not yet supported
