@@ -1,3 +1,36 @@
+## [1.0.0-alpha.10] - 2026-10-20
+
+### 💥 变更
+
+- **交接与迁移拆成两条命令**（语义唯一，命名与实现对齐）：
+  - **`/handoff`** —— 原 agent 停手、核实状态、把交接文档写到 `<项目>/.ai-zen/handoffs/`，**会话照旧**（不弹确认，可反复执行；交接回合留在 `agent.messages` 里，可继续要求细化同一份文档）；
+  - **`/migrate`**（别名 `/migration`）—— 同一次交接 + 清历史 + 开新会话（需确认）。
+  - 两条都支持 `self` / `summary` 参数（如 `/handoff summary`、`/migrate self`）跳过默认选择。
+- **自动迁移改为「执行者三选一」选择器**：上下文超阈值时不再只问「是否迁移」，而是选择 **原 agent 自交接（默认高亮，保真）/ 独立摘要（便宜）/ 跳过本次**。选择器复用既有 picker 浮层（`setPickerState`）。非交互环境（管道、重定向、e2e）无选择通道，按默认执行者迁移，不阻塞、不额外输出。
+- **交接文档目录**：新增 `PROJECT_HANDOFFS_DIR = <cwd>/.ai-zen/handoffs`，交接文档落在项目内，可随仓库共享/评审。
+
+### ♻️ 重构
+
+- **`src/migration-service.ts` → `src/handoff-service.ts`**：`createMigrationService` → `createHandoffService`，钩子从 `onBeforeMigrate` / `onMigrated` 改为 `onBeforeHandoff` / `onHandoff` / `onMigrated`。存档旧会话移到 `onHandoff`（此时已包含交接回合，归档可审计）；`/handoff` 不切换会话也因此不需要额外存档（`ConversationPersistPlugin` 每轮已落盘）。
+- **`src/auto-migrate-confirm-plugin.ts` → `src/auto-migrate-confirm.ts`**：`AutoMigrateConfirmPlugin`（继承 + 重写 `onAfterSend`）退化为 `createAutoMigratePlugin()` 工厂——「何时迁移」仍在 SDK 插件里，「用谁交接」通过 SDK 新增的 `resolveMode` 回调注入，不再重复实现阈值判断。
+- `src/agent-creator.ts` 抽出并导出 `listSkillDirs()`：Scope 装配与交接服务（读取 `handoff` Skill 正文）共用同一份目录优先级，避免两处各算一遍。
+- `ChatSessionOptions.requestConfirm` → `requestMode`（返回 `HandoffMode | null`）；`ChatSession.migrate()` / `handoff()` 返回文档路径；`ConversationContext.migrationService` → `handoffService`。
+- `ContextGuardPlugin` 接线 `isSuspended: () => handoffService.busy`：交接回合护栏从 `× 1.5` 放宽到 `× 2`。
+- 斜杠命令解析支持参数：命令名取首个 token（`/migrate summary` 不再被当成未知命令）。
+
+### ⚠️ 依赖
+
+- `@ai-zen/agents-sdk` `1.0.0-alpha.9 → 1.0.0-alpha.10`（`TaskMigrationService` → `HandoffService` 为破坏性变更）。
+
+### ✅ 测试
+
+- 新增 `src/handoff-service.test.ts`（迁移清 `lastUsage` / 新会话落盘 / `/handoff` 不切会话）、`src/auto-migrate-confirm.test.ts`（非交互默认值、选择透传、取消跳过、busy 让行）。全量 **17 文件 / 229 用例**通过，`tsc --noEmit`（含测试工程）与 `build` 零错误。
+
+### 📄 文档
+
+- `docs/{en,zh}/migration.md` 重写为「任务交接与迁移」：两条命令的差异、两种执行者的取舍、自交接的代码级保障（守卫/放宽/防递归）、文档位置与命名、模板由 `handoff` Skill 承载（`metadata.custom: "true"` 退出同步、可项目级覆盖）、成本说明。网站镜像同步。
+- `README.md` / `README.zh.md` 命令表与「任务交接与迁移」章节、`docs/{en,zh}/index.md` 特性与导航同步。
+
 ## [1.0.0-alpha.9] - 2026-10-14
 
 ### 🔧 修复

@@ -1,63 +1,117 @@
 ---
-title: Task Migration
-description: Automatic task migration in @ai-zen/cli when the context limit is exceeded, the /migrate manual trigger, and the handoff document structure.
+title: Task Handoff & Migration
+description: How @ai-zen/cli writes handoff documents (`/handoff`) and migrates to a new session (`/migrate`), the two handoff executors, and where handoff documents live.
 outline: deep
 ---
 
-# Task Migration
+# Task Handoff & Migration
 
-As a conversation's context approaches the model's context-window limit, continuing the conversation causes information to be truncated or requests to fail. **Task migration** generates a **handoff document** that records how far the task has progressed, what remains, and the key decisions, then starts a **new session** with that document as context, achieving seamless continuation.
+As a conversation's context approaches the model's context-window limit, continuing causes truncation or failed requests. Two related but distinct concepts cover this:
+
+| Concept | What it does | Command |
+|---|---|---|
+| **Handoff** | Stops the current work and writes a handoff document. The session keeps running. | `/handoff` |
+| **Migration** | Handoff **plus** clearing history and starting a new session with that document. | `/migrate` |
+
+Migration is therefore "handoff + onboarding": the old agent steps down, the new session picks up from the document.
+
+## Handoff document
+
+Every handoff (manual or automatic) produces one Markdown file:
+
+```
+<project>/.ai-zen/handoffs/<YYYYMMDD-HHmmss>-<conversationId first 8 chars>.md
+```
+
+- The directory sits inside the project so the document can be reviewed and committed alongside the code.
+- The file name is deterministic and contains the originating conversation id, making it easy to trace back.
+- The breakpoint message injected into a new session contains **only the path** — the next agent reads it with `read` when it actually needs the details.
+
+### The template lives in a Skill, not in code
+
+The document structure and writing rules are defined by the `handoff` skill:
+
+```
+~/.ai-zen/skills/handoff/SKILL.md
+```
+
+It is released by the SDK on first bootstrap and synced on later versions:
+
+- Untouched (no `metadata.custom: "true"` in the frontmatter) → overwritten with the latest version, so template improvements reach existing users;
+- Marked `custom: "true"` → treated as yours, never overwritten.
+
+You can also drop a project-level `./.ai-zen/skills/handoff/SKILL.md` to override it for one repository (normal skill precedence applies).
+
+The code does **not** carry a second copy of the section list. Its only responsibilities are: read the skill body → inject it → validate that a file was actually written → fall back to a minimal built-in template if the skill is missing.
+
+Sections produced by the default template:
+
+- **💬 对话断点** — the last request/summary exchange.
+- **🎯 任务目标** — what the user actually wants (intent and acceptance criteria).
+- **📊 当前状态** — branch/commit, uncommitted changes, test status, running processes/ports.
+- **✅ 已完成** — each item with its artifact path and how it was verified.
+- **📋 未完成** — prioritized, each with the "next smallest action".
+- **🧠 关键决策** — rationale, plus dead ends to avoid.
+- **⚠️ 约束与偏好** — user rules, project conventions, untouchable parts.
+- **📁 文件索引** — path + purpose + whether it changed.
+- **🔔 接手第一步** — up to three commands the successor can run immediately.
+
+## Two executors
+
+| Executor | Who writes | Strength | Cost |
+|---|---|---|---|
+| `self` (**default**) | The **original agent**, in its own session, after stopping | Sees the full context, can verify real state with tools | +1~2 full-context requests (input side) |
+| `summary` | A single independent model call over the serialized history | Cheap and deterministic | No tools, no original-session context — lower fidelity |
+
+`self` is the default because fidelity is the whole point of a handoff. `summary` is the escape hatch, and also the **one-way fallback**: if `self` fails (no `write` tool, file missing or too small after one retry, tool/guard error), the service degrades to `summary` and tells you so. The reverse never happens — it would add another full request at the worst possible moment.
+
+### Why `self` is reliable
+
+- **Stopping is code-enforced, not just requested.** During the handoff turn a one-shot `HandoffGuardPlugin` rejects `edit` / `batch_edit` / `rm` / `rename` / `mkdir` / `copy`, and only allows `write` when the target resolves to the handoff file. Rejections are *soft*: the reason is returned to the model as a tool result, so it re-focuses instead of crashing the turn.
+- **Boundary**: this cannot stop `exec` (`echo > file` always works). It reduces accidental damage, it is not a sandbox.
+- **The guardrail relaxes instead of disappearing.** `ContextGuardPlugin` switches from `maxTokens × 1.5` to `maxTokens × 2` while `service.busy` — a handoff happens exactly when context is fullest, but a fuse is still in place.
+- **No recursion.** The handoff turn is itself a `send()`; `AutoMigratePlugin` steps aside while `service.busy`, so "handoff triggers migration triggers handoff" cannot happen.
 
 ## Triggering
 
-### Automatic migration
-
-When the API response's `usage.prompt_tokens` exceeds the current model's `maxContextTokens`, the SDK's `AutoMigratePlugin` automatically triggers a migration; the CLI wraps it with `AutoMigrateConfirmPlugin` (`src/auto-migrate-confirm-plugin.ts`) to ask for a **second confirmation** before migrating.
-
-- **Second confirmation**: the prompt shows the current usage and the threshold (e.g. `260000/250000 tokens`), defaults to "yes" (pressing Enter migrates, matching the default of `/migrate`), and explains the impact (generate a handoff document → save the current conversation → start a new session). Choosing "no" **skips this one** migration: the current conversation is unaffected (history is not pruned), and you can keep chatting or use `/migrate` at any time; as long as usage stays over the threshold, the prompt appears again after the next response.
-- **Non-interactive environments**: the confirmation is only shown when both stdin and stdout are TTYs. Pipes, redirections, and e2e scripts have no confirmation channel and keep the previous behavior — migrate automatically without blocking on input and without extra output.
-- The threshold is determined by the model config `maxContextTokens` (the README suggests setting it to roughly 25% of the model's actual context window — e.g. 250,000 for a 1M-token model).
-- During conversation assembly, `ContextGuardPlugin` acts as a **safety guardrail** placed before the migration plugin: when usage severely exceeds the limit (`> maxTokens × 1.5`) it throws a `ContextOverflowError` to interrupt the conversation, preventing a sudden over-limit (such as reading a very large file) from blowing past the context before migration takes effect.
-- The same guardrail also applies to **sub-agents**: at each delegation boundary (`onSubAgentStart`) the same `ContextGuardPlugin` (same `maxTokens`) is installed onto the newly built sub-agent (see `src/sub-agent-guard-plugin.ts`), so a delegated sub-agent is interrupted when its context exceeds the hard limit too. The Skill sub-agent created by `call_skill_sub_agent` crosses the same delegation boundary as of SDK 0.11.0 and is therefore covered as well.
-
-### Manual migration
-
-You can actively trigger migration at any time during a conversation with `/migrate`, without waiting for the token limit:
+### Manual
 
 ```
-/migrate
+/handoff                # write the document only, keep this session
+/handoff summary        # force the independent executor
+/migrate                # handoff + start a new session (alias: /migration)
+/migrate self           # specify the executor explicitly
 ```
 
-The command first confirms (migration will: generate a handoff document → save the current conversation → start a new session to continue), then verifies that the current conversation contains at least one user message (the migration document needs a "conversation breakpoint"), and finally delegates to the shared migration service.
+`/handoff` asks for no confirmation (non-destructive, rerunnable) — and since the handoff turn stays in `agent.messages`, you can keep refining the document ("expand section 3", "add the port info"); the agent rewrites the same file. `/migrate` asks for confirmation because it discards history.
+
+### Automatic (context limit)
+
+When `usage.prompt_tokens` exceeds the model's `maxContextTokens`, the SDK's `AutoMigratePlugin` triggers a migration. In an interactive terminal the CLI shows a **three-way picker**:
+
+- `原 agent 自交接` (default, highlighted) — highest fidelity;
+- `独立摘要` — cheap;
+- `Esc` — skip this round. History is untouched; the prompt appears again after the next response while usage stays over the threshold.
+
+Non-interactive environments (pipes, redirects, e2e scripts) have no picker: they migrate with the default executor, without blocking and without extra output.
 
 ## Migration chain
 
-Automatic and manual migration **reuse the same migration service instance** (`ConversationContext.migrationService`, created by `createMigrationService(ctx)` in `src/migration-service.ts`):
+1. **`onBeforeHandoff`** — progress notice (`正在编写任务交接文档…`).
+2. **Handoff turn** — abort in-flight work, run the `self` turn (or the `summary` call), verify the file (`exists` + ≥ 400 bytes, one retry, then degrade).
+3. **`onHandoff`** — log the document path; for migration, save the old conversation **now** (it already contains the handoff turn, so the archive is auditable).
+4. **`migrate` strategy `prune`** — physically drop history, keeping `definition.messages` + one breakpoint message holding the path.
+5. **`onMigrated`** — clear `agent.lastUsage` (otherwise the guardrail would kill the first message of the new session using stale token counts), assign a new conversation id, persist it, update the last-session pointer.
 
-1. **`onBeforeMigrate`**: save the old conversation (at this point `agent.messages` is still the full old history) to `conversations/`. Automatic migration passes `promptTokens`/`maxTokens`; manual migration passes `undefined`.
-2. **`onMigrated`**: generate a new id and name for the new session, immediately persist the migrated opening line as its own conversation file, update the "last session id" pointer, and print a completion message.
+The old conversation is always saved before pruning, so a failed handoff never costs you history: you can retry or keep chatting.
 
-Migration is **non-destructive**: the old conversation has already been saved in `onBeforeMigrate`, so even if generation fails you can retry or continue the current conversation at any time.
+## Cost notes
 
-## Migration strategy: prune
+- Each handoff writes the document **once**; the code never re-generates or re-summarizes it.
+- The injected breakpoint carries only a path; the cost of `read`-ing it is paid by whoever actually needs it.
+- `self` costs roughly one or two extra full-context *inputs* compared with `summary`; the output side is nearly identical (the document plus a ≤40-character confirmation).
 
-The CLI explicitly adopts the SDK's `strategy: "prune"` (physical pruning mode):
+## Related
 
-- **`omit` (SDK default)**: mark history messages with `omit: true` for auditability, and append a "conversation breakpoint" message as the new context starting point.
-- **`prune` (CLI's choice)**: physically prune history, keeping only the system prompt + the handoff breakpoint (i.e. the old "replace behavior"). This is consistent with the product semantics of "start a new session after migration" on the client side, with no observable difference externally.
-
-## Handoff document structure
-
-The migration prompt template includes the following parts:
-
-- **Conversation Breakpoint**: the verbatim content of the last user/AI exchange.
-- **Completed Tasks**: task titles and output paths.
-- **Pending Tasks**: description, progress, and next steps.
-- **Important Notes**: technical preferences, lessons learned, and architecture decisions.
-- **File Index**: key files and their descriptions.
-- **Handover Instructions**: the SOP for the relay Agent (read files first, verify state, then act).
-
-## Related documentation
-
-- The underlying migration service is provided by `@ai-zen/agents-sdk`'s `TaskMigrationService`; triggering is handled by the SDK's `AutoMigratePlugin`, and the CLI-level `AutoMigrateConfirmPlugin` merely inserts a second confirmation before that trigger (reusing the base class's threshold check and migration call).
-- For other capabilities, see [Built-in Tools](./tools.md), [MCP Support](./mcp.md), and [Skill](./skills.md).
+- Implemented in `@ai-zen/agents-sdk`: `HandoffService` (`handoff()` / `migrate()`), `HandoffGuardPlugin`, `AutoMigratePlugin`, `ContextGuardPlugin`; the factory skill lives in `config/factory-skills.ts`.
+- For other capabilities, see [Built-in Tools](./tools.md), [MCP Support](./mcp.md) and [Skills](./skills.md).

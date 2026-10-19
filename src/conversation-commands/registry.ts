@@ -29,7 +29,8 @@ export const COMMAND_REGISTRY: readonly CommandMeta[] = [
   { name: "clear", description: "清屏" },
   { name: "config", description: "打开配置中心（默认模型 / 端点管理）" },
   { name: "key", description: "设置当前端点的 API Key" },
-  { name: "migrate", description: "手动任务迁移（生成交接文档并开启新会话）" },
+  { name: "handoff", description: "编写任务交接文档（不切换会话）" },
+  { name: "migrate", aliases: ["migration"], description: "交接并开启新会话（生成交接文档）" },
   { name: "help", description: "显示此帮助" },
   // exit 置于末尾：斜杠菜单回车执行高亮项，避免「只输入 / 就回车」直接退出
   { name: "exit", aliases: ["quit"], description: "退出对话（会提示是否保存）" },

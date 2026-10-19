@@ -1,6 +1,7 @@
 // 由 src/tui/screens/chat.tsx 拆分而来 —— 斜杠命令执行器（/config /key /save /load /back …）
 import { Dispatch, SetStateAction } from "react";
 import { AgentNS } from "@ai-zen/agents-core";
+import type { HandoffMode } from "@ai-zen/agents-sdk";
 import { spawnSync } from "node:child_process";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,6 +33,15 @@ export interface ChatCommandHost {
   setInputText: (text: string) => void;
 }
 
+/**
+ * 解析命令后的执行者参数（`/migrate self`、`/handoff summary`）。
+ * 缺省返回 undefined（走服务默认值）；非法值也返回 undefined，由调用方报错。
+ */
+export function parseHandoffMode(raw?: string): HandoffMode | undefined {
+  const value = raw?.trim().toLowerCase();
+  return value === "self" || value === "summary" ? value : undefined;
+}
+
 export async function runCommand(name: string, raw: string, host: ChatCommandHost): Promise<void> {
   const {
     session,
@@ -51,6 +61,12 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
   const push = (text: string, tone: "info" | "error" = "info") => {
     notice(text, tone);
   };
+
+  // 命令参数：首个 token 为命令名，其余为参数（如 `/migrate summary`）
+  const args = raw.trim().split(/\s+/).slice(1);
+  const modeArg = args[0]?.toLowerCase();
+  const mode = parseHandoffMode(modeArg);
+  const invalidMode = modeArg !== undefined && mode === undefined;
 
   switch (name) {
     case "config":
@@ -129,19 +145,46 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       });
       break;
     }
-    case "migrate": {
+    case "handoff": {
+      if (invalidMode) {
+        push(`未知的执行者：${modeArg}（可选 self / summary）`, "error");
+        break;
+      }
+      if (!session.messages.some((m) => m.role === AgentNS.Role.User)) {
+        push("当前对话还没有可交接的内容", "error");
+        break;
+      }
+      try {
+        const path = await session.handoff(mode);
+        push(`交接文档已生成：${path}`);
+      } catch (error: any) {
+        push(`编写交接文档失败：${error?.message ?? error}`, "error");
+      }
+      break;
+    }
+    case "migrate":
+    case "migration": {
+      if (invalidMode) {
+        push(`未知的执行者：${modeArg}（可选 self / summary）`, "error");
+        break;
+      }
       if (!session.messages.some((m) => m.role === AgentNS.Role.User)) {
         push("当前对话还没有可迁移的内容", "error");
         break;
       }
-      const ok = await new Promise<boolean>((resolve) => setConfirmState({ question: "确定对当前对话进行任务迁移吗？", resolve }));
+      const ok = await new Promise<boolean>((resolve) =>
+        setConfirmState({
+          question: `确定对当前对话进行任务迁移吗？（将生成交接文档并开启新会话）`,
+          resolve,
+        }),
+      );
       if (!ok) {
         push("已取消迁移");
         break;
       }
       try {
-        await session.migrate();
-        push("任务迁移完成，已开启新会话");
+        const path = await session.migrate(mode);
+        push(`任务迁移完成，已开启新会话\n📄 交接文档：${path}`);
       } catch (error: any) {
         push(`任务迁移失败：${error?.message ?? error}`, "error");
       }

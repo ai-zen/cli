@@ -24,7 +24,7 @@ outline: deep
 - **子 Agent 编排**：带 `function` 字段的 Agent 可作为工具被其他 Agent 调用，支持独立权限体系。
 - **Skill 技能**：通过 `SKILL.md` 定义可复用技能，支持按上下文加载与委托给技能子 Agent。
 - **MCP 支持**：接入 stdio / HTTP / SSE 传输的 MCP 服务器，多级配置合并。
-- **任务迁移**：上下文 token 超限时先二次确认，确认后自动生成交接文档并开启新会话；也可随时用 `/migrate` 手动触发。
+- **任务交接与迁移**：由原 agent 停手后自己核实状态、把交接文档写进 `.ai-zen/handoffs/`；需要时再清空历史、以该文档开启新会话。超限时交互式弹出执行者选择（自交接 / 独立摘要 / 跳过），`/handoff` 只写文档、`/migrate` 写文档并换会话。
 - **会话恢复**：每个会话实时落盘为独立文件，指针记录「上一轮会话 id」，下次启动自动续接。
 - **Shell 兜底钩子**：`ai hook install` 可把终端中无法识别的命令转发给 AI 处理。
 
@@ -34,7 +34,7 @@ outline: deep
 - [内置工具](./tools.md) — 20 种内置工具、动态加载工具与权限模型。
 - [MCP 支持](./mcp.md) — MCP 配置、合并优先级、连接与 OAuth 现状。
 - [Skill 技能](./skills.md) — Skill 目录、加载与子 Agent 委托。
-- [任务迁移](./migration.md) — 自动/手动迁移、交接文档结构。
+- [任务交接与迁移](./migration.md) — `/handoff` 与 `/migrate` 的区别、两种执行者、文档落盘位置。
 - [配置](./configuration.md) — 配置文件、目录布局、预设端点与模型。
 
 ## 许可证

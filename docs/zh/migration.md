@@ -1,63 +1,117 @@
 ---
-title: 任务迁移
-description: @ai-zen/cli 在上下文超限时的自动任务迁移，以及 /migrate 手动迁移与交接文档结构。
+title: 任务交接与迁移
+description: "@ai-zen/cli 如何编写交接文档（/handoff）与迁移到新会话（/migrate），两种交接执行者，以及交接文档的落盘位置。"
 outline: deep
 ---
 
-# 任务迁移
+# 任务交接与迁移
 
-当对话的上下文接近模型的上下文窗口上限时，继续对话会导致信息被截断或请求失败。**任务迁移**通过生成一份**交接文档（handoff document）**，把当前任务的完成情况、待办与关键决策固化下来，并以这份文档为上下文开启一个**新会话**，实现无缝续接。
+当对话的上下文接近模型窗口上限时，继续对话会导致信息被截断或请求失败。这里有**两个相关但不同**的概念：
+
+| 概念 | 做什么 | 命令 |
+|---|---|---|
+| **交接（handoff）** | 停下手头工作，写出一份交接文档。会话照旧运行。 | `/handoff` |
+| **迁移（migrate）** | 交接 **加上** 清空历史、以该文档开启新会话。 | `/migrate` |
+
+所以「迁移」= 「交接 + 新 agent 上岗」：原 agent 交班，新会话从文档接续。
+
+## 交接文档
+
+每一次交接（手动或自动）都会产出一个 Markdown 文件：
+
+```
+<项目>/.ai-zen/handoffs/<YYYYMMDD-HHmmss>-<会话id前8位>.md
+```
+
+- 目录在项目内，便于随代码一起审阅、提交；
+- 文件名确定性可预期，并带原始会话 id，方便回溯；
+- 注入新会话的断点消息**只包含路径**——接手的 agent 在真正需要细节时才 `read` 它。
+
+### 模板来自 Skill，不在代码里
+
+文档结构与书写规则由 `handoff` Skill 定义：
+
+```
+~/.ai-zen/skills/handoff/SKILL.md
+```
+
+它由 SDK 首次 bootstrap 时释放，并在后续版本自动同步：
+
+- 未被改动（frontmatter 没有 `metadata.custom: "true"`）→ 覆盖为最新版本，模板改进能到达老用户；
+- 标了 `custom: "true"` → 视为用户自有，永不覆盖。
+
+也可以在项目里放一份 `./.ai-zen/skills/handoff/SKILL.md` 覆盖（遵循既有的 Skill 目录优先级）。
+
+代码里**不再保留**第二份章节清单。它只负责四件事：读 Skill 正文 → 注入 → 校验文件确实写出来了 → 读不到 Skill 时使用内置的最小兜底模板。
+
+默认模板包含的章节：
+
+- **💬 对话断点** —— 用户最后的要求、你最后交付了什么；
+- **🎯 任务目标** —— 用户到底要什么（意图与验收标准）；
+- **📊 当前状态** —— 分支/commit、未提交改动、测试是否通过、有无进程/端口在跑；
+- **✅ 已完成** —— 每项附产出路径与验证方式；
+- **📋 未完成** —— 按优先级，每项给「下一步最小动作」；
+- **🧠 关键决策** —— 取舍理由，以及走过的死路；
+- **⚠️ 约束与偏好** —— 用户强调的规矩、项目约定、不可动的部分；
+- **📁 文件索引** —— 路径 + 作用 + 本次是否改动；
+- **🔔 接手第一步** —— 3 条以内可直接执行的命令。
+
+## 两种执行者
+
+| 执行者 | 谁来写 | 优势 | 代价 |
+|---|---|---|---|
+| `self`（**默认**） | **原 agent** 停手后在自己的会话里写 | 上下文完整，可用工具核实真实状态 | 多 1~2 次全量请求（输入侧） |
+| `summary` | 一次独立模型调用，基于序列化历史摘要 | 便宜、确定 | 无工具、无原会话上下文，保真度低 |
+
+`self` 之所以是默认，是因为「保真」正是交接的意义。`summary` 是逃生口，也是**单向降级**目标：`self` 失败（没有 `write` 工具、文件缺失或过小且重试一次仍不行、工具/护栏报错）时自动降级并告知用户。反向绝不发生——那会在最危险的时刻再加一次全量请求。
+
+### `self` 为什么可靠
+
+- **「停手」由代码兜底，不只是提示词**：交接回合会临时启用一次性 `HandoffGuardPlugin`，拒绝 `edit` / `batch_edit` / `rm` / `rename` / `mkdir` / `copy`，`write` 仅在目标路径归一后等于交接文档时放行。拒绝是**软拒绝**——原因作为工具结果回给模型，它会转回正题，而不是把整轮交接打断。
+- **边界**：挡不住 `exec`（`echo > file` 总能绕过）。它降低的是误操作概率，不是沙箱。
+- **护栏是放宽而非消失**：`service.busy` 期间 `ContextGuardPlugin` 从 `maxTokens × 1.5` 放宽到 `× 2`——交接恰好发生在上下文最满的时刻，但仍保留熔断。
+- **不会递归**：交接回合本身也是一次 `send()`，`AutoMigratePlugin` 在 `service.busy` 时让行，因此「交接触发迁移、迁移再触发交接」不可能发生。
 
 ## 触发方式
 
-### 自动迁移
-
-当 API 响应的 `usage.prompt_tokens` 超过当前模型的 `maxContextTokens` 时，SDK 的 `AutoMigratePlugin` 会自动触发迁移；CLI 在其之上包了一层 `AutoMigrateConfirmPlugin`（`src/auto-migrate-confirm-plugin.ts`），迁移前先做一次**二次确认**。
-
-- **二次确认**：确认框展示当前用量与阈值（如 `260000/250000 tokens`），默认「是」（回车即迁移，与 `/migrate` 的默认值一致），并说明迁移影响（生成交接文档 → 保存当前对话 → 开启新会话继续）。选择「否」则**跳过本次**迁移：当前对话不受影响（历史未被剔除），可继续提问或随时改用 `/migrate`；只要仍处于超限状态，下次发送后仍会再次询问。
-- **非交互环境**：仅在 stdin 与 stdout 均为 TTY 时询问。管道、重定向、e2e 脚本等无确认通道的场景保持既有行为——直接自动迁移，不阻塞等待输入、不额外输出。
-- 阈值由模型配置项 `maxContextTokens` 决定（README 建议设为模型实际上下文窗口的约 25%，例如 100 万 token 模型设为 250,000）。
-- 在对话装配中，`ContextGuardPlugin` 作为**安全护栏**位于迁移插件之前：当用量严重超限（`> maxTokens × 1.5`）时会抛出 `ContextOverflowError` 中断对话，防止读入超大文件等突发超限在迁移生效前撑爆上下文。
-- 同一护栏也作用于**子 Agent**：每次委派边界（`onSubAgentStart`）会为新建的子 Agent 安插同一个 `ContextGuardPlugin`（同一 `maxTokens`，见 `src/sub-agent-guard-plugin.ts`），故被委派的子 Agent 上下文超硬上限时同样被中断。`call_skill_sub_agent` 创建的技能子 Agent 自 SDK 0.11.0 起同样经过该委派边界，一并覆盖。
-
-### 手动迁移
-
-在对话中随时输入 `/migrate` 即可主动触发迁移，无需等待 token 超限：
+### 手动
 
 ```
-/migrate
+/handoff                # 只写交接文档，保持当前会话
+/handoff summary        # 强制使用独立摘要执行者
+/migrate                # 交接 + 开启新会话（别名 /migration）
+/migrate self           # 显式指定执行者
 ```
 
-命令会先确认（迁移将：生成交接文档 → 保存当前对话 → 开启新会话继续），随后校验当前对话中至少存在一条用户消息（迁移文档需要“对话断点”），再委托给共享的迁移服务。
+`/handoff` 不弹确认（非破坏性、可反复执行）；而且交接回合会留在 `agent.messages` 里，你可以接着说「第 3 节写细一点」「补上端口占用情况」，agent 会重写同一个文件。`/migrate` 会丢历史，因此要确认。
+
+### 自动（上下文超限）
+
+当 `usage.prompt_tokens` 超过模型的 `maxContextTokens`，SDK 的 `AutoMigratePlugin` 触发迁移。交互式终端里 CLI 弹出**三选一**选择器：
+
+- `原 agent 自交接`（默认高亮）—— 保真度最高；
+- `独立摘要` —— 便宜；
+- `Esc` —— 跳过本次。历史不受影响；只要用量仍超阈值，下次回复后还会再问。
+
+非交互环境（管道、重定向、e2e 脚本）没有选择通道：按默认执行者迁移，不阻塞等待输入、不额外输出。
 
 ## 迁移链路
 
-自动迁移与手动迁移**复用同一套迁移服务实例**（`ConversationContext.migrationService`，由 `src/migration-service.ts` 的 `createMigrationService(ctx)` 创建）：
+1. **`onBeforeHandoff`** —— 进度提示（`正在编写任务交接文档…`）；
+2. **交接回合** —— 中止在途请求，执行 `self` 回合（或 `summary` 调用），校验文件（存在 + ≥ 400 字节，失败重试一次，再失败降级）；
+3. **`onHandoff`** —— 提示文档路径；若是迁移，此刻保存旧会话（已包含交接回合，归档可审计）；
+4. **`migrate` 的 `prune` 策略** —— 物理剔除历史，只保留 `definition.messages` + 一条只含路径的断点消息；
+5. **`onMigrated`** —— 清空 `agent.lastUsage`（否则护栏会拿陈旧用量误杀新会话的第一条消息），分配新会话 id、落盘、更新「上一轮会话」指针。
 
-1. **`onBeforeMigrate`**：保存旧对话（此时 `agent.messages` 仍是完整旧历史）到 `conversations/`。自动迁移会带 `promptTokens`/`maxTokens`，手动迁移则为 `undefined`。
-2. **`onMigrated`**：为新会话生成新 id 与名称，把迁移后的开场白立即落盘为独立会话文件，并更新「上一轮会话 id」指针，随后输出完成提示。
+旧会话一定在剔除前保存，因此即使交接失败也不会丢历史：可以重试，也可以继续当前对话。
 
-迁移**非破坏性**：旧对话在 `onBeforeMigrate` 中已保存，即使生成失败也可随时重试或继续当前对话。
+## 成本说明
 
-## 迁移策略：prune
+- 每次交接文档**只写一次**，代码不会重新生成或再次摘要；
+- 断点消息只带路径，`read` 的成本由真正需要细节的一方支付；
+- `self` 相比 `summary` 多花的钱几乎全在**输入**侧（多 1~2 次全量历史），输出侧基本相同（文档正文 + ≤40 字确认）。
 
-CLI 显式采用 SDK 的 `strategy: "prune"`（物理剔除模式）：
+## 相关
 
-- **`omit`（SDK 默认）**：历史消息标记 `omit: true` 保留可审计，追加“对话断点”消息作为新上下文起点。
-- **`prune`（CLI 采用）**：物理剔除历史，仅保留系统提示 + 交接断点（即旧的“替换行为”），与端侧“迁移后开启新会话”的产品语义一致，对外使用无差异。
-
-## 交接文档结构
-
-迁移提示模板包含以下部分：
-
-- **对话断点（Conversation Breakpoint）**：最后一条用户/AI 交换的逐字内容。
-- **已完成任务（Completed Tasks）**：任务标题与输出路径。
-- **待办任务（Pending Tasks）**：描述、进度、下一步。
-- **重要说明（Important Notes）**：技术偏好、经验教训、架构决策。
-- **文件索引（File Index）**：关键文件及其说明。
-- **交接说明（Handover Instructions）**：给继任 Agent 的 SOP（先读文件、核实状态、再行动）。
-
-## 相关文档
-
-- 底层迁移服务由 `@ai-zen/agents-sdk` 的 `TaskMigrationService` 提供；触发由 SDK 的 `AutoMigratePlugin` 承担，CLI 层的 `AutoMigrateConfirmPlugin` 仅在其触发前插入一次二次确认（复用基类的阈值判断与迁移调用）。
+- 实现位于 `@ai-zen/agents-sdk`：`HandoffService`（`handoff()` / `migrate()`）、`HandoffGuardPlugin`、`AutoMigratePlugin`、`ContextGuardPlugin`；出厂 Skill 定义在 `config/factory-skills.ts`。
 - 其他能力见 [内置工具](./tools.md)、[MCP 支持](./mcp.md)、[Skill 技能](./skills.md)。

@@ -15,16 +15,18 @@ import type { SubAgentContext } from "@ai-zen/agents-core";
 import {
   AutoRefreshToolsPlugin,
   ContextGuardPlugin,
+  type AutoMigrateTriggerInfo,
+  type HandoffMode,
+  type HandoffService,
   type SdkAgent,
-  type TaskMigrationService,
 } from "@ai-zen/agents-sdk";
 import { createAgent, resetScope } from "../agent-creator.js";
 import { readConfig } from "../config.js";
 import { CwdTrackerPlugin } from "../cwd-tracker-plugin.js";
 import { ConversationPersistPlugin } from "../conversation-persist-plugin.js";
 import { SubAgentGuardInstallerPlugin } from "../sub-agent-guard-plugin.js";
-import { AutoMigrateConfirmPlugin } from "../auto-migrate-confirm-plugin.js";
-import { createMigrationService } from "../migration-service.js";
+import { createAutoMigratePlugin } from "../auto-migrate-confirm.js";
+import { createHandoffService } from "../handoff-service.js";
 import { conversationRepository, generateConversationId } from "../conversation-repository.js";
 import { writeLastSession } from "../session-pointer.js";
 import type { ConversationContext } from "../types.js";
@@ -44,8 +46,11 @@ export interface ChatSessionOptions {
   messages?: AgentNS.Message[];
   conversationId?: string;
   conversationName?: string;
-  /** 自动迁移二次确认（由 Ink 层弹出确认框实现） */
-  requestConfirm?: (question: string) => Promise<boolean>;
+  /**
+   * 自动迁移时的执行者选择（由 Ink 层弹出选择器实现）。
+   * 返回 `null` 表示跳过本次迁移；未提供时按默认执行者（原 agent 自交接）直接迁移。
+   */
+  requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
 }
 
 /** 去掉 CwdTrackerPlugin 追加在用户消息末尾的工作目录提示（转发自 ./text.js） */
@@ -61,19 +66,19 @@ export class ChatSession {
 
   private agent!: SdkAgent;
   private readonly ctx: ConversationContext;
-  private readonly migrationService: TaskMigrationService;
+  private readonly handoffService: HandoffService;
   private readonly notifier: ChatSessionNotifier;
-  private readonly requestConfirm?: (q: string) => Promise<boolean>;
+  private readonly requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
   private readonly disposers: Array<() => void> = [];
 
   private constructor(
-    migrationService: TaskMigrationService,
+    handoffService: HandoffService,
     ctx: ConversationContext,
     options: ChatSessionOptions,
     maxTokens: number | undefined,
     notifier: ChatSessionNotifier,
   ) {
-    this.migrationService = migrationService;
+    this.handoffService = handoffService;
     this.ctx = ctx;
     this.modelId = options.modelId;
     this.agentId = options.agentId || "default";
@@ -81,7 +86,7 @@ export class ChatSession {
     this.currentId = ctx.currentId || generateConversationId();
     this.currentName = ctx.currentName;
     this.notifier = notifier;
-    this.requestConfirm = options.requestConfirm;
+    this.requestMode = options.requestMode;
   }
 
   /** 创建会话：装配 Agent、插件与「变更信号」 */
@@ -106,13 +111,13 @@ export class ChatSession {
       agentId: options.agentId,
       running: true,
     };
-    const migrationService = createMigrationService(ctx, {
+    const handoffService = createHandoffService(ctx, {
       // 迁移进度/结果经通知通道渲染，避免直接写 stdout 撕裂画面
       log: (text) => notifier.onNotice(text, "info"),
     });
-    ctx.migrationService = migrationService;
+    ctx.handoffService = handoffService;
 
-    const session = new ChatSession(migrationService, ctx, options, maxTokens, notifier);
+    const session = new ChatSession(handoffService, ctx, options, maxTokens, notifier);
     session.agent = agent;
     await session.attach(agent);
     return session;
@@ -203,16 +208,40 @@ export class ChatSession {
     this.notifier.onChange(true);
   }
 
-  /** 手动任务迁移（/migrate）：与自动迁移共用同一服务实例 */
-  async migrate(): Promise<void> {
+  /** 手动任务迁移（`/migrate`）：交接 + 开新会话；与自动迁移共用同一服务实例 */
+  async migrate(mode?: HandoffMode): Promise<string> {
     if (!this.messages.some((m) => m.role === AgentNS.Role.User)) {
       throw new Error("当前对话还没有可迁移的内容");
     }
-    await this.migrationService.migrate({ agent: this.agent });
+    const ctx = await this.handoffService.migrate({
+      agent: this.agent,
+      mode,
+      conversationId: this.currentId,
+    });
     // 迁移后服务会开启新会话，同步会话元信息
     this.currentName = this.ctx.currentName;
     this.currentId = this.ctx.currentId ?? generateConversationId();
     this.notifier.onChange(true);
+    return ctx.handoffPath;
+  }
+
+  /**
+   * 只产出交接文档（`/handoff`）：不切换会话、不改动历史。
+   *
+   * 交接回合（指令 + 工具调用 + 回执）会留在 `agent.messages` 里，
+   * 用户可继续要求细化同一份文档（重写同一路径即可）。
+   */
+  async handoff(mode?: HandoffMode): Promise<string> {
+    if (!this.messages.some((m) => m.role === AgentNS.Role.User)) {
+      throw new Error("当前对话还没有可交接的内容");
+    }
+    const ctx = await this.handoffService.handoff({
+      agent: this.agent,
+      mode,
+      conversationId: this.currentId,
+    });
+    this.notifier.onChange(true);
+    return ctx.handoffPath;
   }
 
   /** 撤回：删除索引 index 起的消息，返回被撤回的首条用户消息文本（用于预填输入） */
@@ -263,17 +292,21 @@ export class ChatSession {
     );
 
     if (this.maxTokens && this.maxTokens > 0) {
-      agent.use(new ContextGuardPlugin({ maxTokens: this.maxTokens }));
       agent.use(
-        new AutoMigrateConfirmPlugin({
-          service: this.migrationService,
+        new ContextGuardPlugin({
           maxTokens: this.maxTokens,
-          // TUI 下由 Ink 层提供确认通道
-          shouldConfirm: () => Boolean(this.requestConfirm),
-          confirm: (info) =>
-            this.requestConfirm!(
-              `上下文即将超限（${info.promptTokens}/${info.maxTokens} tokens），是否立即执行任务迁移？`,
-            ),
+          // 交接回合放宽阈值（而非放行）：交接恰好发生在上下文最满的时刻，
+          // 且交接回合本身还要再发请求，不放宽会被护栏误杀；放宽仍保留熔断
+          isSuspended: () => this.handoffService.busy,
+        }),
+      );
+      agent.use(
+        createAutoMigratePlugin({
+          service: this.handoffService,
+          maxTokens: this.maxTokens,
+          // TUI 下由 Ink 层提供执行者选择器；无选择通道时按默认执行者（原 agent 自交接）迁移
+          shouldConfirm: () => Boolean(this.requestMode),
+          choose: (info) => this.requestMode!(info),
           log: (text) => this.notifier.onNotice(text, "info"),
         }),
       );

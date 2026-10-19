@@ -17,6 +17,13 @@
  *       ├── conversations/        ← 对话记录
  *       └── last-session.json     ← 「各 cwd 上一轮会话 id」指针（cwd → id）
  *
+ *   项目/.ai-zen/                 ← 项目级配置与产物
+ *   ├── skills/                   ← 项目级 Skill
+ *   ├── tools/                    ← 项目级工具
+ *   ├── sub-agents/               ← 项目级子 Agent
+ *   ├── mcp.json                  ← 项目级 MCP 配置
+ *   └── handoffs/                 ← 交接文档（任务交接的落盘产物）
+ *
  *   ~/.agents/                    ← 业界通用规范（如 Cursor、Windsurf、Cline）
  *   ├── skills/                   ← 用户级 Skill
  *   └── mcp.json                  ← 用户级 MCP 配置
@@ -69,6 +76,13 @@ export const TOOLS_DIR = join(AI_ZEN_DIR, "tools");
 export const PROJECT_SUB_AGENTS_DIR = join(process.cwd(), ".ai-zen", "sub-agents");
 export const PROJECT_SKILLS_DIR = join(process.cwd(), ".ai-zen", "skills");
 export const PROJECT_TOOLS_DIR = join(process.cwd(), ".ai-zen", "tools");
+/**
+ * 交接文档目录（项目级）：`<cwd>/.ai-zen/handoffs/`。
+ *
+ * 交接文档是「人也能直接读」的产物，放在项目内便于随仓库共享/评审；
+ * 目录由交接时的 write 工具或服务落盘时自动创建，无需预先建立。
+ */
+export const PROJECT_HANDOFFS_DIR = join(process.cwd(), ".ai-zen", "handoffs");
 
 // ==================== 业界通用规范 ~/.agents/ 目录 ====================
 

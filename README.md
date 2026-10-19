@@ -66,7 +66,7 @@ When run with no arguments on an interactive terminal, the CLI opens a full-scre
 ╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
 
               AI workbench in your terminal
-              v1.0.0-alpha.9 · sdk x · core y
+              v1.0.0-alpha.10 · sdk x · core y
 ```
 
 After the splash, you land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and the status bar (model · agent · this-round / cumulative tokens · generating) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line.
@@ -114,25 +114,24 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 | `/clear` | Clear the screen |
 | `/config` | Open the configuration center (endpoints / models / image models / MCP servers / agent definitions / defaults / tool-output cap) |
 | `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
-| `/migrate` | Manually trigger task migration (generate handoff doc & start a new session) |
+| `/handoff` | Write a handoff document only (session keeps running; no confirmation) |
+| `/migrate` `/migration` | Handoff + start a new session (discards history; asks for confirmation) |
 | `/help` | Show available commands |
 
-### Conversation Migration
+### Task Handoff & Migration
 
-When the API response's `usage.prompt_tokens` exceeds the model's `maxContextTokens`, the system first asks for a **second confirmation** (showing current usage and the threshold, defaulting to "yes"; choosing "no" skips this migration and leaves the current conversation untouched), then generates a **handover document** summarizing completed tasks, pending items, and key decisions. A new conversation session is created with this document as context, ensuring seamless continuation. The confirmation only appears when both stdin and stdout are TTYs; non-interactive scenarios such as pipes and redirections keep the previous automatic migration behavior.
+Two related commands, one pipeline:
 
-You can also manually trigger a migration at any time by typing `/migrate` in the conversation — no need to wait for the token limit. Both automatic and manual migration delegate to the SDK's `TaskMigrationService`, so the handoff document is always produced consistently.
+- **`/handoff`** — the original agent stops what it is doing and writes a handoff document to `<project>/.ai-zen/handoffs/<timestamp>-<conversation id>.md`, using its own tools to verify the real state (branch, uncommitted changes, tests, ports). The session keeps running, so you can keep refining the document.
+- **`/migrate`** — the same handoff, then history is cleared and a new session starts from the document (the breakpoint message carries only the path; the new agent reads it).
+
+Two executors: `self` (default — the original agent writes it in-session, highest fidelity) and `summary` (a single independent model call, cheap but lossy). `self` degrades to `summary` one-way on failure. Pass it explicitly with `/handoff summary` or `/migrate self`.
+
+When `usage.prompt_tokens` exceeds the model's `maxContextTokens`, an interactive terminal shows a three-way picker (self / summary / skip); non-interactive pipes migrate with the default executor without blocking.
+
+The document template is not hard-coded: it comes from the `handoff` Skill (`~/.ai-zen/skills/handoff/SKILL.md`, released and synced by the SDK; mark `metadata.custom: "true"` to keep your own version, or override per project). See [Task Handoff & Migration](./docs/en/migration.md) for the full chain, cost notes, and the template sections.
 
 The same context guard also applies to **sub-agents**: at each delegation boundary (`onSubAgentStart`) the CLI installs the same `ContextGuardPlugin` (same `maxTokens`) onto the newly built sub-agent, so a delegated sub-agent (including the Skill sub-agent created by `call_skill_sub_agent`) is interrupted as soon as its context exceeds the hard limit. This is transparent — a normally-running sub-agent is unaffected.
-
-The migration prompt template includes:
-- **Conversation Breakpoint** — Last user/AI exchange verbatim
-- **Completed Tasks** — Task titles and output paths
-- **Pending Tasks** — Description, progress, next steps
-- **Important Notes** — Technical preferences, lessons learned, architecture decisions
-- **File Index** — Key files with descriptions
-- **Handover Instructions** — SOP for the relay agent (read files first, verify state, then act)
-
 ### Shell Fallback Hook
 
 When you type an unrecognized command in your terminal, it can be automatically forwarded to AI for processing:

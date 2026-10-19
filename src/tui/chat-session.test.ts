@@ -23,6 +23,7 @@ vi.mock("../agent-creator.js", () => ({
     events: { on: () => {}, off: () => {}, emit: () => {} },
   })),
   resetScope: vi.fn(async () => {}),
+  listSkillDirs: vi.fn(() => []),
 }));
 
 describe("ChatSession.reset（/new 归档旧对话）", () => {

@@ -24,7 +24,7 @@ When collaborating with AI in a bare terminal, you often have to manually switch
 - **Sub-agent orchestration**: Agents with a `function` field can be called as tools by other Agents, with an independent permission system.
 - **Skill**: reusable skills defined via `SKILL.md`, loaded contextually and delegatable to a Skill sub-agent.
 - **MCP support**: connect MCP servers over stdio / HTTP / SSE transports, with multi-level config merging.
-- **Task migration**: ask for confirmation first when context tokens exceed the limit, then automatically generate a handoff document and start a new session; you can also trigger it manually at any time with `/migrate`.
+- **Task handoff & migration**: the original agent stops and writes a handoff document to `.ai-zen/handoffs/` (verified with its own tools), then optionally clears history and starts a new session from it. An interactive executor picker (self / summary / skip) appears when the context limit is hit; `/handoff` writes the document without switching sessions, `/migrate` does both.
 - **Session recovery**: every conversation is persisted as its own file in real time, and a pointer records the "last session id"; the last session is resumed automatically on the next launch.
 - **Shell fallback hook**: `ai hook install` forwards unrecognized terminal commands to the AI for processing.
 
@@ -34,7 +34,7 @@ When collaborating with AI in a bare terminal, you often have to manually switch
 - [Built-in Tools](./tools.md) — the 20 built-in tools, the dynamic loading tools, and the permission model.
 - [MCP Support](./mcp.md) — MCP configuration, merge priority, connection, and current OAuth status.
 - [Skill](./skills.md) — Skill directories, loading, and Skill sub-agent delegation.
-- [Task Migration](./migration.md) — automatic/manual migration and the handoff document structure.
+- [Task Handoff & Migration](./migration.md) — `/handoff` vs `/migrate`, the two executors, and where the documents live.
 - [Configuration](./configuration.md) — config files, directory layout, preset endpoints, and models.
 
 ## License

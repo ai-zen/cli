@@ -2,10 +2,10 @@
   "name": "cli",
   "npm": "@ai-zen/cli",
   "description": {
-    "zh": "双模式 AI Agent 终端（纯 stdio 管道 + 交互式 TUI，内置 20 种工具，支持 MCP、Skill 与任务迁移）",
-    "en": "Dual-mode AI Agent terminal (pure stdio pipelines + interactive TUI, ships with 20 built-in tools, with MCP, Skill, and task migration support)"
+    "zh": "双模式 AI Agent 终端（纯 stdio 管道 + 交互式 TUI，内置 20 种工具，支持 MCP、Skill 与任务交接/迁移）",
+    "en": "Dual-mode AI Agent terminal (pure stdio pipelines + interactive TUI, ships with 20 built-in tools, with MCP, Skill, and task handoff/migration support)"
   },
-  "version": "1.0.0-alpha.9",
+  "version": "1.0.0-alpha.10",
   "docsRoot": "docs",
   "locales": ["zh", "en"],
   "defaultLocale": "zh",
@@ -19,7 +19,7 @@
       { "title": "内置工具", "path": "zh/tools.md" },
       { "title": "MCP 支持", "path": "zh/mcp.md" },
       { "title": "Skill 技能", "path": "zh/skills.md" },
-      { "title": "任务迁移", "path": "zh/migration.md" },
+      { "title": "任务交接与迁移", "path": "zh/migration.md" },
       { "title": "配置", "path": "zh/configuration.md" }
     ],
     "en": [
@@ -27,7 +27,7 @@
       { "title": "Built-in Tools", "path": "en/tools.md" },
       { "title": "MCP Support", "path": "en/mcp.md" },
       { "title": "Skill", "path": "en/skills.md" },
-      { "title": "Task Migration", "path": "en/migration.md" },
+      { "title": "Task Handoff & Migration", "path": "en/migration.md" },
       { "title": "Configuration", "path": "en/configuration.md" }
     ]
   }

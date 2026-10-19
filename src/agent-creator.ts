@@ -30,6 +30,25 @@ let _scope: Scope | null = null;
 /** existsSync 的别名，用于数组 .filter() 场景 */
 const exists = existsSync;
 
+/**
+ * Skill 目录列表（优先级从高到低）：
+ *   1. 项目/.ai-zen/skills/
+ *   2. 项目/.agents/skills/            ← 业界通用规范
+ *   3. ~/.ai-zen/skills/
+ *   4. ~/.agents/skills/               ← 业界通用规范
+ *
+ * 同时供 Scope 装配与交接服务（读取 `handoff` Skill 正文）使用，避免两处各算一遍。
+ * 只返回**当前真实存在**的目录，不存在的不参与发现。
+ */
+export function listSkillDirs(): string[] {
+  return [
+    PROJECT_SKILLS_DIR,
+    PROJECT_AGENTS_SKILLS_DIR,
+    SKILLS_DIR,
+    USER_AGENTS_SKILLS_DIR,
+  ].filter(exists);
+}
+
 export async function getScope(): Promise<Scope> {
   if (_scope) return _scope;
 
@@ -49,17 +68,8 @@ export async function getScope(): Promise<Scope> {
     USER_AGENTS_MCP_CONFIG_FILE,
   ].filter(exists);
 
-  // Skills 目录优先级（从高到低）：
-  //   1. 项目/.ai-zen/skills/
-  //   2. 项目/.agents/skills/            ← 业界通用规范
-  //   3. ~/.ai-zen/skills/
-  //   4. ~/.agents/skills/               ← 业界通用规范
-  const skillsPaths = [
-    PROJECT_SKILLS_DIR,
-    PROJECT_AGENTS_SKILLS_DIR,
-    SKILLS_DIR,
-    USER_AGENTS_SKILLS_DIR,
-  ].filter(exists);
+  // Skills 目录优先级（从高到低）：见 listSkillDirs()
+  const skillsPaths = listSkillDirs();
 
   _scope = new Scope({
     config,

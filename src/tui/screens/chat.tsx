@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
 import { AgentNS } from "@ai-zen/agents-core";
 import { AppConfig } from "@ai-zen/agents-sdk";
+import type { HandoffMode } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
 import { Spinner, StatusBar, SlashMenu, SelectItem } from "../components.js";
 import { layoutInput, usableFrameRows, isTerminalReply } from "../text.js";
@@ -130,8 +131,18 @@ export function Chat(props: ChatScreenProps) {
         messages: props.messages,
         conversationId: props.conversationId,
         conversationName: props.conversationName,
-        requestConfirm: (question) =>
-          new Promise<boolean>((resolve) => setConfirmState({ question, resolve })),
+        requestMode: (info) =>
+          new Promise<HandoffMode | null>((resolve) =>
+            setPickerState({
+              title: `上下文即将超限（${info.promptTokens}/${info.maxTokens} tokens），由谁编写交接文档？`,
+              items: [
+                { label: "原 agent 自交接", value: "self", hint: "保真 · 可核实真实状态" },
+                { label: "独立摘要", value: "summary", hint: "便宜 · 保真度低" },
+              ],
+              resolve: (value) =>
+                resolve(value === "self" || value === "summary" ? value : null),
+            }),
+          ),
       },
       notifier,
     )
@@ -311,9 +322,10 @@ export function Chat(props: ChatScreenProps) {
     setNotice(null);
 
     if (trimmed.startsWith("/")) {
-      const name = trimmed.slice(1).toLowerCase();
-      // /migrate 会调用模型生成交接文档（较慢）：期间应像自动迁移一样拦住输入框。
-      const blocksInput = name === "migrate";
+      // 命令名取首个 token：支持 `/migrate summary`、`/handoff self` 这类带参数的写法
+      const name = trimmed.slice(1).split(/\s+/)[0].toLowerCase();
+      // 交接/迁移会调用模型写文档（较慢）：期间应像自动迁移一样拦住输入框。
+      const blocksInput = name === "migrate" || name === "migration" || name === "handoff";
       if (blocksInput) setBusy(true);
       try {
         await runCommand(name, trimmed, {
