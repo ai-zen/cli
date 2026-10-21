@@ -105,6 +105,8 @@ export function SelectList<T>({ items, onSelect, isActive = true, initialIndex =
 export interface StatusBarProps {
   model: string;
   agent: string;
+  /** 思考强度文案（关 / 低 / 中 / 高 / 最高 / 开 / —）；不传则不展示该段 */
+  effort?: string | null;
   /** 最近一轮的 token 用量（lastUsage.total_tokens） */
   lastTokens?: number;
   /** 本会话累计 token 用量（含子 Agent） */
@@ -113,7 +115,7 @@ export interface StatusBarProps {
   hint?: string;
 }
 
-export function StatusBar({ model, agent, lastTokens, totalTokens, busy, hint }: StatusBarProps) {
+export function StatusBar({ model, agent, effort, lastTokens, totalTokens, busy, hint }: StatusBarProps) {
   return (
     <Box paddingX={1} justifyContent="space-between" flexShrink={0} width="100%">
       <Text wrap="truncate">
@@ -121,6 +123,12 @@ export function StatusBar({ model, agent, lastTokens, totalTokens, busy, hint }:
         <Text color={theme.accent}>{model}</Text>
         <Text color={theme.dim}> · agent </Text>
         <Text color={theme.assistant}>{agent}</Text>
+        {effort != null && effort !== "" ? (
+          <>
+            <Text color={theme.dim}> · 思考 </Text>
+            <Text color={effort === "关" || effort === "—" ? theme.faint : theme.reasoning}>{effort}</Text>
+          </>
+        ) : null}
         {lastTokens != null ? <Text color={theme.dim}> · 本轮 {lastTokens}</Text> : null}
         {totalTokens != null ? <Text color={theme.dim}> · 累计 {totalTokens} tok</Text> : null}
         {busy ? <Text color={theme.tool}> · ⏳ 生成中</Text> : null}

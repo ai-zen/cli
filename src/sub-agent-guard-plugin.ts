@@ -12,8 +12,8 @@
  * init）。
  *
  * 约束口径（与主 Agent 一致，仅此一项）：把主 Agent 同款的 `ContextGuardPlugin` 装到子 Agent 上
- * —— 同一 `maxTokens`（当前模型 `maxContextTokens`）、同样不传 ratio（沿用 SDK 默认 1.5），
- * 使「上下文 token 超过 maxTokens × 1.5 即中断」对子 Agent 同样成立。
+ * —— 同一个 `guardTokens`（当前模型的 `tokenThresholds.guard`），使「请求前用量超过硬线即中断」
+ * 对子 Agent 同样成立。
  * **不设**轮次上限，**不设**工具调用次数上限。
  *
  * 中断语义：抛错即结束子 Agent 的 run；异常经 `AgentTool` 的 finally（分发 onSubAgentEnd）
@@ -30,8 +30,8 @@ import type { AgentPlugin } from "@ai-zen/agents-sdk";
 import type { SubAgentContext } from "@ai-zen/agents-core";
 
 export interface SubAgentGuardOptions {
-  /** 子 Agent 的上下文 token 阈值；与主 Agent 同源（当前模型的 `maxContextTokens`） */
-  maxTokens: number;
+  /** 强行阻断阈值；与主 Agent 同源（当前模型的 `tokenThresholds.guard`） */
+  guardTokens: number;
 }
 
 /**
@@ -42,19 +42,19 @@ export interface SubAgentGuardOptions {
  * 由 `ContextGuardPlugin` 按阈值决定。
  */
 export class SubAgentGuardInstallerPlugin implements AgentPlugin {
-  private readonly maxTokens: number;
+  private readonly guardTokens: number;
 
   constructor(options: SubAgentGuardOptions) {
-    this.maxTokens = options.maxTokens;
+    this.guardTokens = options.guardTokens;
   }
 
   onSubAgentStart({ subAgent }: SubAgentContext): void {
-    // 与主 Agent 完全同款：同一 maxTokens，不传 ratio（沿用 ContextGuardPlugin 默认 1.5）
-    subAgent.use(new ContextGuardPlugin({ maxTokens: this.maxTokens }));
+    // 与主 Agent 完全同款：同一个 guardTokens 绝对阈值
+    subAgent.use(new ContextGuardPlugin({ guardTokens: this.guardTokens }));
 
     // 传染到孙级：子 Agent 若再委派，其子 Agent 同样被安插
     subAgent.use(
-      new SubAgentGuardInstallerPlugin({ maxTokens: this.maxTokens }),
+      new SubAgentGuardInstallerPlugin({ guardTokens: this.guardTokens }),
     );
   }
 }

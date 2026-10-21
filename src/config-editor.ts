@@ -245,7 +245,8 @@ export function addModel(
     name: input.name.trim() || id,
     endpointId: input.endpointId,
     modelName: input.modelName?.trim() || id,
-    maxContextTokens: 128_000,
+    // 交接软线 128K / 阻断硬线 192K（与 SDK 迁移兜底一致）
+    tokenThresholds: { handoff: 128_000, guard: 192_000 },
     custom: true,
   };
   return { config: { ...config, models: [...config.models, model] }, model };

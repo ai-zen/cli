@@ -63,8 +63,8 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       { id: "bigmodelcn", name: "BigModelCN (智谱AI)", baseUrl: "https://open.bigmodel.cn/api/paas/v4", apiKey: " ea8c98b6-key " },
     ],
     models: [
-      { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash", endpointId: "deepseek", maxContextTokens: 250_000 },
-      { id: "glm-5.1", name: "GLM-5.1", endpointId: "bigmodelcn", maxContextTokens: 250_000 },
+      { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash", endpointId: "deepseek", tokenThresholds: { handoff: 250_000, guard: 375000 } },
+      { id: "glm-5.1", name: "GLM-5.1", endpointId: "bigmodelcn", tokenThresholds: { handoff: 250_000, guard: 375000 } },
     ],
     defaultModel: "deepseek-v4-flash",
     ...overrides,
@@ -196,9 +196,9 @@ describe("config-editor / 通用改写（配置中心）", () => {
   });
 
   it("updateModel 只改目标模型", () => {
-    const after = updateModel(makeConfig(), "glm-5.1", { maxContextTokens: 100_000, custom: true });
-    expect(after.models[1]).toMatchObject({ maxContextTokens: 100_000, custom: true });
-    expect(after.models[0].maxContextTokens).toBe(250_000);
+    const after = updateModel(makeConfig(), "glm-5.1", { tokenThresholds: { handoff: 100_000, guard: 150000 }, custom: true });
+    expect(after.models[1]).toMatchObject({ tokenThresholds: { handoff: 100_000, guard: 150000 }, custom: true });
+    expect(after.models[0].tokenThresholds.handoff).toBe(250_000);
   });
 
   it("removeModel 修正悬空的默认引用", () => {
@@ -210,7 +210,7 @@ describe("config-editor / 通用改写（配置中心）", () => {
   it("addModel 派生 id 并标记 custom", () => {
     const { config, model } = addModel(makeConfig(), { name: "My GPT", endpointId: "deepseek" });
     expect(model).toMatchObject({ id: "my-gpt", name: "My GPT", endpointId: "deepseek", custom: true });
-    expect(model.maxContextTokens).toBeGreaterThan(0);
+    expect(model.tokenThresholds.handoff).toBeGreaterThan(0);
     expect(config.models).toHaveLength(3);
   });
 

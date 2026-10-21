@@ -66,12 +66,78 @@ When run with no arguments on an interactive terminal, the CLI opens a full-scre
 ╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
 
               AI workbench in your terminal
-              v1.0.0-alpha.13 · sdk x · core y
+              v1.0.0-alpha.14 · sdk x · core y
 ```
 
 After the splash, you land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and the status bar (model · agent · this-round / cumulative tokens · generating) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line.
 
-The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word), and an inline `/` command menu (↑↓ to choose, `Tab` to complete). Tool calls render as `⚙ name(args)` with **JSON syntax highlighting**; the answer / reasoning is **Markdown-source-colored** (headings, bold, italic, inline code, lists, quotes, links), and fenced code blocks are **syntax-highlighted by language with the fence markers kept** (highlight data from `highlight.js` via `lowlight`). `Ctrl+C` cancels the current request while generating, and exits when idle.
+The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word; `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word; `Ctrl+K` kills to end of line; `Ctrl+U` kills to line start; `PgUp`/`PgDn` (or `Alt+V`/`Ctrl+V`) scroll the transcript; on macOS `⌘← →` moves by word, `⌘⌫`/`⌘⌦` deletes by word, `⌘[`/`⌘]` pages and `⌘;`/`⌘'` scrolls by line (depending on whether the terminal reports Cmd — see below)., and an inline `/` command menu (↑↓ to choose, `Tab` to complete). Tool calls render as `⚙ name(args)` with **JSON syntax highlighting**; the answer / reasoning is **Markdown-source-colored** (headings, bold, italic, inline code, lists, quotes, links), and fenced code blocks are **syntax-highlighted by language with the fence markers kept** (highlight data from `highlight.js` via `lowlight`). `Ctrl+C` cancels the current request while generating, and exits when idle.
+
+### Keyboard & terminal compatibility (macOS, etc.)
+
+The convention for terminal TUIs on macOS is **Option-as-Meta plus readline-style Ctrl keys**: `Cmd` is not part of the terminal protocol (`super` is only reported under the [kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)), so `⌘` is left to the terminal itself (copy / paste / search). This CLI follows that convention.
+
+**Step one: make Option act as Meta.** macOS terminals do not send the Option modifier by default — until you enable it, every `Option+X` shortcut does nothing:
+
+| Terminal | Setting |
+|---|---|
+| Apple Terminal | Settings → Profiles → Keyboard → check **Use Option as Meta Key** |
+| iTerm2 | Settings → Profiles → Keys → General → Left/Right Option key = `Esc+` |
+| VS Code / Cursor | add `"terminal.integrated.macOptionIsMeta": true` to settings |
+| Ghostty / kitty / WezTerm | enable Option-as-Alt / Option-as-Meta in the config |
+
+Key map (aligned with [Claude Code](https://docs.claude.com/en/docs/claude-code/interactive-mode)):
+
+| Keys | Action |
+|---|---|
+| `Enter` | Send |
+| `Ctrl+J`, `Ctrl+Enter`, `Alt+Enter`, `Shift+Enter` | Newline |
+| `Ctrl+C` | While generating: interrupt; when idle: clear the draft, press again to exit |
+| `Ctrl+D` | With a draft: delete the character after the cursor; empty input: press twice to exit |
+| `Esc` | While generating: interrupt; otherwise clear the draft and jump to the bottom |
+| `Ctrl+A` / `Ctrl+E` | Line start / end |
+| `Ctrl+P` / `Ctrl+N` | Previous / next history entry (also moves the slash menu) |
+| `Ctrl+K` / `Ctrl+U` | Kill to line end / line start |
+| `Ctrl+W` | Kill back to the previous whitespace (punctuation does not split: `src/utils/foo.ts` goes in one press) |
+| `Alt+B` / `Alt+F` | Move by word |
+| `Alt+D`, `Alt+Backspace`, `Ctrl+Delete` | Delete by word |
+| `Ctrl+Y` / `Alt+Y` | Yank the last killed text / cycle older entries |
+| `Ctrl+_` | Undo the last input edit |
+| `Ctrl+S` | Stash the draft / press again to restore |
+| `Ctrl+V` | Reserved for image paste (**not implemented yet**; shows a notice) |
+| `Ctrl+L` | Clear the screen (context kept) |
+| `PgUp` / `PgDn` | Page through the transcript |
+| `Shift+↑ ↓`, `Alt+↑ ↓`, `⌘;` / `⌘'`* | Scroll by line |
+| `\` + `Enter` | Newline (works in any terminal) |
+
+Not implemented (no counterpart here): `Ctrl+O` transcript viewer, `Ctrl+R` reverse search, `Ctrl+B` background tasks, `Ctrl+T` task list, `Shift+Tab` permission modes.
+
+`Ctrl+V` (Claude Code's "paste image") is **not implemented yet** — pressing it shows a notice. It first needs a proper "file → content block" capability probe (Files API upload vs base64 inline) instead of hard-coding a single endpoint. Note that macOS maps `⌘⌫` to `Ctrl+U`, which is why `Ctrl+U` kills to line start here; use `Esc` to clear the draft.
+
+\* `⌘` combos only carry the `super` bit when the terminal **enables the kitty keyboard protocol** (and for iTerm2, when Cmd is mapped to Super). Terminals without it (e.g. Apple Terminal) can only map `⌘` to `ESC` sequences (e.g. `⌘←` → `ESC[1;9D`, equivalent to `Alt+←`), or you can use the Alt combos above.
+
+> macOS maps `⌘⌫` to `Ctrl+U` in iTerm2 and Terminal.app, which is why `Ctrl+U` here follows readline semantics (delete to line start): making it "clear everything" would throw away the whole draft whenever a Mac user presses `⌘⌫`.
+
+> On macOS `Ctrl+← →` is usually swallowed by the system: Mission Control binds it to "Move left/right a space". Uncheck it under System Settings → Keyboard → Keyboard Shortcuts → Mission Control.
+
+If a key still does nothing, turn on the key diagnostics and press it once:
+
+```bash
+AIZ_DEBUG_KEYS=1 aiz
+# in another shell
+tail -f /tmp/aiz-key-debug.log
+```
+
+The first line records the terminal environment (`TERM`, `TERM_PROGRAM`, ...); every keypress then appends one line:
+
+```
+key input="d" flags=[meta] raw=true
+key input="" flags=[pageUp] raw=false
+```
+
+- **No new line after pressing** → the key never reached the app (system shortcut / terminal key mapping)
+- **Line present but `flags` unexpected** → the sequence arrived; the matching logic is at fault (paste that line in a report)
+- **`raw=false`** → stdin was not in raw mode, so the terminal interpreted the key itself (e.g. scrolled its scrollback)
 
 ### First-run setup (API Key)
 
@@ -113,6 +179,8 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 | `/editor` | Open system editor for long-form input |
 | `/clear` | Clear the screen |
 | `/config` | Open the configuration center (endpoints / models / image models / MCP servers / agent definitions / defaults / tool-output cap) |
+| `/model` | Switch the model of the current session and persist it: if the Agent has an explicit model binding that binding is updated, otherwise the default model is changed |
+| `/think` `/effort` | Switch reasoning effort (available levels come from the model's capability, e.g. `low/high/max`); persisted into the current Agent definition; `/think default` falls back to the model default |
 | `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
 | `/handoff` | Write a handoff document only (session keeps running; no confirmation) |
 | `/migrate` `/migration` | Handoff + start a new session (discards history; asks for confirmation) |
@@ -204,6 +272,7 @@ The `maxContextTokens` field on each model sets the migration threshold (typical
 ### Environment Variable
 
 - `AI_ZEN_DIR` — Override the shared root directory (default: `~/.ai-zen`). CLI runtime data goes to `$AI_ZEN_DIR/cli/`, and shared resources (agents, skills, tools, MCP, etc.) go to `$AI_ZEN_DIR/`.
+- `AIZ_DEBUG_KEYS=1` — Enables key diagnostics logging (off by default, zero overhead); `AIZ_KEYS_FILE=<path>` overrides the target file (default `/tmp/aiz-key-debug.log`).
 
 ## Filesystem Layout
 

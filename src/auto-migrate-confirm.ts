@@ -29,8 +29,8 @@ import {
 export interface AutoMigrateModeOptions {
   /** 交接服务实例（与 `/migrate`、`/handoff` 共用同一实例） */
   service: HandoffService;
-  /** 触发迁移的上下文阈值 */
-  maxTokens: number;
+  /** 交接阈值（`tokenThresholds.handoff`）：prompt_tokens 超过它即触发迁移 */
+  handoffTokens: number;
   /**
    * 用户的执行者选择（由调用方注入：TUI 用选择器浮层）。
    * 返回 `null` 表示跳过本次迁移。
@@ -53,7 +53,7 @@ export function canPromptUser(): boolean {
 export function createAutoMigratePlugin(options: AutoMigrateModeOptions): AutoMigratePlugin {
   const {
     service,
-    maxTokens,
+    handoffTokens,
     choose,
     defaultMode = "self",
     shouldConfirm = canPromptUser,
@@ -62,7 +62,7 @@ export function createAutoMigratePlugin(options: AutoMigrateModeOptions): AutoMi
 
   return new AutoMigratePlugin({
     service,
-    maxTokens,
+    handoffTokens,
     resolveMode: async (info) => {
       // 非交互环境：没有选择通道，按默认执行者迁移（不阻塞、不额外输出）
       if (!shouldConfirm()) return defaultMode;

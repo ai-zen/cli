@@ -20,6 +20,7 @@ import { createAgent } from "./agent-creator.js";
 import { readConfig } from "./config.js";
 import { CwdTrackerPlugin } from "./cwd-tracker-plugin.js";
 import { SubAgentGuardInstallerPlugin } from "./sub-agent-guard-plugin.js";
+import type { TokenThresholds } from "./reasoning-effort.js";
 import { conversationRepository } from "./conversation-repository.js";
 import { formatShortTime } from "./format-time.js";
 
@@ -83,7 +84,8 @@ export function extractText(content: AgentNS.MessageContent | undefined): string
 interface ResolvedTarget {
   modelId: string;
   agentId: string;
-  maxTokens?: number;
+  /** 当前模型的上下文阈值（交接软线 + 阻断硬线） */
+  tokenThresholds?: TokenThresholds;
 }
 
 /**
@@ -107,11 +109,8 @@ async function resolveTarget(): Promise<ResolvedTarget> {
     );
   }
 
-  const maxTokens =
-    model.maxContextTokens ??
-    (model.maxContextChars ? Math.floor(model.maxContextChars / 4) : undefined);
-
-  return { modelId, agentId: config.defaultAgent ?? "default", maxTokens };
+  // 阈值由配置直接给出（旧字段已在 SDK 的 ConfigManager.read() 里迁移过）
+  return { modelId, agentId: config.defaultAgent ?? "default", tokenThresholds: model.tokenThresholds };
 }
 
 /** 运行一次纯 stdio 对话，返回进程退出码 */
@@ -133,14 +132,14 @@ export async function runStdio(options: StdioRunOptions): Promise<number> {
   console.log = (...args: unknown[]) => logStderr(args.map((a) => String(a)).join(" "));
 
   try {
-    const { modelId, agentId, maxTokens } = await resolveTarget();
+    const { modelId, agentId, tokenThresholds } = await resolveTarget();
 
     const agent = await createAgent({ agentId });
     agent.use(new CwdTrackerPlugin());
     agent.use(new AutoRefreshToolsPlugin());
-    if (maxTokens && maxTokens > 0) {
-      agent.use(new ContextGuardPlugin({ maxTokens }));
-      agent.use(new SubAgentGuardInstallerPlugin({ maxTokens }));
+    if (tokenThresholds) {
+      agent.use(new ContextGuardPlugin({ guardTokens: tokenThresholds.guard }));
+      agent.use(new SubAgentGuardInstallerPlugin({ guardTokens: tokenThresholds.guard }));
     }
     await agent.init();
 

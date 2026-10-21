@@ -21,7 +21,7 @@ writeFileSync(
       // SDK alpha.1 起对「出厂模型清单」做托管同步：未标 `custom: true` 的模型会被
       // 出厂定义替换，悬空的 `defaultModel` 回退到出厂默认。这里必须标 `custom: true`，
       // 才能让 `defaultModel: "gpt4"` 原样保留（本用例只验证 Scope 是否携带配置与目录）。
-      models: [{ id: "gpt4", name: "GPT-4", endpointId: "openai", maxContextTokens: 1000, custom: true }],
+      models: [{ id: "gpt4", name: "GPT-4", endpointId: "openai", tokenThresholds: { handoff: 1000, guard: 1500 }, custom: true }],
       defaultModel: "gpt4",
       version: 4,
     },

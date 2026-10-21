@@ -108,14 +108,38 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         commit: (raw) => save({ modelName: raw || undefined }, "模型名"),
       },
       {
-        key: "maxContextTokens",
-        label: "迁移阈值",
+        key: "handoffTokens",
+        label: "交接阈值",
         kind: "number",
-        value: String(model.maxContextTokens ?? 0),
-        initial: String(model.maxContextTokens ?? 0),
+        value: String(model.tokenThresholds?.handoff ?? 0),
+        initial: String(model.tokenThresholds?.handoff ?? 0),
         commit: (raw) => {
           const n = Number(raw.trim());
-          return Number.isFinite(n) && n > 0 ? save({ maxContextTokens: Math.floor(n) }, "迁移阈值") : Promise.resolve("迁移阈值需为正整数");
+          if (!Number.isFinite(n) || n <= 0) return Promise.resolve("交接阈值需为正整数");
+          const guard = model.tokenThresholds?.guard ?? 0;
+          // 软线不得越过硬线，否则一启动就被阻断
+          if (guard > 0 && Math.floor(n) >= guard) return Promise.resolve("交接阈值需小于阻断阈值");
+          return save(
+            { tokenThresholds: { handoff: Math.floor(n), guard } },
+            "交接阈值",
+          );
+        },
+      },
+      {
+        key: "guardTokens",
+        label: "阻断阈值",
+        kind: "number",
+        value: String(model.tokenThresholds?.guard ?? 0),
+        initial: String(model.tokenThresholds?.guard ?? 0),
+        commit: (raw) => {
+          const n = Number(raw.trim());
+          if (!Number.isFinite(n) || n <= 0) return Promise.resolve("阻断阈值需为正整数");
+          const handoff = model.tokenThresholds?.handoff ?? 0;
+          if (Math.floor(n) <= handoff) return Promise.resolve("阻断阈值需大于交接阈值");
+          return save(
+            { tokenThresholds: { handoff, guard: Math.floor(n) } },
+            "阻断阈值",
+          );
         },
       },
       {

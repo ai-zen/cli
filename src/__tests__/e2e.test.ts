@@ -89,7 +89,7 @@ function setupConfigDir(aizDir: string, options: SetupOptions = {}): void {
             modelName: "deepseek-flash",
             description: "DeepSeek 旗舰模型",
             defaultParams: { thinking: { type: "disabled" } },
-            maxContextTokens: 250000,
+            tokenThresholds: { handoff: 250000, guard: 375000 },
             // custom: true → 用户自有，避免被 SDK「出厂模型清单同步」替换（alpha.1）
             custom: true,
           },

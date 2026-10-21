@@ -25,6 +25,7 @@ import { readConfig } from "../config.js";
 import { CwdTrackerPlugin } from "../cwd-tracker-plugin.js";
 import { ConversationPersistPlugin } from "../conversation-persist-plugin.js";
 import { SubAgentGuardInstallerPlugin } from "../sub-agent-guard-plugin.js";
+import type { TokenThresholds } from "../reasoning-effort.js";
 import { createAutoMigratePlugin } from "../auto-migrate-confirm.js";
 import { createHandoffService } from "../handoff-service.js";
 import { conversationRepository, generateConversationId } from "../conversation-repository.js";
@@ -59,7 +60,8 @@ export { stripCwdNote };
 export class ChatSession {
   readonly modelId: string;
   readonly agentId: string;
-  readonly maxTokens?: number;
+  /** 当前模型的上下文阈值（交接软线 + 阻断硬线），缺省时不装护栏插件 */
+  readonly tokenThresholds?: TokenThresholds;
 
   /**
    * 会话 id / 名称的**唯一真相源是 `ctx`**（`ConversationContext`）。
@@ -95,14 +97,14 @@ export class ChatSession {
     handoffService: HandoffService,
     ctx: ConversationContext,
     options: ChatSessionOptions,
-    maxTokens: number | undefined,
+    tokenThresholds: TokenThresholds | undefined,
     notifier: ChatSessionNotifier,
   ) {
     this.handoffService = handoffService;
     this.ctx = ctx;
     this.modelId = options.modelId;
     this.agentId = options.agentId || "default";
-    this.maxTokens = maxTokens;
+    this.tokenThresholds = tokenThresholds;
     this.currentId = ctx.currentId || generateConversationId();
     this.currentName = ctx.currentName;
     this.notifier = notifier;
@@ -116,9 +118,8 @@ export class ChatSession {
   ): Promise<ChatSession> {
     const config = await readConfig();
     const model = config.models.find((m) => m.id === options.modelId);
-    const maxTokens =
-      model?.maxContextTokens ??
-      (model?.maxContextChars ? Math.floor(model.maxContextChars / 4) : undefined);
+    // 阈值由配置直接给出（旧字段已在 SDK 的 ConfigManager.read() 里迁移过）
+    const tokenThresholds = model?.tokenThresholds;
 
     const agent = await createAgent({ messages: options.messages, agentId: options.agentId });
     const currentId = options.conversationId || generateConversationId();
@@ -137,7 +138,7 @@ export class ChatSession {
     });
     ctx.handoffService = handoffService;
 
-    const session = new ChatSession(handoffService, ctx, options, maxTokens, notifier);
+    const session = new ChatSession(handoffService, ctx, options, tokenThresholds, notifier);
     session.agent = agent;
     await session.attach(agent);
     return session;
@@ -308,26 +309,21 @@ export class ChatSession {
       }),
     );
 
-    if (this.maxTokens && this.maxTokens > 0) {
-      agent.use(
-        new ContextGuardPlugin({
-          maxTokens: this.maxTokens,
-          // 交接回合放宽阈值（而非放行）：交接恰好发生在上下文最满的时刻，
-          // 且交接回合本身还要再发请求，不放宽会被护栏误杀；放宽仍保留熔断
-          isSuspended: () => this.handoffService.busy,
-        }),
-      );
+    if (this.tokenThresholds) {
+      const { handoff, guard } = this.tokenThresholds;
+      // 硬线：请求前用量超过 guard 即中断本轮（绝对值，不再有 ratio/放宽档）
+      agent.use(new ContextGuardPlugin({ guardTokens: guard }));
       agent.use(
         createAutoMigratePlugin({
           service: this.handoffService,
-          maxTokens: this.maxTokens,
+          handoffTokens: handoff,
           // TUI 下由 Ink 层提供执行者选择器；无选择通道时按默认执行者（原 agent 自交接）迁移
           shouldConfirm: () => Boolean(this.requestMode),
           choose: (info) => this.requestMode!(info),
           log: (text) => this.notifier.onNotice(text, "info"),
         }),
       );
-      agent.use(new SubAgentGuardInstallerPlugin({ maxTokens: this.maxTokens }));
+      agent.use(new SubAgentGuardInstallerPlugin({ guardTokens: guard }));
     }
 
     this.wire(agent);

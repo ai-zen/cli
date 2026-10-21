@@ -15,7 +15,7 @@ outline: deep
 - **Node.js**: the package is published as ESM (`"type": "module"`). `package.json` does not declare an `engines` field, so the actual required version follows the Node ecosystem (a recent LTS is recommended).
 - **Runtime dependencies** (declared in `package.json`):
   - `@ai-zen/agents-core` `^4.5.1`
-  - `@ai-zen/agents-sdk` `1.0.0-alpha.11`
+  - `@ai-zen/agents-sdk` `1.0.0-alpha.13`
   - `@modelcontextprotocol/sdk` `^1.29.0`
   - `dayjs`, `ink`, `react`, `zod`, `highlight.js`, `lowlight`
 - **Platform**: the underlying tools and the Shell hook depend on a Unix shell (`bash`/`zsh`) and `process.env.SHELL`; the Shell hook is unavailable on Windows (`hook` will report "unsupported shell").
@@ -66,7 +66,7 @@ cat README.md | ai "summarize in three sentences"
 
 On start, an animated gradient ASCII splash appears, then you land **directly in the chat screen** (rendered with Ink/React) — resuming the last session if there is one, otherwise starting a new conversation. The chat screen is **bottom-pinned**: a divider, the input line, and the status bar always sit at the bottom of the terminal, while the conversation scrolls above them.
 
-The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word), and an inline `/` command menu. Tool calls render as `⚙ name(args)` with **JSON highlighting**; the answer/reasoning is **Markdown-source-colored** (headings / bold / italic / inline code / lists / quotes / links), and fenced code blocks are highlighted by language with the **fence markers kept**.
+The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word, `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word, `Ctrl+K` kills to end of line, `Ctrl+U` kills to line start, `Esc` clears the input, `PgUp` / `PgDn` (or `Alt+V` / `Ctrl+V`) scroll the transcript), and an inline `/` command menu. Tool calls render as `⚙ name(args)` with **JSON highlighting**; the answer/reasoning is **Markdown-source-colored** (headings / bold / italic / inline code / lists / quotes / links), and fenced code blocks are highlighted by language with the **fence markers kept**.
 
 ### First-run setup (API Key)
 
@@ -101,6 +101,8 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 | `/editor` | Use the system editor to enter a long message |
 | `/clear` | Clear the screen |
 | `/config` | Open the configuration center (default model / endpoint management) |
+| `/model` | Switch the model of the current session and persist it (updates the Agent binding when there is one, otherwise the default model); the status bar shows the model name |
+| `/think` `/effort` | Switch reasoning effort (levels available depend on the model's capability), persisted into the current Agent definition's `reasoningEffort`; the status bar shows the current level |
 | `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
 | `/migrate` | Manually trigger task migration (generate a handoff document and start a new session) |
 | `/load` | Load a saved conversation (replaces the current session) |
@@ -135,6 +137,8 @@ ai hook uninstall
 | First launch, endpoint has no key | The **credential screen** appears automatically; entering a key saves it and enters the chat |
 | Change the key of the **endpoint used by the current model** | `/key` in the chat (the session is rebuilt on save, so it takes effect immediately) |
 | Endpoint key / base URL, default model, add endpoint | `/config` → "Endpoint management" |
+| Model used by the current session | `/model` in the chat (write target depends on whether the Agent has a model binding) |
+| Reasoning effort | `/think` in the chat (written into the current Agent's `reasoningEffort`; the ceiling comes from the model's `reasoning` declaration) |
 | Models / image models / MCP servers / agent definitions / defaults / tool-output cap | `/config` → configuration center |
 
 > Note: the CLI entry only implements the `hook` subcommand (`ai hook install|uninstall`); there is **no `config` subcommand** — configuration editing happens inside the TUI (endpoints, models, image models, MCP servers, agent definitions, defaults and the tool-output cap can all be added/edited/deleted under `/config`). See [Configuration](./configuration.md).

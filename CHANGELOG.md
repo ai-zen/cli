@@ -1,3 +1,49 @@
+## [1.0.0-alpha.14] - 2026-10-22
+
+### 🚀 新功能
+
+- **输入框键位对齐 Claude Code / readline** —— 编辑快捷键统一为业界通行的一套：
+  - 按词操作：`Alt+B` / `Alt+F` 跨词移动（macOS 上 `Option+←/→` 发的就是 `ESC b` / `ESC f`，此前完全不响应）；`Alt+Backspace`、`Alt+D`、`Ctrl+Delete` 按词删除
+  - 整段操作：`Ctrl+K` 删到行尾、`Ctrl+U` 删到行首、`Ctrl+W` **删到前一空白**（标点不切分，`src/utils/foo.ts` 一次删完）
+  - kill ring：`Ctrl+Y` 取回刚删的文本，`Alt+Y` 循环取回更早的；`Ctrl+_` 撤销上一次输入编辑；`Ctrl+S` 暂存 / 恢复草稿
+  - 移动与历史：`Ctrl+A` / `Ctrl+E` 行首 / 行尾，`Ctrl+P` / `Ctrl+N` 历史上下
+  - 新增纯函数层 `src/tui/input-editing.ts`（`deleteToPrevWhitespace` / `killedText` / kill ring / 撤销栈），12 例单测
+- **macOS 按键诊断** —— `AIZ_DEBUG_KEYS=1` 时把终端环境（`TERM` / `TERM_PROGRAM`）与每次按键（`input` + 修饰位 + `raw` 状态）写入 `/tmp/aiz-key-debug.log`（`AIZ_KEYS_FILE` 可改路径），用于定位「某个键在我机器上没反应」：没新行=键被系统截走，`flags` 不符=匹配逻辑问题，`raw=false`=按键被终端自己解释。
+- **`/model` 切换当前会话的模型并写入配置** —— 无参弹模型选择器（标注当前），`/model <id>` 直切。写入位置按「会话模型真正的来源」决定：Agent 定义显式绑定了模型 → 改该 Agent 的 `modelId`；没绑定（走默认模型）→ 改 `config.json` 的 `defaultModel`。切换后重建 Scope 与会话（消息与上下文保留），状态栏模型名随之更新。判定逻辑抽为 `src/model-switch.ts`（`resolveModelWriteTarget` / `switchModel`，7 例单测）。
+- **思考强度展示与切换（`/think`，别名 `/effort`）** —— 状态栏在模型名后展示当前强度（`关` / `极低` / `低` / `中` / `高` / `极高` / `最高`；模型可调但 Agent 未声明时显示`默认`，模型不可调时显示 `—`）。`/think` 无参弹选择器（标注当前）、`/think high` 直设、`/think default` 清除声明恢复跟随模型默认。
+  - **档位存在 Agent 定义上**（`AgentDefinition.reasoningEffort`），不在模型上：同一个模型可以给编程 / 小说 / 闲聊三个 Agent 配不同强度，而模型的 `defaultParams` 不动。
+  - **可选档位由模型能力决定**（`Model.reasoning.efforts`，SDK 按厂商官方文档声明）：智谱 GLM-5.3 系只有 `low/high/max` 且不能关（传 `medium` 或 `disabled` 会 400），DeepSeek 是 `off/low/high/max`，OpenAI 是 `off/minimal/low/medium/high`；模型没声明就一个档位都不给，绝不推测。
+  - 读写与校验抽为 `src/reasoning-effort.ts`（`effortChoices` / `describeEffort` / `setAgentEffort`，9 例单测）。
+- **SDK 日志接管** —— TUI 启动即 `setLogger()`，关掉 SDK 的 `console.log` 兜底（否则 `load_mcp` 的 manifest 会直写 stdout 撕裂界面）；`AIZ_DEBUG_SDK=1` 时改为落盘 `/tmp/aiz-sdk.log`（`AIZ_SDK_LOG_FILE` 可改路径），6 例单测。
+
+### 🔧 行为变更（不兼容）
+
+- **升级 `@ai-zen/agents-sdk` 至 `1.0.0-alpha.13`，上下文阈值改为结构体** —— `Model.maxContextTokens` 被 `Model.tokenThresholds: { handoff, guard }` 取代（`maxContextChars` 淘汰）：
+  - `handoff`：交接软线，`prompt_tokens` 超过它触发任务交接；
+  - `guard`：强行阻断硬线，每次请求**前**超过它即中断本轮并报错。
+  - 两条线都是**绝对值**，`ContextGuardPlugin` 的 `ratio` / `suspendedRatio` / `isSuspended` 已从 SDK 删除——想调松就改数字。代价是交接回合不再有 2.0 倍额外放宽，出厂把 `guard` 配成 `handoff × 1.5`（375K）以留出缓冲。
+  - 旧配置**自动迁移**：SDK 的 `ConfigManager.read()` 读到即迁（`maxContextTokens` → `handoff`，`maxContextChars` 按 `/4` 折算，缺 `guard` 按 1.5 倍补一次，旧键删除），检测到差异才写回磁盘。用户无需手改 `config.json`。
+  - 配置中心里原来的「迁移阈值」一项拆成「交接阈值」与「阻断阈值」两行，并校验软线必须小于硬线。
+
+- **`Ctrl+N` 由「换行」改为「历史下一条」** —— 换行改用 `Ctrl+J` / `Ctrl+Enter` / `Alt+Enter` / `Shift+Enter` / `\` + `Enter`
+- **`Ctrl+V` 不再兼任「翻页」** —— 预留给 Claude Code 的「粘贴图片」；当前按下会提示暂未实现。翻页用 `PgUp` / `PgDn`，按行滚动用 `Shift+↑ ↓` / `Alt+↑ ↓`
+- **`Ctrl+U` 由「清空整个输入框」改为「删到行首」** —— macOS 的 iTerm2 与 Terminal.app 会把 `⌘⌫` 映射成 `Ctrl+U`，原先的语义会让 Mac 用户一按 ⌘⌫ 就丢掉整段草稿；清空全部改由 `Esc` 负责
+- **`Ctrl+C` 空闲时不再直接退出** —— 有草稿时先清空并提示，再按一次才退出
+- **`Ctrl+D` 改为双击确认退出** —— 有草稿时改为 readline 语义（删光标后一个字符）
+- **忙碌期（生成 / 迁移中）`Esc` 现在等于中断本轮**
+
+### ⏳ 暂未实现
+
+- **粘贴图片（`Ctrl+V`）** —— 需要先解决「文件 → 内容块」的端点能力探测（Files API 上传 vs base64 内联），不能把上传端点硬编码成某个 id；随后的 SDK 改造再做，本轮已把该功能代码移除，避免半成品上线。
+
+### ✅ 测试
+
+- 新增 `src/tui/input-editing.test.ts`（12 例）+ `src/tui/key-debug.test.ts`（4 例）+ `src/sdk-log.test.ts`（6 例）+ `src/model-switch.test.ts`（7 例）+ `src/reasoning-effort.test.ts`（9 例）+ 输入工具函数 8 例；全量 **23 文件 / 286 例** 通过，`tsc` 与 `build` 零错误。
+
+### 📄 文档
+
+- `README{,.zh}.md` 重写「键盘与终端兼容」小节：改为业界通行路线「Option 当 Meta + readline 系 Ctrl 键」，附 Apple Terminal / iTerm2 / VS Code / Ghostty 的具体设置路径；说明 `⌘` 需 kitty 键盘协议才会上报、`⌘⌫` 被终端映射为 `Ctrl+U` 的原因；补充按键诊断用法。`README{,.zh}.md` 与 `docs/{zh,en}/getting-started.md` 的命令表新增 `/model`、`/think`（含「配置文件来源」对照），`docs/manifest.json` 版本号同步。
+
 ## [1.0.0-alpha.13] - 2026-10-21
 
 ### 🚀 新功能

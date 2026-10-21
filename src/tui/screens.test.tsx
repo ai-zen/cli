@@ -13,6 +13,10 @@ import {
   usableFrameRows,
   wordLeft,
   wordRight,
+  deleteWordLeft,
+  deleteWordRight,
+  deleteToLineEnd,
+  deleteToLineStart,
   computeChatLayout,
   resolveSubmitText,
   stripCwdNote,
@@ -416,5 +420,44 @@ describe("跨词移动（Ctrl/Alt + ← →）", () => {
   it("越界钳制", () => {
     expect(wordLeft("hi", 0)).toBe(0);
     expect(wordRight("hi", 2)).toBe(2);
+  });
+});
+
+describe("按词删除（Ctrl+W / Alt+Backspace、Alt+D / Ctrl+Delete、Ctrl+K）", () => {
+  it("deleteWordLeft 删掉光标前的分隔符与单词", () => {
+    expect(deleteWordLeft("hello world", 11)).toEqual({ text: "hello ", cursor: 6 });
+    // 词尾带空格时，空格也一并吃掉（与 readline 的 backward-kill-word 一致）
+    expect(deleteWordLeft("hello world ", 12)).toEqual({ text: "hello ", cursor: 6 });
+    // 光标已在词首时，吃掉的是前一个词与它后面的空格
+    expect(deleteWordLeft("hello world", 6)).toEqual({ text: "world", cursor: 0 });
+  });
+  it("deleteWordLeft 在光标为 0 时为空操作", () => {
+    expect(deleteWordLeft("hello", 0)).toEqual({ text: "hello", cursor: 0 });
+  });
+  it("deleteWordRight 删掉光标后到词尾（分隔符保留，与 readline M-d 一致）", () => {
+    expect(deleteWordRight("hello world", 0)).toEqual({ text: " world", cursor: 0 });
+    expect(deleteWordRight("hello world", 5)).toEqual({ text: "hello", cursor: 5 });
+  });
+  it("deleteWordRight 在行尾时为空操作", () => {
+    expect(deleteWordRight("hello", 5)).toEqual({ text: "hello", cursor: 5 });
+  });
+  it("CJK 文本按「整段非空白」算一个词", () => {
+    expect(deleteWordLeft("你好，世界", 5)).toEqual({ text: "", cursor: 0 });
+    expect(deleteWordRight("你好，世界", 0)).toEqual({ text: "", cursor: 0 });
+  });
+  it("deleteToLineEnd 删到行尾（保留换行），行尾时吃掉换行", () => {
+    expect(deleteToLineEnd("abc\ndef", 1)).toEqual({ text: "a\ndef", cursor: 1 });
+    expect(deleteToLineEnd("abc\ndef", 3)).toEqual({ text: "abcdef", cursor: 3 });
+    expect(deleteToLineEnd("abc", 3)).toEqual({ text: "abc", cursor: 3 });
+  });
+  it("deleteToLineStart 删到行首（Ctrl+U，macOS 的 ⌘⌫ 会落到这里）", () => {
+    expect(deleteToLineStart("abc def", 7)).toEqual({ text: "", cursor: 0 });
+    expect(deleteToLineStart("abc def", 4)).toEqual({ text: "def", cursor: 0 });
+    // 多行：只影响当前行，上一行不受影响
+    expect(deleteToLineStart("foo\nbar", 7)).toEqual({ text: "foo\n", cursor: 4 });
+    expect(deleteToLineStart("foo\nbar", 4)).toEqual({ text: "foo\nbar", cursor: 4 });
+  });
+  it("跨行时只影响当前行", () => {
+    expect(deleteWordLeft("foo\nbar baz", 11)).toEqual({ text: "foo\nbar ", cursor: 8 });
   });
 });

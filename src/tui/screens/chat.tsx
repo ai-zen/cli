@@ -1,6 +1,7 @@
 // 对话屏幕 —— 以 SDK 的 `agent.messages` 为唯一数据源渲染（无自定义中间模型）
 import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
+import { keyDebug } from "../key-debug.js";
 import { AgentNS } from "@ai-zen/agents-core";
 import { AppConfig } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
@@ -12,7 +13,16 @@ import { readConfig, readMcpConfig, saveConfig, writeMcpConfig } from "../../con
 import { readAgentStore, AgentStore } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
 import { ConfigWizard, McpSnapshot, WizardCloseResult, WizardStep } from "../config-wizard/index.js";
-import { computeInputCursorPosition, wordLeft, wordRight } from "./input.js";
+import { computeInputCursorPosition, deleteToLineEnd, deleteToLineStart, deleteWordLeft, deleteWordRight, wordLeft, wordRight } from "./input.js";
+import {
+  deleteToPrevWhitespace,
+  killedText,
+  killAt,
+  popUndo,
+  pushKill,
+  pushUndo,
+  type EditState,
+} from "../input-editing.js";
 import { ChatLayout, computeChatLayout } from "./layout.js";
 import { FrameBuffer } from "./frame-buffer.js";
 import { LineView } from "./render.js";
@@ -20,6 +30,7 @@ import { messageToLines, transcriptLines } from "./messages-view.js";
 import { PickerOverlay, Confirm } from "./overlays.js";
 import { chooseHandoffMode } from "./handoff-choice.js";
 import { runCommand } from "./chat-commands.js";
+import { describeEffort } from "../../reasoning-effort.js";
 import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
 
 // ==================== 对话屏幕 ====================
@@ -32,6 +43,8 @@ export interface ChatScreenProps {
   conversationName?: string;
   /** 重挂载时的初始输入（/back 撤回后用于预填） */
   initialInput?: string;
+  /** 重挂载后展示一次的系统提示（如 /model 的写入结果，旧实例已卸载） */
+  initialNotice?: string;
 }
 
 /**
@@ -88,10 +101,28 @@ export function Chat(props: ChatScreenProps) {
 
   /** 本轮是否在生成中（spinner / 输入禁用） */
   const [busy, setBusy] = useState(false);
+  /**
+   * 思考强度展示文案（关 / 低 / 中 / 高 / 最高 / 开 / —）。
+   *
+   * 真相在配置里（模型的 `defaultParams`），这里只镜像一份供状态栏用：
+   * `/think` 写入后由命令层回调刷新，切换模型时靠 `props.modelId` 变化重读。
+   */
+  const [effortText, setEffortText] = useState<string | null>(null);
   /** 乐观回显：提交后、真实 user 消息落进 messages 之前，先显示用户提问 */
   const [pendingUser, setPendingUser] = useState<{ text: string; base: number } | null>(null);
   /** 转录显示起点（/clear 清屏用：隐藏此索引之前的消息，但不改上下文） */
   const [transcriptFrom, setTranscriptFrom] = useState(0);
+
+  // ---- Claude Code 同款编辑状态 ----
+  /** kill ring：Ctrl+W/U/K 删掉的文本，Ctrl+Y 取回、Alt+Y 循环 */
+  const killRingRef = useRef<string[]>([]);
+  const yankIndexRef = useRef(-1);
+  /** 编辑撤销栈（Ctrl+_） */
+  const undoStackRef = useRef<EditState[]>([]);
+  /** 暂存区（Ctrl+S） */
+  const stashRef = useRef<EditState | null>(null);
+  /** Ctrl+D 双击退出计时 */
+  const ctrlDAtRef = useRef(0);
 
   /**
    * 通知通道：notice / error 走独立栏位，绝不进对话转录（messages）。
@@ -103,6 +134,14 @@ export function Chat(props: ChatScreenProps) {
   useEffect(() => noticeChannel.subscribe(setNotice), [noticeChannel]);
 
   /**
+   * 重挂载附带的系统提示（如 `/model` 的切换结果）。
+   *
+   * 用 ref 而非 props 直读：本值只在首次挂载消费一次，若写进 create 的依赖数组，
+   * 会把「展示一条提示」误变成「重建会话」。
+   */
+  const initialNoticeRef = useRef(props.initialNotice);
+
+  /**
    * 渲染信号 + 合帧：SDK 内容变更 → FrameBuffer 合帧 → setTick 触发重渲染。
    * 转录内容始终从 `agent.messages` 现取，tick 只负责「告诉 React 该重画了」。
    */
@@ -111,6 +150,26 @@ export function Chat(props: ChatScreenProps) {
   if (frameBufferRef.current == null) {
     frameBufferRef.current = new FrameBuffer<null>(() => setTick((t) => t + 1));
   }
+
+  // 思考强度展示：从当前模型的 defaultParams 派生；`/think` 写入后由命令层回调刷新，
+  // 切换模型（重挂载）时靠 props.modelId 变化重读。
+  useEffect(() => {
+    let alive = true;
+    // 档位存在 Agent 定义上（`reasoningEffort`），能力在模型上，两者都要读
+    Promise.all([readConfig(), readAgentStore()])
+      .then(([config, store]) => {
+        const model = config.models?.find((item) => item.id === props.modelId);
+        const agentId = props.agentId ?? "default";
+        const definition = store.agents.find((item) => item.id === agentId) ?? null;
+        if (alive) setEffortText(describeEffort(model, definition));
+      })
+      .catch(() => {
+        if (alive) setEffortText(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [props.modelId, props.agentId]);
 
   // 创建会话
   useEffect(() => {
@@ -135,7 +194,7 @@ export function Chat(props: ChatScreenProps) {
         requestMode: (info) =>
           chooseHandoffMode(
             setPickerState,
-            `上下文即将超限（${info.promptTokens}/${info.maxTokens} tokens）· 选择交接方式`,
+            `上下文即将超限（${info.promptTokens}/${info.handoffTokens} tokens）· 选择交接方式`,
           ),
       },
       notifier,
@@ -147,6 +206,11 @@ export function Chat(props: ChatScreenProps) {
         }
         sessionRef.current = session;
         setReady(true);
+        // 重挂载附带的提示只需展示一次（消费后置空，避免再次触发）
+        if (initialNoticeRef.current) {
+          noticeChannel.push(initialNoticeRef.current);
+          initialNoticeRef.current = undefined;
+        }
         setTick((t) => t + 1);
       })
       .catch((error: any) => setBootError(error?.message ?? String(error)));
@@ -284,6 +348,63 @@ export function Chat(props: ChatScreenProps) {
     if (cp >= chars.length) return;
     setInput(chars.slice(0, cp).join("") + chars.slice(cp + 1).join(""));
   };
+  /** 套用纯函数算好的「文本 + 光标」结果（无变化则不触发重渲染） */
+  const applyEdit = (r: { text: string; cursor: number }) => {
+    if (r.text === input && r.cursor === cursor) return;
+    undoStackRef.current = pushUndo(undoStackRef.current, { text: input, cursor });
+    setInput(r.text);
+    setCursor(r.cursor);
+  };
+  /** 删除类编辑：额外把删掉的文本放进 kill ring（Ctrl+Y 可取回） */
+  const applyKill = (r: { text: string; cursor: number }) => {
+    if (r.text === input && r.cursor === cursor) return;
+    killRingRef.current = pushKill(killRingRef.current, killedText(input, r.text));
+    yankIndexRef.current = -1;
+    applyEdit(r);
+  };
+  const deleteWordBeforeCursor = () => applyKill(deleteWordLeft(input, cursor));
+  const deleteWordAfterCursor = () => applyKill(deleteWordRight(input, cursor));
+  const deleteToEndOfLine = () => applyKill(deleteToLineEnd(input, cursor));
+  const deleteToStartOfLine = () => applyKill(deleteToLineStart(input, cursor));
+  /** Ctrl+W：删到前一空白（标点不切分，整条路径一次删掉） */
+  const deletePrevWhitespace = () => applyKill(deleteToPrevWhitespace(input, cursor));
+  /** Ctrl+Y / Alt+Y：插入 kill ring 中的一段（index 循环） */
+  const yank = (advance: boolean) => {
+    const ring = killRingRef.current;
+    if (ring.length === 0) return;
+    const next = advance ? yankIndexRef.current + 1 : 0;
+    if (next >= ring.length) return;
+    yankIndexRef.current = next;
+    const text = killAt(ring, next) ?? "";
+    insertAtCursor(text);
+  };
+  /** Ctrl+_：撤销上一次编辑 */
+  const undoEdit = () => {
+    const popped = popUndo(undoStackRef.current);
+    if (!popped) return;
+    undoStackRef.current = popped.rest;
+    setInput(popped.state.text);
+    setCursor(popped.state.cursor);
+  };
+  /** Ctrl+S：暂存 / 恢复输入 */
+  const toggleStash = () => {
+    if (input.length > 0) {
+      stashRef.current = { text: input, cursor };
+      setInputText("");
+      noticeChannel.push("已暂存输入（Ctrl+S 恢复）");
+      return;
+    }
+    const stashed = stashRef.current;
+    if (!stashed) return;
+    stashRef.current = null;
+    setInput(stashed.text);
+    setCursor(stashed.cursor);
+    noticeChannel.push("已恢复暂存的输入");
+  };
+  /** Ctrl+V：粘粘图片 —— 暂未支持（需先做「文件 → 内容块」能力探测，见 SKILL/后续迭代） */
+  const pasteImageUnsupported = () => {
+    noticeChannel.push("暂不支持粘贴图片（Ctrl+V 预留给图片粘贴，当前未实现）", "error");
+  };
   const moveCursor = (delta: number) => {
     const len = Array.from(input).length;
     setCursor((c) => Math.max(0, Math.min(len, c + delta)));
@@ -335,6 +456,7 @@ export function Chat(props: ChatScreenProps) {
           setPickerState,
           setConfirmState,
           setInputText,
+          setEffortText,
         });
       } finally {
         if (blocksInput) setBusy(false);
@@ -360,6 +482,8 @@ export function Chat(props: ChatScreenProps) {
   // 输入处理
   useInput(
     (char, key) => {
+      // 按键诊断（AIZ_DEBUG_KEYS=1）：必须在任何 return 之前记录，否则被吞掉的键不会留痕
+      keyDebug(char, key);
       if (bootError) {
         if (char === "k" || char === "K") {
           void openWizard({ kind: "menu" });
@@ -377,33 +501,139 @@ export function Chat(props: ChatScreenProps) {
         scrollByPage(1);
         return;
       }
+      // 翻页的「兜底键」：部分终端把 PgUp/PgDn 留给自己滚 scrollback（应用收不到）。
+      // 注意 `Ctrl+V` 预留给图片粘贴（当前未实现），不再兼任 page-down。
+      if (char === "v" && key.meta) {
+        scrollByPage(-1);
+        return;
+      }
+      // macOS 习惯键：⌘[ / ⌘] 翻页、⌘; / ⌘' 按行滚动。
+      // Cmd 只在 kitty 键盘协议下才会带 super 位（或终端把 ⌘ 组合映射成带 8 号
+      // 修饰位的转义序列，那种会落到上面的 meta 分支里，同样生效）。
+      if (key.super && (char === "[" || char === "]")) {
+        scrollByPage(char === "[" ? -1 : 1);
+        return;
+      }
+      if (key.super && (char === ";" || char === "'")) {
+        scrollByLine(char === ";" ? -1 : 1);
+        return;
+      }
       if (key.return && (key.ctrl || key.meta || key.shift)) {
         insertAtCursor("\n");
         return;
       }
       if (char === "c" && key.ctrl) {
+        // Claude Code：生成中中断；空闲时有草稿就先清空，已空则退出
         if (busy) sessionRef.current?.abort();
-        else void doExit();
+        else if (input.length > 0) {
+          setInputText("");
+          noticeChannel.push("已清空输入 · 再按一次 Ctrl+C 退出");
+        } else void doExit();
         return;
       }
       if (char === "d" && key.ctrl) {
-        void doExit();
+        // Claude Code：有草稿时删光标后一个字符；空输入需双击确认退出
+        if (input.length > 0) {
+          deleteAfterCursor();
+          return;
+        }
+        const now = Date.now();
+        if (now - ctrlDAtRef.current < 800) {
+          void doExit();
+          return;
+        }
+        ctrlDAtRef.current = now;
+        noticeChannel.push("再按一次 Ctrl+D 退出");
         return;
       }
       if (char === "l" && key.ctrl) {
         clearTranscript();
         return;
       }
+      // ---- kill / yank / undo / stash（照抄 Claude Code / readline）----
       if (char === "u" && key.ctrl) {
-        setInputText("");
+        // 删到行首。macOS 上 ⌘⌫ 会被终端映射成 Ctrl+U，故不能做成「清空全部」
+        deleteToStartOfLine();
+        return;
+      }
+      if (char === "k" && key.ctrl) {
+        deleteToEndOfLine();
+        return;
+      }
+      if (char === "w" && key.ctrl) {
+        // 删到前一空白（标点不切分：`src/utils/foo.ts` 一次删完）
+        deletePrevWhitespace();
+        return;
+      }
+      if (char === "y" && key.ctrl) {
+        yank(false);
+        return;
+      }
+      if (char === "y" && key.meta) {
+        yank(true);
+        return;
+      }
+      // Ctrl+_ / Ctrl+Shift+-：撤销上一次输入编辑
+      if ((char === "_" && key.ctrl) || (char === "-" && key.ctrl && key.shift)) {
+        undoEdit();
+        return;
+      }
+      if (char === "s" && key.ctrl) {
+        toggleStash();
+        return;
+      }
+      if ((char === "v" && key.ctrl) || (key.super && (char === "v" || char === "V"))) {
+        pasteImageUnsupported();
+        return;
+      }
+      // readline 的行首 / 行尾（macOS 上部分终端把 ⌘← / ⌘→ 发成 ^A / ^E）
+      if (char === "a" && key.ctrl) {
+        moveCursorToLineStart();
+        return;
+      }
+      if (char === "e" && key.ctrl) {
+        moveCursorToLineEnd();
         return;
       }
       if (char === "j" && key.ctrl) {
         insertAtCursor("\n");
         return;
       }
-      if (char === "n" && key.ctrl) {
-        insertAtCursor("\n");
+      // Ctrl+P / Ctrl+N：历史上下（Claude Code 语义；换行改用 Ctrl+J / Alt+Enter）
+      if ((char === "p" && key.ctrl) || (char === "n" && key.ctrl)) {
+        const up = char === "p";
+        if (hints.length > 0) {
+          setMenuIndex((i) => (up ? (i - 1 + hints.length) % hints.length : (i + 1) % hints.length));
+          return;
+        }
+        if (up && history.length > 0) {
+          const idx = historyIndex.current < 0 ? history.length - 1 : Math.max(0, historyIndex.current - 1);
+          historyIndex.current = idx;
+          setInputText(history[idx]);
+        } else if (!up && historyIndex.current >= 0) {
+          const idx = historyIndex.current + 1;
+          if (idx >= history.length) {
+            historyIndex.current = -1;
+            setInputText("");
+          } else {
+            historyIndex.current = idx;
+            setInputText(history[idx]);
+          }
+        }
+        return;
+      }
+      // 按词删除：Alt+Backspace / Ctrl+Backspace 删前一个词；Alt+D / Ctrl+Delete 删后一个词。
+      // 必须在下面「单字符 Backspace/Delete」之前判定，否则带修饰键的删除只掉一个字符。
+      if (key.backspace && (key.ctrl || key.meta || key.super)) {
+        deleteWordBeforeCursor();
+        return;
+      }
+      if (key.delete && (key.ctrl || key.meta || key.super)) {
+        deleteWordAfterCursor();
+        return;
+      }
+      if (char === "d" && key.meta) {
+        deleteWordAfterCursor();
         return;
       }
       if (key.return) {
@@ -442,13 +672,24 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if (key.leftArrow) {
-        if (key.ctrl || key.meta) setCursor(wordLeft(input, cursor));
+        if (key.ctrl || key.meta || key.super) setCursor(wordLeft(input, cursor));
         else moveCursor(-1);
         return;
       }
       if (key.rightArrow) {
-        if (key.ctrl || key.meta) setCursor(wordRight(input, cursor));
+        if (key.ctrl || key.meta || key.super) setCursor(wordRight(input, cursor));
         else moveCursor(1);
+        return;
+      }
+      // 跨词移动的「兜底键」：macOS 上 Option+←/→ 往往发的是 ESC b / ESC f
+      // （readline 的 backward-word / forward-word），并不带 leftArrow 标记；
+      // 而 Ctrl+←/→ 常被系统「Mission Control → 左右切换空间」截走，应用根本收不到。
+      if (char === "b" && key.meta) {
+        setCursor(wordLeft(input, cursor));
+        return;
+      }
+      if (char === "f" && key.meta) {
+        setCursor(wordRight(input, cursor));
         return;
       }
       if (key.home) {
@@ -460,8 +701,12 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if (key.escape) {
-        setInputText("");
-        scrollToBottom();
+        // Claude Code：生成中 Esc = 中断本轮；否则清空草稿并回到底部
+        if (busy) sessionRef.current?.abort();
+        else {
+          setInputText("");
+          scrollToBottom();
+        }
         return;
       }
       if (key.backspace) {
@@ -472,7 +717,7 @@ export function Chat(props: ChatScreenProps) {
         deleteAfterCursor();
         return;
       }
-      if (char && !key.ctrl && !key.meta) {
+      if (char && !key.ctrl && !key.meta && !key.super) {
         insertAtCursor(char);
       }
     },
@@ -485,13 +730,25 @@ export function Chat(props: ChatScreenProps) {
   // 忙碌期（生成 / 迁移中）专用：输入框不可编辑，仅保留「中止(Ctrl+C) / 退出(Ctrl+D) / 回看滚动」。
   useInput(
     (char, key) => {
+      keyDebug(char, key);
       if (isTerminalReply(char)) return;
       if (char === "c" && key.ctrl) {
         sessionRef.current?.abort();
         return;
       }
+      if (key.escape) {
+        // 忙碌期 Esc 也充当「中断」（与 Claude Code 一致）
+        sessionRef.current?.abort();
+        return;
+      }
       if (char === "d" && key.ctrl) {
-        void doExit();
+        const now = Date.now();
+        if (now - ctrlDAtRef.current < 800) {
+          void doExit();
+          return;
+        }
+        ctrlDAtRef.current = now;
+        noticeChannel.push("再按一次 Ctrl+D 退出");
         return;
       }
       if (key.pageUp) {
@@ -502,8 +759,20 @@ export function Chat(props: ChatScreenProps) {
         scrollByPage(1);
         return;
       }
-      if ((key.upArrow || key.downArrow) && (key.shift || key.meta)) {
+      if ((key.upArrow || key.downArrow) && (key.shift || key.meta || key.super)) {
         scrollByLine(key.upArrow ? -1 : 1);
+        return;
+      }
+      if (char === "v" && (key.meta || key.super)) {
+        scrollByPage(-1);
+        return;
+      }
+      if (key.super && (char === "[" || char === "]")) {
+        scrollByPage(char === "[" ? -1 : 1);
+        return;
+      }
+      if (key.super && (char === ";" || char === "'")) {
+        scrollByLine(char === ";" ? -1 : 1);
         return;
       }
     },
@@ -682,6 +951,7 @@ export function Chat(props: ChatScreenProps) {
       <StatusBar
         model={props.modelId}
         agent={props.agentId ?? "default"}
+        effort={effortText}
         lastTokens={lastTokens}
         totalTokens={totalTokens}
         busy={busy}
@@ -690,7 +960,7 @@ export function Chat(props: ChatScreenProps) {
             ? "初始化中…"
             : layout.scrolled
               ? "↕ 滚动中 · PgUp/PgDn 翻页 · 发送回到底部"
-              : "Enter 发送 · Ctrl+N 换行 · / 命令 · PgUp 看历史"
+              : "Enter 发送 · Ctrl+J 换行 · / 命令 · PgUp 看历史"
         }
       />
     </Box>

@@ -35,7 +35,7 @@ describe("createAutoMigratePlugin", () => {
   it("未超阈值时不询问、不迁移", async () => {
     const { service, migrate } = stubService();
     const choose = vi.fn(async () => "self" as const);
-    const plugin = createAutoMigratePlugin({ service, maxTokens: MAX_TOKENS, choose, shouldConfirm: () => true });
+    const plugin = createAutoMigratePlugin({ service, handoffTokens: MAX_TOKENS, choose, shouldConfirm: () => true });
 
     await plugin.onAfterSend!(buildCtx(MAX_TOKENS));
 
@@ -48,7 +48,7 @@ describe("createAutoMigratePlugin", () => {
     const choose = vi.fn(async () => "summary" as const);
     const plugin = createAutoMigratePlugin({
       service,
-      maxTokens: MAX_TOKENS,
+      handoffTokens: MAX_TOKENS,
       choose,
       shouldConfirm: () => false,
     });
@@ -63,11 +63,11 @@ describe("createAutoMigratePlugin", () => {
   it("交互环境：把用户的执行者选择透传给 migrate", async () => {
     const { service, migrate } = stubService();
     const choose = vi.fn(async () => "summary" as const);
-    const plugin = createAutoMigratePlugin({ service, maxTokens: MAX_TOKENS, choose, shouldConfirm: () => true });
+    const plugin = createAutoMigratePlugin({ service, handoffTokens: MAX_TOKENS, choose, shouldConfirm: () => true });
 
     await plugin.onAfterSend!(buildCtx(MAX_TOKENS + 1));
 
-    expect(choose).toHaveBeenCalledWith({ promptTokens: MAX_TOKENS + 1, maxTokens: MAX_TOKENS });
+    expect(choose).toHaveBeenCalledWith({ promptTokens: MAX_TOKENS + 1, handoffTokens: MAX_TOKENS });
     expect(migrate.mock.calls[0][0].mode).toBe("summary");
   });
 
@@ -76,7 +76,7 @@ describe("createAutoMigratePlugin", () => {
     const logs: string[] = [];
     const plugin = createAutoMigratePlugin({
       service,
-      maxTokens: MAX_TOKENS,
+      handoffTokens: MAX_TOKENS,
       choose: async () => null,
       shouldConfirm: () => true,
       log: (text) => logs.push(text),
@@ -93,7 +93,7 @@ describe("createAutoMigratePlugin", () => {
     const { service, migrate } = stubService();
     const plugin = createAutoMigratePlugin({
       service,
-      maxTokens: MAX_TOKENS,
+      handoffTokens: MAX_TOKENS,
       choose: async () => null,
       shouldConfirm: () => false,
       defaultMode: "summary",
@@ -108,7 +108,7 @@ describe("createAutoMigratePlugin", () => {
     const migrate = vi.fn(async (_params: any) => ({}) as any);
     const service = { busy: true, migrate } as unknown as HandoffService;
     const choose = vi.fn(async () => "self" as const);
-    const plugin = createAutoMigratePlugin({ service, maxTokens: MAX_TOKENS, choose, shouldConfirm: () => true });
+    const plugin = createAutoMigratePlugin({ service, handoffTokens: MAX_TOKENS, choose, shouldConfirm: () => true });
 
     await plugin.onAfterSend!(buildCtx(MAX_TOKENS + 1));
 

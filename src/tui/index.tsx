@@ -18,6 +18,8 @@ import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
 import { conversationRepository } from "../conversation-repository.js";
 import { readLastSession } from "../session-pointer.js";
 import { Splash, Chat } from "./screens/index.js";
+import { keyDebugStart } from "./key-debug.js";
+import { installSdkLogger } from "../sdk-log.js";
 import type { AgentNS } from "@ai-zen/agents-core";
 
 /** ANSI：清屏 + 光标归位 + 显示光标（屏幕间切换时从头绘制，避免行偏移） */
@@ -196,6 +198,8 @@ async function runChat(target: ChatTarget): Promise<void> {
   let current = target;
   let messages = target.messages;
   let initialInput: string | undefined;
+  /** 重挂载后要展示一次的系统提示（如 `/model` 的写入结果，旧实例已卸载，只能传给新屏） */
+  let initialNotice: string | undefined;
 
   while (true) {
     const result = await mount(
@@ -206,6 +210,7 @@ async function runChat(target: ChatTarget): Promise<void> {
         conversationId={current.conversationId}
         conversationName={current.conversationName}
         initialInput={initialInput}
+        initialNotice={initialNotice}
       />,
     );
 
@@ -223,6 +228,11 @@ async function runChat(target: ChatTarget): Promise<void> {
         initialInput?: string;
         conversationId?: string;
         conversationName?: string;
+        /** `/model` 切换后重挂载：新模型 / Agent */
+        modelId?: string;
+        agentId?: string;
+        /** 重挂载后展示一次的系统提示 */
+        notice?: string;
       };
       if (value.load) {
         // /load：整体切换到另一段已保存对话（含模型 / Agent），重挂载对话屏
@@ -234,11 +244,21 @@ async function runChat(target: ChatTarget): Promise<void> {
         };
         messages = value.load.messages;
         initialInput = undefined;
+        initialNotice = undefined;
         continue;
       }
       if (value.restart) {
         messages = value.messages ?? messages;
         initialInput = value.initialInput;
+        initialNotice = value.notice;
+        // `/model` 换模型：modelId / agentId 变了就得重建会话（上下文阈值、工具集都跟着变）
+        if (value.modelId) {
+          current = {
+            ...current,
+            modelId: value.modelId,
+            agentId: value.agentId ?? current.agentId,
+          };
+        }
         continue;
       }
     }
@@ -250,6 +270,12 @@ async function runChat(target: ChatTarget): Promise<void> {
 
 export async function runTui(): Promise<void> {
   const uninstallSignals = installSignalSafety();
+  // 接管 SDK 全局日志：关掉库自带的 console 兜底。必须在任何 Ink 渲染之前——
+  // SDK 的 logger 默认是 console.log，直写 stdout 会把界面撕坏
+  // （`load_mcp` 甚至会把整份 manifest 打出来）。AIZ_DEBUG_SDK=1 可改为落盘。
+  installSdkLogger();
+  // 按键诊断：AIZ_DEBUG_KEYS=1 时把终端环境 + 每次按键写进日志（默认关闭，零开销）
+  keyDebugStart();
 
   try {
     // 启动界面（一次性）

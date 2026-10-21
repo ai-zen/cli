@@ -66,12 +66,78 @@ ai --version
 ╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
 
               终端里的 AI 协作台
-              v1.0.0-alpha.13 · sdk x · core y
+              v1.0.0-alpha.14 · sdk x · core y
 ```
 
 启动界面结束后**直接进入对话界面**（若存在「上一轮会话」则自动续接，否则新建对话）。对话界面采用**底部固定**布局：分隔线、输入行与状态栏（模型 · Agent · 本轮/累计 token 用量 · 生成状态）始终贴在终端底部，对话内容在其上方滚动；生成中时输入行位置显示进度指示。
 
-对话界面包含：流式输出区（思考过程 / 回答正文 / 工具调用分行展示）、多行输入（`Enter` 发送、`Ctrl+N` 换行、`← →` 移动光标、`Ctrl+← →` 跨词）与内联 `/` 命令菜单（↑↓ 选择、`Tab` 补全）。工具调用以 `⚙ 名称(参数)` 展示并带 **JSON 语法高亮**，正文与思考按 **Markdown 源码着色**（标题 / 粗体 / 斜体 / 行内代码 / 列表 / 引用 / 链接），**围栏代码块按语言高亮并保留围栏标记**（高亮数据来自 `highlight.js` / `lowlight`）。`Ctrl+C` 在生成中取消本轮请求、空闲时退出。
+对话界面包含：流式输出区（思考过程 / 回答正文 / 工具调用分行展示）、多行输入（`Enter` 发送、`Ctrl+N` 换行、`← →` 移动光标、`Ctrl+← →` 跨词、`Ctrl+W` / `Alt+Backspace` 删前一个词、`Alt+D` / `Ctrl+Delete` 删后一个词、`Ctrl+K` 删到行尾、`Ctrl+U` 删到行首、`PgUp`/`PgDn`（或 `Alt+V`/`Ctrl+V`）翻页；macOS 上另支持 `⌘← →` 跨词、`⌘⌫`/`⌘⌦` 按词删除、`⌘[`/`⌘]` 翻页、`⌘;`/`⌘'` 按行滚动（取决于终端是否上报 Cmd，见下））与内联 `/` 命令菜单（↑↓ 选择、`Tab` 补全）。工具调用以 `⚙ 名称(参数)` 展示并带 **JSON 语法高亮**，正文与思考按 **Markdown 源码着色**（标题 / 粗体 / 斜体 / 行内代码 / 列表 / 引用 / 链接），**围栏代码块按语言高亮并保留围栏标记**（高亮数据来自 `highlight.js` / `lowlight`）。`Ctrl+C` 在生成中取消本轮请求、空闲时退出。
+
+### 键盘与终端兼容（macOS 等）
+
+macOS 上终端 TUI 的通行做法是 **Option 当 Meta + readline 系 Ctrl 键**：`Cmd` 不在终端协议里（`super` 只有 kitty 键盘协议才会上报，见 [kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)），因此 `⌘` 主要留给终端自身（复制 / 粘贴 / 搜索）。本 CLI 的键位与这条路线一致。
+
+**第一步：把 Option 设为 Meta**。macOS 终端默认不发送 Option 修饰位，不设则所有 `Option+X` 全部无效：
+
+| 终端 | 设置 |
+|------|------|
+| Apple Terminal | 设置 → 描述文件 → 键盘 → 勾选「**将 Option 用作 Meta 键**」 |
+| iTerm2 | Settings → Profiles → Keys → General → Left/Right Option key 设为 `Esc+` |
+| VS Code / Cursor | settings 里加 `"terminal.integrated.macOptionIsMeta": true` |
+| Ghostty / kitty / WezTerm | 配置文件中启用 Option-as-Alt / Option-as-Meta |
+
+键位一览（与 [Claude Code](https://docs.claude.com/en/docs/claude-code/interactive-mode) 对齐）：
+
+| 键位 | 作用 |
+|------|------|
+| `Enter` | 发送 |
+| `Ctrl+J`、`Ctrl+Enter`、`Alt+Enter`、`Shift+Enter` | 换行 |
+| `Ctrl+C` | 生成中：中断本轮；空闲：有草稿先清空，再按退出 |
+| `Ctrl+D` | 有草稿：删光标后一个字符；空输入：连按两次退出 |
+| `Esc` | 生成中：中断；否则清空草稿并回到底部 |
+| `Ctrl+A` / `Ctrl+E` | 行首 / 行尾 |
+| `Ctrl+P` / `Ctrl+N` | 历史上一条 / 下一条（也用于斜杠菜单选择） |
+| `Ctrl+K` / `Ctrl+U` | 删到行尾 / 删到行首 |
+| `Ctrl+W` | 删到前一空白（标点不切分：`src/utils/foo.ts` 一次删完） |
+| `Alt+B` / `Alt+F` | 跨词移动 |
+| `Alt+D`、`Alt+Backspace`、`Ctrl+Delete` | 按词删除（标点算分隔） |
+| `Ctrl+Y` / `Alt+Y` | 取回刚删掉的文本 / 循环取回更早的 |
+| `Ctrl+_` | 撤销上一次输入编辑 |
+| `Ctrl+S` | 暂存当前草稿 / 再按恢复 |
+| `Ctrl+V` | 预留：粘贴图片（**暂未实现**，按下会提示） |
+| `Ctrl+L` | 清屏（保留上下文） |
+| `PgUp` / `PgDn` | 应用内翻页回看 |
+| `Shift+↑ ↓`、`Alt+↑ ↓`、`⌘;` / `⌘'`* | 按行滚动 |
+| `\` + `Enter` | 换行（任何终端可用） |
+
+未实现（我们的场景没有对应物）：`Ctrl+O` 转录查看器、`Ctrl+R` 反向历史搜索、`Ctrl+B` 后台任务、`Ctrl+T` 任务清单、`Shift+Tab` 权限模式。
+
+`Ctrl+V`（Claude Code 的「粘贴图片」）**暂未实现**：按下会提示未支持。原因是它需要先解决「文件 → 内容块」的端点能力探测（Files API 上传 vs base64内联），不能简单硬编码某个端点。⌘⌫ 已被终端映射为 `Ctrl+U`，所以这里删到行首；要清空草稿用 `Esc`。
+
+\* `⌘` 组合只有终端**启用 kitty 键盘协议**时才会带上 `super` 位（iTerm2 还需把 Cmd 映射为 Super）；不支持的终端（如 Apple Terminal）只能在终端里把 `⌘` 映射成 `ESC` 序列（如 `⌘←` → `ESC[1;9D`，等价于 `Alt+←`），或直接用上表的 Alt 组合。
+
+> macOS 的 `⌘⌫` 会被 iTerm2 / Terminal.app 映射为 `Ctrl+U`，因此本 CLI 的 `Ctrl+U` 取 readline 语义「删到行首」——若做成「清空全部」，Mac 用户按 `⌘⌫` 会丢掉整个草稿。
+
+> `Ctrl+← →` 无效通常是系统原因：macOS 默认把它绑定给「调度中心 → 向左/向右移动一个空间」，按键在到达终端前就被截走。可在「系统设置 → 键盘 → 键盘快捷键 → 调度中心」取消勾选。
+
+若某个键仍然没反应，打开**按键诊断**再按一次：
+
+```bash
+AIZ_DEBUG_KEYS=1 aiz
+# 另开一个窗口
+tail -f /tmp/aiz-key-debug.log
+```
+
+首行记录终端环境（`TERM` / `TERM_PROGRAM` 等），之后每次按键一行：
+
+```
+key input="d" flags=[meta] raw=true
+key input="" flags=[pageUp] raw=false
+```
+
+- **按了键却没有新行** → 键被系统 / 终端截走（改系统快捷键或终端键位映射）
+- **有行但 `flags` 与预期不符** → 序列已到达应用，是匹配逻辑问题（反馈时贴这一行）
+- **`raw=false`** → stdin 不在 raw mode，按键被终端自己解释（例如去滚 scrollback）
 
 ### 首次配置（API Key）
 
@@ -113,6 +179,8 @@ ai --version
 | `/editor` | 使用系统编辑器（vim/nano）输入长消息 |
 | `/clear` | 清屏 |
 | `/config` | 打开配置中心（端点 / 模型 / 图片模型 / MCP 服务器 / Agent 定义 / 默认项 / 工具上限） |
+| `/model` | 切换当前会话使用的模型并写入配置：Agent 显式绑定过模型就改该 Agent 的绑定，否则改默认模型 |
+| `/think` `/effort` | 切换思考强度（可选档位由模型能力决定，如 `low/high/max`），写入当前 Agent 定义并立即生效；`/think default` 恢复跟随模型默认 |
 | `/key` | 设置当前端点的 API Key（保存后自动重建会话） |
 | `/handoff` | 编写任务交接文档（会话照旧，不弹确认） |
 | `/migrate` `/migration` | 交接 + 开启新会话（清空历史，需确认） |
@@ -204,6 +272,7 @@ ai hook uninstall
 ### 环境变量
 
 - `AI_ZEN_DIR` — 覆盖共享根目录（默认 `~/.ai-zen`）。CLI 运行时数据在 `$AI_ZEN_DIR/cli/`，共享资源（agents、skills、tools、MCP 等）在 `$AI_ZEN_DIR/`。
+- `AIZ_DEBUG_KEYS=1` — 开启按键诊断日志（默认关闭，零开销）；`AIZ_KEYS_FILE=<路径>` 可改落盘位置（默认 `/tmp/aiz-key-debug.log`）。
 
 ## 文件系统布局
 

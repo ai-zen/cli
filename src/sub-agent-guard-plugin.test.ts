@@ -5,8 +5,8 @@ import { ContextOverflowError } from "@ai-zen/agents-sdk";
 import { SubAgentGuardInstallerPlugin } from "./sub-agent-guard-plugin.js";
 
 const MAX_TOKENS = 100;
-/** 硬上限 = maxTokens × ratio（ContextGuardPlugin 默认 ratio 1.5） */
-const HARD_LIMIT = MAX_TOKENS * 1.5;
+/** 子 Agent 与主 Agent 共用同一个绝对阈值 guardTokens（到线即中断，无倍数） */
+const HARD_LIMIT = MAX_TOKENS;
 
 /** 组装 SendContext（仅 agent.lastUsage 参与护栏判定） */
 function createSendCtx(agent: unknown): SendContext {
@@ -51,7 +51,7 @@ function createSubAgentCtx(
 describe("SubAgentGuardInstallerPlugin", () => {
   it("委派时装「上下文护栏 + 安装器自身」，且始终不拒绝委派", () => {
     const installer = new SubAgentGuardInstallerPlugin({
-      maxTokens: MAX_TOKENS,
+      guardTokens: MAX_TOKENS,
     });
     const { subAgent, use } = createSubAgentStub();
 
@@ -67,7 +67,7 @@ describe("SubAgentGuardInstallerPlugin", () => {
   it("安插后对子 Agent 立即生效（无需 init）：用量超硬上限即中断", async () => {
     const subAgent = createRealAgent();
     const installer = new SubAgentGuardInstallerPlugin({
-      maxTokens: MAX_TOKENS,
+      guardTokens: MAX_TOKENS,
     });
 
     installer.onSubAgentStart(createSubAgentCtx(subAgent));
@@ -81,7 +81,7 @@ describe("SubAgentGuardInstallerPlugin", () => {
   it("用量恰好等于硬上限时放行（判定为「超过」才中断）", async () => {
     const subAgent = createRealAgent();
     const installer = new SubAgentGuardInstallerPlugin({
-      maxTokens: MAX_TOKENS,
+      guardTokens: MAX_TOKENS,
     });
 
     installer.onSubAgentStart(createSubAgentCtx(subAgent));
@@ -95,7 +95,7 @@ describe("SubAgentGuardInstallerPlugin", () => {
   it("首轮请求前无 usage 数据时放行", async () => {
     const subAgent = createRealAgent();
     const installer = new SubAgentGuardInstallerPlugin({
-      maxTokens: MAX_TOKENS,
+      guardTokens: MAX_TOKENS,
     });
 
     installer.onSubAgentStart(createSubAgentCtx(subAgent));
@@ -105,18 +105,18 @@ describe("SubAgentGuardInstallerPlugin", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("阈值与主 Agent 同源：按传入的 maxTokens 计算硬上限", async () => {
+  it("阈值与主 Agent 同源：按传入的 guardTokens 判定硬线", async () => {
     const subAgent = createRealAgent();
-    const installer = new SubAgentGuardInstallerPlugin({ maxTokens: 1000 });
+    const installer = new SubAgentGuardInstallerPlugin({ guardTokens: 1000 });
 
     installer.onSubAgentStart(createSubAgentCtx(subAgent));
-    setUsage(subAgent, 1400); // 未超 1000 × 1.5 = 1500
+    setUsage(subAgent, 1000); // 恰好等于硬线 → 放行（判定为「超过」才中断）
 
     await expect(
       subAgent.dispatchHook("onInnerLoopStart", createSendCtx(subAgent)),
     ).resolves.toBeUndefined();
 
-    setUsage(subAgent, 1501);
+    setUsage(subAgent, 1001);
     await expect(
       subAgent.dispatchHook("onInnerLoopStart", createSendCtx(subAgent)),
     ).rejects.toThrow(ContextOverflowError);
@@ -124,7 +124,7 @@ describe("SubAgentGuardInstallerPlugin", () => {
 
   it("孙级传染：子 Agent 再委派时，孙 Agent 同样被安插", async () => {
     const installer = new SubAgentGuardInstallerPlugin({
-      maxTokens: MAX_TOKENS,
+      guardTokens: MAX_TOKENS,
     });
     const child = createRealAgent();
 

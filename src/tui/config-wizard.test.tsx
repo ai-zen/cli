@@ -33,8 +33,8 @@ function makeConfig(): AppConfig {
       { id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", apiKey: "sk-old-key-123456" },
     ],
     models: [
-      { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash", endpointId: "deepseek", maxContextTokens: 250_000 },
-      { id: "gpt-5.5", name: "GPT-5.5", endpointId: "openai", maxContextTokens: 250_000 },
+      { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash", endpointId: "deepseek", tokenThresholds: { handoff: 250_000, guard: 375000 } },
+      { id: "gpt-5.5", name: "GPT-5.5", endpointId: "openai", tokenThresholds: { handoff: 250_000, guard: 375000 } },
     ],
     imageModels: [{ id: "cogview-4", name: "CogView-4", endpointId: "openai", modelName: "cogview-4" }],
     defaultModel: "deepseek-v4-flash",
@@ -608,15 +608,11 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
       />,
     );
     await tick();
-    // 字段顺序：名称(0) 端点(1) 模型名(2) 迁移阈值(3) 视觉(4) …
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(DOWN);
-    await tick();
+    // 字段顺序：名称(0) 端点(1) 模型名(2) 交接阈值(3) 阻断阈值(4) 视觉(5) …
+    for (let i = 0; i < 5; i++) {
+      stdin.write(DOWN);
+      await tick();
+    }
     stdin.write(ENTER); // 切换视觉
     await tick();
     expect(onSave.mock.calls[0]![0].models[0]!.vision).toBe(true);

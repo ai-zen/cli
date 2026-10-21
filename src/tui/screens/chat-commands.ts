@@ -11,6 +11,18 @@ import { ChatSession, stripCwdNote } from "../chat-session.js";
 import { matchCommandHints } from "../../conversation-commands/registry.js";
 import { conversationRepository, listConversations } from "../../conversation-repository.js";
 import { formatShortTime } from "../../format-time.js";
+import { readConfig } from "../../config.js";
+import { resetScope } from "../../agent-creator.js";
+import { switchModel } from "../../model-switch.js";
+import {
+  EFFORT_LABELS,
+  describeEffort,
+  effortChoices,
+  setAgentEffort,
+  type ReasoningEffort,
+} from "../../reasoning-effort.js";
+import { readAgentStore } from "../../agents-store.js";
+import { isReasoningEffort } from "@ai-zen/agents-sdk";
 import { WizardStep } from "../config-wizard/index.js";
 import { truncate } from "./render.js";
 import { chooseHandoffMode } from "./handoff-choice.js";
@@ -32,6 +44,8 @@ export interface ChatCommandHost {
   >;
   setConfirmState: Dispatch<SetStateAction<{ question: string; resolve: (value: boolean) => void } | null>>;
   setInputText: (text: string) => void;
+  /** 更新状态栏的思考强度展示（`/think` 写入后由上层重取） */
+  setEffortText: (text: string) => void;
 }
 
 /**
@@ -56,6 +70,7 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
     doExit,
     setPickerState,
     setInputText,
+    setEffortText,
   } = host;
 
   const push = (text: string, tone: "info" | "error" = "info") => {
@@ -75,6 +90,153 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
     case "key":
       await openKeyEditor();
       break;
+    case "model": {
+      const config = await readConfig();
+      const models = config.models ?? [];
+      if (models.length === 0) {
+        push("配置里还没有任何模型，请用 /config 添加端点与模型", "error");
+        break;
+      }
+
+      // 支持 `/model <id>` 直切，无参时弹选择器
+      let chosen: string | undefined = args[0];
+      if (chosen && !models.some((model) => model.id === chosen)) {
+        push(`未知模型：${chosen}（可选：${models.map((m) => m.id).join(" / ")}）`, "error");
+        break;
+      }
+      if (!chosen) {
+        const items: SelectItem<string>[] = models.map((model) => ({
+          label: model.id === session.modelId ? `${model.name}（当前）` : model.name,
+          value: model.id,
+          hint: model.id,
+        }));
+        const picked = await new Promise<string | null>((resolve) =>
+          setPickerState({ title: "切换模型（会写入配置）", items, resolve }),
+        );
+        if (picked == null) {
+          push("已取消切换模型");
+          break;
+        }
+        chosen = picked;
+      }
+
+      if (chosen === session.modelId) {
+        push(`已经是当前模型：${chosen}`);
+        break;
+      }
+
+      // 先确认目标模型可用：重挂载走的是 ChatSession.create → createModel，
+      // 端点缺 Key 会直接抛错落到启动错误屏，用户连 /key 都进不去
+      const targetModel = models.find((model) => model.id === chosen)!;
+      const targetEndpoint = (config.endpoints ?? []).find(
+        (endpoint) => endpoint.id === targetModel.endpointId,
+      );
+      if (!targetEndpoint) {
+        push(`模型 ${chosen} 引用的端点 ${targetModel.endpointId} 不存在，请用 /config 检查`, "error");
+        break;
+      }
+      if (!targetEndpoint.apiKey) {
+        push(`端点「${targetEndpoint.name}」还没有 API Key，请先用 /config 配置后再切换`, "error");
+        break;
+      }
+
+      try {
+        // 写入位置由「Agent 是否显式绑定模型」决定（见 model-switch.ts）
+        const result = await switchModel({ config, agentId: session.agentId, modelId: chosen });
+        // Scope 持有配置快照：不重建的话 getScope() 会把旧模型又交给新 Agent
+        await resetScope();
+        // 重挂载对话屏：模型变了要重算上下文阈值、重建 Agent；消息与上下文保留
+        exit({
+          restart: true,
+          modelId: chosen,
+          agentId: session.agentId,
+          messages: session.messages,
+          notice: result.summary,
+        });
+      } catch (error: any) {
+        push(`切换模型失败：${error?.message ?? error}`, "error");
+      }
+      break;
+    }
+    case "think":
+    case "effort": {
+      const config = await readConfig();
+      const store = await readAgentStore();
+      const definition = store.agents.find((item) => item.id === session.agentId) ?? null;
+      const modelId = definition?.modelId ?? config.defaultModel;
+      const model = (config.models ?? []).find((item) => item.id === modelId);
+      if (!model) {
+        push(`模型 ${modelId} 不存在，请用 /model 或 /config 检查`, "error");
+        break;
+      }
+
+      const choices = effortChoices(model);
+      if (choices.length === 0) {
+        push(
+          `模型 ${model.id} 未声明可调档位（模型配置缺少 reasoning.efforts，或该型号不支持调整）`,
+          "error",
+        );
+        break;
+      }
+
+      // 支持 `/think high` 直设、`/think default` 恢复跟随模型默认，无参时弹选择器
+      let picked: string | undefined = args[0];
+      if (picked !== undefined && picked !== "default" && !isReasoningEffort(picked)) {
+        push(`未知强度：${picked}（可选 ${choices.join(" / ")} / default）`, "error");
+        break;
+      }
+      if (!picked) {
+        const current = definition?.reasoningEffort;
+        const items: SelectItem<string>[] = [
+          {
+            label: `跟随模型默认${current ? "" : "（当前）"}`,
+            value: "default",
+            hint: "删除 Agent 上的档位声明",
+          },
+          ...choices.map((value) => ({
+            label: `${EFFORT_LABELS[value]}${value === current ? "（当前）" : ""}`,
+            value,
+            hint: value,
+          })),
+        ];
+        const choice = await new Promise<string | null>((resolve) =>
+          setPickerState({
+            title: `思考强度（当前：${describeEffort(model, definition)}）`,
+            items,
+            resolve,
+          }),
+        );
+        if (choice == null) {
+          push("已取消切换思考强度");
+          break;
+        }
+        picked = choice;
+      }
+
+      const effort = picked === "default" ? null : (picked as ReasoningEffort);
+      const unchanged = effort === null ? !definition?.reasoningEffort : definition?.reasoningEffort === effort;
+      if (unchanged) {
+        push("思考强度未变化");
+        break;
+      }
+
+      try {
+        const result = await setAgentEffort({
+          config,
+          agentId: session.agentId,
+          effort,
+          // 已读过定义，避免命令层与写入层各读一次盘
+          readAgent: async () => definition,
+        });
+        // 状态栏先跟上；档位要通过重建 Agent 才会进请求参数
+        setEffortText(describeEffort(result.model, result.definition));
+        await session.reload();
+        push(result.summary);
+      } catch (error: any) {
+        push(`切换思考强度失败：${error?.message ?? error}`, "error");
+      }
+      break;
+    }
     case "help": {
       const lines = ["可用命令："];
       for (const hint of matchCommandHints("")) {

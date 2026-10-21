@@ -16,7 +16,17 @@ export {
   messageText,
 } from "./messages-view.js";
 
-export { inputLines, computeInputCursorPosition, isWordChar, wordLeft, wordRight } from "./input.js";
+export {
+  inputLines,
+  computeInputCursorPosition,
+  isWordChar,
+  wordLeft,
+  wordRight,
+  deleteWordLeft,
+  deleteWordRight,
+  deleteToLineEnd,
+  deleteToLineStart,
+} from "./input.js";
 
 export { CONFIRM_LINES, pickerLines, computeChatLayout } from "./layout.js";
 export type { ChatLayoutInput, ChatLayout } from "./layout.js";

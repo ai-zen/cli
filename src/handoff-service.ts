@@ -46,10 +46,10 @@ export function createHandoffService(
     // 交接模板的唯一真相源：磁盘上的 handoff Skill（出厂随 SDK 释放，可被项目级覆盖）
     skillDirs: listSkillDirs(),
     onBeforeHandoff: (hctx: HandoffContext) => {
-      const isAuto = hctx.promptTokens != null && hctx.maxTokens != null;
+      const isAuto = hctx.promptTokens != null && hctx.handoffTokens != null;
       if (isAuto) {
         log(
-          `📋 检测到上下文即将超限（${hctx.promptTokens}/${hctx.maxTokens} tokens），正在交接（${describeMode(hctx.requestedMode)}）…`,
+          `📋 检测到上下文即将超限（${hctx.promptTokens}/${hctx.handoffTokens} tokens），正在交接（${describeMode(hctx.requestedMode)}）…`,
         );
       } else {
         log(`📋 正在编写任务交接文档（${describeMode(hctx.requestedMode)}）…`);
@@ -71,7 +71,7 @@ export function createHandoffService(
     onMigrated: async (hctx: HandoffContext) => {
       // 清空「最近一次用量」：prune 已把上下文物理重置（仅留系统提示 + 交接断点），
       // 但 lastUsage 仍是迁移前/交接回合的 prompt_tokens。若不清理，下一次发送时
-      // ContextGuardPlugin（`onInnerLoopStart` 以 maxTokens × ratio 为硬上限）会拿这个
+      // ContextGuardPlugin（`onInnerLoopStart` 以 tokenThresholds.guard 为硬上限）会拿这个
       // 陈旧值判定，立即抛出「上下文严重超限」而中断——用户表现为「迁移完成后第一条
       // 消息就被总上下文保护插件拦截」。置空后护栏首轮无据可查而放行，待下一次响应
       // 以真实（已大幅缩小的）用量回填。

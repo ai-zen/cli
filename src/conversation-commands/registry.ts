@@ -28,6 +28,8 @@ export const COMMAND_REGISTRY: readonly CommandMeta[] = [
   { name: "editor", description: "使用系统编辑器输入长消息" },
   { name: "clear", description: "清屏" },
   { name: "config", description: "打开配置中心（默认模型 / 端点管理）" },
+  { name: "model", description: "切换当前会话使用的模型（写入配置）" },
+  { name: "think", aliases: ["effort"], description: "切换思考强度（写入模型配置）" },
   { name: "key", description: "设置当前端点的 API Key" },
   { name: "handoff", description: "编写任务交接文档（不切换会话）" },
   { name: "migrate", aliases: ["migration"], description: "交接并开启新会话（生成交接文档）" },
