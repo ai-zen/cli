@@ -179,7 +179,7 @@ key input="" flags=[pageUp] raw=false
 | `/editor` | 使用系统编辑器（vim/nano）输入长消息 |
 | `/clear` | 清屏 |
 | `/config` | 打开配置中心（端点 / 模型 / 图片模型 / MCP 服务器 / Agent 定义 / 默认项 / 工具上限） |
-| `/model` | 切换当前会话使用的模型并写入配置：Agent 显式绑定过模型就改该 Agent 的绑定，否则改默认模型 |
+| `/model` | 切换当前会话使用的模型并写入配置（写 Agent 的 `modelId`；思考强度重置为模型默认） |
 | `/think` `/effort` | 切换思考强度（可选档位来自模型的思考策略表，如 `low/high/max`），写入当前 Agent 定义并立即生效；`/think default` 恢复跟随模型默认 |
 | `/key` | 设置当前端点的 API Key（保存后自动重建会话） |
 | `/handoff` | 编写任务交接文档（会话照旧，不弹确认） |
@@ -261,7 +261,6 @@ ai hook uninstall
       "defaultSize": "1024x1024"
     }
   ],
-  "defaultModel": "deepseek-flash",
   "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
   "defaultMigrationModel": "deepseek-flash"
@@ -269,6 +268,8 @@ ai hook uninstall
 ```
 
 > 说明：`models` / `imageModels` 中**未标 `custom: true`** 的条目属于**出厂托管**——每次启动会与 SDK 出厂清单对齐、被替换为最新定义；自建模型请加 `"custom": true`。`endpoints` 始终保留用户配置，不受影响。
+>
+> 模型**不在 `config.json` 里指定**：每个 Agent 在自己的定义文件（`agents/<id>.json`）的 `modelId` 字段上绑定模型，这是运行期的唯一真相源；`/model` 切换写的也是它。
 
 ### 环境变量
 

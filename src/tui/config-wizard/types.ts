@@ -8,8 +8,8 @@ import { AgentKind, AgentStore } from "../../agents-store.js";
 /** 可编辑的端点字段（首启引导 / `/key` 的直达编辑步骤用） */
 export type EndpointField = "apiKey" | "baseUrl";
 
-/** 「默认项」的四类目标 */
-export type DefaultTarget = "defaultModel" | "defaultImageModel" | "defaultAgent" | "defaultMigrationModel";
+/** 「默认项」的可选目标（模型不再有配置级默认：它写在 Agent 定义上） */
+export type DefaultTarget = "defaultImageModel" | "defaultAgent" | "defaultMigrationModel";
 
 /** 向导步骤（判别联合，逐步收敛） */
 export type WizardStep =

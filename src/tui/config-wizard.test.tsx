@@ -37,7 +37,6 @@ function makeConfig(): AppConfig {
       { id: "gpt-5.5", name: "GPT-5.5", endpointId: "openai", tokenThresholds: { handoff: 250_000, guard: 375000 } },
     ],
     imageModels: [{ id: "cogview-4", name: "CogView-4", endpointId: "openai", modelName: "cogview-4" }],
-    defaultModel: "deepseek-v4-flash",
     defaultImageModel: "cogview-4",
   };
 }
@@ -433,7 +432,7 @@ describe("ConfigWizard（配置中心）", () => {
     unmount();
   });
 
-  it("默认模型可切换", async () => {
+  it("默认迁移模型可切换（配置级已无「默认模型」）", async () => {
     const onSave = makeOnSave();
     const { stdin, unmount } = render(
       <ConfigWizard config={makeConfig()} onSave={onSave} onClose={noop} />,
@@ -451,13 +450,17 @@ describe("ConfigWizard（配置中心）", () => {
     await tick();
     stdin.write(ENTER); // 打开默认项
     await tick();
-    stdin.write(ENTER); // 默认模型（第一项）
+    stdin.write(DOWN); // → 默认 Agent
+    await tick();
+    stdin.write(DOWN); // → 默认迁移模型
+    await tick();
+    stdin.write(ENTER);
     await tick();
     stdin.write(DOWN); // → GPT-5.5
     await tick();
     stdin.write(ENTER);
     await tick();
-    expect(onSave.mock.calls[0]![0].defaultModel).toBe("gpt-5.5");
+    expect(onSave.mock.calls[0]![0].defaultMigrationModel).toBe("gpt-5.5");
     unmount();
   });
 });
@@ -757,9 +760,7 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     stdin.write(ENTER);
     await tick();
     expect(lastFrame()).toContain("默认项");
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(DOWN); // → 默认 Agent（第 3 项）
+    stdin.write(DOWN); // → 默认 Agent（第 2 项；配置级「默认模型」已移除）
     await tick();
     stdin.write(ENTER); // 打开 Agent 选择
     await tick();

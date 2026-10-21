@@ -1,7 +1,7 @@
 // 由 src/tui/config-wizard.tsx 拆分而来 —— 默认项子菜单 / 选择默认值
 import { ReactNode } from "react";
 import { SelectItem } from "../components.js";
-import { findEndpoint, findModel, isApiKeySet, setDefaultAgent, setDefaultImageModel, setDefaultMigrationModel, setDefaultModel } from "../../config-editor.js";
+import { findEndpoint, findModel, isApiKeySet, setDefaultAgent, setDefaultImageModel, setDefaultMigrationModel } from "../../config-editor.js";
 import { DefaultTarget } from "./types.js";
 import { WizardContext } from "./engine.js";
 import { ListStep } from "./list.js";
@@ -12,11 +12,6 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
   if (activeStep.kind === "defaults") {
     const defaultImage = (config.imageModels ?? []).find((model) => model.id === config.defaultImageModel);
     const items: SelectItem<DefaultTarget>[] = [
-      {
-        label: "默认模型",
-        value: "defaultModel",
-        hint: findModel(config, config.defaultModel)?.name ?? config.defaultModel ?? "未设置",
-      },
       {
         label: "默认图片模型",
         value: "defaultImageModel",
@@ -48,8 +43,8 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
     const target = activeStep.target;
     let title = "默认项";
     let items: SelectItem<string>[] = [];
-    if (target === "defaultModel" || target === "defaultMigrationModel") {
-      title = target === "defaultModel" ? "默认模型" : "默认迁移模型";
+    if (target === "defaultMigrationModel") {
+      title = "默认迁移模型";
       items = config.models.map((model) => {
         const endpoint = findEndpoint(config, model.endpointId);
         return {
@@ -83,8 +78,7 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
         onPick={(value) => {
           const id = value || undefined;
           const label = value || "未设置";
-          if (target === "defaultModel") void commit(setDefaultModel(config, id), `默认模型 → ${label}`, [], { kind: "defaults" });
-          else if (target === "defaultMigrationModel")
+          if (target === "defaultMigrationModel")
             void commit(setDefaultMigrationModel(config, id), `默认迁移模型 → ${label}`, [], { kind: "defaults" });
           else if (target === "defaultImageModel")
             void commit(setDefaultImageModel(config, id), `默认图片模型 → ${label}`, [], { kind: "defaults" });

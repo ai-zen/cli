@@ -33,7 +33,6 @@ export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, n
     if (key.escape) onClose();
   });
 
-  const defaultModel = findModel(config, config.defaultModel);
   const defaultImage = (config.imageModels ?? []).find((model) => model.id === config.defaultImageModel);
   const items: SelectItem<string>[] = [
     {
@@ -44,7 +43,7 @@ export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, n
     {
       label: "模型管理",
       value: "models",
-      hint: `${config.models.length} 个 · 默认 ${defaultModel?.name ?? config.defaultModel ?? "未设置"}`,
+      hint: `${config.models.length} 个`,
     },
     {
       label: "图片模型",

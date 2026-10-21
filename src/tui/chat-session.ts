@@ -42,7 +42,6 @@ export interface ChatSessionNotifier {
 }
 
 export interface ChatSessionOptions {
-  modelId: string;
   agentId?: string;
   messages?: AgentNS.Message[];
   conversationId?: string;
@@ -58,7 +57,16 @@ export interface ChatSessionOptions {
 export { stripCwdNote };
 
 export class ChatSession {
-  readonly modelId: string;
+  /**
+   * 当前模型 id —— 从 Agent 定义读，**不再单独存一份**。
+   *
+   * 模型的唯一真相源是 `AgentDefinition.modelId`：会话不记模型，配置也没有
+   * `defaultModel`。这样状态栏、落盘与 SDK 实发请求用的永远是同一个值。
+   */
+  get modelId(): string {
+    return this.agent.definition.modelId ?? "";
+  }
+
   readonly agentId: string;
   /** 当前模型的上下文阈值（交接软线 + 阻断硬线），缺省时不装护栏插件 */
   readonly tokenThresholds?: TokenThresholds;
@@ -102,7 +110,6 @@ export class ChatSession {
   ) {
     this.handoffService = handoffService;
     this.ctx = ctx;
-    this.modelId = options.modelId;
     this.agentId = options.agentId || "default";
     this.tokenThresholds = tokenThresholds;
     this.currentId = ctx.currentId || generateConversationId();
@@ -117,18 +124,20 @@ export class ChatSession {
     notifier: ChatSessionNotifier,
   ): Promise<ChatSession> {
     const config = await readConfig();
-    const model = config.models.find((m) => m.id === options.modelId);
+
+    // 先建 Agent：模型来自 Agent 定义（`createAgent` 内部解析 modelId），
+    // 阈值再按该模型查配置——不存在「CLI 以为的模型」与「实发模型」两套值。
+    const agent = await createAgent({ messages: options.messages, agentId: options.agentId });
+    const model = config.models.find((m) => m.id === agent.definition.modelId);
     // 阈值由配置直接给出（旧字段已在 SDK 的 ConfigManager.read() 里迁移过）
     const tokenThresholds = model?.tokenThresholds;
 
-    const agent = await createAgent({ messages: options.messages, agentId: options.agentId });
     const currentId = options.conversationId || generateConversationId();
     const ctx: ConversationContext = {
       agent,
       input: "",
       currentName: options.conversationName || currentId,
       currentId,
-      modelId: options.modelId,
       agentId: options.agentId,
       running: true,
     };
@@ -279,7 +288,6 @@ export class ChatSession {
     await conversationRepository.write({
       id,
       agentId: this.agentId,
-      modelId: this.modelId,
       messages: this.agent.messages,
       cwd: process.cwd(),
       createdAt: existing?.createdAt ?? now,
@@ -303,7 +311,6 @@ export class ChatSession {
       new ConversationPersistPlugin({
         getId: () => this.currentId,
         agentId: this.agentId,
-        modelId: this.modelId,
         cwd: process.cwd(),
         onError: (text) => this.notifier.onNotice(text, "info"),
       }),

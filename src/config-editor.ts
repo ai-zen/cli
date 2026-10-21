@@ -144,11 +144,6 @@ export function setEndpointBaseUrl(config: AppConfig, endpointId: string, baseUr
   };
 }
 
-/** 设置默认模型（传 `undefined` 表示清空，交由 SDK 回退出厂默认） */
-export function setDefaultModel(config: AppConfig, modelId: string | undefined): AppConfig {
-  return { ...config, defaultModel: modelId };
-}
-
 /** 由名称派生唯一 id：小写、非字母数字折叠为 `-`，冲突时追加序号 */
 function deriveUniqueId(taken: Set<string>, name: string, fallback: string): string {
   const base =
@@ -216,8 +211,10 @@ export function updateModel(config: AppConfig, modelId: string, patch: Partial<M
 }
 
 /**
- * 删除模型；若 `defaultModel` / `defaultMigrationModel` 指向它，
- * 则改指剩余的第一个模型（无剩余模型则清空）。
+ * 删除模型；若 `defaultMigrationModel` 指向它，则改指剩余的第一个模型（无剩余则清空）。
+ *
+ * 模型真相源是 `AgentDefinition.modelId`（不在配置里），所以这里无需处理任何
+ * 「默认模型」——删除后由 `createAgent` 报错引导用户重选，而不是静默回退。
  */
 export function removeModel(config: AppConfig, modelId: string): AppConfig {
   const models = config.models.filter((model) => model.id !== modelId);
@@ -226,7 +223,6 @@ export function removeModel(config: AppConfig, modelId: string): AppConfig {
   return {
     ...config,
     models,
-    defaultModel: config.defaultModel && ids.has(config.defaultModel) ? config.defaultModel : fallback,
     defaultMigrationModel:
       config.defaultMigrationModel && ids.has(config.defaultMigrationModel)
         ? config.defaultMigrationModel

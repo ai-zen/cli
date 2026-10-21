@@ -12,12 +12,13 @@
 
 import { AgentNS } from "@ai-zen/agents-core";
 import {
+  AgentRepository,
   AutoRefreshToolsPlugin,
   ContextGuardPlugin,
   setLogger,
 } from "@ai-zen/agents-sdk";
 import { createAgent } from "./agent-creator.js";
-import { readConfig } from "./config.js";
+import { AGENTS_DIR, readConfig } from "./config.js";
 import { CwdTrackerPlugin } from "./cwd-tracker-plugin.js";
 import { SubAgentGuardInstallerPlugin } from "./sub-agent-guard-plugin.js";
 import type { TokenThresholds } from "@ai-zen/agents-sdk";
@@ -95,11 +96,17 @@ interface ResolvedTarget {
 async function resolveTarget(): Promise<ResolvedTarget> {
   const config = await readConfig();
 
-  const modelId = config.defaultModel ?? config.models[0]?.id;
-  if (!modelId) throw new Error("没有可用的模型，请先运行 `ai` 完成配置");
+  const agentId = config.defaultAgent ?? "default";
+  const definition = await new AgentRepository(AGENTS_DIR).read(agentId);
+  const modelId = definition?.modelId;
+  if (!modelId) {
+    throw new Error(
+      `Agent "${agentId}" 未绑定模型，请先运行 \`ai\` 在 /config 里为它选择模型`,
+    );
+  }
 
   const model = config.models.find((m) => m.id === modelId);
-  if (!model) throw new Error(`默认模型 ${modelId} 不存在`);
+  if (!model) throw new Error(`Agent 绑定的模型 ${modelId} 不存在`);
 
   const endpoint = config.endpoints.find((e) => e.id === model.endpointId);
   if (!endpoint) throw new Error(`模型 ${modelId} 引用的端点 ${model.endpointId} 不存在`);
@@ -110,7 +117,7 @@ async function resolveTarget(): Promise<ResolvedTarget> {
   }
 
   // 阈值由配置直接给出（旧字段已在 SDK 的 ConfigManager.read() 里迁移过）
-  return { modelId, agentId: config.defaultAgent ?? "default", tokenThresholds: model.tokenThresholds };
+  return { modelId, agentId, tokenThresholds: model.tokenThresholds };
 }
 
 /** 运行一次纯 stdio 对话，返回进程退出码 */

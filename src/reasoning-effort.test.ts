@@ -292,20 +292,18 @@ describe("setAgentEffort 写入 Agent 定义", () => {
     ).rejects.toThrow(/不存在/);
   });
 
-  it("未绑定模型的 Agent 用 defaultModel", async () => {
+  it("未绑定模型的 Agent 直接报错（不再回退 defaultModel）", async () => {
     const writeAgent = vi.fn(async (_def: AgentDefinition) => {});
-    const result = await setAgentEffort({
-      config: makeConfig(),
-      presets: PRESETS,
-      effort: "max",
-      readAgent: async () => makeDefinition(), // 无 modelId
-      writeAgent,
-    });
-    expect(result.model.id).toBe("deepseek-flash");
-    expect(writeAgent.mock.calls[0]![0].modelParams).toEqual({
-      thinking: { type: "enabled" },
-      reasoning_effort: "max",
-    });
+    await expect(
+      setAgentEffort({
+        config: makeConfig(),
+        presets: PRESETS,
+        effort: "max",
+        readAgent: async () => makeDefinition(), // 无 modelId
+        writeAgent,
+      }),
+    ).rejects.toThrow(/未绑定模型/);
+    expect(writeAgent).not.toHaveBeenCalled();
   });
 });
 

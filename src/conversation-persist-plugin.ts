@@ -17,7 +17,6 @@ export interface ConversationPersistPluginOptions {
   /** 动态返回当前会话 id（迁移切换会话后随之变化） */
   getId: () => string;
   agentId: string;
-  modelId: string;
   cwd?: string;
   /** 落盘失败时的上报（TUI 走 Ink notice）；默认丢弃 */
   onError?: (text: string) => void;
@@ -27,7 +26,7 @@ export class ConversationPersistPlugin implements AgentPlugin {
   constructor(private options: ConversationPersistPluginOptions) {}
 
   async onInnerLoopEnd(ctx: SendContext): Promise<void> {
-    const { getId, agentId, modelId, cwd, onError } = this.options;
+    const { getId, agentId, cwd, onError } = this.options;
     const messages = ctx.agent.messages;
 
     // 尚无实质内容（没有用户消息）时不落盘，避免产生空会话文件
@@ -40,7 +39,6 @@ export class ConversationPersistPlugin implements AgentPlugin {
       await conversationRepository.write({
         id,
         agentId,
-        modelId,
         messages,
         cwd,
         createdAt: existing?.createdAt ?? now,

@@ -19,7 +19,6 @@ const ENTER = "\r";
 const makeConfig = (): AppConfig => ({
   endpoints: [{ id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-x" }],
   models: [{ id: "m", name: "M", endpointId: "deepseek", tokenThresholds: { handoff: 1000, guard: 1500 } }],
-  defaultModel: "m",
 });
 
 const makeAgent = (): AgentDefinition => ({

@@ -108,7 +108,8 @@ async function migrateDefinition(
   presets: ReasoningPresets,
 ): Promise<AgentDefinition> {
   const { reasoningEffort, ...rest } = def as AgentDefinition & { reasoningEffort?: string };
-  const modelId = rest.modelId ?? config.defaultModel;
+  // 模型只认 Agent 定义自身的 modelId（配置层已无 defaultModel）
+  const modelId = rest.modelId;
   const model = (config.models ?? []).find((item) => item.id === modelId);
   const preset = model ? presetFor(model.id, model.reasoningPreset, presets) : undefined;
   const patch = reasoningEffort ? patchOf(preset, reasoningEffort) : undefined;

@@ -25,7 +25,6 @@ export interface ConversationContext {
   agent: SdkAgent;
   input: string;
   currentName: string;
-  modelId: string;
   currentId: string;
   agentId: string | undefined;
   running: boolean;

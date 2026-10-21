@@ -151,7 +151,10 @@ export async function setAgentEffort(
   const definition = await readAgent(agentId);
   if (!definition) throw new Error(`Agent "${agentId}" 不存在`);
 
-  const modelId = definition.modelId ?? config.defaultModel;
+  const modelId = definition.modelId;
+  if (!modelId) {
+    throw new Error(`Agent "${agentId}" 未绑定模型，请先为它选择模型`);
+  }
   const model = (config.models ?? []).find((item) => item.id === modelId);
   if (!model) throw new Error(`模型 "${modelId}" 不存在，请先用 /model 或 /config 检查`);
 

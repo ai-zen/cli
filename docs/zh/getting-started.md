@@ -101,7 +101,7 @@ cat README.md | ai "用三句话总结"
 | `/editor` | 用系统编辑器输入长消息 |
 | `/clear` | 清屏 |
 | `/config` | 打开配置中心（默认模型 / 端点管理） |
-| `/model` | 切换当前会话的模型并写入配置（Agent 绑定过模型则改绑定，否则改默认模型）；状态栏显示模型名 |
+| `/model` | 切换当前会话的模型并写入配置（写 Agent 的 `modelId`，思考强度重置为模型默认）；状态栏显示模型名 |
 | `/think` `/effort` | 切换思考强度（可选档位来自模型的思考策略表），写入当前 Agent 定义的 `reasoningEffort`，状态栏显示当前强度 |
 | `/key` | 设置当前端点的 API Key（保存后自动重建会话） |
 | `/migrate` | 手动触发任务迁移（生成交接文档并开启新会话） |
@@ -137,7 +137,7 @@ ai hook uninstall
 | 首次启动、端点缺 Key | 启动时自动弹出**凭据设置屏**，输入即存盘并进入对话 |
 | 修改**当前模型所用端点**的 Key | 对话内 `/key`（保存后自动重建会话，立即生效） |
 | 端点 Key / Base URL、默认模型、新建端点 | 对话内 `/config` →「端点管理」 |
-| 当前会话所用模型 | 对话内 `/model`（按 Agent 是否绑定模型决定写入位置） |
+| 当前会话所用模型 | 对话内 `/model`（写入该 Agent 的 `modelId`） |
 | 思考强度（reasoning effort） | 对话内 `/think`（写入当前 Agent 定义的 `reasoningEffort`；可选档位来自 `~/.ai-zen/reasoning-presets.json` 里该模型引用的策略，可自行增删策略） |
 | 模型 / 图片模型 / MCP 服务器 / Agent 定义 / 默认项 / 工具上限 | 对话内 `/config` → 配置中心 |
 

@@ -64,7 +64,6 @@ outline: deep
       "defaultSize": "1024x1024"
     }
   ],
-  "defaultModel": "deepseek-flash",
   "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
   "defaultMigrationModel": "deepseek-flash"
@@ -76,9 +75,27 @@ outline: deep
 - `endpoints`：API 端点列表（`id`、`name`、`baseUrl`、`apiKey`、`description`）。
 - `models`：对话模型列表。其中 `tokenThresholds` 设定两条用量线：`handoff`（交接软线，`prompt_tokens` 超过它触发任务交接）与 `guard`（强行阻断硬线，请求前超过它中断本轮）；两者都是**绝对值**，建议 `guard ≈ handoff × 1.5`。`reasoningPreset` 引用 `reasoning-presets.json` 里的策略名（决定 `/think` 能选哪几档），缺省 = 不可调。`vision` 表示是否支持图片输入（决定 `view_image` 是否启用）。
 - `imageModels`：图片生成模型列表（`id`、`name`、`endpointId`、`modelName`、`defaultSize`、`defaultQuality`）。
-- `models` / `imageModels` 中未标 `custom: true` 的条目属于**出厂托管**：每次启动会与 SDK 出厂清单对齐并被替换为最新定义；自建条目请加 `"custom": true`（悬空的 `defaultModel` / `defaultMigrationModel` 会回退到出厂默认）。`endpoints` 始终保留用户配置。
+- `models` / `imageModels` 中未标 `custom: true` 的条目属于**出厂托管**：每次启动会与 SDK 出厂清单对齐并被替换为最新定义；自建条目请加 `"custom": true`（悬空的 `defaultMigrationModel` 会回退到出厂默认）。`endpoints` 始终保留用户配置。
 - 旧字段 `maxContextTokens` / `maxContextChars` / `reasoning` 会在启动时自动迁移（前两者折成 `tokenThresholds`，`reasoning` 换成 `reasoningPreset`），无需手改；迁移只在检测到差异时写盘一次。
-- `defaultModel` / `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`：各默认项。
+- `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`：其余默认项。
+- **模型不在 `config.json` 里指定**：它写在 Agent 定义的 `modelId` 上（见下节）。旧版的 `config.defaultModel` 已在升级时自动搬迁到默认 Agent 并从配置中删除。
+
+## Agent 定义（`agents/<id>.json`）
+
+每个 Agent 在自己的定义文件里绑定模型 —— 这是运行期的**唯一真相源**：状态栏、凭据预检、上下文阈值与发给 API 的请求全部读它，`/model` 切换写的也是它。
+
+```json
+{
+  "id": "default",
+  "name": "默认助手",
+  "modelId": "deepseek-flash",
+  "messages": [ ... ],
+  "modelParams": { "thinking": { "type": "enabled" }, "reasoning_effort": "high" }
+}
+```
+
+- `modelId`：绑定模型。**必填**——缺失时启动会直接报错并提示用 `/config` 为该 Agent 选择模型。
+- `modelParams`：Agent 级参数覆盖，浅合并进模型的 `defaultParams`（`/think` 写的就是它）。**切换模型时会被清空**，让目标模型走自己的默认参数：思考参数与模型强相关，把 DeepSeek 的 `thinking.type: "disabled"` 带到 GLM-5.3 上会被直接拒绝。
 
 ## 文件系统布局
 

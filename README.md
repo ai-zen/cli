@@ -179,7 +179,7 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 | `/editor` | Open system editor for long-form input |
 | `/clear` | Clear the screen |
 | `/config` | Open the configuration center (endpoints / models / image models / MCP servers / agent definitions / defaults / tool-output cap) |
-| `/model` | Switch the model of the current session and persist it: if the Agent has an explicit model binding that binding is updated, otherwise the default model is changed |
+| `/model` | Switch the model of the current session and persist it (written to the Agent's `modelId`; thinking level is reset to the model default) |
 | `/think` `/effort` | Switch reasoning effort (available levels come from the model's reasoning preset, e.g. `low/high/max`); persisted into the current Agent definition; `/think default` falls back to the model default |
 | `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
 | `/handoff` | Write a handoff document only (session keeps running; no confirmation) |
@@ -261,7 +261,6 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
       "defaultSize": "1024x1024"
     }
   ],
-  "defaultModel": "deepseek-flash",
   "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
   "defaultMigrationModel": "deepseek-flash"
@@ -269,6 +268,8 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
 ```
 
 > Note: entries in `models` / `imageModels` **without `custom: true`** are **factory-managed** — on every launch they are reconciled with (and replaced by) the SDK factory catalog; add `"custom": true` for your own entries. `endpoints` are never managed and always keep your configuration.
+>
+> The model is **not** selected in `config.json`: each Agent binds one in its own definition file (`agents/<id>.json`, field `modelId`), which is the single source of truth at runtime. `/model` writes exactly that field.
 
 ### Environment Variable
 

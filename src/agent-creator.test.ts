@@ -18,11 +18,9 @@ writeFileSync(
   JSON.stringify(
     {
       endpoints: [],
-      // SDK alpha.1 起对「出厂模型清单」做托管同步：未标 `custom: true` 的模型会被
-      // 出厂定义替换，悬空的 `defaultModel` 回退到出厂默认。这里必须标 `custom: true`，
-      // 才能让 `defaultModel: "gpt4"` 原样保留（本用例只验证 Scope 是否携带配置与目录）。
+      // 对「出厂模型清单」做托管同步：未标 `custom: true` 的模型会被出厂定义替换。
+      // 这里标 `custom: true` 才能让自定义模型原样保留（本用例只验证 Scope 携带的配置与目录）。
       models: [{ id: "gpt4", name: "GPT-4", endpointId: "openai", tokenThresholds: { handoff: 1000, guard: 1500 }, custom: true }],
-      defaultModel: "gpt4",
       version: 4,
     },
     null,
@@ -57,7 +55,7 @@ describe("getScope", () => {
 
   it("Scope 携带配置与 agents 目录", async () => {
     const scope = await getScope();
-    expect(scope.config.defaultModel).toBe("gpt4");
+    expect(scope.config.models.map((m) => m.id)).toContain("gpt4");
     expect(scope.agentsDir).toBe(join(dir, "agents"));
   });
 });

@@ -37,7 +37,6 @@ import {
   setDefaultAgent,
   setDefaultImageModel,
   setDefaultMigrationModel,
-  setDefaultModel,
   setEndpointApiKey,
   setEndpointBaseUrl,
   setMaxToolOutput,
@@ -66,7 +65,6 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash", endpointId: "deepseek", tokenThresholds: { handoff: 250_000, guard: 375000 } },
       { id: "glm-5.1", name: "GLM-5.1", endpointId: "bigmodelcn", tokenThresholds: { handoff: 250_000, guard: 375000 } },
     ],
-    defaultModel: "deepseek-v4-flash",
     ...overrides,
   };
 }
@@ -155,10 +153,6 @@ describe("config-editor / 不可变改写", () => {
     expect(after.endpoints[1].baseUrl).toBe("https://open.bigmodel.cn/api/paas/v4");
   });
 
-  it("setDefaultModel 写入 defaultModel", () => {
-    expect(setDefaultModel(makeConfig(), "glm-5.1").defaultModel).toBe("glm-5.1");
-  });
-
   it("uniqueEndpointId 派生合法 id 并避让冲突", () => {
     const config = makeConfig();
     expect(uniqueEndpointId(config, "My Gateway")).toBe("my-gateway");
@@ -201,10 +195,9 @@ describe("config-editor / 通用改写（配置中心）", () => {
     expect(after.models[0].tokenThresholds.handoff).toBe(250_000);
   });
 
-  it("removeModel 修正悬空的默认引用", () => {
+  it("removeModel 修正悬空的迁移模型引用", () => {
     const after = removeModel(makeConfig(), "deepseek-v4-flash");
     expect(after.models.map((m) => m.id)).toEqual(["glm-5.1"]);
-    expect(after.defaultModel).toBe("glm-5.1");
   });
 
   it("addModel 派生 id 并标记 custom", () => {

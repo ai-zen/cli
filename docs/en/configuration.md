@@ -64,7 +64,6 @@ Key paths defined in `src/config.ts`:
       "defaultSize": "1024x1024"
     }
   ],
-  "defaultModel": "deepseek-flash",
   "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
   "defaultMigrationModel": "deepseek-flash"
@@ -76,9 +75,27 @@ Fields (aligned with the SDK's `AppConfig` type):
 - `endpoints`: the list of API endpoints (`id`, `name`, `baseUrl`, `apiKey`, `description`).
 - `models`: the list of conversation models. `tokenThresholds` sets two usage lines: `handoff` (soft line — `prompt_tokens` above it triggers a task handoff) and `guard` (hard line — aborts the round when exceeded before a request); both are **absolute values**, `guard ≈ handoff × 1.5` is recommended. `reasoningPreset` references a preset name in `reasoning-presets.json` (it decides which levels `/think` offers); absent = not adjustable. `vision` indicates whether image input is supported (which determines whether `view_image` is enabled).
 - `imageModels`: the list of image-generation models (`id`, `name`, `endpointId`, `modelName`, `defaultSize`, `defaultQuality`).
-- Entries in `models` / `imageModels` without `custom: true` are **factory-managed**: on every launch they are reconciled with (and replaced by) the SDK factory catalog; add `"custom": true` for your own entries (a dangling `defaultModel` / `defaultMigrationModel` falls back to the factory default). `endpoints` are never managed and always keep your configuration.
+- Entries in `models` / `imageModels` without `custom: true` are **factory-managed**: on every launch they are reconciled with (and replaced by) the SDK factory catalog; add `"custom": true` for your own entries (a dangling `defaultMigrationModel` falls back to the factory default). `endpoints` are never managed and always keep your configuration.
 - Legacy fields `maxContextTokens` / `maxContextChars` / `reasoning` are migrated automatically on launch (the first two fold into `tokenThresholds`, `reasoning` becomes `reasoningPreset`); no manual edit is needed, and the file is written only once when a difference is detected.
-- `defaultModel` / `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`: the various defaults.
+- `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`: the remaining defaults.
+- **The model is not selected here**: it lives on the Agent definition's `modelId` field (see below). The old `config.defaultModel` is moved onto the default Agent during upgrade and then dropped from the config.
+
+## Agent definition (`agents/<id>.json`)
+
+Each Agent binds its model in its own definition file — this is the **single source of truth** at runtime: the status bar, credential pre-check, context thresholds and the actual API request all read it, and `/model` writes exactly this field.
+
+```json
+{
+  "id": "default",
+  "name": "Default assistant",
+  "modelId": "deepseek-flash",
+  "messages": [ ... ],
+  "modelParams": { "thinking": { "type": "enabled" }, "reasoning_effort": "high" }
+}
+```
+
+- `modelId`: the bound model. **Required** — when missing, startup fails with a hint to pick a model via `/config`.
+- `modelParams`: per-Agent parameter overrides, shallow-merged into the model's `defaultParams` (this is what `/think` writes). **It is cleared when switching models** so the target model falls back to its own defaults: thinking parameters are model-specific, and DeepSeek's `thinking.type: "disabled"` is rejected outright by GLM-5.3.
 
 ## Filesystem layout
 

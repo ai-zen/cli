@@ -94,7 +94,6 @@ export function createHandoffService(
         await conversationRepository.write({
           id,
           agentId: ctx.agentId || "default",
-          modelId: ctx.modelId,
           messages: hctx.agent.messages,
           cwd: process.cwd(),
           createdAt: existing?.createdAt ?? now,

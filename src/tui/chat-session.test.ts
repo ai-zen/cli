@@ -14,6 +14,8 @@ const state = vi.hoisted(() => {
 // 把 agent-creator 打桩，避免真实构建 Agent / 访问网络
 vi.mock("../agent-creator.js", () => ({
   createAgent: vi.fn(async (opts: any) => ({
+    // definition 是模型真相源（ChatSession.modelId 从它读）
+    definition: { id: opts?.agentId ?? "default", modelId: "m1", messages: [] },
     messages: opts?.messages ? [...opts.messages] : [],
     lastUsage: undefined,
     use: () => {},
@@ -31,7 +33,7 @@ describe("ChatSession.reset（/new 归档旧对话）", () => {
     const dir = state.dir;
     const convFile = (id: string) => join(dir, "cli", "conversations", `${id}.json`);
     const session = await ChatSession.create(
-      { modelId: "m1" },
+      {},
       { onChange: () => {}, onNotice: () => {} },
     );
 
@@ -64,7 +66,7 @@ describe("ChatSession.reset（/new 归档旧对话）", () => {
 describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
   it("只改 ctx.currentId 时 session.currentId 立即跟随（自动迁移换 id 的回归）", async () => {
     const session = await ChatSession.create(
-      { modelId: "m1" },
+      {},
       { onChange: () => {}, onNotice: () => {} },
     );
     const before = session.currentId;
@@ -81,7 +83,7 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
 
   it("赋值 session.currentId 会同步写回 ctx", async () => {
     const session = await ChatSession.create(
-      { modelId: "m1" },
+      {},
       { onChange: () => {}, onNotice: () => {} },
     );
 
@@ -91,7 +93,7 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
   });
   it("端到端：handoffService.migrate() 之后 currentId 必须跟随新会话（自动迁移路径）", async () => {
     const session = await ChatSession.create(
-      { modelId: "m1" },
+      {},
       { onChange: () => {}, onNotice: () => {} },
     );
     session.currentId = "会话_自动迁移前";
@@ -142,7 +144,7 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
 describe("ChatSession.totalUsage（本会话累计用量）", () => {
   it("逐消息求和：assistant 的 usage + 工具消息的 subAgentUsage（含子 Agent）", async () => {
     const session = await ChatSession.create(
-      { modelId: "m1" },
+      {},
       { onChange: () => {}, onNotice: () => {} },
     );
     session.messages.push(

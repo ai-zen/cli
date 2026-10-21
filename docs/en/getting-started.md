@@ -101,7 +101,7 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 | `/editor` | Use the system editor to enter a long message |
 | `/clear` | Clear the screen |
 | `/config` | Open the configuration center (default model / endpoint management) |
-| `/model` | Switch the model of the current session and persist it (updates the Agent binding when there is one, otherwise the default model); the status bar shows the model name |
+| `/model` | Switch the model of the current session and persist it (written to the Agent's `modelId`; thinking level reset to the model default); the status bar shows the model name |
 | `/think` `/effort` | Switch reasoning effort (available levels come from the model's reasoning preset), persisted into the current Agent definition's `reasoningEffort`; the status bar shows the current level |
 | `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
 | `/migrate` | Manually trigger task migration (generate a handoff document and start a new session) |
@@ -137,7 +137,7 @@ ai hook uninstall
 | First launch, endpoint has no key | The **credential screen** appears automatically; entering a key saves it and enters the chat |
 | Change the key of the **endpoint used by the current model** | `/key` in the chat (the session is rebuilt on save, so it takes effect immediately) |
 | Endpoint key / base URL, default model, add endpoint | `/config` → "Endpoint management" |
-| Model used by the current session | `/model` in the chat (write target depends on whether the Agent has a model binding) |
+| Model used by the current session | `/model` in the chat (writes the Agent's `modelId`) |
 | Reasoning effort | `/think` in the chat (written into the current Agent's `reasoningEffort`; available levels come from the preset referenced by the model in `~/.ai-zen/reasoning-presets.json`, which you can extend) |
 | Models / image models / MCP servers / agent definitions / defaults / tool-output cap | `/config` → configuration center |
 

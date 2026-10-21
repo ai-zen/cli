@@ -140,14 +140,13 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       }
 
       try {
-        // 写入位置由「Agent 是否显式绑定模型」决定（见 model-switch.ts）
+        // 只写 Agent 定义（模型唯一真相源）
         const result = await switchModel({ config, agentId: session.agentId, modelId: chosen });
         // Scope 持有配置快照：不重建的话 getScope() 会把旧模型又交给新 Agent
         await resetScope();
         // 重挂载对话屏：模型变了要重算上下文阈值、重建 Agent；消息与上下文保留
         exit({
           restart: true,
-          modelId: chosen,
           agentId: session.agentId,
           messages: session.messages,
           notice: result.summary,
@@ -163,7 +162,11 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       const presets = await readReasoningPresets();
       const store = await readAgentStore();
       const definition = store.agents.find((item) => item.id === session.agentId) ?? null;
-      const modelId = definition?.modelId ?? config.defaultModel;
+      const modelId = definition?.modelId;
+      if (!modelId) {
+        push(`Agent「${session.agentId}」未绑定模型，请用 /config 为它选择模型`, "error");
+        break;
+      }
       const model = (config.models ?? []).find((item) => item.id === modelId);
       if (!model) {
         push(`模型 ${modelId} 不存在，请用 /model 或 /config 检查`, "error");
@@ -307,7 +310,6 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       // 整体切换会话（含模型 / Agent）——交由上层重挂载对话屏
       exit({
         load: {
-          modelId: conversation.modelId,
           agentId: conversation.agentId,
           messages: conversation.messages,
           conversationId: conversation.id,

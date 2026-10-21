@@ -36,7 +36,6 @@ import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
 // ==================== 对话屏幕 ====================
 
 export interface ChatScreenProps {
-  modelId: string;
   agentId?: string;
   messages?: AgentNS.Message[];
   conversationId?: string;
@@ -103,10 +102,18 @@ export function Chat(props: ChatScreenProps) {
   /** 本轮是否在生成中（spinner / 输入禁用） */
   const [busy, setBusy] = useState(false);
   /**
+   * 当前模型 id —— **从会话（即 Agent 定义）读**，不作为 prop 传入。
+   *
+   * 模型的唯一真相源是 `AgentDefinition.modelId`：所以状态栏、凭据检查、思考状态
+   * 与 SDK 实发请求用的永远是同一个值，不会出现「显示 A、实发 B」。
+   */
+  const [modelId, setModelId] = useState<string>("");
+
+  /**
    * 思考强度展示文案（关 / 低 / 中 / 高 / 最高 / 开 / —）。
    *
    * 真相在配置里（模型的 `defaultParams`），这里只镜像一份供状态栏用：
-   * `/think` 写入后由命令层回调刷新，切换模型时靠 `props.modelId` 变化重读。
+   * `/think` 写入后由命令层回调刷新，切模型（会话重建）时靠 `modelId` 变化重读。
    */
   const [effortText, setEffortText] = useState<string | null>(null);
   /** 乐观回显：提交后、真实 user 消息落进 messages 之前，先显示用户提问 */
@@ -153,13 +160,14 @@ export function Chat(props: ChatScreenProps) {
   }
 
   // 思考强度展示：从当前模型的 defaultParams 派生；`/think` 写入后由命令层回调刷新，
-  // 切换模型（重挂载）时靠 props.modelId 变化重读。
+  // 切模型（会话重建）时靠 modelId 变化重读。
   useEffect(() => {
+    if (!modelId) return;
     let alive = true;
-    // 档位存在 Agent 定义上（`reasoningEffort`），可选档位在策略表里（`reasoningPreset` 指向），两者都要读
+    // 档位存在 Agent 定义上（`modelParams`），可选档位在策略表里（`reasoningPreset` 指向），两者都要读
     Promise.all([readConfig(), readAgentStore(), readReasoningPresets()])
       .then(([config, store, presets]) => {
-        const model = config.models?.find((item) => item.id === props.modelId);
+        const model = config.models?.find((item) => item.id === modelId);
         const agentId = props.agentId ?? "default";
         const definition = store.agents.find((item) => item.id === agentId) ?? null;
         if (alive) setEffortText(describeEffort(model, presets, definition));
@@ -170,7 +178,7 @@ export function Chat(props: ChatScreenProps) {
     return () => {
       alive = false;
     };
-  }, [props.modelId, props.agentId]);
+  }, [modelId, props.agentId]);
 
   // 创建会话
   useEffect(() => {
@@ -186,7 +194,6 @@ export function Chat(props: ChatScreenProps) {
     };
     ChatSession.create(
       {
-        modelId: props.modelId,
         agentId: props.agentId,
         messages: props.messages,
         conversationId: props.conversationId,
@@ -206,6 +213,7 @@ export function Chat(props: ChatScreenProps) {
           return;
         }
         sessionRef.current = session;
+        setModelId(session.modelId);
         setReady(true);
         // 重挂载附带的提示只需展示一次（消费后置空，避免再次触发）
         if (initialNoticeRef.current) {
@@ -221,7 +229,6 @@ export function Chat(props: ChatScreenProps) {
       sessionRef.current?.dispose();
     };
   }, [
-    props.modelId,
     props.agentId,
     props.messages,
     props.conversationId,
@@ -247,7 +254,7 @@ export function Chat(props: ChatScreenProps) {
   const openWizard = async (step: WizardStep) => {
     try {
       const config = await readConfig();
-      currentEndpointRef.current = resolveCredential(config, props.modelId)?.endpointId ?? null;
+      currentEndpointRef.current = resolveCredential(config, modelId)?.endpointId ?? null;
       const agentStore = await readAgentStore();
       setWizardConfig(config);
       setWizardPresets(await readReasoningPresets());
@@ -264,9 +271,9 @@ export function Chat(props: ChatScreenProps) {
   const openKeyEditor = async () => {
     try {
       const config = await readConfig();
-      const credential = resolveCredential(config, props.modelId);
+      const credential = resolveCredential(config, modelId);
       if (!credential) {
-        noticeChannel.push(`模型 ${props.modelId} 未绑定可用端点，请用 /config 检查配置`, "error");
+        noticeChannel.push(`模型 ${modelId} 未绑定可用端点，请用 /config 检查配置`, "error");
         return;
       }
       currentEndpointRef.current = credential.endpointId;
@@ -952,7 +959,7 @@ export function Chat(props: ChatScreenProps) {
       )}
 
       <StatusBar
-        model={props.modelId}
+        model={modelId}
         agent={props.agentId ?? "default"}
         effort={effortText}
         lastTokens={lastTokens}

@@ -124,11 +124,32 @@ async function ensureCredential(modelId: string): Promise<boolean> {
 // ==================== 目标解析 ====================
 
 interface ChatTarget {
-  modelId: string;
   agentId?: string;
   messages?: AgentNS.Message[];
   conversationId?: string;
   conversationName?: string;
+}
+
+/**
+ * 解析某个 Agent 绑定模型（**唯一真相源**）。
+ *
+ * 配置层已无 `defaultModel`、会话存档也不再记模型，所以这里缺失就直接报错，
+ * 绝不做任何隐式回退——回退正是「状态栏显示 A、实发请求 B」的根源。
+ */
+async function modelOf(agentId: string | undefined): Promise<string> {
+  const id = agentId || "default";
+  const agent = await new AgentRepository(AGENTS_DIR).read(id);
+  const modelId = agent?.modelId;
+  if (!modelId) {
+    throw new Error(`Agent「${id}」未绑定模型，请用 /config 为它选择模型`);
+  }
+  const config = await readConfig();
+  if (!config.models.some((model) => model.id === modelId)) {
+    throw new Error(
+      `Agent「${id}」绑定的模型“${modelId}”已不在配置中，请用 /config 重新选择`,
+    );
+  }
+  return modelId;
 }
 
 async function resolveTarget(): Promise<ChatTarget> {
@@ -137,23 +158,11 @@ async function resolveTarget(): Promise<ChatTarget> {
   const agents = await repository.list();
 
   const agentId = config.defaultAgent ?? agents[0]?.id;
-  let modelId: string | undefined;
-  if (agentId) {
-    const agent = await repository.read(agentId);
-    modelId = agent?.modelId;
-  }
-  modelId = modelId ?? config.defaultModel ?? config.models[0]?.id;
+  if (!agentId) throw new Error("没有可用的 Agent，请先在配置中创建（配置文件 config.json）");
 
-  if (!modelId) {
-    throw new Error("没有可用的模型，请先在配置中添加端点与模型（配置文件 config.json）");
-  }
-  return { modelId, agentId };
-}
-
-/** 目标模型是否仍在配置中（续接的会话可能引用了已删除的模型） */
-async function modelExists(modelId: string): Promise<boolean> {
-  const config = await readConfig();
-  return config.models.some((model) => model.id === modelId);
+  // 校验模型可用（缺失时抛出可读错误，交给启动屏展示）
+  await modelOf(agentId);
+  return { agentId };
 }
 
 /** 读取「上一轮会话 id」指针，续接该会话（指针缺失或会话不存在时返回 null） */
@@ -162,8 +171,8 @@ async function resumeLastSession(): Promise<ChatTarget | null> {
   if (!pointer) return null;
   const conversation = await conversationRepository.read(pointer.id);
   if (!conversation) return null;
+  // 模型由 Agent 定义决定（旧存档里的 modelId 一律忽略）
   return targetFromMessages({
-    modelId: conversation.modelId,
     agentId: conversation.agentId,
     messages: conversation.messages,
     conversationId: conversation.id,
@@ -173,14 +182,12 @@ async function resumeLastSession(): Promise<ChatTarget | null> {
 
 /** 从已保存对话构造对话目标 */
 function targetFromMessages(input: {
-  modelId: string;
   agentId?: string;
   messages: AgentNS.Message[];
   conversationId?: string;
   conversationName?: string;
 }): ChatTarget {
   return {
-    modelId: input.modelId,
     agentId: input.agentId,
     messages: input.messages,
     conversationId: input.conversationId,
@@ -204,7 +211,6 @@ async function runChat(target: ChatTarget): Promise<void> {
   while (true) {
     const result = await mount(
       <Chat
-        modelId={current.modelId}
         agentId={current.agentId}
         messages={messages}
         conversationId={current.conversationId}
@@ -218,7 +224,6 @@ async function runChat(target: ChatTarget): Promise<void> {
       const value = result as {
         restart?: boolean;
         load?: {
-          modelId: string;
           agentId?: string;
           messages?: AgentNS.Message[];
           conversationId?: string;
@@ -228,16 +233,14 @@ async function runChat(target: ChatTarget): Promise<void> {
         initialInput?: string;
         conversationId?: string;
         conversationName?: string;
-        /** `/model` 切换后重挂载：新模型 / Agent */
-        modelId?: string;
+        /** `/model` 切换后重挂载：Agent 变了（模型由 Agent 定义承载） */
         agentId?: string;
         /** 重挂载后展示一次的系统提示 */
         notice?: string;
       };
       if (value.load) {
-        // /load：整体切换到另一段已保存对话（含模型 / Agent），重挂载对话屏
+        // /load：整体切换到另一段已保存对话（含 Agent），重挂载对话屏
         current = {
-          modelId: value.load.modelId,
           agentId: value.load.agentId,
           conversationId: value.load.conversationId,
           conversationName: value.load.conversationName,
@@ -251,13 +254,9 @@ async function runChat(target: ChatTarget): Promise<void> {
         messages = value.messages ?? messages;
         initialInput = value.initialInput;
         initialNotice = value.notice;
-        // `/model` 换模型：modelId / agentId 变了就得重建会话（上下文阈值、工具集都跟着变）
-        if (value.modelId) {
-          current = {
-            ...current,
-            modelId: value.modelId,
-            agentId: value.agentId ?? current.agentId,
-          };
+        // `/model` 换模型：Agent 定义里的 modelId 已变，需重建会话（阈值、工具集跟着变）
+        if (value.agentId) {
+          current = { ...current, agentId: value.agentId };
         }
         continue;
       }
@@ -283,19 +282,7 @@ export async function runTui(): Promise<void> {
 
     // 直达对话：优先续接「上一轮会话」，否则新建对话
     let target: ChatTarget | null = await resumeLastSession();
-    if (target && !(await modelExists(target.modelId))) {
-      // 续接目标引用了已从配置中删除的模型：退回默认模型但保留历史，
-      // 避免卡在「模型不存在」的报错屏而无处可走
-      const fallback = await resolveTarget().catch(() => null);
-      target = fallback
-        ? {
-            ...fallback,
-            messages: target.messages,
-            conversationId: target.conversationId,
-            conversationName: target.conversationName,
-          }
-        : null;
-    } else if (!target) {
+    if (!target) {
       try {
         target = await resolveTarget();
       } catch (error: any) {
@@ -308,7 +295,16 @@ export async function runTui(): Promise<void> {
     }
 
     // 端点凭据预检：未配置 API Key 时先弹出输入屏，而不是「报错即退出」
-    if (!(await ensureCredential(target.modelId))) {
+    // 模型从 Agent 定义读 —— 与 SDK 实发请求用的是同一个值
+    let modelId: string | null = null;
+    try {
+      modelId = await modelOf(target.agentId);
+    } catch (error: any) {
+      process.stderr.write(`\n✖ 无法启动对话：${error?.message ?? error}\n`);
+      farewell();
+      return;
+    }
+    if (!(await ensureCredential(modelId))) {
       farewell();
       return;
     }

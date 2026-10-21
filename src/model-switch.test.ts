@@ -1,6 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
-import { resolveModelWriteTarget, switchModel } from "./model-switch.js";
+import { switchModel } from "./model-switch.js";
+
+/**
+ * `switchModel` 只有一种写法：把目标模型写进 `AgentDefinition.modelId`。
+ *
+ * 之所以把这些断言写死在这里：曾经存在「写 Agent / 写 config.defaultModel」两条路径，
+ * 于是 CLI 显示层的模型与 SDK 实发请求的模型会分叉——状态栏写着 DeepSeek、请求却
+ * 发给了 GLM，用户看到 401 却怎么切都切不回来。现在只允许一处真相源。
+ */
 
 function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -9,7 +17,6 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       { id: "glm-5.3", name: "GLM-5.3", endpointId: "bigmodelcn", tokenThresholds: { handoff: 250_000, guard: 375000 } },
       { id: "deepseek-flash", name: "DeepSeek-V4.1-Flash", endpointId: "deepseek", tokenThresholds: { handoff: 250_000, guard: 375000 } },
     ],
-    defaultModel: "glm-5.3",
     ...overrides,
   } as AppConfig;
 }
@@ -25,30 +32,14 @@ function makeDefinition(overrides: Partial<AgentDefinition> = {}): AgentDefiniti
   };
 }
 
-describe("模型切换的写入目标判定", () => {
-  it("Agent 显式绑定过模型 → 写 Agent 定义", () => {
-    expect(resolveModelWriteTarget(makeDefinition({ modelId: "glm-5.3" }))).toBe("agent");
-  });
-
-  it("Agent 未绑定模型 → 写全局默认模型", () => {
-    expect(resolveModelWriteTarget(makeDefinition())).toBe("default");
-  });
-
-  it("Agent 定义缺失 → 写全局默认模型", () => {
-    expect(resolveModelWriteTarget(null)).toBe("default");
-    expect(resolveModelWriteTarget(undefined)).toBe("default");
-  });
-});
-
-describe("switchModel 写入配置", () => {
-  it("绑定过模型的 Agent：改 definition.modelId，保留其它字段，不动 config", async () => {
+describe("switchModel：唯一写入目标是 Agent 定义", () => {
+  it("改 definition.modelId，保留其它字段", async () => {
     const definition = makeDefinition({
       modelId: "glm-5.3",
       custom: true,
       permissions: { tools: { allow: ["read"] } } as AgentDefinition["permissions"],
     });
     const writeAgent = vi.fn(async (_definition: AgentDefinition) => {});
-    const saveConfig = vi.fn(async (_config: AppConfig) => {});
 
     const result = await switchModel({
       config: makeConfig(),
@@ -56,14 +47,10 @@ describe("switchModel 写入配置", () => {
       modelId: "deepseek-flash",
       readAgent: async () => definition,
       writeAgent,
-      saveConfig,
       now: new Date("2026-10-22T02:00:00.000Z"),
     });
 
-    expect(result.target).toBe("agent");
-    expect(saveConfig).not.toHaveBeenCalled();
     expect(writeAgent).toHaveBeenCalledTimes(1);
-
     const written = writeAgent.mock.calls[0]![0] as AgentDefinition;
     expect(written.modelId).toBe("deepseek-flash");
     expect(written.updatedAt).toBe("2026-10-22T02:00:00.000Z");
@@ -73,37 +60,59 @@ describe("switchModel 写入配置", () => {
     expect(written.messages).toEqual(definition.messages);
     expect(written.createdAt).toBe(definition.createdAt);
     expect(result.summary).toContain("DeepSeek-V4.1-Flash");
-    expect(result.summary).toContain("绑定模型");
   });
 
-  it("未绑定模型的 Agent：写 config.defaultModel，不碰 Agent 定义", async () => {
+  it("未绑定过模型的 Agent 也一样写进 Agent 定义（不再有 config.defaultModel 兜底）", async () => {
     const writeAgent = vi.fn(async (_definition: AgentDefinition) => {});
-    const saveConfig = vi.fn(async (_config: AppConfig) => {});
-    const original = makeConfig();
 
-    const result = await switchModel({
-      config: original,
+    await switchModel({
+      config: makeConfig(),
       agentId: "default",
       modelId: "deepseek-flash",
-      readAgent: async () => makeDefinition(),
+      readAgent: async () => makeDefinition(), // 无 modelId
       writeAgent,
-      saveConfig,
     });
 
-    expect(result.target).toBe("default");
-    expect(writeAgent).not.toHaveBeenCalled();
-    expect(saveConfig).toHaveBeenCalledTimes(1);
-    const written = saveConfig.mock.calls[0]![0] as AppConfig;
-    expect(written.defaultModel).toBe("deepseek-flash");
-    // 新对象而非就地改：原配置对象（Scope 持有它的快照）不能被篡改
-    expect(result.config).not.toBe(original);
-    expect(original.defaultModel).toBe("glm-5.3");
-    expect(result.summary).toContain("默认模型配置");
+    expect(writeAgent).toHaveBeenCalledTimes(1);
+    expect((writeAgent.mock.calls[0]![0] as AgentDefinition).modelId).toBe("deepseek-flash");
   });
 
-  it("模型不存在时抛错，且不写任何配置", async () => {
+  it("切换即重置思考强度：清空 modelParams，走目标模型默认", async () => {
+    const definition = makeDefinition({
+      modelId: "deepseek-flash",
+      // DeepSeek 关思考的展开参数——带到 GLM-5.3 上会被直接拒绝
+      modelParams: { thinking: { type: "disabled" } },
+    });
     const writeAgent = vi.fn(async (_definition: AgentDefinition) => {});
-    const saveConfig = vi.fn(async (_config: AppConfig) => {});
+
+    await switchModel({
+      config: makeConfig(),
+      agentId: "default",
+      modelId: "glm-5.3",
+      readAgent: async () => definition,
+      writeAgent,
+    });
+
+    const written = writeAgent.mock.calls[0]![0] as AgentDefinition;
+    expect(written.modelId).toBe("glm-5.3");
+    // 不是「剔除思考键」，而是整个删掉——不留任何思考强度设置
+    expect(written.modelParams).toBeUndefined();
+    expect("modelParams" in written).toBe(false);
+  });
+
+  it("原本没有思考强度时不多写一个空对象", async () => {
+    const writeAgent = vi.fn(async (_definition: AgentDefinition) => {});
+    await switchModel({
+      config: makeConfig(),
+      modelId: "glm-5.3",
+      readAgent: async () => makeDefinition({ modelId: "deepseek-flash" }),
+      writeAgent,
+    });
+    expect("modelParams" in (writeAgent.mock.calls[0]![0] as AgentDefinition)).toBe(false);
+  });
+
+  it("模型不存在时抛错，且不写任何东西", async () => {
+    const writeAgent = vi.fn(async (_definition: AgentDefinition) => {});
 
     await expect(
       switchModel({
@@ -112,12 +121,26 @@ describe("switchModel 写入配置", () => {
         modelId: "not-exist",
         readAgent: async () => makeDefinition({ modelId: "glm-5.3" }),
         writeAgent,
-        saveConfig,
       }),
     ).rejects.toThrow(/不存在/);
 
     expect(writeAgent).not.toHaveBeenCalled();
-    expect(saveConfig).not.toHaveBeenCalled();
+  });
+
+  it("Agent 定义缺失时抛错（不能凭空造一个 Agent）", async () => {
+    const writeAgent = vi.fn(async (_definition: AgentDefinition) => {});
+
+    await expect(
+      switchModel({
+        config: makeConfig(),
+        agentId: "ghost",
+        modelId: "deepseek-flash",
+        readAgent: async () => null,
+        writeAgent,
+      }),
+    ).rejects.toThrow(/不存在/);
+
+    expect(writeAgent).not.toHaveBeenCalled();
   });
 
   it("缺省 agentId 视为 default", async () => {
@@ -127,7 +150,6 @@ describe("switchModel 写入配置", () => {
       modelId: "deepseek-flash",
       readAgent,
       writeAgent: async () => {},
-      saveConfig: async () => {},
     });
     expect(readAgent).toHaveBeenCalledWith("default");
   });

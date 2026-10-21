@@ -19,7 +19,11 @@ import type { ConversationContext } from "./types.js";
 export interface Conversation {
   id: string;
   agentId: string;
-  modelId: string;
+  /**
+   * @deprecated 已不再读写。模型真相源是 `AgentDefinition.modelId`。
+   * 保留字段仅为了不破坏旧存档的反序列化，读取时一律忽略。
+   */
+  modelId?: string;
   messages: AgentNS.Message[];
   lastPromptTokens?: number;
   cwd?: string;
@@ -49,7 +53,6 @@ export async function saveConversation(ctx: ConversationContext): Promise<string
   await conversationRepository.write({
     id,
     agentId: ctx.agentId || "default",
-    modelId: ctx.modelId,
     messages: ctx.agent.messages,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
