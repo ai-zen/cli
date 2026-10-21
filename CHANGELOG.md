@@ -1,3 +1,11 @@
+## [1.0.0-alpha.17] - 2026-10-22
+
+### 🔧 行为变更
+
+- **升级 `@ai-zen/agents-sdk` 至 `1.0.0-alpha.16`（内含 core `4.5.2`）：模型参数不再能覆盖请求体的固定字段** —— core 之前把模型参数 spread 在请求体最外层，于是 `Model.defaultParams` / `AgentDefinition.modelParams` 里若出现 `model` / `messages` / `tools` / `stream` / `stream_options`，会静默覆盖框架自己填的值。最惨的是 `stream: false`：流式被关掉而调用方仍按异步流解析，整轮直接失败。现在固定字段永远胜出。
+  - 对 `/think` 与思考档位**没有影响**：写入的都是 `thinking` / `reasoning_effort` 这类非固定键，照常透传。
+  - 唯一需要注意的是别在 `modelParams` 里手写上面那五个键——写了也不会生效。
+
 ## [1.0.0-alpha.16] - 2026-10-22
 
 ### 🔧 行为变更（不兼容）
