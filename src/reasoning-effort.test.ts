@@ -1,21 +1,24 @@
 import { describe, it, expect, vi } from "vitest";
-import type { AgentDefinition, AppConfig, Model } from "@ai-zen/agents-sdk";
-import type { ReasoningEffort } from "./reasoning-effort.js";
+import type { AgentDefinition, AppConfig, Model, ReasoningPresets } from "@ai-zen/agents-sdk";
 import {
   EFFORT_LABELS,
   describeEffort,
   effortChoices,
+  effortLabel,
   isAdjustable,
   setAgentEffort,
 } from "./reasoning-effort.js";
+import { FACTORY_REASONING_PRESETS } from "@ai-zen/agents-sdk";
 
-/** DeepSeek：low/high/max，可关闭（thinking.type） */
+const PRESETS = FACTORY_REASONING_PRESETS;
+
+/** DeepSeek：low/high/max + off */
 const DEEPSEEK = {
   id: "deepseek-flash",
   name: "DeepSeek",
   endpointId: "deepseek",
   tokenThresholds: { handoff: 250_000, guard: 375_000 },
-  reasoning: { efforts: ["low", "high", "max"] as ReasoningEffort[], disable: "thinking" as const },
+  reasoningPreset: "deepseek",
 } as Model;
 
 /** 智谱 GLM-5.3：只认三档且不能关 */
@@ -24,23 +27,31 @@ const GLM53 = {
   name: "GLM-5.3",
   endpointId: "bigmodelcn",
   tokenThresholds: { handoff: 250_000, guard: 375_000 },
-  reasoning: { efforts: ["low", "high", "max"] as ReasoningEffort[] },
+  reasoningPreset: "zhipu-5.3",
 } as Model;
 
-/** 不可调档（GLM-4.7 强制思考、无 effort 参数） */
+/** 未挂策略（GLM-4.7 强制思考、无 effort 参数） */
 const FORCED = {
   id: "glm-4.7-flash",
   name: "GLM-4.7",
   endpointId: "bigmodelcn",
   tokenThresholds: { handoff: 100_000, guard: 150_000 },
-  reasoning: { efforts: [] as ReasoningEffort[] },
+} as Model;
+
+/** 引用了不存在的策略名 */
+const BROKEN = {
+  id: "broken",
+  name: "Broken",
+  endpointId: "e",
+  tokenThresholds: { handoff: 1000, guard: 1500 },
+  reasoningPreset: "no-such-preset",
 } as Model;
 
 function makeConfig(): AppConfig {
   return {
     endpoints: [],
     defaultModel: "deepseek-flash",
-    models: [DEEPSEEK, GLM53, FORCED],
+    models: [DEEPSEEK, GLM53, FORCED, BROKEN],
   } as unknown as AppConfig;
 }
 
@@ -56,41 +67,58 @@ function makeDefinition(overrides: Partial<AgentDefinition> = {}): AgentDefiniti
 }
 
 describe("档位标签与可选值", () => {
-  it("每个档位都有中文标签", () => {
-    for (const level of ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max"] as ReasoningEffort[]) {
+  it("常见档位有中文标签，未知档位原样显示", () => {
+    for (const level of ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max"]) {
       expect(EFFORT_LABELS[level]).toBeTruthy();
     }
+    expect(effortLabel("high")).toBe("高");
+    expect(effortLabel("ultra-max")).toBe("ultra-max"); // 用户自建档位名
   });
 
-  it("可选值来自模型能力：off 只在支持关闭时出现", () => {
-    expect(effortChoices(DEEPSEEK)).toEqual(["off", "low", "high", "max"]);
-    expect(effortChoices(GLM53)).toEqual(["low", "high", "max"]); // 无 off
-    expect(effortChoices(FORCED)).toEqual([]);
-    expect(effortChoices(undefined)).toEqual([]);
+  it("可选值完全来自策略表的键（含 off）", () => {
+    expect(effortChoices(DEEPSEEK, PRESETS)).toEqual(["low", "high", "max", "off"]);
+    expect(effortChoices(GLM53, PRESETS)).toEqual(["low", "high", "max"]); // 表里没有 off
+    expect(effortChoices(FORCED, PRESETS)).toEqual([]);
+    expect(effortChoices(BROKEN, PRESETS)).toEqual([]);
+    expect(effortChoices(undefined, PRESETS)).toEqual([]);
   });
 
   it("isAdjustable 判定模型是否可调", () => {
-    expect(isAdjustable(DEEPSEEK)).toBe(true);
-    expect(isAdjustable(FORCED)).toBe(false);
-    expect(isAdjustable(null)).toBe(false);
+    expect(isAdjustable(DEEPSEEK, PRESETS)).toBe(true);
+    expect(isAdjustable(FORCED, PRESETS)).toBe(false);
+    expect(isAdjustable(BROKEN, PRESETS)).toBe(false);
+    expect(isAdjustable(null, PRESETS)).toBe(false);
+  });
+
+  it("用户自建的策略一样能列出来（档位名随意）", () => {
+    const custom: ReasoningPresets = {
+      "my-endpoint": { levels: { turbo: { effort: "turbo" }, chill: { effort: "chill" } } },
+    };
+    const model = { ...DEEPSEEK, reasoningPreset: "my-endpoint" } as Model;
+    expect(effortChoices(model, custom)).toEqual(["turbo", "chill"]);
   });
 });
 
 describe("describeEffort 状态栏文案", () => {
   it("模型不可调 → 「—」", () => {
-    expect(describeEffort(FORCED, makeDefinition())).toBe("—");
-    expect(describeEffort(undefined, null)).toBe("—");
+    expect(describeEffort(FORCED, PRESETS, makeDefinition())).toBe("—");
+    expect(describeEffort(BROKEN, PRESETS, makeDefinition())).toBe("—");
+    expect(describeEffort(undefined, PRESETS, null)).toBe("—");
   });
 
   it("Agent 声明了档位 → 中文标签", () => {
-    expect(describeEffort(GLM53, makeDefinition({ reasoningEffort: "max" }))).toBe("最高");
-    expect(describeEffort(DEEPSEEK, makeDefinition({ reasoningEffort: "off" }))).toBe("关");
-    expect(describeEffort(DEEPSEEK, makeDefinition({ reasoningEffort: "low" }))).toBe("低");
+    expect(describeEffort(GLM53, PRESETS, makeDefinition({ reasoningEffort: "max" }))).toBe("最高");
+    expect(describeEffort(DEEPSEEK, PRESETS, makeDefinition({ reasoningEffort: "off" }))).toBe("关");
+    expect(describeEffort(DEEPSEEK, PRESETS, makeDefinition({ reasoningEffort: "low" }))).toBe("低");
   });
 
   it("可调但 Agent 未声明 → 「默认」", () => {
-    expect(describeEffort(DEEPSEEK, makeDefinition())).toBe("默认");
-    expect(describeEffort(DEEPSEEK, null)).toBe("默认");
+    expect(describeEffort(DEEPSEEK, PRESETS, makeDefinition())).toBe("默认");
+    expect(describeEffort(DEEPSEEK, PRESETS, null)).toBe("默认");
+  });
+
+  it("Agent 声明了策略里没有的档位 → 退回模型默认", () => {
+    expect(describeEffort(GLM53, PRESETS, makeDefinition({ reasoningEffort: "xhigh" }))).toBe("默认");
   });
 });
 
@@ -102,6 +130,7 @@ describe("setAgentEffort 写入 Agent 定义", () => {
 
     const result = await setAgentEffort({
       config,
+      presets: PRESETS,
       agentId: "default",
       effort: "high",
       readAgent: async () => definition,
@@ -126,6 +155,7 @@ describe("setAgentEffort 写入 Agent 定义", () => {
 
     const result = await setAgentEffort({
       config: makeConfig(),
+      presets: PRESETS,
       agentId: "default",
       effort: null,
       readAgent: async () => definition,
@@ -137,36 +167,50 @@ describe("setAgentEffort 写入 Agent 定义", () => {
     expect(result.summary).toContain("跟随模型默认");
   });
 
-  it("模型不支持的档位 → 抛错且不写盘", async () => {
+  it("策略里没有的档位 → 抛错且不写盘", async () => {
     const writeAgent = vi.fn(async (_def: AgentDefinition) => {});
     await expect(
       setAgentEffort({
         config: makeConfig(),
+        presets: PRESETS,
         agentId: "default",
-        effort: "medium", // GLM-5.3 只认 low/high/max
+        effort: "medium", // zhipu-5.3 只有 low/high/max
         readAgent: async () => makeDefinition({ modelId: "glm-5.3" }),
         writeAgent,
       }),
-    ).rejects.toThrow(/不支持档位 "medium"/);
+    ).rejects.toThrow(/没有档位 "medium"/);
     expect(writeAgent).not.toHaveBeenCalled();
   });
 
-  it("模型不可调档 → 抛错", async () => {
+  it("模型未关联策略 / 策略名不存在 → 抛错", async () => {
     await expect(
       setAgentEffort({
         config: makeConfig(),
+        presets: PRESETS,
         agentId: "default",
         effort: "high",
         readAgent: async () => makeDefinition({ modelId: "glm-4.7-flash" }),
         writeAgent: async () => {},
       }),
-    ).rejects.toThrow(/未声明可调档位/);
+    ).rejects.toThrow(/未关联可用的思考策略/);
+
+    await expect(
+      setAgentEffort({
+        config: makeConfig(),
+        presets: PRESETS,
+        agentId: "default",
+        effort: "high",
+        readAgent: async () => makeDefinition({ modelId: "broken" }),
+        writeAgent: async () => {},
+      }),
+    ).rejects.toThrow(/未关联可用的思考策略/);
   });
 
   it("Agent 不存在 → 抛错", async () => {
     await expect(
       setAgentEffort({
         config: makeConfig(),
+        presets: PRESETS,
         agentId: "nope",
         effort: "low",
         readAgent: async () => null,
@@ -179,6 +223,7 @@ describe("setAgentEffort 写入 Agent 定义", () => {
     const writeAgent = vi.fn(async (_def: AgentDefinition) => {});
     const result = await setAgentEffort({
       config: makeConfig(),
+      presets: PRESETS,
       effort: "max",
       readAgent: async () => makeDefinition(), // 无 modelId
       writeAgent,

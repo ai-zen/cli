@@ -197,7 +197,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
 
   // 字段构造器已抽到 ./fields.js
   const { endpointFields, modelFields, imageModelFields, mcpServerFields, agentFields, agentPermFields } =
-    createFieldBuilders({ config, mcp, store, persist, persistMcp, saveAgent, removeAgentQuiet, go });
+    createFieldBuilders({ config, mcp, store, reasoningPresets: props.reasoningPresets ?? {}, persist, persistMcp, saveAgent, removeAgentQuiet, go });
 
   return {
     config,

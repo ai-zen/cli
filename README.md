@@ -180,7 +180,7 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 | `/clear` | Clear the screen |
 | `/config` | Open the configuration center (endpoints / models / image models / MCP servers / agent definitions / defaults / tool-output cap) |
 | `/model` | Switch the model of the current session and persist it: if the Agent has an explicit model binding that binding is updated, otherwise the default model is changed |
-| `/think` `/effort` | Switch reasoning effort (available levels come from the model's capability, e.g. `low/high/max`); persisted into the current Agent definition; `/think default` falls back to the model default |
+| `/think` `/effort` | Switch reasoning effort (available levels come from the model's reasoning preset, e.g. `low/high/max`); persisted into the current Agent definition; `/think default` falls back to the model default |
 | `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
 | `/handoff` | Write a handoff document only (session keeps running; no confirmation) |
 | `/migrate` `/migration` | Handoff + start a new session (discards history; asks for confirmation) |

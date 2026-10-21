@@ -49,7 +49,7 @@
 import { promises as fs } from "fs";
 import { dirname, join } from "path";
 import { ConfigManager as SdkConfigManager } from "@ai-zen/agents-sdk";
-import type { AppConfig } from "@ai-zen/agents-sdk";
+import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 
 // ==================== 根目录 ====================
 
@@ -140,6 +140,17 @@ export async function ensureConfigDir(): Promise<void> {
 export async function readConfig(): Promise<AppConfig> {
   await ensureConfigDir();
   return await sdkConfigMgr.read();
+}
+
+/**
+ * 读取思考策略表（`~/.ai-zen/reasoning-presets.json`）。
+ *
+ * 与 `config.json` 分开存：档位与厂商协议的对应关系是数据，用户看得见、改得动；
+ * 模型配置里只留 `reasoningPreset` 这个名字。文件缺失或损坏时 SDK 会回落到出厂种子。
+ */
+export async function readReasoningPresets(): Promise<ReasoningPresets> {
+  await ensureConfigDir();
+  return await sdkConfigMgr.readReasoningPresets();
 }
 
 export async function saveConfig(config: AppConfig): Promise<void> {

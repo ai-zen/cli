@@ -11,18 +11,16 @@ import { ChatSession, stripCwdNote } from "../chat-session.js";
 import { matchCommandHints } from "../../conversation-commands/registry.js";
 import { conversationRepository, listConversations } from "../../conversation-repository.js";
 import { formatShortTime } from "../../format-time.js";
-import { readConfig } from "../../config.js";
+import { readConfig, readReasoningPresets } from "../../config.js";
 import { resetScope } from "../../agent-creator.js";
 import { switchModel } from "../../model-switch.js";
 import {
-  EFFORT_LABELS,
-  describeEffort,
   effortChoices,
+  effortLabel,
+  describeEffort,
   setAgentEffort,
-  type ReasoningEffort,
 } from "../../reasoning-effort.js";
 import { readAgentStore } from "../../agents-store.js";
-import { isReasoningEffort } from "@ai-zen/agents-sdk";
 import { WizardStep } from "../config-wizard/index.js";
 import { truncate } from "./render.js";
 import { chooseHandoffMode } from "./handoff-choice.js";
@@ -161,6 +159,7 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
     case "think":
     case "effort": {
       const config = await readConfig();
+      const presets = await readReasoningPresets();
       const store = await readAgentStore();
       const definition = store.agents.find((item) => item.id === session.agentId) ?? null;
       const modelId = definition?.modelId ?? config.defaultModel;
@@ -170,10 +169,10 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
         break;
       }
 
-      const choices = effortChoices(model);
+      const choices = effortChoices(model, presets);
       if (choices.length === 0) {
         push(
-          `模型 ${model.id} 未声明可调档位（模型配置缺少 reasoning.efforts，或该型号不支持调整）`,
+          `模型 ${model.id} 未关联可用的思考策略（缺 reasoningPreset，或策略表里没这一档），无法调整`,
           "error",
         );
         break;
@@ -181,7 +180,7 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
 
       // 支持 `/think high` 直设、`/think default` 恢复跟随模型默认，无参时弹选择器
       let picked: string | undefined = args[0];
-      if (picked !== undefined && picked !== "default" && !isReasoningEffort(picked)) {
+      if (picked !== undefined && picked !== "default" && !choices.includes(picked)) {
         push(`未知强度：${picked}（可选 ${choices.join(" / ")} / default）`, "error");
         break;
       }
@@ -194,14 +193,14 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
             hint: "删除 Agent 上的档位声明",
           },
           ...choices.map((value) => ({
-            label: `${EFFORT_LABELS[value]}${value === current ? "（当前）" : ""}`,
+            label: `${effortLabel(value)}${value === current ? "（当前）" : ""}`,
             value,
             hint: value,
           })),
         ];
         const choice = await new Promise<string | null>((resolve) =>
           setPickerState({
-            title: `思考强度（当前：${describeEffort(model, definition)}）`,
+            title: `思考强度（当前：${describeEffort(model, presets, definition)}）`,
             items,
             resolve,
           }),
@@ -213,7 +212,7 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
         picked = choice;
       }
 
-      const effort = picked === "default" ? null : (picked as ReasoningEffort);
+      const effort = picked === "default" ? null : (picked as string);
       const unchanged = effort === null ? !definition?.reasoningEffort : definition?.reasoningEffort === effort;
       if (unchanged) {
         push("思考强度未变化");
@@ -223,13 +222,14 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       try {
         const result = await setAgentEffort({
           config,
+          presets,
           agentId: session.agentId,
           effort,
           // 已读过定义，避免命令层与写入层各读一次盘
           readAgent: async () => definition,
         });
         // 状态栏先跟上；档位要通过重建 Agent 才会进请求参数
-        setEffortText(describeEffort(result.model, result.definition));
+        setEffortText(describeEffort(result.model, presets, result.definition));
         await session.reload();
         push(result.summary);
       } catch (error: any) {

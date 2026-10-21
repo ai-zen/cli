@@ -1,5 +1,5 @@
 // 由 src/tui/config-wizard.tsx 拆分而来 —— 共享类型与步骤常量
-import { AppConfig } from "@ai-zen/agents-sdk";
+import { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { McpConfig, McpScope } from "../../config.js";
 import { AgentKind, AgentStore } from "../../agents-store.js";
 
@@ -78,6 +78,12 @@ export interface McpSnapshot {
 export interface ConfigWizardProps {
   /** 打开向导时的配置快照 */
   config: AppConfig;
+  /**
+   * 思考策略表（`readReasoningPresets()`）。
+   *
+   * 只用于给模型的「思考策略」字段做合法性校验与提示；不传则不做校验。
+   */
+  reasoningPresets?: ReasoningPresets;
   /** 起始步骤（默认配置中心菜单） */
   initialStep?: WizardStep;
   /**

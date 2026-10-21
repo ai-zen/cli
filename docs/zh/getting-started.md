@@ -15,7 +15,7 @@ outline: deep
 - **Node.js**：包以 ESM（`"type": "module"`）发布。`package.json` 未声明 `engines` 字段，实际所需版本以 Node 生态为准（建议使用较新的 LTS）。
 - **运行时依赖**（由 `package.json` 声明）：
   - `@ai-zen/agents-core` `^4.5.1`
-  - `@ai-zen/agents-sdk` `1.0.0-alpha.13`
+  - `@ai-zen/agents-sdk` `1.0.0-alpha.14`
   - `@modelcontextprotocol/sdk` `^1.29.0`
   - `dayjs`、`ink`、`react`、`zod`、`highlight.js`、`lowlight`
 - **平台**：底层工具与 Shell 钩子依赖 Unix shell（`bash`/`zsh`）与 `process.env.SHELL`；在 Windows 上 Shell 钩子不可用（`hook` 会报“不支持的 shell”）。
@@ -102,7 +102,7 @@ cat README.md | ai "用三句话总结"
 | `/clear` | 清屏 |
 | `/config` | 打开配置中心（默认模型 / 端点管理） |
 | `/model` | 切换当前会话的模型并写入配置（Agent 绑定过模型则改绑定，否则改默认模型）；状态栏显示模型名 |
-| `/think` `/effort` | 切换思考强度（可选档位由模型能力决定），写入当前 Agent 定义的 `reasoningEffort`，状态栏显示当前强度 |
+| `/think` `/effort` | 切换思考强度（可选档位来自模型的思考策略表），写入当前 Agent 定义的 `reasoningEffort`，状态栏显示当前强度 |
 | `/key` | 设置当前端点的 API Key（保存后自动重建会话） |
 | `/migrate` | 手动触发任务迁移（生成交接文档并开启新会话） |
 | `/load` | 加载已保存的对话（替换当前会话） |
@@ -138,12 +138,41 @@ ai hook uninstall
 | 修改**当前模型所用端点**的 Key | 对话内 `/key`（保存后自动重建会话，立即生效） |
 | 端点 Key / Base URL、默认模型、新建端点 | 对话内 `/config` →「端点管理」 |
 | 当前会话所用模型 | 对话内 `/model`（按 Agent 是否绑定模型决定写入位置） |
-| 思考强度（reasoning effort） | 对话内 `/think`（写入当前 Agent 定义的 `reasoningEffort`，能力上限来自模型的 `reasoning` 声明） |
+| 思考强度（reasoning effort） | 对话内 `/think`（写入当前 Agent 定义的 `reasoningEffort`；可选档位来自 `~/.ai-zen/reasoning-presets.json` 里该模型引用的策略，可自行增删策略） |
 | 模型 / 图片模型 / MCP 服务器 / Agent 定义 / 默认项 / 工具上限 | 对话内 `/config` → 配置中心 |
 
 > 说明：CLI 入口只实现 `hook` 子命令（`ai hook install|uninstall`），**没有 `config` 子命令**；配置编辑在 TUI 内完成（端点、模型、图片模型、MCP 服务器、Agent 定义、默认项与工具上限均已可在 `/config` 内增删改）。详见 [配置](./configuration.md)。
 
 > 纯 stdio 模式（带参数 / 管道）没有交互通道：端点缺 Key 时会向 stderr 报错并以非 0 退出；请先在 TUI 或直接编辑 `config.json` 完成配置。
+
+## 思考策略表（reasoning-presets.json）
+
+`~/.ai-zen/reasoning-presets.json` 与 `config.json` 同级，记录「档位名 → 请求参数补丁」。模型只记策略名（`reasoningPreset`），Agent 只记档位（`reasoningEffort`）——两家端点对 `thinking` / `reasoning_effort` 的要求不一样，这些差异全部关在这张表里，代码不认厂商。
+
+出厂三张表：
+
+| 策略 | 档位 | 能否关思考 |
+|------|------|-----------|
+| `openai` | `minimal` / `low` / `medium` / `high` / `off` | 能（`reasoning_effort: "none"`） |
+| `zhipu-5.3` | `low` / `high` / `max` | **不能**（表里没有 `off`，官方也不支持） |
+| `deepseek` | `low` / `high` / `max` / `off` | 能（`thinking.type: "disabled"`） |
+
+想接一个新端点，照抄一张表改个名即可，然后在 `/config` →「模型」→「思考策略」里填这个名字，`/think` 立刻就能列出该表的档位：
+
+```json
+{
+  "my-endpoint": {
+    "levels": {
+      "fast": { "reasoning_effort": "low" },
+      "deep": { "reasoning_effort": "high" }
+    }
+  }
+}
+```
+
+- 表里的键就是菜单里的档位，**没有**单独的「能否关闭」开关；
+- 给某张表加 `"custom": true` 表示「这张表我接管了」，SDK 升级不再覆盖它（其余策略仍会同步）；
+- 自定义的档位名在状态栏直接显示原名（`fast` / `deep`），不会变成空白。
 
 ## 开发与测试
 

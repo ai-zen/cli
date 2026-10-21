@@ -25,7 +25,7 @@ import { readConfig } from "../config.js";
 import { CwdTrackerPlugin } from "../cwd-tracker-plugin.js";
 import { ConversationPersistPlugin } from "../conversation-persist-plugin.js";
 import { SubAgentGuardInstallerPlugin } from "../sub-agent-guard-plugin.js";
-import type { TokenThresholds } from "../reasoning-effort.js";
+import type { TokenThresholds } from "@ai-zen/agents-sdk";
 import { createAutoMigratePlugin } from "../auto-migrate-confirm.js";
 import { createHandoffService } from "../handoff-service.js";
 import { conversationRepository, generateConversationId } from "../conversation-repository.js";

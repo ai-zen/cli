@@ -20,7 +20,7 @@ import { createAgent } from "./agent-creator.js";
 import { readConfig } from "./config.js";
 import { CwdTrackerPlugin } from "./cwd-tracker-plugin.js";
 import { SubAgentGuardInstallerPlugin } from "./sub-agent-guard-plugin.js";
-import type { TokenThresholds } from "./reasoning-effort.js";
+import type { TokenThresholds } from "@ai-zen/agents-sdk";
 import { conversationRepository } from "./conversation-repository.js";
 import { formatShortTime } from "./format-time.js";
 

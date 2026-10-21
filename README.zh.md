@@ -180,7 +180,7 @@ key input="" flags=[pageUp] raw=false
 | `/clear` | 清屏 |
 | `/config` | 打开配置中心（端点 / 模型 / 图片模型 / MCP 服务器 / Agent 定义 / 默认项 / 工具上限） |
 | `/model` | 切换当前会话使用的模型并写入配置：Agent 显式绑定过模型就改该 Agent 的绑定，否则改默认模型 |
-| `/think` `/effort` | 切换思考强度（可选档位由模型能力决定，如 `low/high/max`），写入当前 Agent 定义并立即生效；`/think default` 恢复跟随模型默认 |
+| `/think` `/effort` | 切换思考强度（可选档位来自模型的思考策略表，如 `low/high/max`），写入当前 Agent 定义并立即生效；`/think default` 恢复跟随模型默认 |
 | `/key` | 设置当前端点的 API Key（保存后自动重建会话） |
 | `/handoff` | 编写任务交接文档（会话照旧，不弹确认） |
 | `/migrate` `/migration` | 交接 + 开启新会话（清空历史，需确认） |

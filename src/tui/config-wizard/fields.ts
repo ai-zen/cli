@@ -1,4 +1,4 @@
-import { AgentDefinition, AppConfig, Endpoint, ImageModel, Model } from "@ai-zen/agents-sdk";
+import { AgentDefinition, AppConfig, Endpoint, ImageModel, Model, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { McpConfig, McpScope, McpServerEntry } from "../../config.js";
 import { agentKindLabel, agentList, AgentKind, AgentStore } from "../../agents-store.js";
 import { findEndpoint, findModel, formatAgentPermission, formatArgs, getAgentPrompt, kvSummary, maskApiKey, mcpServerIdTaken, parseArgs, parsePermission, PERMISSION_DIMENSIONS, renameMcpServer, setAgentPermission, summarizePermissions, updateAgentDefinition, updateAgentFunction, updateEndpoint, updateImageModel, updateMcpServer, updateModel } from "../../config-editor.js";
@@ -20,6 +20,8 @@ export interface FieldBuilderContext {
   config: AppConfig;
   mcp: McpSnapshot;
   store: AgentStore;
+  /** 思考策略表（模型详情页校验策略名用） */
+  reasoningPresets: ReasoningPresets;
   persist: (next: AppConfig, message: string, changedEndpointIds?: string[]) => Promise<string | null>;
   persistMcp: (scope: McpScope, next: McpConfig, message: string) => Promise<string | null>;
   saveAgent: (kind: AgentKind, def: AgentDefinition, message: string) => Promise<string | null>;
@@ -28,7 +30,7 @@ export interface FieldBuilderContext {
 }
 
 export function createFieldBuilders(context: FieldBuilderContext) {
-  const { config, mcp, store, persist, persistMcp, saveAgent, removeAgentQuiet, go } = context;
+  const { config, mcp, store, reasoningPresets, persist, persistMcp, saveAgent, removeAgentQuiet, go } = context;
 
   // ---------- 字段构造器 ----------
 
@@ -74,6 +76,16 @@ export function createFieldBuilders(context: FieldBuilderContext) {
     ];
   };
 
+  /** 模型详情页「思考策略」的展示文案：附上该策略的档位，免得用户还得去翻 JSON */
+  const describePreset = (name?: string): string => {
+    if (!name) return "（不调档）";
+    const preset = Object.prototype.hasOwnProperty.call(reasoningPresets, name)
+      ? reasoningPresets[name]
+      : undefined;
+    const levels = Object.keys(preset?.levels ?? {});
+    return levels.length ? `${name}（${levels.join(" / ")}）` : `${name}（策略不存在）`;
+  };
+
   /** 模型详情字段；编辑「出厂托管」模型时自动标记 `custom: true`（否则改动会被 SDK 同步覆盖） */
   const modelFields = (model: Model): DetailField[] => {
     const managed = !model.custom;
@@ -106,6 +118,27 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         value: model.modelName ?? "（同 id）",
         initial: model.modelName ?? "",
         commit: (raw) => save({ modelName: raw || undefined }, "模型名"),
+      },
+      {
+        key: "reasoningPreset",
+        label: "思考策略",
+        kind: "text",
+        value: describePreset(model.reasoningPreset),
+        initial: model.reasoningPreset ?? "",
+        commit: (raw) => {
+          const name = raw.trim();
+          if (!name) return save({ reasoningPreset: undefined }, "思考策略");
+          // 名字写错等于静默失去调档能力，当场拦住
+          if (!Object.prototype.hasOwnProperty.call(reasoningPresets, name)) {
+            const available = Object.keys(reasoningPresets);
+            return Promise.resolve(
+              available.length
+                ? `策略 "${name}" 不存在（可选：${available.join(" / ")}）`
+                : `策略 "${name}" 不存在（策略表为空，见 reasoning-presets.json）`,
+            );
+          }
+          return save({ reasoningPreset: name }, "思考策略");
+        },
       },
       {
         key: "handoffTokens",

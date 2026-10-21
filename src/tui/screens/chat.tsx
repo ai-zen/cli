@@ -3,13 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
 import { keyDebug } from "../key-debug.js";
 import { AgentNS } from "@ai-zen/agents-core";
-import { AppConfig } from "@ai-zen/agents-sdk";
+import { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
 import { Spinner, StatusBar, SlashMenu, SelectItem } from "../components.js";
 import { layoutInput, usableFrameRows, isTerminalReply } from "../text.js";
 import { ChatSession, type ChatSessionNotifier } from "../chat-session.js";
 import { CommandHint, matchCommandHints } from "../../conversation-commands/registry.js";
-import { readConfig, readMcpConfig, saveConfig, writeMcpConfig } from "../../config.js";
+import { readConfig, readMcpConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "../../config.js";
 import { readAgentStore, AgentStore } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
 import { ConfigWizard, McpSnapshot, WizardCloseResult, WizardStep } from "../config-wizard/index.js";
@@ -84,6 +84,7 @@ export function Chat(props: ChatScreenProps) {
   /** 配置向导：非 null 时整屏接管（凭据设置 / 配置中心） */
   const [wizardStep, setWizardStep] = useState<WizardStep | null>(null);
   const [wizardConfig, setWizardConfig] = useState<AppConfig | null>(null);
+  const [wizardPresets, setWizardPresets] = useState<ReasoningPresets>({});
   const [wizardAgents, setWizardAgents] = useState<{ id: string; name: string }[]>([]);
   const [wizardMcp, setWizardMcp] = useState<McpSnapshot | null>(null);
   const [wizardAgentStore, setWizardAgentStore] = useState<AgentStore | null>(null);
@@ -155,13 +156,13 @@ export function Chat(props: ChatScreenProps) {
   // 切换模型（重挂载）时靠 props.modelId 变化重读。
   useEffect(() => {
     let alive = true;
-    // 档位存在 Agent 定义上（`reasoningEffort`），能力在模型上，两者都要读
-    Promise.all([readConfig(), readAgentStore()])
-      .then(([config, store]) => {
+    // 档位存在 Agent 定义上（`reasoningEffort`），可选档位在策略表里（`reasoningPreset` 指向），两者都要读
+    Promise.all([readConfig(), readAgentStore(), readReasoningPresets()])
+      .then(([config, store, presets]) => {
         const model = config.models?.find((item) => item.id === props.modelId);
         const agentId = props.agentId ?? "default";
         const definition = store.agents.find((item) => item.id === agentId) ?? null;
-        if (alive) setEffortText(describeEffort(model, definition));
+        if (alive) setEffortText(describeEffort(model, presets, definition));
       })
       .catch(() => {
         if (alive) setEffortText(null);
@@ -249,6 +250,7 @@ export function Chat(props: ChatScreenProps) {
       currentEndpointRef.current = resolveCredential(config, props.modelId)?.endpointId ?? null;
       const agentStore = await readAgentStore();
       setWizardConfig(config);
+      setWizardPresets(await readReasoningPresets());
       setWizardAgents(agentStore.agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id })));
       setWizardAgentStore(agentStore);
       setWizardMcp({ global: await readMcpConfig("global"), project: await readMcpConfig("project") });
@@ -784,6 +786,7 @@ export function Chat(props: ChatScreenProps) {
     return (
       <ConfigWizard
         config={wizardConfig}
+        reasoningPresets={wizardPresets}
         initialStep={wizardStep}
         closeOnSave={wizardStep.kind !== "menu"}
         agents={wizardAgents}

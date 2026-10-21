@@ -608,14 +608,71 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
       />,
     );
     await tick();
-    // 字段顺序：名称(0) 端点(1) 模型名(2) 交接阈值(3) 阻断阈值(4) 视觉(5) …
-    for (let i = 0; i < 5; i++) {
+    // 字段顺序：名称(0) 端点(1) 模型名(2) 思考策略(3) 交接阈值(4) 阻断阈值(5) 视觉(6) …
+    for (let i = 0; i < 6; i++) {
       stdin.write(DOWN);
       await tick();
     }
     stdin.write(ENTER); // 切换视觉
     await tick();
     expect(onSave.mock.calls[0]![0].models[0]!.vision).toBe(true);
+    unmount();
+  });
+
+  it("模型详情：思考策略可指向策略表里的名字", async () => {
+    const onSave = makeOnSave();
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        reasoningPresets={{ openai: { levels: { low: {}, high: {} } } }}
+        initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    for (let i = 0; i < 3; i++) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER); // 思考策略 → 编辑
+    await tick();
+    stdin.write("\u0015"); // Ctrl+U 清空
+    await tick();
+    stdin.write("openai");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(onSave.mock.calls[0]![0].models[0]!.reasoningPreset).toBe("openai");
+    unmount();
+  });
+
+  it("模型详情：不存在的策略名被当场拦住，不写盘", async () => {
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        reasoningPresets={{ openai: { levels: { low: {} } } }}
+        initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    for (let i = 0; i < 3; i++) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("\u0015");
+    await tick();
+    stdin.write("typo-preset");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame()).toContain("不存在");
+    expect(onSave).not.toHaveBeenCalled();
     unmount();
   });
 

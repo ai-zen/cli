@@ -15,7 +15,7 @@ outline: deep
 - **Node.js**: the package is published as ESM (`"type": "module"`). `package.json` does not declare an `engines` field, so the actual required version follows the Node ecosystem (a recent LTS is recommended).
 - **Runtime dependencies** (declared in `package.json`):
   - `@ai-zen/agents-core` `^4.5.1`
-  - `@ai-zen/agents-sdk` `1.0.0-alpha.13`
+  - `@ai-zen/agents-sdk` `1.0.0-alpha.14`
   - `@modelcontextprotocol/sdk` `^1.29.0`
   - `dayjs`, `ink`, `react`, `zod`, `highlight.js`, `lowlight`
 - **Platform**: the underlying tools and the Shell hook depend on a Unix shell (`bash`/`zsh`) and `process.env.SHELL`; the Shell hook is unavailable on Windows (`hook` will report "unsupported shell").
@@ -102,7 +102,7 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 | `/clear` | Clear the screen |
 | `/config` | Open the configuration center (default model / endpoint management) |
 | `/model` | Switch the model of the current session and persist it (updates the Agent binding when there is one, otherwise the default model); the status bar shows the model name |
-| `/think` `/effort` | Switch reasoning effort (levels available depend on the model's capability), persisted into the current Agent definition's `reasoningEffort`; the status bar shows the current level |
+| `/think` `/effort` | Switch reasoning effort (available levels come from the model's reasoning preset), persisted into the current Agent definition's `reasoningEffort`; the status bar shows the current level |
 | `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
 | `/migrate` | Manually trigger task migration (generate a handoff document and start a new session) |
 | `/load` | Load a saved conversation (replaces the current session) |
@@ -138,12 +138,41 @@ ai hook uninstall
 | Change the key of the **endpoint used by the current model** | `/key` in the chat (the session is rebuilt on save, so it takes effect immediately) |
 | Endpoint key / base URL, default model, add endpoint | `/config` → "Endpoint management" |
 | Model used by the current session | `/model` in the chat (write target depends on whether the Agent has a model binding) |
-| Reasoning effort | `/think` in the chat (written into the current Agent's `reasoningEffort`; the ceiling comes from the model's `reasoning` declaration) |
+| Reasoning effort | `/think` in the chat (written into the current Agent's `reasoningEffort`; available levels come from the preset referenced by the model in `~/.ai-zen/reasoning-presets.json`, which you can extend) |
 | Models / image models / MCP servers / agent definitions / defaults / tool-output cap | `/config` → configuration center |
 
 > Note: the CLI entry only implements the `hook` subcommand (`ai hook install|uninstall`); there is **no `config` subcommand** — configuration editing happens inside the TUI (endpoints, models, image models, MCP servers, agent definitions, defaults and the tool-output cap can all be added/edited/deleted under `/config`). See [Configuration](./configuration.md).
 
 > Pure stdio mode (arguments / pipes) has no interactive channel: a missing API Key fails fast on stderr with a non-zero exit code. Configure it in the TUI or edit `config.json` first.
+
+## Reasoning presets (`reasoning-presets.json`)
+
+`~/.ai-zen/reasoning-presets.json` sits next to `config.json` and maps **level name → request-parameter patch**. A model only records the preset name (`reasoningPreset`); an Agent only records the level (`reasoningEffort`). Endpoints disagree on `thinking` / `reasoning_effort`, and all of that lives in this table — the code never branches on vendor.
+
+Factory presets:
+
+| Preset | Levels | Can thinking be disabled? |
+|------|------|-----------|
+| `openai` | `minimal` / `low` / `medium` / `high` / `off` | Yes (`reasoning_effort: "none"`) |
+| `zhipu-5.3` | `low` / `high` / `max` | **No** (no `off` key; the vendor rejects it too) |
+| `deepseek` | `low` / `high` / `max` / `off` | Yes (`thinking.type: "disabled"`) |
+
+To onboard a new endpoint, copy a table and rename it, then set `/config` → Model → “Reasoning preset” to that name; `/think` immediately offers its levels:
+
+```json
+{
+  "my-endpoint": {
+    "levels": {
+      "fast": { "reasoning_effort": "low" },
+      "deep": { "reasoning_effort": "high" }
+    }
+  }
+}
+```
+
+- The keys of the table **are** the menu entries; there is no separate “can it be disabled” switch;
+- Adding `"custom": true` to a preset means “I own this table” — SDK upgrades stop overwriting it (other presets still sync);
+- Custom level names are shown verbatim in the status bar (`fast` / `deep`), never as a blank.
 
 ## Development and testing
 
