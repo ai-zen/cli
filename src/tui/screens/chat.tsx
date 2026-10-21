@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
 import { AgentNS } from "@ai-zen/agents-core";
 import { AppConfig } from "@ai-zen/agents-sdk";
-import type { HandoffMode } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
 import { Spinner, StatusBar, SlashMenu, SelectItem } from "../components.js";
 import { layoutInput, usableFrameRows, isTerminalReply } from "../text.js";
@@ -19,6 +18,7 @@ import { FrameBuffer } from "./frame-buffer.js";
 import { LineView } from "./render.js";
 import { messageToLines, transcriptLines } from "./messages-view.js";
 import { PickerOverlay, Confirm } from "./overlays.js";
+import { chooseHandoffMode } from "./handoff-choice.js";
 import { runCommand } from "./chat-commands.js";
 import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
 
@@ -131,17 +131,11 @@ export function Chat(props: ChatScreenProps) {
         messages: props.messages,
         conversationId: props.conversationId,
         conversationName: props.conversationName,
+        // 自动迁移：与手动 /migrate、/handoff 共用同一套「交接方式三选一」选择器
         requestMode: (info) =>
-          new Promise<HandoffMode | null>((resolve) =>
-            setPickerState({
-              title: `上下文即将超限（${info.promptTokens}/${info.maxTokens} tokens），由谁编写交接文档？`,
-              items: [
-                { label: "原 agent 自交接", value: "self", hint: "保真 · 可核实真实状态" },
-                { label: "独立摘要", value: "summary", hint: "便宜 · 保真度低" },
-              ],
-              resolve: (value) =>
-                resolve(value === "self" || value === "summary" ? value : null),
-            }),
+          chooseHandoffMode(
+            setPickerState,
+            `上下文即将超限（${info.promptTokens}/${info.maxTokens} tokens）· 选择交接方式`,
           ),
       },
       notifier,

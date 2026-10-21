@@ -78,20 +78,21 @@ outline: deep
 
 ```
 /handoff                # 只写交接文档，保持当前会话
-/handoff summary        # 强制使用独立摘要执行者
+/handoff self           # 显式指定执行者：当前会话自己写（不再询问）
+/handoff summary        # 显式指定执行者：单独 Agent 摘要
 /migrate                # 交接 + 开启新会话（别名 /migration）
 /migrate self           # 显式指定执行者
 ```
 
-`/handoff` 不弹确认（非破坏性、可反复执行）；而且交接回合会留在 `agent.messages` 里，你可以接着说「第 3 节写细一点」「补上端口占用情况」，agent 会重写同一个文件。`/migrate` 会丢历史，因此要确认。
+`/handoff` 与 `/migrate` 都会先弹出**同一套「交接方式」三选一**（见下）——除非在命令后直接带上 `self` / `summary` 指定执行者（此时不再询问）。`/handoff` 不切换会话、可反复执行，交接回合会留在 `agent.messages` 里，可继续让它细化同一份文档；`/migrate` 则会丢历史并开启新会话。
 
 ### 自动（上下文超限）
 
-当 `usage.prompt_tokens` 超过模型的 `maxContextTokens`，SDK 的 `AutoMigratePlugin` 触发迁移。交互式终端里 CLI 弹出**三选一**选择器：
+当 `usage.prompt_tokens` 超过模型的 `maxContextTokens`，SDK 的 `AutoMigratePlugin` 触发迁移。交互式终端里，CLI 与手动命令一致地弹出**同一个三选一**：
 
-- `原 agent 自交接`（默认高亮）—— 保真度最高；
-- `独立摘要` —— 便宜；
-- `Esc` —— 跳过本次。历史不受影响；只要用量仍超阈值，下次回复后还会再问。
+- **当前会话自己写交接文档**（`self`，默认高亮）—— 原 agent 停手后用工具核实并撰写，保真度最高；
+- **单独 Agent 写交接文档**（`summary`）—— 历史序列化后单次独立生成，更快更省，但不核实文件；
+- **不交接** —— 跳过本次（按 `Esc` 同效）。历史不受影响；只要用量仍超阈值，下次回复后还会再问。
 
 非交互环境（管道、重定向、e2e 脚本）没有选择通道：按默认执行者迁移，不阻塞等待输入、不额外输出。
 

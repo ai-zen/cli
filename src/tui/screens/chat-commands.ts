@@ -13,6 +13,7 @@ import { conversationRepository, listConversations } from "../../conversation-re
 import { formatShortTime } from "../../format-time.js";
 import { WizardStep } from "../config-wizard/index.js";
 import { truncate } from "./render.js";
+import { chooseHandoffMode } from "./handoff-choice.js";
 
 export interface ChatCommandHost {
   session: ChatSession;
@@ -54,7 +55,6 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
     openKeyEditor,
     doExit,
     setPickerState,
-    setConfirmState,
     setInputText,
   } = host;
 
@@ -154,8 +154,14 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
         push("当前对话还没有可交接的内容", "error");
         break;
       }
+      // 未显式指定执行者时三选一（与自动迁移统一）；显式 `/handoff self|summary` 则直接采用
+      const chosen = mode ?? (await chooseHandoffMode(setPickerState, "编写交接文档 · 选择交接方式"));
+      if (chosen == null) {
+        push("已取消交接");
+        break;
+      }
       try {
-        const path = await session.handoff(mode);
+        const path = await session.handoff(chosen);
         push(`交接文档已生成：${path}`);
       } catch (error: any) {
         push(`编写交接文档失败：${error?.message ?? error}`, "error");
@@ -172,18 +178,14 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
         push("当前对话还没有可迁移的内容", "error");
         break;
       }
-      const ok = await new Promise<boolean>((resolve) =>
-        setConfirmState({
-          question: `确定对当前对话进行任务迁移吗？（将生成交接文档并开启新会话）`,
-          resolve,
-        }),
-      );
-      if (!ok) {
+      // 与原 yes/no 确认统一为三选一：选「不交接」即取消本次迁移
+      const chosen = mode ?? (await chooseHandoffMode(setPickerState, "任务迁移 · 选择交接方式（完成后开启新会话）"));
+      if (chosen == null) {
         push("已取消迁移");
         break;
       }
       try {
-        const path = await session.migrate(mode);
+        const path = await session.migrate(chosen);
         push(`任务迁移完成，已开启新会话\n📄 交接文档：${path}`);
       } catch (error: any) {
         push(`任务迁移失败：${error?.message ?? error}`, "error");

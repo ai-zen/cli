@@ -69,9 +69,9 @@ export function createAutoMigratePlugin(options: AutoMigrateModeOptions): AutoMi
 
       const mode = await choose(info);
       if (mode == null) {
-        log("⏭️ 已跳过本次任务迁移，继续当前对话。");
+        // 合并为单条：notice 通道只保留最新一条，拆成两行会被后者覆盖
         log(
-          "💡 上下文仍接近上限：可随时输入 /migrate 手动迁移；若继续增长至严重超限，对话会被安全护栏中断。",
+          "⏭️ 已跳过本次任务迁移；可随时输入 /migrate 手动迁移，若继续增长至严重超限对话会被安全护栏中断。",
         );
         return null;
       }

@@ -78,20 +78,21 @@ Sections produced by the default template:
 
 ```
 /handoff                # write the document only, keep this session
-/handoff summary        # force the independent executor
+/handoff self           # specify the executor explicitly: this session writes (no prompt)
+/handoff summary        # specify the executor explicitly: separate summary
 /migrate                # handoff + start a new session (alias: /migration)
 /migrate self           # specify the executor explicitly
 ```
 
-`/handoff` asks for no confirmation (non-destructive, rerunnable) — and since the handoff turn stays in `agent.messages`, you can keep refining the document ("expand section 3", "add the port info"); the agent rewrites the same file. `/migrate` asks for confirmation because it discards history.
+Both `/handoff` and `/migrate` first show the **same three-way "handoff method" picker** (see below) — unless you pass `self` / `summary` right after the command to pick the executor directly (no prompt). `/handoff` keeps the session (non-destructive, rerunnable) and its handoff turn stays in `agent.messages`, so you can keep refining the same file; `/migrate` discards history and opens a new session.
 
 ### Automatic (context limit)
 
-When `usage.prompt_tokens` exceeds the model's `maxContextTokens`, the SDK's `AutoMigratePlugin` triggers a migration. In an interactive terminal the CLI shows a **three-way picker**:
+When `usage.prompt_tokens` exceeds the model's `maxContextTokens`, the SDK's `AutoMigratePlugin` triggers a migration. In an interactive terminal the CLI shows the **same three-way picker** as the manual commands:
 
-- `原 agent 自交接` (default, highlighted) — highest fidelity;
-- `独立摘要` — cheap;
-- `Esc` — skip this round. History is untouched; the prompt appears again after the next response while usage stays over the threshold.
+- **Write in the current session** (`self`, highlighted by default) — the original agent stops, verifies with tools, and writes; highest fidelity;
+- **Write via a separate agent** (`summary`) — a single independent generation over the serialized history; faster and cheaper, but does not verify files;
+- **Don't hand off** — skip this round (same as `Esc`). History is untouched; the prompt appears again after the next response while usage stays over the threshold.
 
 Non-interactive environments (pipes, redirects, e2e scripts) have no picker: they migrate with the default executor, without blocking and without extra output.
 
