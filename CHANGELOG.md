@@ -1,3 +1,23 @@
+## [1.0.0-alpha.16] - 2026-10-22
+
+### 🔧 行为变更（不兼容）
+
+- **升级 `@ai-zen/agents-sdk` 至 `1.0.0-alpha.15`：思考档位不再「存档位名」，改存展开后的参数** —— 上一版把档位名写在 Agent 定义的 `reasoningEffort` 上，运行期由 SDK 查表翻译成请求参数。那等于把「什么叫 `max`」这件产品语义塞进了运行时。现在改成**配置即事实**：
+  - `/think` 把选中档位的参数补丁直接写进 `AgentDefinition.modelParams`（如 `{"thinking":{"type":"enabled"},"reasoning_effort":"high"}`），SDK 只做一次 `{...defaultParams, ...modelParams}` 浅合并；
+  - **旧 `reasoningEffort` 自动迁移**：读 Agent 定义时展开成 `modelParams` 并写回；模型没关联策略的只删旧字段（不会瞎猜参数）。
+- **思考策略表的归属调整为「SDK 提供、CLI 使用」** —— 表的类型、出厂内容与读写放在 SDK（CLI 与桌面端共享同一份「智谱 5.3 只认 low/high/max」的知识），CLI 只负责**利用**它：限制 `/think` 的可选档位、把档位展开成参数写进 Agent。`Scope` 不再需要注入策略表。
+
+### 🚀 新功能
+
+- **状态栏档位改为「从生效参数反查」** —— 显示的就是真正会发给 API 的那几个参数匹配到的档位（模型默认参数也算），不再依赖 Agent 上的档位声明。三种状态：命中某档 → 「低/中/高…」；有 Agent 覆盖但匹配不上任何档位（手改过参数）→「自定义」；完全匹配不上 →「默认」。
+- **`/config` →「模型」详情页的「思考策略」字段**继续可用，显示该策略及其档位（如 `zhipu-5.3（low / high / max）`），写错名字当场拦下。
+
+### ✅ 测试
+
+- `src/reasoning-effort.test.ts` 重写（19 例）：写入的是展开参数而非档位名、`max` → `off` 不残留 `reasoning_effort`、保留 `temperature` 等无关参数、`null` 清空后连 `modelParams` 一起删、往返一致（写进去能反查回原档位）。
+- 新增 `src/agents-store.test.ts`（4 例）：旧 `reasoningEffort` 展开并写回磁盘、无策略时只删字段、无旧字段时不写盘、迁移后能反查回原档位。
+- 全量 **24 文件 / 299 例通过**。
+
 ## [1.0.0-alpha.15] - 2026-10-22
 
 ### 🔧 行为变更（不兼容）

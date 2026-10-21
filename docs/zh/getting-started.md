@@ -147,7 +147,11 @@ ai hook uninstall
 
 ## 思考策略表（reasoning-presets.json）
 
-`~/.ai-zen/reasoning-presets.json` 与 `config.json` 同级，记录「档位名 → 请求参数补丁」。模型只记策略名（`reasoningPreset`），Agent 只记档位（`reasoningEffort`）——两家端点对 `thinking` / `reasoning_effort` 的要求不一样，这些差异全部关在这张表里，代码不认厂商。
+`~/.ai-zen/reasoning-presets.json` 与 `config.json` 同级，记录「档位名 → 请求参数补丁」。两家端点对 `thinking` / `reasoning_effort` 的要求不一样，这些差异全部关在这张表里。
+
+表由 SDK 提供（**CLI 与桌面端共享同一份档位知识**，不该各写一遍），但 SDK **不用它生成请求参数**——它只在你选档位的那一刻被 CLI 用来：
+1. 决定 `/think` 能列哪几档；
+2. 把选中档位的**参数补丁写进 Agent 定义**（`modelParams`）。
 
 出厂三张表：
 
@@ -157,7 +161,7 @@ ai hook uninstall
 | `zhipu-5.3` | `low` / `high` / `max` | **不能**（表里没有 `off`，官方也不支持） |
 | `deepseek` | `low` / `high` / `max` / `off` | 能（`thinking.type: "disabled"`） |
 
-想接一个新端点，照抄一张表改个名即可，然后在 `/config` →「模型」→「思考策略」里填这个名字，`/think` 立刻就能列出该表的档位：
+想接一个新端点，照抄一张表改个名，再在 `/config` →「模型」→「思考策略」里填这个名字，`/think` 立刻就能列出该表的档位：
 
 ```json
 {
@@ -171,8 +175,10 @@ ai hook uninstall
 ```
 
 - 表里的键就是菜单里的档位，**没有**单独的「能否关闭」开关；
-- 给某张表加 `"custom": true` 表示「这张表我接管了」，SDK 升级不再覆盖它（其余策略仍会同步）；
+- 给某张表加 `"custom": true` 表示「这张表我接管了」，升级时不再覆盖它（其余策略仍会同步）；
 - 自定义的档位名在状态栏直接显示原名（`fast` / `deep`），不会变成空白。
+
+> **配置即事实**：`/think high` 把 `{"thinking":{"type":"enabled"},"reasoning_effort":"high"}` 直接写进 `~/.ai-zen/agents/<id>.json` 的 `modelParams`，不再是「存一个档位名、运行时查表」。所以**改了策略表不会追溯已经配过的 Agent**——它们存的是当时那份参数。想更新就再跑一次 `/think`。
 
 ## 开发与测试
 

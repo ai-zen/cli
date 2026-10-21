@@ -120,7 +120,7 @@ const sdkConfigMgr = new SdkConfigManager(CONFIG_FILE);
  * SDK 的出厂默认配置会自动写入 config.json（如果不存在）。
  */
 export async function ensureConfigDir(): Promise<void> {
-  // SDK bootstrap：目录 + config.json + default Agent + default SubAgent
+  // SDK bootstrap：目录 + config.json + default Agent + default SubAgent + 出厂思考策略表
   await sdkConfigMgr.bootstrap();
 
   // CLI 运行时目录
@@ -145,11 +145,11 @@ export async function readConfig(): Promise<AppConfig> {
 /**
  * 读取思考策略表（`~/.ai-zen/reasoning-presets.json`）。
  *
- * 与 `config.json` 分开存：档位与厂商协议的对应关系是数据，用户看得见、改得动；
- * 模型配置里只留 `reasoningPreset` 这个名字。文件缺失或损坏时 SDK 会回落到出厂种子。
+ * 这张表**只属于 CLI**：档位与参数补丁的对应关系是产品的编织知识，不在 SDK 里。
+ * 文件缺失或损坏时回落到出厂种子。
  */
 export async function readReasoningPresets(): Promise<ReasoningPresets> {
-  await ensureConfigDir();
+  // 表归 SDK 管（CLI / 桌面端共享），此处只做透传；缺失/损坏时 SDK 会回落出厂种子
   return await sdkConfigMgr.readReasoningPresets();
 }
 

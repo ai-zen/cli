@@ -10,8 +10,9 @@
  */
 
 import { AgentRepository } from "@ai-zen/agents-sdk";
-import type { AgentDefinition } from "@ai-zen/agents-sdk";
-import { AGENTS_DIR, SUB_AGENTS_DIR } from "./config.js";
+import type { AgentDefinition, AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
+import { AGENTS_DIR, SUB_AGENTS_DIR, readConfig, readReasoningPresets } from "./config.js";
+import { patchOf, presetFor } from "./reasoning-presets.js";
 
 /** Agent 定义的类型：顶层 Agent / 子 Agent */
 export type AgentKind = "agent" | "subagent";
@@ -65,7 +66,55 @@ export function createAgentStore(agents: AgentDefinition[], subAgents: AgentDefi
 
 /** 从磁盘读取 Agent / Sub-agent 快照，并附带真实读写能力 */
 export async function readAgentStore(): Promise<AgentStore> {
-  const agents = await new AgentRepository(AGENTS_DIR).list();
-  const subAgents = await new AgentRepository(SUB_AGENTS_DIR).list();
+  const repoAgents = new AgentRepository(AGENTS_DIR);
+  const repoSubAgents = new AgentRepository(SUB_AGENTS_DIR);
+  const [rawAgents, rawSubAgents] = await Promise.all([repoAgents.list(), repoSubAgents.list()]);
+
+  // 旧版 `/think` 把档位名写在 `reasoningEffort` 上；现在档位在写入时就展开成参数。
+  // 这里做一次性迁移：能查到策略就展开进 `modelParams`，查不到就只删旧字段。
+  const isLegacy = (def: AgentDefinition) =>
+    "reasoningEffort" in (def as unknown as Record<string, unknown>);
+  const legacy = (defs: AgentDefinition[]) => defs.filter(isLegacy);
+  const needsMigration = legacy(rawAgents).length + legacy(rawSubAgents).length > 0;
+
+  if (!needsMigration) return createAgentStore(rawAgents, rawSubAgents);
+
+  const [config, presets] = await Promise.all([readConfig(), readReasoningPresets()]);
+  const migrate = async (
+    repo: AgentRepository,
+    defs: AgentDefinition[],
+  ): Promise<AgentDefinition[]> => {
+    const out: AgentDefinition[] = [];
+    for (const def of defs) {
+      if (!isLegacy(def)) {
+        out.push(def);
+        continue;
+      }
+      out.push(await migrateDefinition(repo, def, config, presets));
+    }
+    return out;
+  };
+
+  const agents = await migrate(repoAgents, rawAgents);
+  const subAgents = await migrate(repoSubAgents, rawSubAgents);
   return createAgentStore(agents, subAgents);
+}
+
+/** 把旧 `reasoningEffort` 展开成 `modelParams` 并写回（只跑一次：写完旧字段就没了） */
+async function migrateDefinition(
+  repo: AgentRepository,
+  def: AgentDefinition,
+  config: AppConfig,
+  presets: ReasoningPresets,
+): Promise<AgentDefinition> {
+  const { reasoningEffort, ...rest } = def as AgentDefinition & { reasoningEffort?: string };
+  const modelId = rest.modelId ?? config.defaultModel;
+  const model = (config.models ?? []).find((item) => item.id === modelId);
+  const preset = model ? presetFor(model.id, model.reasoningPreset, presets) : undefined;
+  const patch = reasoningEffort ? patchOf(preset, reasoningEffort) : undefined;
+  const next: AgentDefinition = patch
+    ? { ...rest, modelParams: { ...(rest.modelParams ?? {}), ...patch } }
+    : rest;
+  await repo.write(next);
+  return next;
 }

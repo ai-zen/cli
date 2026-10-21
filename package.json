@@ -1,6 +1,6 @@
 {
   "name": "@ai-zen/cli",
-  "version": "1.0.0-alpha.15",
+  "version": "1.0.0-alpha.16",
   "description": "AI-ZEN CLI - dual-mode AI terminal: pure stdio pipelines and an interactive TUI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -33,7 +33,7 @@
   "license": "MIT",
   "dependencies": {
     "@ai-zen/agents-core": "^4.5.1",
-    "@ai-zen/agents-sdk": "1.0.0-alpha.14",
+    "@ai-zen/agents-sdk": "1.0.0-alpha.15",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dayjs": "^1.11.21",
     "highlight.js": "^11.12.0",

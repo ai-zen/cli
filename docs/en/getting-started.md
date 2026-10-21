@@ -147,7 +147,11 @@ ai hook uninstall
 
 ## Reasoning presets (`reasoning-presets.json`)
 
-`~/.ai-zen/reasoning-presets.json` sits next to `config.json` and maps **level name → request-parameter patch**. A model only records the preset name (`reasoningPreset`); an Agent only records the level (`reasoningEffort`). Endpoints disagree on `thinking` / `reasoning_effort`, and all of that lives in this table — the code never branches on vendor.
+`~/.ai-zen/reasoning-presets.json` sits next to `config.json` and maps **level name → request-parameter patch**. Endpoints disagree on `thinking` / `reasoning_effort`, and all of that lives in this table.
+
+The table ships with the SDK (**CLI and desktop share the same level knowledge**, it should not be written twice), but the SDK **never uses it to build request parameters** — the CLI consults it only at the moment you pick a level, to:
+1. decide which levels `/think` offers;
+2. write the chosen level's **parameter patch into the Agent definition** (`modelParams`).
 
 Factory presets:
 
@@ -171,8 +175,10 @@ To onboard a new endpoint, copy a table and rename it, then set `/config` → Mo
 ```
 
 - The keys of the table **are** the menu entries; there is no separate “can it be disabled” switch;
-- Adding `"custom": true` to a preset means “I own this table” — SDK upgrades stop overwriting it (other presets still sync);
+- Adding `"custom": true` to a preset means “I own this table” — upgrades stop overwriting it (other presets still sync);
 - Custom level names are shown verbatim in the status bar (`fast` / `deep`), never as a blank.
+
+> **Configuration is the fact**: `/think high` writes `{"thinking":{"type":"enabled"},"reasoning_effort":"high"}` straight into `~/.ai-zen/agents/<id>.json` under `modelParams`, instead of storing a level name and looking it up at runtime. So **editing the preset table does not retroactively change Agents already configured** — they hold the parameters from that moment. Run `/think` again to update them.
 
 ## Development and testing
 

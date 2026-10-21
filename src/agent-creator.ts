@@ -21,7 +21,7 @@ import {
   USER_AGENTS_SKILLS_DIR, USER_AGENTS_MCP_CONFIG_FILE,
   PROJECT_AGENTS_SKILLS_DIR, PROJECT_AGENTS_MCP_CONFIG_FILE,
 } from "./config.js";
-import { readConfig, readReasoningPresets } from "./config.js";
+import { readConfig } from "./config.js";
 
 // ==================== Scope 创建（单例）====================
 
@@ -53,8 +53,6 @@ export async function getScope(): Promise<Scope> {
   if (_scope) return _scope;
 
   const config = await readConfig();
-  // 思考策略表与 config 平级加载后注入：createModel 靠它把 Agent 的档位翻成请求参数
-  const reasoningPresets = await readReasoningPresets();
 
   // MCP 配置合并优先级（从高到低）：
   //   1. 项目/.mcp.json
@@ -76,7 +74,6 @@ export async function getScope(): Promise<Scope> {
   _scope = new Scope({
     config,
     agentsDir: AGENTS_DIR,
-    reasoningPresets,
   }).use(
     ...allInOne({
       subAgentsPaths: [PROJECT_SUB_AGENTS_DIR, SUB_AGENTS_DIR].filter(exists),

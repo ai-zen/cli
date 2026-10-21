@@ -20,6 +20,7 @@ import {
   describeEffort,
   setAgentEffort,
 } from "../../reasoning-effort.js";
+import { matchLevel, presetFor } from "../../reasoning-presets.js";
 import { readAgentStore } from "../../agents-store.js";
 import { WizardStep } from "../config-wizard/index.js";
 import { truncate } from "./render.js";
@@ -185,12 +186,16 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
         break;
       }
       if (!picked) {
-        const current = definition?.reasoningEffort;
+        // 「当前」指 Agent 定义上真正写着的那一档（模型默认参数不算，那是跟随状态）
+        const current = matchLevel(
+          presetFor(model.id, model.reasoningPreset, presets),
+          definition?.modelParams,
+        );
         const items: SelectItem<string>[] = [
           {
             label: `跟随模型默认${current ? "" : "（当前）"}`,
             value: "default",
-            hint: "删除 Agent 上的档位声明",
+            hint: "删除 Agent 上的思考参数",
           },
           ...choices.map((value) => ({
             label: `${effortLabel(value)}${value === current ? "（当前）" : ""}`,
@@ -213,7 +218,11 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       }
 
       const effort = picked === "default" ? null : (picked as string);
-      const unchanged = effort === null ? !definition?.reasoningEffort : definition?.reasoningEffort === effort;
+      const agentLevel = matchLevel(
+        presetFor(model.id, model.reasoningPreset, presets),
+        definition?.modelParams,
+      );
+      const unchanged = effort === null ? agentLevel === undefined : agentLevel === effort;
       if (unchanged) {
         push("思考强度未变化");
         break;
