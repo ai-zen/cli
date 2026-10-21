@@ -50,7 +50,8 @@ outline: deep
       "name": "GPT-6.1 Sol",
       "endpointId": "openai",
       "modelName": "gpt-6.1-sol",
-      "maxContextTokens": 250000,
+      "tokenThresholds": { "handoff": 250000, "guard": 375000 },
+      "reasoningPreset": "openai",
       "custom": true
     }
   ],
@@ -73,9 +74,10 @@ outline: deep
 字段（与 SDK 的 `AppConfig` 类型对齐）：
 
 - `endpoints`：API 端点列表（`id`、`name`、`baseUrl`、`apiKey`、`description`）。
-- `models`：对话模型列表。其中 `maxContextTokens` 设定**迁移阈值**（README 建议约为模型实际上下文窗口的 25%）。`vision` 表示是否支持图片输入（决定 `view_image` 是否启用）。
+- `models`：对话模型列表。其中 `tokenThresholds` 设定两条用量线：`handoff`（交接软线，`prompt_tokens` 超过它触发任务交接）与 `guard`（强行阻断硬线，请求前超过它中断本轮）；两者都是**绝对值**，建议 `guard ≈ handoff × 1.5`。`reasoningPreset` 引用 `reasoning-presets.json` 里的策略名（决定 `/think` 能选哪几档），缺省 = 不可调。`vision` 表示是否支持图片输入（决定 `view_image` 是否启用）。
 - `imageModels`：图片生成模型列表（`id`、`name`、`endpointId`、`modelName`、`defaultSize`、`defaultQuality`）。
 - `models` / `imageModels` 中未标 `custom: true` 的条目属于**出厂托管**：每次启动会与 SDK 出厂清单对齐并被替换为最新定义；自建条目请加 `"custom": true`（悬空的 `defaultModel` / `defaultMigrationModel` 会回退到出厂默认）。`endpoints` 始终保留用户配置。
+- 旧字段 `maxContextTokens` / `maxContextChars` / `reasoning` 会在启动时自动迁移（前两者折成 `tokenThresholds`，`reasoning` 换成 `reasoningPreset`），无需手改；迁移只在检测到差异时写盘一次。
 - `defaultModel` / `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`：各默认项。
 
 ## 文件系统布局

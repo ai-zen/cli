@@ -88,7 +88,7 @@ outline: deep
 
 ### 自动（上下文超限）
 
-当 `usage.prompt_tokens` 超过模型的 `maxContextTokens`，SDK 的 `AutoMigratePlugin` 触发迁移。交互式终端里，CLI 与手动命令一致地弹出**同一个三选一**：
+当 `usage.prompt_tokens` 超过模型的 `tokenThresholds.handoff`，SDK 的 `AutoMigratePlugin` 触发迁移。交互式终端里，CLI 与手动命令一致地弹出**同一个三选一**：
 
 - **当前会话自己写交接文档**（`self`，默认高亮）—— 原 agent 停手后用工具核实并撰写，保真度最高；
 - **单独 Agent 写交接文档**（`summary`）—— 历史序列化后单次独立生成，更快更省，但不核实文件；

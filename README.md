@@ -195,7 +195,7 @@ Two related commands, one pipeline:
 
 Two executors: `self` (default — the original agent writes it in-session, highest fidelity) and `summary` (a single independent model call, cheap but lossy). `self` degrades to `summary` one-way on failure. Pass it explicitly with `/handoff summary` or `/migrate self`.
 
-When `usage.prompt_tokens` exceeds the model's `maxContextTokens`, an interactive terminal shows a three-way picker (self / summary / skip); non-interactive pipes migrate with the default executor without blocking.
+When `usage.prompt_tokens` exceeds the model's `tokenThresholds.handoff`, an interactive terminal shows a three-way picker (self / summary / skip); non-interactive pipes migrate with the default executor without blocking.
 
 The document template is not hard-coded: it comes from the `handoff` Skill (`~/.ai-zen/skills/handoff/SKILL.md`, released and synced by the SDK; mark `metadata.custom: "true"` to keep your own version, or override per project). See [Task Handoff & Migration](./docs/en/migration.md) for the full chain, cost notes, and the template sections.
 
@@ -229,7 +229,7 @@ Configuration is stored in `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json`
 | Endpoints / models / image models, MCP servers, agent definitions (incl. sub-agents), defaults, tool-output cap | `/config` (the configuration center — full management) |
 | Other advanced fields (skills / user tools, …) | Edit the files under `~/.ai-zen/` manually |
 
-The `maxContextTokens` field on each model sets the migration threshold (typically ~25% of the model's actual context window, e.g. 250,000 for a 1M-token model).
+The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft — a handoff is triggered above it) and `guard` (hard — the round is aborted above it, before the request). Both are absolute values; `guard ≈ handoff × 1.5` is recommended (typically ~25% of the model's actual context window for `handoff`, e.g. 250,000 for a 1M-token model).
 
 ```jsonc
 {
@@ -247,7 +247,8 @@ The `maxContextTokens` field on each model sets the migration threshold (typical
       "name": "GPT-6.1 Sol",
       "endpointId": "openai",
       "modelName": "gpt-6.1-sol",
-      "maxContextTokens": 250000,
+      "tokenThresholds": { "handoff": 250000, "guard": 375000 },
+      "reasoningPreset": "openai",
       "custom": true
     }
   ],

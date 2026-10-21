@@ -50,7 +50,8 @@ Key paths defined in `src/config.ts`:
       "name": "GPT-6.1 Sol",
       "endpointId": "openai",
       "modelName": "gpt-6.1-sol",
-      "maxContextTokens": 250000,
+      "tokenThresholds": { "handoff": 250000, "guard": 375000 },
+      "reasoningPreset": "openai",
       "custom": true
     }
   ],
@@ -73,9 +74,10 @@ Key paths defined in `src/config.ts`:
 Fields (aligned with the SDK's `AppConfig` type):
 
 - `endpoints`: the list of API endpoints (`id`, `name`, `baseUrl`, `apiKey`, `description`).
-- `models`: the list of conversation models. Among these, `maxContextTokens` sets the **migration threshold** (the README suggests roughly 25% of the model's actual context window). `vision` indicates whether image input is supported (which determines whether `view_image` is enabled).
+- `models`: the list of conversation models. `tokenThresholds` sets two usage lines: `handoff` (soft line — `prompt_tokens` above it triggers a task handoff) and `guard` (hard line — aborts the round when exceeded before a request); both are **absolute values**, `guard ≈ handoff × 1.5` is recommended. `reasoningPreset` references a preset name in `reasoning-presets.json` (it decides which levels `/think` offers); absent = not adjustable. `vision` indicates whether image input is supported (which determines whether `view_image` is enabled).
 - `imageModels`: the list of image-generation models (`id`, `name`, `endpointId`, `modelName`, `defaultSize`, `defaultQuality`).
 - Entries in `models` / `imageModels` without `custom: true` are **factory-managed**: on every launch they are reconciled with (and replaced by) the SDK factory catalog; add `"custom": true` for your own entries (a dangling `defaultModel` / `defaultMigrationModel` falls back to the factory default). `endpoints` are never managed and always keep your configuration.
+- Legacy fields `maxContextTokens` / `maxContextChars` / `reasoning` are migrated automatically on launch (the first two fold into `tokenThresholds`, `reasoning` becomes `reasoningPreset`); no manual edit is needed, and the file is written only once when a difference is detected.
 - `defaultModel` / `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`: the various defaults.
 
 ## Filesystem layout

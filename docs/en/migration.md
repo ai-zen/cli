@@ -88,7 +88,7 @@ Both `/handoff` and `/migrate` first show the **same three-way "handoff method" 
 
 ### Automatic (context limit)
 
-When `usage.prompt_tokens` exceeds the model's `maxContextTokens`, the SDK's `AutoMigratePlugin` triggers a migration. In an interactive terminal the CLI shows the **same three-way picker** as the manual commands:
+When `usage.prompt_tokens` exceeds the model's `tokenThresholds.handoff`, the SDK's `AutoMigratePlugin` triggers a migration. In an interactive terminal the CLI shows the **same three-way picker** as the manual commands:
 
 - **Write in the current session** (`self`, highlighted by default) — the original agent stops, verifies with tools, and writes; highest fidelity;
 - **Write via a separate agent** (`summary`) — a single independent generation over the serialized history; faster and cheaper, but does not verify files;

@@ -195,7 +195,7 @@ key input="" flags=[pageUp] raw=false
 
 两种执行者：`self`（默认——原 agent 在会话内写，保真度最高）与 `summary`（一次独立模型调用，便宜但有损）。`self` 失败时**单向**降级为 `summary`。可用 `/handoff summary` 或 `/migrate self` 显式指定。
 
-当 `usage.prompt_tokens` 超过模型的 `maxContextTokens`，交互式终端会弹出三选一选择器（自交接 / 独立摘要 / 跳过）；管道等非交互场景按默认执行者迁移，不阻塞。
+当 `usage.prompt_tokens` 超过模型的 `tokenThresholds.handoff`，交互式终端会弹出三选一选择器（自交接 / 独立摘要 / 跳过）；管道等非交互场景按默认执行者迁移，不阻塞。
 
 文档模板不在代码里：来自 `handoff` Skill（`~/.ai-zen/skills/handoff/SKILL.md`，由 SDK 释放并随版本同步；在 frontmatter 写 `metadata.custom: "true"` 可保留你自己的版本，也可在项目内覆盖）。完整链路、成本说明与模板章节见 [任务交接与迁移](./docs/zh/migration.md)。
 
@@ -229,7 +229,7 @@ ai hook uninstall
 | 端点 / 模型 / 图片模型、MCP 服务器、Agent 定义（含 Sub-agent）、默认项、工具输出上限 | 对话内 `/config`（配置中心，全面管理） |
 | 其它高级项（Skill / 用户工具等） | 手动编辑 `~/.ai-zen/` 下的文件 |
 
-其中 `maxContextTokens` 是迁移触发阈值（通常设为模型实际上下文窗口的约 25%，例如 1M tokens 的模型设为 250,000）。
+其中 `tokenThresholds` 是两条用量线：`handoff`（交接软线，超过它触发任务交接）与 `guard`（强行阻断硬线，请求前超过它中断本轮）。两者都是绝对值，建议 `guard ≈ handoff × 1.5`（`handoff` 通常设为模型实际上下文窗口的约 25%，例如 1M tokens 的模型设为 250,000）。
 
 ```jsonc
 {
@@ -247,7 +247,8 @@ ai hook uninstall
       "name": "GPT-6.1 Sol",
       "endpointId": "openai",
       "modelName": "gpt-6.1-sol",
-      "maxContextTokens": 250000,
+      "tokenThresholds": { "handoff": 250000, "guard": 375000 },
+      "reasoningPreset": "openai",
       "custom": true
     }
   ],
