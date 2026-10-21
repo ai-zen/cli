@@ -113,3 +113,39 @@ describe("MCP 作用域化读写", () => {
     expect(read.mcpServers.s).toMatchObject({ disabled: true, description: "d" });
   });
 });
+
+describe("readConfig 顺带完成升级迁移", () => {
+  it("老配置（有 defaultModel、Agent 无 modelId）→ 模型搬到 Agent 上，config 里字段清除", async () => {
+    // 复刻升级现场：配置层有 defaultModel，Agent 定义还没绑定模型
+    await fs.writeFile(
+      join(testDir, "config.json"),
+      JSON.stringify({ defaultModel: "deepseek-flash", endpoints: [], models: [] }, null, 2),
+    );
+    await fs.mkdir(join(testDir, "agents"), { recursive: true });
+    await fs.writeFile(
+      join(testDir, "agents", "default.json"),
+      JSON.stringify(
+        {
+          id: "default",
+          name: "默认助手",
+          messages: [{ role: "system", content: "hi" }],
+          createdAt: "2026-10-01T00:00:00.000Z",
+          updatedAt: "2026-10-01T00:00:00.000Z",
+        },
+        null,
+        2,
+      ),
+    );
+
+    // 任何读到配置的入口都会触发 bootstrap —— 这是升级迁移的唯一时机。
+    // 曾经 TUI 的「续接会话」路径绕过了它，导致升级后第一次启动直接报
+    // 「Agent 未绑定模型」，所以这条链路必须有测试守着。
+    await config.readConfig();
+
+    const agent = JSON.parse(await fs.readFile(join(testDir, "agents", "default.json"), "utf-8"));
+    expect(agent.modelId).toBe("deepseek-flash");
+
+    const cfg = JSON.parse(await fs.readFile(join(testDir, "config.json"), "utf-8"));
+    expect("defaultModel" in cfg).toBe(false);
+  });
+});

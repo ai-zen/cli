@@ -1,3 +1,16 @@
+## [1.0.0-alpha.19] - 2026-10-22
+
+### 🐛 修复
+
+- **修复升级后首次启动报「Agent「default」未绑定模型」** —— alpha.18 把模型真相源改成 `AgentDefinition.modelId`，并把「为历史 Agent 补齐 modelId」放在 `bootstrap()` 里。但 TUI 的**续接会话**路径（`resumeLastSession()` 命中上一轮存档）根本不会经过 `resolveTarget()`，也就不会读取配置，于是 `bootstrap()` 从未执行：Agent 还是没绑模型、`config.defaultModel` 也还在，启动直接失败。
+  - `runTui()` 开头显式 `await ensureConfigDir()`，配置初始化早于任何 Agent 读取；
+  - `modelOf()` 自身也先读一次配置（双重保险），即使调用方漏了也不会再撞到这个错误。
+- 新增回归测试：老配置（有 `defaultModel`、Agent 无 `modelId`）读一次配置后，模型被搬到 Agent 上、`config.json` 里的旧字段被清除。
+
+### ✅ 测试
+
+- 全量 **24 文件 / 299 例通过**。
+
 ## [1.0.0-alpha.18] - 2026-10-22
 
 ### 🐛 修复

@@ -12,7 +12,7 @@
 import { render, useApp, type Instance } from "ink";
 import { AgentRepository } from "@ai-zen/agents-sdk";
 import type { AppConfig } from "@ai-zen/agents-sdk";
-import { AGENTS_DIR, readConfig, saveConfig } from "../config.js";
+import { AGENTS_DIR, ensureConfigDir, readConfig, saveConfig } from "../config.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
 import { conversationRepository } from "../conversation-repository.js";
@@ -138,12 +138,14 @@ interface ChatTarget {
  */
 async function modelOf(agentId: string | undefined): Promise<string> {
   const id = agentId || "default";
+  // 先跑一次配置初始化：bootstrap 会为缺 modelId 的历史 Agent 补上并落盘。
+  // 不做这一步就会读到“未绑定模型”的旧定义，把一次正常的升级变成启动错误。
+  const config = await readConfig();
   const agent = await new AgentRepository(AGENTS_DIR).read(id);
   const modelId = agent?.modelId;
   if (!modelId) {
     throw new Error(`Agent「${id}」未绑定模型，请用 /config 为它选择模型`);
   }
-  const config = await readConfig();
   if (!config.models.some((model) => model.id === modelId)) {
     throw new Error(
       `Agent「${id}」绑定的模型“${modelId}”已不在配置中，请用 /config 重新选择`,
@@ -277,6 +279,13 @@ export async function runTui(): Promise<void> {
   keyDebugStart();
 
   try {
+    // 配置初始化必须早于任何 Agent 读取：
+    //   - 目录 / config.json / 默认 Agent / 出厂策略表都在这里释放；
+    //   - 历史 Agent 缺 `modelId` 的补齐也在这里（`ensureDefaultAgent`）。
+    // 而「续接上一轮会话」这条路径不会经过 `resolveTarget()`，少了这一步，
+    // 升级后第一次启动会直接报「Agent 未绑定模型」。
+    await ensureConfigDir();
+
     // 启动界面（一次性）
     await mount(<Splash />);
 
