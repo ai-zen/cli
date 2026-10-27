@@ -46,10 +46,12 @@ The CLI has two **non-mixing** run modes, chosen automatically from the launch a
 
 | Mode | Trigger | Audience | Behavior |
 |------|---------|----------|----------|
-| **Pure stdio** | Arguments present, **or** stdin/stdout is not a TTY (pipe, redirect, CI) | Scripts, pipes, shell fallback hook | No extra interaction; writes the final answer as plain text to stdout |
-| **TUI** | No arguments and both stdin/stdout are TTYs | Human users | Interactive chat UI |
+| **Pure stdio** | Arguments present, **or** stdin/stdout is not a TTY (pipe, redirect, CI) | Scripts, pipes | No extra interaction; writes the final answer as plain text to stdout |
+| **TUI** | No arguments and both stdin/stdout are TTYs; or `--tui` | Human users, shell fallback hook | Interactive chat UI |
 
 In pure stdio mode, logs / progress / errors all go to **stderr**; stdout carries the result only (no ANSI / emoji / spinner). Exit code is `0` on success and non-zero on failure; nothing is persisted by default (use `--save` to keep a conversation archive).
+
+Two modifiers refine this: `--tui` forces the interactive UI (the arguments are auto-sent as the first message; in a non-TTY environment it fails instead of degrading to pipe mode), and `--new` starts a **fresh conversation** instead of resuming the last one in this directory (TUI only; ignored on the stdio path, where a run is always a one-off session).
 
 ## Quick example
 
@@ -64,7 +66,7 @@ ai Hello, please introduce yourself.
 cat README.md | ai "summarize in three sentences"
 ```
 
-On start, an animated gradient ASCII splash appears, then you land **directly in the chat screen** (rendered with Ink/React) — resuming the last session if there is one, otherwise starting a new conversation. The chat screen is **bottom-pinned**: a divider, the input line, and the status bar always sit at the bottom of the terminal, while the conversation scrolls above them.
+On start, an animated gradient ASCII splash appears, then you land **directly in the chat screen** (rendered with Ink/React) — resuming the last session if there is one, otherwise starting a new conversation. The chat screen is **bottom-pinned**: a divider, the input line, and the status bar always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the input row is replaced by a **phase indicator** (connecting → queued (waiting for the first token) → thinking → calling a tool → waiting for the tool to return → streaming).
 
 The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word, `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word, `Ctrl+K` kills to end of line, `Ctrl+U` kills to line start, `Esc` clears the input, `PgUp` / `PgDn` (or `Alt+V` / `Ctrl+V`) scroll the transcript), and an inline `/` command menu. Tool calls render as `⚙ name(args)` with **JSON highlighting**; the answer/reasoning is **Markdown-source-colored** (headings / bold / italic / inline code / lists / quotes / links), and fenced code blocks are highlighted by language with the **fence markers kept**.
 
@@ -130,7 +132,7 @@ ai hook install
 ai hook uninstall
 ```
 
-> The hook is only available on `bash` / `zsh` (it depends on `process.env.SHELL`); other shells are not supported. The hook body calls `ai "$@"` (pure stdio mode) so the answer is printed in your current shell session; if the legacy `aiz` hook is installed, re-running `ai hook install` upgrades it automatically.
+> The hook is only available on `bash` / `zsh` (it depends on `process.env.SHELL`); other shells are not supported. The hook body calls `ai --tui --new "$@"`: it opens the **interactive UI**, auto-sends the mistyped command as the first message, and always starts a **fresh conversation** (nothing is appended to the long conversation you had in that directory). If an older hook is installed, re-running `ai hook install` upgrades the function body in place (it compares the installed block with the current version and overwrites when they differ).
 
 ## Configuring the API Key
 
