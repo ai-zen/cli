@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { canPromptUser, createAutoMigratePlugin } from "./auto-migrate-confirm.js";
 import type { HandoffService } from "@ai-zen/agents-sdk";
+import { setLocale } from "./i18n/index.js";
+
+// 跳过迁移的提示已 i18n 化：用例断言中文，显式锁定语言（不依赖宿主 LANG）
+beforeEach(() => setLocale("zh"));
 
 const MAX_TOKENS = 100;
 

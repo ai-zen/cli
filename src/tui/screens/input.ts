@@ -1,12 +1,13 @@
 // 由 src/tui/screens.tsx 拆分而来 —— 输入区折行 / 硬件光标 / 跨词移动
 import { displayWidth, graphemes, layoutInput, INPUT_PREFIX_WIDTH } from "../text.js";
+import { t } from "../../i18n/index.js";
 
 // ==================== 对话屏布局（吸底）====================
 
 /** 输入区文本折行（不含提示符 `❯ `，交由渲染层补齐）；空输入用占位提示 */
 export function inputLines(text: string, columns: number): string[] {
   const width = Math.max(4, columns - 4);
-  const body = text.length > 0 ? text : "输入消息，/ 查看命令…";
+  const body = text.length > 0 ? text : t("input.placeholder");
   return layoutInput(body, 0, width).lines;
 }
 

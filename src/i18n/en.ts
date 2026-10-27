@@ -184,4 +184,19 @@ export const en: Record<string, string> = {
   "handoff.migrated": "🚀 Migration complete, a new session has started ({n} messages)",
   "handoff.migratedHint": "💡 The new assistant reads the handoff document first, then carries on.",
   "handoff.persistFailed": "⚠️ Failed to save the session after migration: {error}",
+
+  // ---------- Entry / exit / time formats ----------
+  "app.goodbye": "\nBye 👋\n",
+  "app.agentNoModel": "Agent \"{id}\" has no model bound — pick one with /config",
+  "app.agentModelGone": "The model \"{model}\" bound to agent \"{id}\" is no longer in the config — pick another with /config",
+  "app.noAgents": "No usable agent — create one in the config first (config.json)",
+  "app.bootFailed": "✖ Cannot start the conversation: {error}",
+  "app.unexpected": "✖ Unexpected error: {error}",
+  "chat.persistFailed": "⚠️ Failed to save the conversation: {error}",
+  "migrate.skipped": "⏭️ Task migration skipped this time; run /migrate whenever you like. If the context keeps growing past the hard limit, the safety guard will interrupt the conversation.",
+  "time.yesterday": "Yesterday {time}",
+  "time.pattern.thisYear": "MMM D, HH:mm",
+  "time.pattern.older": "MMM D, YYYY HH:mm",
+  "time.pattern.full": "MMM D, YYYY HH:mm:ss",
+  "time.messageCount": "{n} message(s), {time}",
 };

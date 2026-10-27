@@ -187,4 +187,19 @@ export const zh: Record<string, string> = {
   "handoff.migrated": "🚀 任务迁移完成，已开启新会话（共 {n} 条消息）",
   "handoff.migratedHint": "💡 新助手会先读取交接文档，随后即可继续推进任务。",
   "handoff.persistFailed": "⚠️ 迁移后会话落盘失败：{error}",
+
+  // ---------- 入口 / 退出 / 时间格式 ----------
+  "app.goodbye": "\n再见 👋\n",
+  "app.agentNoModel": "Agent「{id}」未绑定模型，请用 /config 为它选择模型",
+  "app.agentModelGone": "Agent「{id}」绑定的模型“{model}”已不在配置中，请用 /config 重新选择",
+  "app.noAgents": "没有可用的 Agent，请先在配置中创建（配置文件 config.json）",
+  "app.bootFailed": "✖ 无法启动对话：{error}",
+  "app.unexpected": "✖ 意外错误: {error}",
+  "chat.persistFailed": "⚠️ 会话落盘失败：{error}",
+  "migrate.skipped": "⏭️ 已跳过本次任务迁移；可随时输入 /migrate 手动迁移，若继续增长至严重超限对话会被安全护栏中断。",
+  "time.yesterday": "昨天 {time}",
+  "time.pattern.thisYear": "M月D日 HH:mm",
+  "time.pattern.older": "YYYY年M月D日 HH:mm",
+  "time.pattern.full": "YYYY年M月D日 HH:mm:ss",
+  "time.messageCount": "{n} 条消息, {time}",
 };

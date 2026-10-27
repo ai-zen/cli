@@ -25,6 +25,7 @@ import {
   type HandoffMode,
   type HandoffService,
 } from "@ai-zen/agents-sdk";
+import { t } from "./i18n/index.js";
 
 export interface AutoMigrateModeOptions {
   /** 交接服务实例（与 `/migrate`、`/handoff` 共用同一实例） */
@@ -70,9 +71,7 @@ export function createAutoMigratePlugin(options: AutoMigrateModeOptions): AutoMi
       const mode = await choose(info);
       if (mode == null) {
         // 合并为单条：notice 通道只保留最新一条，拆成两行会被后者覆盖
-        log(
-          "⏭️ 已跳过本次任务迁移；可随时输入 /migrate 手动迁移，若继续增长至严重超限对话会被安全护栏中断。",
-        );
+        log(t("migrate.skipped"));
         return null;
       }
       return mode;

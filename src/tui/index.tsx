@@ -22,6 +22,7 @@ import { keyDebugStart } from "./key-debug.js";
 import { disableMouseTracking, enableMouseTracking } from "./mouse.js";
 import { installSdkLogger } from "../sdk-log.js";
 import { initLocale } from "../i18n/preferences.js";
+import { t } from "../i18n/index.js";
 import type { AgentNS } from "@ai-zen/agents-core";
 
 /** ANSI：清屏 + 光标归位 + 显示光标（屏幕间切换时从头绘制，避免行偏移） */
@@ -52,7 +53,7 @@ function farewell(): void {
     /* ignore */
   }
   const finish = () => process.exit(0);
-  process.stdout.write("\x1b[?25h\n再见 👋\n", finish);
+  process.stdout.write(`\x1b[?25h${t("app.goodbye")}`, finish);
   setTimeout(finish, 250);
 }
 
@@ -156,12 +157,10 @@ async function modelOf(agentId: string | undefined): Promise<string> {
   const agent = await new AgentRepository(AGENTS_DIR).read(id);
   const modelId = agent?.modelId;
   if (!modelId) {
-    throw new Error(`Agent「${id}」未绑定模型，请用 /config 为它选择模型`);
+    throw new Error(t("app.agentNoModel", { id }));
   }
   if (!config.models.some((model) => model.id === modelId)) {
-    throw new Error(
-      `Agent「${id}」绑定的模型“${modelId}”已不在配置中，请用 /config 重新选择`,
-    );
+    throw new Error(t("app.agentModelGone", { id, model: modelId }));
   }
   return modelId;
 }
@@ -172,7 +171,7 @@ async function resolveTarget(): Promise<ChatTarget> {
   const agents = await repository.list();
 
   const agentId = config.defaultAgent ?? agents[0]?.id;
-  if (!agentId) throw new Error("没有可用的 Agent，请先在配置中创建（配置文件 config.json）");
+  if (!agentId) throw new Error(t("app.noAgents"));
 
   // 校验模型可用（缺失时抛出可读错误，交给启动屏展示）
   await modelOf(agentId);
@@ -310,7 +309,7 @@ export async function runTui(): Promise<void> {
       try {
         target = await resolveTarget();
       } catch (error: any) {
-        process.stderr.write(`\n✖ 无法启动对话：${error?.message ?? error}\n`);
+        process.stderr.write(`\n${t("app.bootFailed", { error: error?.message ?? error })}\n`);
       }
     }
     if (!target) {
@@ -324,7 +323,7 @@ export async function runTui(): Promise<void> {
     try {
       modelId = await modelOf(target.agentId);
     } catch (error: any) {
-      process.stderr.write(`\n✖ 无法启动对话：${error?.message ?? error}\n`);
+      process.stderr.write(`\n${t("app.bootFailed", { error: error?.message ?? error })}\n`);
       farewell();
       return;
     }
@@ -367,7 +366,7 @@ function installSignalSafety(): () => void {
   };
   const onFatal = (error: unknown) => {
     restore();
-    process.stderr.write(`\n✖ 意外错误: ${(error as any)?.message ?? error}\n`);
+    process.stderr.write(`\n${t("app.unexpected", { error: (error as any)?.message ?? error })}\n`);
     process.exit(1);
   };
 

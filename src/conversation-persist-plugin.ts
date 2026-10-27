@@ -12,6 +12,7 @@ import type { AgentPlugin, SendContext } from "@ai-zen/agents-sdk";
 import { AgentNS } from "@ai-zen/agents-core";
 import { conversationRepository } from "./conversation-repository.js";
 import { writeLastSession } from "./session-pointer.js";
+import { t } from "./i18n/index.js";
 
 export interface ConversationPersistPluginOptions {
   /** 动态返回当前会话 id（迁移切换会话后随之变化） */
@@ -46,7 +47,7 @@ export class ConversationPersistPlugin implements AgentPlugin {
       });
       await writeLastSession(cwd ?? process.cwd(), id);
     } catch (err: any) {
-      onError?.(`⚠️ 会话落盘失败：${err?.message ?? err}`);
+      onError?.(t("chat.persistFailed", { error: err?.message ?? err }));
     }
   }
 }
