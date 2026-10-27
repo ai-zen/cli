@@ -116,7 +116,8 @@ outline: deep
 ├── tools/                    ← 用户工具（共享）
 │   └── my-tool.js
 ├── mcp.json                  ← MCP 配置（共享）
-└── mcp-oauth/                ← MCP OAuth token（共享，暂未实现）
+├── mcp-oauth/                ← MCP OAuth token（共享，暂未实现）
+└── logs/                     ← 诊断日志（sdk.log：SDK 全局日志，2MB 轮转）
 
 /path/to/project/
 ├── .mcp.json                 ← 项目共享 MCP 配置（可提交）

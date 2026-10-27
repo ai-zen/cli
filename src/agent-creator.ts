@@ -117,7 +117,12 @@ export async function createAgent(options: CreateAgentOptions): Promise<SdkAgent
   const scope = await getScope();
 
   // 始终从磁盘读取 Agent 定义（含 permissions、工具配置等）
-  const agent = await sdkCreateAgent(scope, agentId || "default");
+  const agent = await sdkCreateAgent(scope, agentId || "default", {
+    // 中断时保留模型已经输出的思考与内容：用户按下中断键后，屏幕上那半句话仍然
+    // 留在上下文里，模型下一轮能接着往下说，而不是「失忆重来」。
+    // （core 默认是 drop；工具轮次不受影响，仍按 abortedToolRoundStrategy 归一）
+    abortedMessageStrategy: "keep",
+  });
 
   // 有历史消息时替换（恢复草稿/已保存对话）。
   // 拷贝而非直接引用：恢复的数组来自草稿/对话存档，直接引用会让后续 append 改写传入数组。

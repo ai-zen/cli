@@ -116,7 +116,8 @@ Each Agent binds its model in its own definition file — this is the **single s
 ├── tools/                    ← User tools (shared)
 │   └── my-tool.js
 ├── mcp.json                  ← MCP config (shared)
-└── mcp-oauth/                ← MCP OAuth tokens (shared, not yet implemented)
+├── mcp-oauth/                ← MCP OAuth tokens (shared, not yet implemented)
+└── logs/                     ← Diagnostics (sdk.log: SDK global log, 2MB rotation)
 
 /path/to/project/
 ├── .mcp.json                 ← Project-shared MCP config (committable)

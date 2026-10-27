@@ -15,10 +15,15 @@
 - **新增 `/mcp`：直达 MCP 管理界面** —— 不另建一套编辑器，直接把配置中心里已有的 MCP 屏打开（增 / 删 / 改 / 启停 / 全局⇄项目作用域切换都在那一屏）。关闭向导后沿用既有 `mcpChanged` 路径自动 `session.reload()`，新服务器当场生效。
   - 默认落点：项目级有服务器就进 `project`，否则进 `global`（项目级为空时进去只会看到空列表）。`/mcp global`、`/mcp project`（可缩写 `g` / `p`）可指定。
 - **新增 `/reload`：刷新运行环境** —— `session.reload()` 内含 `resetScope()`（断开旧 MCP 连接、丢掉配置快照）→ 重建 Agent → 重新发现工具 / Skill / MCP。手改 `mcp.json` / `skills/` / `tools/` 后一条命令生效，**消息与上下文保留**，无需重启 CLI。
+- **中断时保留已输出的思考与内容** —— 按 `Ctrl+C` / `Esc` 停下后，模型**已经吐出来的那半句话不再凭空消失**。此前中断只是把在途消息标成 `Aborted`，而历史过滤器只放行 `completed`，于是屏幕上还留着的思考与回答在下一轮请求里整条不见，模型下一轮像失忆一样重来。
+  - 根因在上游：core 的 `abort()` 只管打标记、`formatHistory()` 只按状态过滤，两者都不关心「已经输出了什么」。core `4.5.3` 新增 `abortedMessageStrategy`（`drop` / `keep`，默认 `drop`），并导出 `reconcileAbortedMessages()`，在工具轮次归一**之后**收尾纯内容消息。
+  - CLI 显式设成 `keep`：确有输出的被中断 assistant 会被恢复为 `completed` 进入上下文。**空输出不保留**（避免空消息污染上下文）、**带工具调用的不归它管**（仍走「整轮进出」，否则会出现「有调用无结果」的非法历史）。
+  - SDK 依赖随之升级到 `1.0.0-alpha.20`（`createAgent` 新增第三参 `CreateAgentOptions`，顺带把此前完全没暴露的 `abortedToolRoundStrategy` / `abortedToolRoundReason` 一起接出来），core 升到 `4.5.3`。
 
 ### 🔧 行为变更
 
 - **`/migration` 不再是 `/migrate` 的别名** —— 只保留 `/migrate`，`/migration` 现在报「未知命令」。registry、命令执行器、`blocksInput` 判定与四份文档同步。
+- **SDK 全局日志默认写入 `~/.ai-zen/logs/sdk.log`** —— 以前默认**丢弃**，只有 `AIZ_DEBUG_SDK=1` 才落盘到 `/tmp`。但 SDK 的 `warn` / `error` 承载「MCP 连不上」「Skill 解析失败」这类关键诊断，默认丢弃等于故障无痕。现在默认落盘（单文件 2MB 封顶后轮转为 `sdk.log.1`），`AIZ_DEBUG_SDK=0` 可彻底关掉，`AIZ_SDK_LOG_FILE` 可改路径。界面上依旧一个字都不显示。
 
 ### 🐛 修复
 
@@ -34,6 +39,8 @@
   - **光标单位改成字素簇**：`✌️` 是 `U+270C U+FE0F` **两个 code point、一个字素簇**（`👨‍👩‍👧` 五个、`🇨🇳` 两个区域指示符）。按 code point 切分时，光标能停在 `✌` 与 `U+FE0F` 之间，于是反显的是一串**变体选择符** —— Ink 的输出里反显段直接消失（实测：`at=U+FE0F` 时帧里既无反显转义也没字符）。同时退格会只删掉半个 emoji、留下孤立的 `U+FE0F`。现在全部光标运算（折行、移动、删除、插入、撤销）改用 `Intl.Segmenter` 的**字素簇**为单位（`graphemes()`，Node 内置无需依赖）。
   - **新增直接依赖** `string-width@^8.3.0`（纯 ESM，本就在 Ink 的依赖树里，体积无变化）。
 - **通知栏行数未计入光标 y** —— 渲染顺序是「对话区 → 通知栏 → 斜杠菜单 → 分隔线 → 输入行」，而 y 公式漏了通知栏一段。于是任何通知出现时硬件光标都会整体上浮那么多行；`/help` 一次塞最多 8 行通知，候选框能浮进对话区。现已补上 `noticeCount`（现作为实测未就绪时的兜底算法保留）。
+- **修复 SDK 日志「接管了却照样糊界面」** —— 加载 MCP 时 `[load_mcp]` 连同整份 tools / resources 清单直接砸在渲染区外面。原因是 SDK 有 4 个模块在**模块顶层**执行 `const log = getLogger()`：模块求值那一刻就把 `console.log` 的函数引用冻进了常量，`setLogger()` 事后只替换内部变量，改不动已经抓走的引用；ESM 的静态 import 又保证这些模块在 `runTui()` 之前就已求值 —— 于是 CLI 无论怎么接管都会漏。
+  - 修在 SDK 侧（不改 CLI 侧骗 console 的 workaround）：4 处全部改为**运行时取 logger**（`getLogger().info(...)` 等）；`skillTools` 那处是从未被调用的死代码，连同 import 一并删除。至此 SDK 内 10 处日志调用全部经由 `getLogger()` 单一出口，不存在 console 旁路。
 
 ### 📝 文档
 
@@ -41,6 +48,7 @@
 - README（中 / 英）与 `docs/{zh,en}/index.md` 的状态栏说明从「一条按优先级的文本流」改为「三个信息块 + 按块换行」。
 - `docs/{zh,en}/mcp.md` 的「管理」章节补充 `/mcp` 直达入口与 `/reload` 刷新；`docs/{zh,en}/migration.md` 去掉「别名 `/migration`」。
 - `docs/manifest.json` 与 README 中的版本号更新为 `1.0.0-alpha.21`。
+- README（中 / 英）的「环境变量」补 `AIZ_DEBUG_SDK=0` / `AIZ_SDK_LOG_FILE`，「文件系统布局」补 `~/.ai-zen/logs/`，键位表下补一段「中断后已输出的思考与内容会保留」的说明。
 
 ### ⚠️ 已知取舍
 
@@ -53,7 +61,7 @@
 
 ### ✅ 测试
 
-- 全量 **31 文件 / 409 例通过**，`npx tsc --noEmit -p tsconfig.test.json` 干净。
+- 全量 **31 文件 / 411 例通过**，`npx tsc --noEmit -p tsconfig.test.json` 干净。
 - 新增 `src/agent-switch.test.ts`（10 例）、`src/mcp-command.test.ts`（6 例）、`src/tui/token-rate.test.ts`（20 例）、`src/tui/status-segments.test.ts`（17 例）、`src/tui/screens/input-row.test.tsx`（7 例）、`src/tui/text.test.ts`（18 例）；`input-editing.test.ts` 补 3 例「emoji 不被拆半个」的用例。
 - `src/tui/screens.test.tsx` 增加状态栏三块顺序、块内不被拆、宽屏并排、以及「Ink 实际渲染行数 == `statusBarRows` 量出行数」的断言；`computeInputCursorPosition` 补「通知栏行数参与 y」的用例。
 - `input-row.test.tsx` 里那条 `⚡` 用例同时断言「手算给 8、实测给 9」——本次改动的理由就在这两行里。

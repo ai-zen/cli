@@ -1,5 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getLogger, setLogger } from "@ai-zen/agents-sdk";
@@ -8,7 +15,9 @@ import {
   createSilentLogger,
   formatSdkLogLine,
   installSdkLogger,
+  MAX_LOG_BYTES,
   SDK_LOG_ENABLED,
+  SDK_LOG_FILE,
 } from "./sdk-log.js";
 
 /** 每次测试用独立临时文件，避免互相干扰 */
@@ -64,12 +73,32 @@ describe("SDK 日志接管", () => {
     expect(() => createFileLogger("/nonexistent-dir-xyz/aiz.log").info("x")).not.toThrow();
   });
 
-  it("默认接管后 SDK 全局日志器为静默实现（console 兜底被关掉）", () => {
-    if (SDK_LOG_ENABLED) return; // 该环境变量由测试进程启动时决定，开启时不校验
-    const installed = installSdkLogger();
+  it("默认接管后日志器为文件实现：日志进文件而不是回到 console", () => {
+    const file = tmpLogFile();
+    const installed = installSdkLogger({ enabled: true, file });
     expect(getLogger()).toBe(installed);
     expect(installed).not.toBe(createSilentLogger()); // 每次返回新对象，避免共享状态
     expect(() => getLogger().info("[load_mcp] manifest 不该打到界面上")).not.toThrow();
+    // 核心断言：接管后这条日志必须落在文件里（修复前它会绕过 setLogger 直接 console.log）
+    expect(readFileSync(file, "utf8")).toContain("[load_mcp] manifest 不该打到界面上");
+  });
+
+  it("默认落盘到 ~/.ai-zen/logs/sdk.log（AIZ_DEBUG_SDK 未置 0 时）", () => {
+    if (process.env.AIZ_DEBUG_SDK === "0") return; // 显式关闭时行为由下一条用例覆盖
+    expect(SDK_LOG_ENABLED).toBe(true);
+    expect(SDK_LOG_FILE).toContain(join(".ai-zen", "logs", "sdk.log"));
+  });
+
+  it("超过单文件上限时轮转为 .1，文件不会无限膨胀", () => {
+    const file = tmpLogFile();
+    writeFileSync(file, "x".repeat(MAX_LOG_BYTES));
+    createFileLogger(file).info("after-rotate");
+
+    // 旧内容被挪到 .1，当前文件只剩轮转后的新内容
+    expect(existsSync(`${file}.1`)).toBe(true);
+    const content = readFileSync(file, "utf8");
+    expect(content).toContain("after-rotate");
+    expect(content.length).toBeLessThan(1000);
   });
 
   it("AIZ_DEBUG_SDK 等价开关：enabled=true 时落盘而非静默", () => {

@@ -111,6 +111,8 @@ macOS 上终端 TUI 的通行做法是 **Option 当 Meta + readline 系 Ctrl 键
 | `Shift+↑ ↓`、`Alt+↑ ↓`、`⌘;` / `⌘'`* | 按行滚动 |
 | `\` + `Enter` | 换行（任何终端可用） |
 
+> 中断（`Ctrl+C` / `Esc`）后，模型**已经输出的思考与内容会保留在上下文里** —— 下一轮它会接着这半句话往下说，而不是当作自己没说过。想要彻底重置，用 `/new` 开新会话。工具调用轮次仍按「整轮进出」归一：没跑完的工具会补上中断原因，不会留下「有调用无结果」的非法历史。
+
 未实现（我们的场景没有对应物）：`Ctrl+O` 转录查看器、`Ctrl+R` 反向历史搜索、`Ctrl+B` 后台任务、`Ctrl+T` 任务清单、`Shift+Tab` 权限模式。
 
 `Ctrl+V`（Claude Code 的「粘贴图片」）**暂未实现**：按下会提示未支持。原因是它需要先解决「文件 → 内容块」的端点能力探测（Files API 上传 vs base64内联），不能简单硬编码某个端点。⌘⌫ 已被终端映射为 `Ctrl+U`，所以这里删到行首；要清空草稿用 `Esc`。
@@ -279,6 +281,7 @@ ai hook uninstall
 
 - `AI_ZEN_DIR` — 覆盖共享根目录（默认 `~/.ai-zen`）。CLI 运行时数据在 `$AI_ZEN_DIR/cli/`，共享资源（agents、skills、tools、MCP 等）在 `$AI_ZEN_DIR/`。
 - `AIZ_DEBUG_KEYS=1` — 开启按键诊断日志（默认关闭，零开销）；`AIZ_KEYS_FILE=<路径>` 可改落盘位置（默认 `/tmp/aiz-key-debug.log`）。
+- `AIZ_DEBUG_SDK=0` — 关闭 SDK 全局日志。**默认开启**，一律写入 `$AI_ZEN_DIR/logs/sdk.log`（界面上不显示任何库日志），单文件 2MB 封顶后轮转为 `sdk.log.1`；`AIZ_SDK_LOG_FILE=<路径>` 可改落盘位置。排查「MCP 连不上」「Skill 解析失败」时看这个文件。
 
 ## 文件系统布局
 
@@ -300,7 +303,8 @@ ai hook uninstall
 ├── tools/                    ← 用户自定义工具（共享）
 │   └── my-tool.js
 ├── mcp.json                  ← MCP 配置（共享）
-└── mcp-oauth/                ← MCP OAuth 令牌（共享）
+├── mcp-oauth/                ← MCP OAuth 令牌（共享）
+└── logs/                     ← 诊断日志（sdk.log：SDK 全局日志，2MB 轮转）
 
 /path/to/project/
 ├── .mcp.json                 ← 项目共享 MCP 配置（可提交 git）

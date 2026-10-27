@@ -111,6 +111,8 @@ Key map (aligned with [Claude Code](https://docs.claude.com/en/docs/claude-code/
 | `Shift+↑ ↓`, `Alt+↑ ↓`, `⌘;` / `⌘'`* | Scroll by line |
 | `\` + `Enter` | Newline (works in any terminal) |
 
+> After an interrupt (`Ctrl+C` / `Esc`), **the reasoning and content the model already produced stay in the context** — on the next turn it picks up that half-finished sentence instead of pretending it never said it. Use `/new` if you want a clean slate. Tool rounds are still reconciled all-in or all-out: unfinished tools get a reason backfilled, so no illegal "call without result" history is left behind.
+
 Not implemented (no counterpart here): `Ctrl+O` transcript viewer, `Ctrl+R` reverse search, `Ctrl+B` background tasks, `Ctrl+T` task list, `Shift+Tab` permission modes.
 
 `Ctrl+V` (Claude Code's "paste image") is **not implemented yet** — pressing it shows a notice. It first needs a proper "file → content block" capability probe (Files API upload vs base64 inline) instead of hard-coding a single endpoint. Note that macOS maps `⌘⌫` to `Ctrl+U`, which is why `Ctrl+U` kills to line start here; use `Esc` to clear the draft.
@@ -279,6 +281,7 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
 
 - `AI_ZEN_DIR` — Override the shared root directory (default: `~/.ai-zen`). CLI runtime data goes to `$AI_ZEN_DIR/cli/`, and shared resources (agents, skills, tools, MCP, etc.) go to `$AI_ZEN_DIR/`.
 - `AIZ_DEBUG_KEYS=1` — Enables key diagnostics logging (off by default, zero overhead); `AIZ_KEYS_FILE=<path>` overrides the target file (default `/tmp/aiz-key-debug.log`).
+- `AIZ_DEBUG_SDK=0` — Disables SDK global logging. **On by default**: everything is written to `$AI_ZEN_DIR/logs/sdk.log` (no library logs ever reach the screen), rotated to `sdk.log.1` once the file passes 2MB; `AIZ_SDK_LOG_FILE=<path>` overrides the location. Check this file when debugging "MCP won't connect" or "Skill failed to parse".
 
 ## Filesystem Layout
 
@@ -300,7 +303,8 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
 ├── tools/                    ← User-defined tools (shared)
 │   └── my-tool.js
 ├── mcp.json                  ← MCP config (shared)
-└── mcp-oauth/                ← MCP OAuth tokens (shared)
+├── mcp-oauth/                ← MCP OAuth tokens (shared)
+└── logs/                     ← Diagnostics (sdk.log: SDK global log, 2MB rotation)
 
 /path/to/project/
 ├── .mcp.json                 ← Project-shared MCP config (committable)
