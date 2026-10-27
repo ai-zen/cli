@@ -3,6 +3,7 @@ import { ReactNode } from "react";
 import { addEndpoint, apiKeyGuide } from "../../config-editor.js";
 import { WizardContext } from "./engine.js";
 import { PromptScreen } from "./prompt.js";
+import { t } from "../../i18n/index.js";
 
 export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
   const { config, error, draft, activeStep, go, commit, setDraft, setError, setStep, cols, rows } = ctx;
@@ -16,15 +17,15 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
         key="new:name"
         columns={cols}
         rows={rows}
-        title="新建端点 · 名称"
-        details={["用于在配置与状态栏中标识该服务，例如 My Gateway"]}
+        title={t("wiz.newEndpoint.nameTitle")}
+        details={[t("wiz.newEndpoint.nameDesc", { example: "My Gateway" })]}
         initialValue={draft.name}
         error={error}
-        hints={[["Enter", "下一步"], ["Esc", "返回"]]}
+        hints={[["Enter", t("ui.next")], ["Esc", t("ui.back")]]}
         onSubmit={(value) => {
           const name = value.trim();
           if (!name) {
-            setError("名称不能为空");
+            setError(t("err.nameRequired"));
             return;
           }
           const next = { ...draft, name };
@@ -43,15 +44,15 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
         key="new:baseUrl"
         columns={cols}
         rows={rows}
-        title="新建端点 · Base URL"
-        details={["例如 https://api.openai.com/v1（须为 OpenAI 兼容接口）"]}
+        title={t("wiz.newEndpoint.baseUrlTitle")}
+        details={[t("wiz.newEndpoint.baseUrlDesc")]}
         initialValue={draft.baseUrl}
         error={error}
-        hints={[["Enter", "下一步"], ["Esc", "返回"]]}
+        hints={[["Enter", t("ui.next")], ["Esc", t("ui.back")]]}
         onSubmit={(value) => {
           const baseUrl = value.trim();
           if (!/^https?:\/\//i.test(baseUrl)) {
-            setError("Base URL 需以 http:// 或 https:// 开头");
+            setError(t("err.baseUrlScheme"));
             return;
           }
           const next = { ...draft, baseUrl };
@@ -67,28 +68,31 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
     );
   }
 
+  const guide = apiKeyGuide(draft.baseUrl);
   return (
     <PromptScreen
       key="new:apiKey"
       columns={cols}
       rows={rows}
-      title="新建端点 · API Key"
+      title={t("wiz.newEndpoint.apiKeyTitle")}
       details={[
-        `端点：${draft.name} · ${draft.baseUrl}`,
-        "可留空稍后再补（留空时该端点暂不可用）",
-        apiKeyGuide(draft.baseUrl).url
-          ? `${apiKeyGuide(draft.baseUrl).vendor} 申请地址：${apiKeyGuide(draft.baseUrl).url}`
-          : undefined,
+        t("wiz.apiKey.endpointLine", { name: draft.name, url: draft.baseUrl }),
+        t("wiz.newEndpoint.apiKeyOptional"),
+        guide.url ? t("wiz.apiKey.guideUrl", { vendor: guide.vendor, url: guide.url }) : undefined,
       ].filter((line): line is string => Boolean(line))}
       mask
       error={error}
-      hints={[["Enter", "保存端点"], ["Tab", "明文/掩码"], ["Esc", "返回"]]}
+      hints={[["Enter", t("wiz.newEndpoint.save")], ["Tab", t("ui.plainOrMasked")], ["Esc", t("ui.back")]]}
       onSubmit={(value) => {
         const apiKey = value.trim();
         const { config: next, endpoint } = addEndpoint(config, { ...draft, apiKey });
         void commit(
           next,
-          `已添加端点 ${endpoint.name}（${endpoint.id}）${apiKey ? "" : " · API Key 待补充"}`,
+          t("wiz.newEndpoint.created", {
+            name: endpoint.name,
+            id: endpoint.id,
+            suffix: apiKey ? "" : t("wiz.newEndpoint.keyPending"),
+          }),
           [endpoint.id],
           { kind: "endpoints" },
         );

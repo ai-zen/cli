@@ -6,13 +6,14 @@ import { NEW_ENDPOINT } from "./types.js";
 import { WizardContext } from "./engine.js";
 import { ListStep } from "./list.js";
 import { DetailStep } from "./detail.js";
+import { t } from "../../i18n/index.js";
 
 export function renderEndpointsStep(ctx: WizardContext): ReactNode {
   const { config, notice, draft, activeStep, go, persist, endpointFields, cols, rows } = ctx;
   // ---------- 端点管理（[新建端点] + 端点列表）----------
   if (activeStep.kind === "endpoints") {
     const items: SelectItem<string>[] = [
-      { label: "＋ 新建端点", value: NEW_ENDPOINT, hint: "自定义 OpenAI 兼容服务" },
+      { label: t("wiz.endpoints.newItem"), value: NEW_ENDPOINT, hint: t("wiz.endpoints.newItemHint") },
       ...config.endpoints.map((endpoint) => ({
         label: endpoint.name || endpoint.id,
         value: endpoint.id,
@@ -23,8 +24,8 @@ export function renderEndpointsStep(ctx: WizardContext): ReactNode {
       <ListStep
         columns={cols}
         rows={rows}
-        title="端点管理"
-        subtitle={`共 ${config.endpoints.length} 个端点 · 选中后可就地编辑 / 删除`}
+        title={t("wiz.menu.endpoints")}
+        subtitle={t("wiz.endpoints.subtitle", { n: config.endpoints.length })}
         items={items}
         onPick={(value) =>
           value === NEW_ENDPOINT
@@ -46,18 +47,27 @@ export function renderEndpointsStep(ctx: WizardContext): ReactNode {
       <DetailStep
         columns={cols}
         rows={rows}
-        title={`◆ 端点 · ${name}`}
-        details={[`${endpoint.id}${modelCount > 0 ? ` · ${modelCount} 个模型引用` : ""}`, "↑ ↓ 移动 · Enter 编辑 · 改动即时写入磁盘"]}
+        title={t("wiz.endpoints.detailTitle", { name })}
+        details={[
+          t("wiz.endpoints.detailLine", {
+            id: endpoint.id,
+            refs: modelCount > 0 ? t("wiz.endpoints.refSuffix", { n: modelCount }) : "",
+          }),
+          t("wiz.endpoints.moveHint"),
+        ]}
         fields={endpointFields(endpoint)}
         notice={notice}
         action={{
-          label: "删除端点",
+          label: t("wiz.endpoints.delete"),
           run: async () => {
             const refs = modelsUsingEndpoint(config, endpoint.id);
             if (refs.length > 0) {
-              return `无法删除：仍被 ${refs.length} 个模型引用（${refs.map((m) => m.name || m.id).join("、")}），请先删除或改绑这些模型`;
+              return t("wiz.endpoints.deleteBlocked", {
+                n: refs.length,
+                models: refs.map((m) => m.name || m.id).join(t("common.listSep")),
+              });
             }
-            const failure = await persist(removeEndpoint(config, endpoint.id), `已删除端点 ${name}`);
+            const failure = await persist(removeEndpoint(config, endpoint.id), t("wiz.endpoints.deleted", { name }));
             if (!failure) go({ kind: "endpoints" });
             return failure;
           },

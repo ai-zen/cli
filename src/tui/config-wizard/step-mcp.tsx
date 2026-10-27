@@ -10,6 +10,7 @@ import { DetailStep } from "./detail.js";
 import { KvEditorScreen } from "./kv-editor.js";
 import { PromptScreen } from "./prompt.js";
 import { scopeLabel, mcpCount, mcpServerHint } from "./mcp-helpers.js";
+import { t } from "../../i18n/index.js";
 
 export function renderMcpStep(ctx: WizardContext): ReactNode {
   const { mcp, error, notice, activeStep, go, persistMcp, setError, mcpServerFields, cols, rows } = ctx;
@@ -19,11 +20,11 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
     const other: McpScope = scope === "global" ? "project" : "global";
     const items: SelectItem<string>[] = [
       {
-        label: `⇄ 切换到「${scopeLabel(other)}」作用域`,
+        label: t("wiz.mcp.switchScope", { scope: scopeLabel(other) }),
         value: SWITCH_SCOPE,
-        hint: `${mcpCount(mcp, other)} 个服务器`,
+        hint: t("wiz.mcp.serverCount", { n: mcpCount(mcp, other) }),
       },
-      { label: "＋ 新建服务器", value: NEW_MCP_SERVER, hint: "stdio / http / sse" },
+      { label: t("wiz.mcp.newItem"), value: NEW_MCP_SERVER, hint: "stdio / http / sse" },
       ...Object.entries(mcp[scope].mcpServers).map(([id, entry]) => ({
         label: id,
         value: id,
@@ -34,8 +35,8 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
       <ListStep
         columns={cols}
         rows={rows}
-        title={`◆ MCP 服务器 · ${scopeLabel(scope)}`}
-        subtitle={`${mcpCount(mcp, scope)} 个 · ${mcpConfigPath(scope)}`}
+        title={t("wiz.mcp.listTitle", { scope: scopeLabel(scope) })}
+        subtitle={t("wiz.mcp.listSubtitle", { n: mcpCount(mcp, scope), path: mcpConfigPath(scope) })}
         items={items}
         onPick={(value) => {
           if (value === SWITCH_SCOPE) go({ kind: "mcp", scope: other });
@@ -56,20 +57,20 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
       <DetailStep
         columns={cols}
         rows={rows}
-        title={`◆ MCP · ${serverId}`}
+        title={t("wiz.mcp.detailTitle", { id: serverId })}
         details={[
-          `${scopeLabel(scope)} · ${mcpConfigPath(scope)}`,
-          `传输 ${entry.type ?? "stdio"} · ↑ ↓ 移动 · Enter 编辑/切换`,
+          t("wiz.scopePath", { scope: scopeLabel(scope), path: mcpConfigPath(scope) }),
+          t("wiz.mcp.detailLine", { transport: entry.type ?? "stdio" }),
         ]}
         fields={mcpServerFields(scope, serverId, entry)}
         notice={notice}
         action={{
-          label: "删除服务器",
+          label: t("wiz.mcp.delete"),
           run: async () => {
             const failure = await persistMcp(
               scope,
               removeMcpServer(mcp[scope], serverId),
-              `已删除 MCP 服务器 ${serverId}（${scopeLabel(scope)}）`,
+              t("wiz.mcp.deleted", { id: serverId, scope: scopeLabel(scope) }),
             );
             if (!failure) go({ kind: "mcp", scope });
             return failure;
@@ -85,14 +86,14 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
   if (activeStep.kind === "mcp-kv") {
     const { scope, serverId, field } = activeStep;
     const entry = findMcpServer(mcp[scope], serverId)!;
-    const label = field === "env" ? "环境变量" : "请求头";
+    const label = field === "env" ? t("field.env") : t("field.headers");
     const current = (entry[field] as Record<string, string> | undefined) ?? {};
     return (
       <KvEditorScreen
         columns={cols}
         rows={rows}
-        title={`◆ MCP · ${serverId} · ${label}`}
-        subtitle={`${scopeLabel(scope)} · ${Object.keys(current).length} 项`}
+        title={t("wiz.mcp.kvTitle", { id: serverId, label })}
+        subtitle={t("wiz.mcp.kvSubtitle", { scope: scopeLabel(scope), n: Object.keys(current).length })}
         map={current}
         notice={notice}
         onCommit={(next) => {
@@ -103,7 +104,7 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
           return persistMcp(
             scope,
             updateMcpServer(mcp[scope], serverId, patch),
-            `MCP ${serverId} 的${label}已更新（${scopeLabel(scope)}）`,
+            t("wiz.mcpFieldUpdated", { id: serverId, label, scope: scopeLabel(scope) }),
           );
         }}
         onBack={() => go({ kind: "mcp-server", scope, serverId })}
@@ -120,26 +121,23 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
         key={`new:mcp:${scope}`}
         columns={cols}
         rows={rows}
-        title={`新建 MCP 服务器 · 名称（${scopeLabel(scope)}）`}
-        details={[
-          "作为 mcpServers 的键，例如 github / chrome-devtools",
-          "创建后默认 stdio，可编辑传输方式 / 命令 / 参数 / 环境变量等",
-        ]}
+        title={t("wiz.mcp.newTitle", { scope: scopeLabel(scope) })}
+        details={[t("wiz.mcp.newDescKey"), t("wiz.mcp.newDescDefault")]}
         error={error}
-        hints={[["Enter", "创建并编辑"], ["Esc", "返回"]]}
+        hints={[["Enter", t("wiz.createAndEdit")], ["Esc", t("ui.back")]]}
         onSubmit={(value) => {
           const name = value.trim();
           if (!name) {
-            setError("名称不能为空");
+            setError(t("err.nameRequired"));
             return;
           }
           if (mcpServerIdTaken(mcp[scope], name)) {
-            setError(`已存在名为 ${name} 的服务器`);
+            setError(t("err.mcpNameTaken", { name }));
             return;
           }
           const { mcp: next, id } = addMcpServer(mcp[scope], name);
           void (async () => {
-            const failure = await persistMcp(scope, next, `已新建 MCP 服务器 ${id}（${scopeLabel(scope)}）`);
+            const failure = await persistMcp(scope, next, t("wiz.mcp.created", { id, scope: scopeLabel(scope) }));
             if (failure) {
               setError(failure);
               return;
