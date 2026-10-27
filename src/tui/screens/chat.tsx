@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
 import { keyDebug } from "../key-debug.js";
+import { parseWheel, WHEEL_STEP } from "../mouse.js";
 import { AgentNS } from "@ai-zen/agents-core";
 import { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
@@ -23,7 +24,7 @@ import {
   pushUndo,
   type EditState,
 } from "../input-editing.js";
-import { ChatLayout, computeChatLayout } from "./layout.js";
+import { ChatLayout, clampViewTop, computeChatLayout } from "./layout.js";
 import { FrameBuffer } from "./frame-buffer.js";
 import { LineView } from "./render.js";
 import { messageToLines, transcriptLines } from "./messages-view.js";
@@ -311,9 +312,7 @@ export function Chat(props: ChatScreenProps) {
   const scrollTo = (nextTop: number) => {
     const L = layoutRef.current;
     if (!L) return;
-    const maxTop = Math.max(0, L.totalLines - L.budget);
-    const clamped = Math.max(0, Math.min(maxTop, nextTop));
-    setViewTop(clamped >= maxTop ? null : clamped);
+    setViewTop(clampViewTop(L.totalLines, L.budget, nextTop));
   };
   const scrollByPage = (dir: -1 | 1) => {
     const L = layoutRef.current;
@@ -324,6 +323,12 @@ export function Chat(props: ChatScreenProps) {
     const L = layoutRef.current;
     if (!L) return;
     scrollTo(L.viewTop + dir);
+  };
+  /** 鼠标滚轮：一格滚 `WHEEL_STEP` 行（与按行滚动共用一个钳制入口） */
+  const scrollByWheel = (dir: -1 | 1) => {
+    const L = layoutRef.current;
+    if (!L) return;
+    scrollTo(L.viewTop + dir * WHEEL_STEP);
   };
   const scrollToBottom = () => setViewTop(null);
 
@@ -499,6 +504,14 @@ export function Chat(props: ChatScreenProps) {
           return;
         }
         if (key.return || key.escape) exit("done");
+        return;
+      }
+      // 鼠标滚轮：滚视口。**必须**排在下面 `isTerminalReply` 之前——那里会把整条鼠标序列
+      // 当「终端上报」吃掉，放后面就永远收不到滚轮。其余鼠标事件（点击 / 拖拽 / 横向滚轮）
+      // 交给 `isTerminalReply` 丢弃，绝不落下到输入框。
+      const wheel = parseWheel(char);
+      if (wheel) {
+        scrollByWheel(wheel.direction);
         return;
       }
       if (isTerminalReply(char)) return;
@@ -740,6 +753,12 @@ export function Chat(props: ChatScreenProps) {
   useInput(
     (char, key) => {
       keyDebug(char, key);
+      // 忙碌期只剩「中止 / 退出 / 回看」，滚轮同样生效（生成时正是最想往回看的时机）
+      const wheel = parseWheel(char);
+      if (wheel) {
+        scrollByWheel(wheel.direction);
+        return;
+      }
       if (isTerminalReply(char)) return;
       if (char === "c" && key.ctrl) {
         sessionRef.current?.abort();

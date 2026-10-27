@@ -19,6 +19,7 @@ import { conversationRepository } from "../conversation-repository.js";
 import { readLastSession } from "../session-pointer.js";
 import { Splash, Chat } from "./screens/index.js";
 import { keyDebugStart } from "./key-debug.js";
+import { disableMouseTracking, enableMouseTracking } from "./mouse.js";
 import { installSdkLogger } from "../sdk-log.js";
 import type { AgentNS } from "@ai-zen/agents-core";
 
@@ -33,6 +34,12 @@ const CLEAR_SCREEN = "\x1b[2J\x1b[H\x1b[?25h";
  * 保证退出即干净交还 shell（Windows 下 TTY 写为异步，用回调 + 兜底定时器双保险）。
  */
 function farewell(): void {
+  // 先关鼠标上报：不关的话，回到 shell 后每次滚轮都会在提示符前吐一串 `^[[<64;…M`
+  try {
+    disableMouseTracking();
+  } catch {
+    /* ignore */
+  }
   try {
     (process.stdin as { setRawMode?: (v: boolean) => void }).setRawMode?.(false);
   } catch {
@@ -76,9 +83,13 @@ export const RENDER_OPTIONS = {
 
 function mount(node: Parameters<typeof render>[0]): Promise<unknown> {
   process.stdout.write(CLEAR_SCREEN);
+  // 鼠标上报随实例生命周期开关：本 TUI 会反复挂载（启动屏 → 对话 → 配置向导），
+  // 每个实例结束时都关掉，避免「已卸载却仍在收鼠标事件」。
+  enableMouseTracking();
   const instance = render(node, RENDER_OPTIONS);
   activeInstance = instance;
   return instance.waitUntilExit().finally(() => {
+    disableMouseTracking();
     if (activeInstance === instance) activeInstance = null;
   });
 }
@@ -331,6 +342,12 @@ function installSignalSafety(): () => void {
   const restore = () => {
     try {
       activeInstance?.unmount();
+    } catch {
+      /* 忽略 */
+    }
+    // 任何异常退出路径都要把终端鼠标上报关掉，否则终端会持续把滚轮写成转义序列
+    try {
+      disableMouseTracking();
     } catch {
       /* 忽略 */
     }

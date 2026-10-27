@@ -18,6 +18,7 @@ import {
   deleteToLineEnd,
   deleteToLineStart,
   computeChatLayout,
+  clampViewTop,
   resolveSubmitText,
   stripCwdNote,
   type RLine,
@@ -50,6 +51,15 @@ describe("isTerminalReply（终端应答序列过滤）", () => {
     expect(isTerminalReply("[?0")).toBe(false);
     expect(isTerminalReply("[?0u ")).toBe(false);
     expect(isTerminalReply("你看这个 [?0u 是不是很奇怪")).toBe(false);
+  });
+
+  it("识别鼠标上报（滚轮 / 点击 / 拖拽），避免落进输入框", () => {
+    expect(isTerminalReply("[<64;10;5M")).toBe(true);
+    expect(isTerminalReply("[<65;10;5M")).toBe(true);
+    expect(isTerminalReply("[<0;10;5M")).toBe(true);
+    expect(isTerminalReply("[<0;10;5m")).toBe(true);
+    expect(isTerminalReply("[<35;7;2M")).toBe(true);
+    expect(isTerminalReply("[<64;10;5")).toBe(false);
   });
 });
 
@@ -140,6 +150,20 @@ describe("Splash", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain("终端里的 AI 协作台");
     expect(frame).toContain("v");
+    unmount();
+  });
+
+  it("鼠标上报（滚轮 / 点击）不算「任意键跳过」", async () => {
+    const onDone = vi.fn();
+    const { stdin, unmount } = render(<Splash onDone={onDone} />);
+    stdin.write("\u001b[<64;10;5M"); // 滚轮上
+    await tick();
+    stdin.write("\u001b[<0;10;5M"); // 左键按下
+    await tick();
+    expect(onDone).not.toHaveBeenCalled();
+    stdin.write("x"); // 真正的按键才跳过
+    await tick();
+    expect(onDone).toHaveBeenCalledTimes(1);
     unmount();
   });
 });
@@ -366,6 +390,28 @@ describe("computeChatLayout（吸底 + 应用内翻页）", () => {
     const multi = computeChatLayout({ ...base, input: "x\ny\nz" });
     expect(multi.bottomLines).toBe(single.bottomLines + 2);
     expect(multi.lines.length).toBe(single.lines.length - 2);
+  });
+});
+
+describe("clampViewTop（翻页 / 按行 / 滚轮共用的滚动钳制）", () => {
+  // totalLines=100、budget=20 → maxTop=80，贴着底部时 viewTop 记为 null
+  it("贴底与越过底部都返回 null（视口重新跟随最新）", () => {
+    expect(clampViewTop(100, 20, 80)).toBeNull();
+    expect(clampViewTop(100, 20, 9999)).toBeNull();
+  });
+
+  it("向上滚动到区间内时返回具体顶行", () => {
+    expect(clampViewTop(100, 20, 0)).toBe(0);
+    expect(clampViewTop(100, 20, 77)).toBe(77);
+  });
+
+  it("越过顶部钳到 0（滚过头不会变成负值）", () => {
+    expect(clampViewTop(100, 20, -50)).toBe(0);
+  });
+
+  it("内容不足一屏时恒为 null（无可滚动区间）", () => {
+    expect(clampViewTop(5, 20, 0)).toBeNull();
+    expect(clampViewTop(0, 20, -3)).toBeNull();
   });
 });
 

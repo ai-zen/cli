@@ -5,6 +5,8 @@
  * 避免 `screens.tsx ↔ config-wizard.tsx` 相互 import 形成循环依赖。
  */
 
+import { isMouseSequence } from "./mouse.js";
+
 // ==================== 显示宽度 ====================
 
 /** 是否宽字符（CJK / 全角 / 常见 Emoji），占 2 列 */
@@ -143,23 +145,29 @@ export function layoutInput(text: string, cursor: number, width: number): InputL
 export const INPUT_PREFIX_WIDTH = 3;
 
 /**
- * 判断一段输入是否为「终端应答序列」而非用户输入。
+ * 判断一段输入是否为「终端上报序列」而非用户输入。
  *
  * 典型来源：
  *   - Kitty 键盘协议查询的应答：`CSI ? <flags> u`（Ink 开启 `kittyKeyboard` 时会发 `CSI ? u`）；
  *   - 光标位置报告（CPR）：`CSI <row>;<col> R`；
- *   - 设备状态报告：`CSI ? <n> n`。
+ *   - 设备状态报告：`CSI ? <n> n`；
+ *   - 鼠标上报（SGR）：`CSI < b ; x ; y M`——滚轮 / 点击 / 拖拽，见 `mouse.ts`。
  *
  * 这类序列本应由 Ink 的解析器整体吞掉。但当它被**拆包**时（前导 ESC 被 Ink 的
  * 「待定转义刷新定时器」当作一次独立的 Escape 键消费），残留在后一个 chunk 里的
  * `[?0u` 会退化成普通文本并被当作输入插入输入框（实测重现）。此处做一层护栏；
  * 根因（不再向终端发查询）已在渲染选项里关闭。
+ *
+ * 鼠标上报是**主动开启**的（`src/tui/mouse.ts`），且 Ink 会把整条序列当作 `char`
+ * 交给 `useInput`，所以这里必须兜住——否则滚一下就往输入框里插一段 `[<64;10;5M`。
+ * 注意：需要读滚轮的屏（对话屏）必须**在处理完滚轮之后**再调用本函数。
  */
 export function isTerminalReply(sequence: string): boolean {
   return (
     /^\[\?\d+u$/.test(sequence) || // Kitty 键盘协议应答（CSI ? <flags> u）
     /^\[\d+;\d+R$/.test(sequence) || // 光标位置报告（CSI <row>;<col> R）
-    /^\[\?\d+n$/.test(sequence) // 设备状态报告（CSI ? <n> n）
+    /^\[\?\d+n$/.test(sequence) || // 设备状态报告（CSI ? <n> n）
+    isMouseSequence(sequence) // 鼠标上报（CSI < b ; x ; y M|m）
   );
 }
 

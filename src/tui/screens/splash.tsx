@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import { theme, pickLogo, logoGradientColors } from "../theme.js";
 import { Spinner } from "../components.js";
+import { isTerminalReply } from "../text.js";
 import { CLI_VERSION, SDK_VERSION, CORE_VERSION } from "../../version.js";
 
 // ==================== Splash（启动界面）====================
@@ -48,7 +49,11 @@ export function Splash({ onDone }: { onDone?: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
-  useInput(() => finish());
+  // 任意键跳过启动动画；但终端上报（鼠标滚轮 / 应答序列）不是「跳过」的意愿，忽略
+  useInput((input) => {
+    if (isTerminalReply(input)) return;
+    finish();
+  });
 
   const totalRows = rows ?? 24;
   const padTop = Math.max(0, Math.floor((totalRows - (logo.length + 9)) / 2));

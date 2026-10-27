@@ -66,12 +66,12 @@ When run with no arguments on an interactive terminal, the CLI opens a full-scre
 ╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
 
               AI workbench in your terminal
-              v1.0.0-alpha.14 · sdk x · core y
+              v1.0.0-alpha.20 · sdk x · core y
 ```
 
 After the splash, you land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and the status bar (model · agent · this-round / cumulative tokens · generating) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line.
 
-The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word; `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word; `Ctrl+K` kills to end of line; `Ctrl+U` kills to line start; `PgUp`/`PgDn` (or `Alt+V`/`Ctrl+V`) scroll the transcript; on macOS `⌘← →` moves by word, `⌘⌫`/`⌘⌦` deletes by word, `⌘[`/`⌘]` pages and `⌘;`/`⌘'` scrolls by line (depending on whether the terminal reports Cmd — see below)., and an inline `/` command menu (↑↓ to choose, `Tab` to complete). Tool calls render as `⚙ name(args)` with **JSON syntax highlighting**; the answer / reasoning is **Markdown-source-colored** (headings, bold, italic, inline code, lists, quotes, links), and fenced code blocks are **syntax-highlighted by language with the fence markers kept** (highlight data from `highlight.js` via `lowlight`). `Ctrl+C` cancels the current request while generating, and exits when idle.
+The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word; `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word; `Ctrl+K` kills to end of line; `Ctrl+U` kills to line start; `PgUp`/`PgDn` (or `Alt+V`/`Ctrl+V`) scroll the transcript, the mouse wheel scrolls by line; on macOS `⌘← →` moves by word, `⌘⌫`/`⌘⌦` deletes by word, `⌘[`/`⌘]` pages and `⌘;`/`⌘'` scrolls by line (depending on whether the terminal reports Cmd — see below)., and an inline `/` command menu (↑↓ to choose, `Tab` to complete). Tool calls render as `⚙ name(args)` with **JSON syntax highlighting**; the answer / reasoning is **Markdown-source-colored** (headings, bold, italic, inline code, lists, quotes, links), and fenced code blocks are **syntax-highlighted by language with the fence markers kept** (highlight data from `highlight.js` via `lowlight`). `Ctrl+C` cancels the current request while generating, and exits when idle.
 
 ### Keyboard & terminal compatibility (macOS, etc.)
 
@@ -107,6 +107,7 @@ Key map (aligned with [Claude Code](https://docs.claude.com/en/docs/claude-code/
 | `Ctrl+V` | Reserved for image paste (**not implemented yet**; shows a notice) |
 | `Ctrl+L` | Clear the screen (context kept) |
 | `PgUp` / `PgDn` | Page through the transcript |
+| Mouse wheel | Scroll by line (3 lines per notch). With mouse reporting on, text selection needs `Shift` (native terminal selection); `tmux` users need `set -g mouse off`, otherwise the wheel is swallowed by copy-mode |
 | `Shift+↑ ↓`, `Alt+↑ ↓`, `⌘;` / `⌘'`* | Scroll by line |
 | `\` + `Enter` | Newline (works in any terminal) |
 

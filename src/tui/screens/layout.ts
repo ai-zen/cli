@@ -41,6 +41,19 @@ export interface ChatLayout {
 }
 
 /**
+ * 把「想要的视口顶部」钳制成合法值：下限 0、上限 `totalLines - budget`。
+ *
+ * 返回 `null` 表示**已贴底**（视口顶恰好等于最大顶，或内容不足一屏）—— 调用方据此
+ * 清掉滚动状态，让视口重新跟随最新内容。所有滚动动作（翻页 / 按行 / 鼠标滚轮）都
+ * 走这一个函数，越界方向自然被吃掉，不会出现「滚过头回不来」。
+ */
+export function clampViewTop(totalLines: number, budget: number, nextTop: number): number | null {
+  const maxTop = Math.max(0, totalLines - budget);
+  const clamped = Math.max(0, Math.min(maxTop, nextTop));
+  return clamped >= maxTop ? null : clamped;
+}
+
+/**
  * 计算对话屏布局：底部区域高度固定后，把「对话行」按视口截取到可用高度，顶部用空行
  * 补齐 —— 使整帧高度恒等于传入的 `rows`（调用方以 `usableFrameRows()` 预留末行），
  * 输入框稳定吸附底部。
