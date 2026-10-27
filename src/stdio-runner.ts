@@ -75,9 +75,9 @@ export function extractText(content: AgentNS.MessageContent | undefined): string
   const parts: string[] = [];
   for (const section of content) {
     if (section.type === "text") parts.push(section.text);
-    else if (section.type === "image_url") parts.push(`[图片: ${section.image_url.url}]`);
+    else if (section.type === "image_url") parts.push(`[Image: ${section.image_url.url}]`);
     else if (section.type === "file")
-      parts.push(`[文件: ${section.file_id ?? section.filename ?? "内联文件"}]`);
+      parts.push(`[File: ${section.file_id ?? section.filename ?? "inline file"}]`);
   }
   return parts.join("\n");
 }
@@ -101,18 +101,18 @@ async function resolveTarget(): Promise<ResolvedTarget> {
   const modelId = definition?.modelId;
   if (!modelId) {
     throw new Error(
-      `Agent "${agentId}" 未绑定模型，请先运行 \`ai\` 在 /config 里为它选择模型`,
+      `Agent "${agentId}" has no model bound — run \`ai\` and pick one under /config`,
     );
   }
 
   const model = config.models.find((m) => m.id === modelId);
-  if (!model) throw new Error(`Agent 绑定的模型 ${modelId} 不存在`);
+  if (!model) throw new Error(`The model "${modelId}" bound to the agent does not exist`);
 
   const endpoint = config.endpoints.find((e) => e.id === model.endpointId);
-  if (!endpoint) throw new Error(`模型 ${modelId} 引用的端点 ${model.endpointId} 不存在`);
+  if (!endpoint) throw new Error(`Model "${modelId}" references endpoint "${model.endpointId}", which does not exist`);
   if (!endpoint.apiKey) {
     throw new Error(
-      `端点 "${endpoint.name}" 的 API Key 未设置，请先运行 \`ai\` 进入交互界面配置`,
+      `Endpoint "${endpoint.name}" has no API key yet — run \`ai\` to configure it in the interactive UI`,
     );
   }
 
@@ -128,7 +128,7 @@ export async function runStdio(options: StdioRunOptions): Promise<number> {
   const prompt = mergePrompt(instruction, stdinText);
 
   if (!prompt.trim()) {
-    logStderr("ai: 没有输入内容（请提供参数，或通过管道传入文本）");
+    logStderr("ai: no input (pass an argument or pipe text in)");
     return 2;
   }
 
@@ -157,7 +157,7 @@ export async function runStdio(options: StdioRunOptions): Promise<number> {
       .find((m) => m.role === AgentNS.Role.Assistant);
 
     if (!lastAssistant || lastAssistant.status === AgentNS.MessageStatus.Error) {
-      logStderr("ai: 模型返回错误");
+      logStderr("ai: the model returned an error");
       return 1;
     }
 
@@ -173,7 +173,7 @@ export async function runStdio(options: StdioRunOptions): Promise<number> {
         createdAt: now,
         updatedAt: now,
       });
-      logStderr(`已保存对话: ${name}`);
+      logStderr(`Saved conversation: ${name}`);
     }
 
     // 结果：仅此一处写入 stdout

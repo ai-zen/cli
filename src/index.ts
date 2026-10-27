@@ -4,6 +4,8 @@ import { installHook, uninstallHook } from "./hook.js";
 import { resolveInvocation } from "./mode.js";
 import { runStdio } from "./stdio-runner.js";
 import { CLI_VERSION } from "./version.js";
+import { initLocale } from "./i18n/preferences.js";
+import { t } from "./i18n/index.js";
 
 // ⚠️ 必须在加载 React/Ink 之前把 NODE_ENV 定为 production。
 //
@@ -31,23 +33,20 @@ process.env.NODE_ENV ||= "production";
  * 模式判定与参数解析集中在 ./mode.ts（纯函数，单测覆盖），本文件只做分发。
  */
 
-const HELP_TEXT = `ai — AI-Zen CLI v${CLI_VERSION}
-
-用法:
-  ai                      进入交互式界面（TUI，需 stdin/stdout 为 TTY）
-  ai <提示词>              以纯 stdio 模式提问，结果写入 stdout
-  cat 文件 | ai "总结要点"  通过管道传入内容，参数作为指令
-  ai hook install         安装 shell 兜底钩子（命令不存在时转发给 AI）
-  ai hook uninstall       卸载 shell 兜底钩子
-
-选项:
-  --save                  保存本次对话到存档（默认不落盘）
-  -h, --help              显示本帮助
-  -v, --version           显示版本号
-
-说明:
-  stdio 模式无任何交互，结果走 stdout、日志走 stderr，成功退出码 0。
-`;
+/**
+ * 帮助文本按当前语言现拼（**不能**写成模块级常量：那会把“模块求值那一刻的语言”定死）。
+ * stdio 模式刻意不做 i18n，但 `--help` 属终端交互文案，要跟随界面语言。
+ */
+function helpText(): string {
+  return (
+    [
+      t("cli.help.title", { version: CLI_VERSION }),
+      t("cli.help.usage"),
+      t("cli.help.options"),
+      t("cli.help.notes"),
+    ].join("\n") + "\n"
+  );
+}
 
 async function main(): Promise<void> {
   const tty = {
@@ -58,7 +57,9 @@ async function main(): Promise<void> {
 
   switch (invocation.kind) {
     case "help":
-      process.stdout.write(HELP_TEXT);
+      // 帮助是用户可见的终端文案，跟随界面语言（偏好 / 系统语言）；其余非 TUI 路径（stdio）不初始化语言
+      await initLocale();
+      process.stdout.write(helpText());
       return;
 
     case "version":
@@ -97,6 +98,6 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`\n❌ 意外错误: ${message}\n`);
+  process.stderr.write(`\n❌ Unexpected error: ${message}\n`);
   process.exitCode = 1;
 });

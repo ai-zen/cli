@@ -199,4 +199,10 @@ export const en: Record<string, string> = {
   "time.pattern.older": "MMM D, YYYY HH:mm",
   "time.pattern.full": "MMM D, YYYY HH:mm:ss",
   "time.messageCount": "{n} message(s), {time}",
+
+  // ---------- `ai --help` (printed outside the TUI, hence the locale init in the help branch) ----------
+  "cli.help.title": "ai — AI-Zen CLI v{version}",
+  "cli.help.usage": "\nUsage:\n  ai                              Start the interactive UI (TUI; stdin/stdout must be a TTY)\n  ai <prompt>                     Ask in pure stdio mode; the result goes to stdout\n  cat file | ai \"summarize it\"   Pipe content in; the argument is the instruction\n  ai hook install                 Install the shell fallback hook (route unknown commands to the AI)\n  ai hook uninstall               Uninstall the shell fallback hook",
+  "cli.help.options": "\nOptions:\n  --save                          Save this conversation to the archive (off by default)\n  -h, --help                      Show this help\n  -v, --version                   Show the version",
+  "cli.help.notes": "\nNotes:\n  stdio mode is non-interactive: the result goes to stdout, logs to stderr, exit code 0 on success.",
 };
