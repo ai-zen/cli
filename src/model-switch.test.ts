@@ -1,6 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
 import { switchModel } from "./model-switch.js";
+import { setLocale } from "./i18n/index.js";
+
+// 切换结果与报错已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
+beforeEach(() => setLocale("zh"));
 
 /**
  * `switchModel` 只有一种写法：把目标模型写进 `AgentDefinition.modelId`。

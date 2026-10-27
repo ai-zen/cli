@@ -12,10 +12,11 @@ import { writeLastSession } from "./session-pointer.js";
 import { PROJECT_HANDOFFS_DIR } from "./config.js";
 import { listSkillDirs } from "./agent-creator.js";
 import type { ConversationContext } from "./types.js";
+import { t } from "./i18n/index.js";
 
 /** 执行者的中文名（供提示文案使用） */
 export function describeMode(mode: HandoffMode): string {
-  return mode === "self" ? "原 agent 自交接" : "独立摘要";
+  return mode === "self" ? t("handoff.mode.self") : t("handoff.mode.summary");
 }
 
 /**
@@ -46,26 +47,36 @@ export function createHandoffService(
     // 交接模板的唯一真相源：磁盘上的 handoff Skill（出厂随 SDK 释放，可被项目级覆盖）
     skillDirs: listSkillDirs(),
     onBeforeHandoff: (hctx: HandoffContext) => {
-      const isAuto = hctx.promptTokens != null && hctx.handoffTokens != null;
+      const { promptTokens, handoffTokens } = hctx;
+      const isAuto = promptTokens != null && handoffTokens != null;
       if (isAuto) {
         log(
-          `📋 检测到上下文即将超限（${hctx.promptTokens}/${hctx.handoffTokens} tokens），正在交接（${describeMode(hctx.requestedMode)}）…`,
+          t("handoff.autoDetected", {
+            used: promptTokens,
+            limit: handoffTokens,
+            mode: describeMode(hctx.requestedMode),
+          }),
         );
       } else {
-        log(`📋 正在编写任务交接文档（${describeMode(hctx.requestedMode)}）…`);
+        log(t("handoff.writing", { mode: describeMode(hctx.requestedMode) }));
       }
     },
     onHandoff: async (hctx: HandoffContext) => {
       // 降级时告知用户：请求的执行者与实际执行者不一致
       if (hctx.mode !== hctx.requestedMode) {
-        log(`⚠️ ${describeMode(hctx.requestedMode)}未能产出文档，已降级为${describeMode(hctx.mode)}`);
+        log(
+          t("handoff.degraded", {
+            requested: describeMode(hctx.requestedMode),
+            mode: describeMode(hctx.mode),
+          }),
+        );
       }
-      log(`📄 交接文档：${hctx.handoffPath}`);
+      log(t("handoff.path", { path: hctx.handoffPath }));
 
       // 迁移前（历史尚未剔除）保存旧对话：此时已包含交接回合，可完整审计
       if (hctx.migrating) {
         await saveConversation(ctx);
-        log(`✅ 原对话已保存：${ctx.currentName}`);
+        log(t("handoff.savedConversation", { name: ctx.currentName }));
       }
     },
     onMigrated: async (hctx: HandoffContext) => {
@@ -82,8 +93,8 @@ export function createHandoffService(
       ctx.currentId = id;
       ctx.currentName = id;
 
-      log(`🚀 任务迁移完成，已开启新会话（共 ${hctx.agent.messages.length} 条消息）`);
-      log("💡 新助手会先读取交接文档，随后即可继续推进任务。");
+      log(t("handoff.migrated", { n: hctx.agent.messages.length }));
+      log(t("handoff.migratedHint"));
 
       // 迁移后立即把新开场白落盘为独立会话文件，并更新「上一轮会话 id」指针，
       // 避免迁移发生在 onAfterSend（ConversationPersistPlugin 的 onInnerLoopEnd
@@ -101,7 +112,7 @@ export function createHandoffService(
         });
         await writeLastSession(process.cwd(), id);
       } catch (err: any) {
-        log(`⚠️ 迁移后会话落盘失败：${err?.message ?? err}`);
+        log(t("handoff.persistFailed", { error: err?.message ?? err }));
       }
     },
   });

@@ -2,10 +2,14 @@ import { promises as fs } from "node:fs";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationContext } from "./types.js";
 import { createHandoffService } from "./handoff-service.js";
 import { conversationRepository } from "./conversation-repository.js";
+import { setLocale } from "./i18n/index.js";
+
+// 交接日志已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
+beforeEach(() => setLocale("zh"));
 
 // 在静态导入之前固定 AI_ZEN_DIR（config.ts 导入时即固化路径，避免污染真实 ~/.ai-zen）
 const state = vi.hoisted(() => {

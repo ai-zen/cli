@@ -185,27 +185,25 @@ export async function setAgentEffort(
     ((definition: AgentDefinition) => new AgentRepository(AGENTS_DIR).write(definition));
 
   const definition = await readAgent(agentId);
-  if (!definition) throw new Error(`Agent "${agentId}" 不存在`);
+  if (!definition) throw new Error(t("effort.err.agentMissing", { id: agentId }));
 
   const modelId = definition.modelId;
   if (!modelId) {
-    throw new Error(`Agent "${agentId}" 未绑定模型，请先为它选择模型`);
+    throw new Error(t("effort.err.noModel", { id: agentId }));
   }
   const model = (config.models ?? []).find((item) => item.id === modelId);
-  if (!model) throw new Error(`模型 "${modelId}" 不存在，请先用 /model 或 /config 检查`);
+  if (!model) throw new Error(t("effort.err.modelMissing", { id: modelId }));
 
   const preset = presetOf(model, presets);
   const allowed = levelsOf(preset);
   if (allowed.length === 0) {
-    throw new Error(
-      `模型 "${model.id}" 未关联可用的思考策略（reasoningPreset），无法设置思考强度`,
-    );
+    throw new Error(t("effort.err.noPreset", { id: model.id }));
   }
 
   const patch = effort === null ? undefined : patchOf(preset, effort);
   if (effort !== null && !patch) {
     throw new Error(
-      `策略 "${model.reasoningPreset}" 没有档位 "${effort}"（可选：${allowed.join(" / ")}）`,
+      t("effort.err.unknownLevel", { preset: model.reasoningPreset ?? "", level: effort, options: allowed.join(" / ") }),
     );
   }
 
@@ -223,10 +221,10 @@ export async function setAgentEffort(
 
   await writeAgent(next);
 
-  const label = effort === null ? "跟随模型默认" : `「${effortLabel(effort)}」`;
+  const label = effort === null ? t("effort.followDefault") : t("effort.quoted", { label: effortLabel(effort) });
   return {
     definition: next,
     model,
-    summary: `思考强度已设为 ${label} · 写入 Agent「${agentId}」（模型 ${model.id}）`,
+    summary: t("effort.summary", { label, id: agentId, model: model.id }),
   };
 }

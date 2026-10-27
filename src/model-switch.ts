@@ -31,6 +31,7 @@
 import { AgentRepository } from "@ai-zen/agents-sdk";
 import type { AgentDefinition } from "@ai-zen/agents-sdk";
 import { AGENTS_DIR } from "./config.js";
+import { t } from "./i18n/index.js";
 
 export interface SwitchModelDeps {
   /** 读 Agent 定义（默认：`~/.ai-zen/agents/<id>.json`） */
@@ -67,7 +68,7 @@ export async function switchModel(options: SwitchModelOptions): Promise<SwitchMo
   const now = options.now ?? new Date();
 
   const model = (config.models ?? []).find((item) => item.id === modelId);
-  if (!model) throw new Error(`模型 "${modelId}" 不存在`);
+  if (!model) throw new Error(t("modelSwitch.err.modelMissing", { id: modelId }));
 
   const readAgent =
     options.readAgent ?? ((id: string) => new AgentRepository(AGENTS_DIR).read(id));
@@ -76,7 +77,7 @@ export async function switchModel(options: SwitchModelOptions): Promise<SwitchMo
     ((definition: AgentDefinition) => new AgentRepository(AGENTS_DIR).write(definition));
 
   const definition = await readAgent(agentId);
-  if (!definition) throw new Error(`Agent "${agentId}" 不存在`);
+  if (!definition) throw new Error(t("modelSwitch.err.agentMissing", { id: agentId }));
 
   const next: AgentDefinition = { ...definition, modelId, updatedAt: now.toISOString() };
   // 换模型 = 重置思考强度：旧模型的档位参数对新模型可能非法（如 GLM-5.3 不接受
@@ -84,9 +85,9 @@ export async function switchModel(options: SwitchModelOptions): Promise<SwitchMo
   delete next.modelParams;
   await writeAgent(next);
 
-  const resetHint = definition.modelParams ? " · 思考强度已重置为模型默认" : "";
+  const resetHint = definition.modelParams ? t("modelSwitch.resetHint") : "";
   return {
-    summary: `已切换模型：${model.name}（${model.id}）· 已写入 Agent「${agentId}」${resetHint}`,
+    summary: t("modelSwitch.summary", { name: model.name, id: model.id, agent: agentId, hint: resetHint }),
     definition: next,
   };
 }

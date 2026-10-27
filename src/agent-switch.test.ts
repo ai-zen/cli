@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
 import { listAgentChoices, switchAgent } from "./agent-switch.js";
+import { setLocale } from "./i18n/index.js";
+
+// 切换结果与不可用原因已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
+beforeEach(() => setLocale("zh"));
 
 /**
  * `/agent` 的唯一写入目标是 `config.defaultAgent`：

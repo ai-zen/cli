@@ -22,6 +22,7 @@
 
 import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
 import { resolveCredential } from "./config-editor.js";
+import { t } from "./i18n/index.js";
 
 /** 选择器里的一行：一个可选的主 Agent */
 export interface AgentChoice {
@@ -49,11 +50,11 @@ export function listAgentChoices(
   return agents.map((agent) => {
     const name = agent.name || agent.id;
     if (!agent.modelId) {
-      return { id: agent.id, name, selectable: false, reason: "未绑定模型" };
+      return { id: agent.id, name, selectable: false, reason: t("agentSwitch.err.noModel") };
     }
     const credential = resolveCredential(config, agent.modelId);
     if (!credential) {
-      return { id: agent.id, name, selectable: false, reason: `模型 ${agent.modelId} 不存在` };
+      return { id: agent.id, name, selectable: false, reason: t("agentSwitch.err.modelMissing", { id: agent.modelId }) };
     }
     if (!credential.configured) {
       return {
@@ -61,7 +62,7 @@ export function listAgentChoices(
         name,
         modelName: credential.modelName,
         selectable: false,
-        reason: `端点「${credential.endpointName}」缺 API Key`,
+        reason: t("agentSwitch.err.missingKey", { endpoint: credential.endpointName }),
       };
     }
     return { id: agent.id, name, modelName: credential.modelName, selectable: true };
@@ -92,27 +93,28 @@ export function switchAgent(options: SwitchAgentOptions): SwitchAgentResult {
   const { config, agents, targetAgentId } = options;
 
   const agent = agents.find((item) => item.id === targetAgentId);
-  if (!agent) throw new Error(`Agent "${targetAgentId}" 不存在`);
+  if (!agent) throw new Error(t("agentSwitch.err.agentMissing", { id: targetAgentId }));
 
   const name = agent.name || agent.id;
   if (!agent.modelId) {
-    throw new Error(`Agent「${name}」未绑定模型，请先用 /config 为它选择模型`);
+    throw new Error(t("agentSwitch.err.agentNoModel", { name }));
   }
 
   const credential = resolveCredential(config, agent.modelId);
   if (!credential) {
-    throw new Error(
-      `Agent「${name}」绑定的模型“${agent.modelId}”已不在配置中，请用 /model 或 /config 重新选择`,
-    );
+    throw new Error(t("agentSwitch.err.modelGone", { name, id: agent.modelId }));
   }
   if (!credential.configured) {
-    throw new Error(
-      `端点「${credential.endpointName}」还没有 API Key，请先用 /config 配置后再切换`,
-    );
+    throw new Error(t("agentSwitch.err.noKey", { endpoint: credential.endpointName }));
   }
 
   return {
     config: { ...config, defaultAgent: agent.id },
-    summary: `已切换主 Agent：${name}（${agent.id}）· 模型 ${credential.modelName}（${credential.modelId}）`,
+    summary: t("agentSwitch.summary", {
+      name,
+      id: agent.id,
+      model: credential.modelName,
+      modelId: credential.modelId,
+    }),
   };
 }
