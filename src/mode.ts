@@ -5,8 +5,12 @@
  *
  * | 模式        | 触发条件                                   | 面向对象               |
  * |-------------|--------------------------------------------|------------------------|
- * | 纯 stdio    | 带位置参数，或 stdin/stdout 非 TTY          | 脚本、管道、shell 钩子 |
- * | TUI         | 无参数且 stdin/stdout 均为 TTY              | 人类用户               |
+ * | 纯 stdio    | 带位置参数，或 stdin/stdout 非 TTY          | 脚本、管道             |
+ * | TUI         | 无参数且 stdin/stdout 均为 TTY；或 `--tui` | 人类用户               |
+ *
+ * 注意：**shell 钩子不属于纯 stdio**。钩子的发起场景是「人坐在交互终端前敲错了命令」，
+ * 因此它走 `ai --tui "$@"` 进 TUI，并把原命令作为首条消息自动发送。
+ * （早期版本写成 `ai "$@"`，于是钩子会话被当成脚本调用落到管道模式——那是实现错误。）
  *
  * 本模块为纯函数与纯数据，不触碰 stdin/stdout、不 import chalk 等 UI 依赖，
  * 便于单测（模式判定与路由是改造中风险最高的逻辑，必须被测覆盖）。
@@ -32,7 +36,10 @@ export type Invocation =
   | { kind: "help" }
   | { kind: "version" }
   | { kind: "stdio"; instruction: string; save: boolean }
-  | { kind: "tui" };
+  /** `initialPrompt`：进 TUI 后**自动作为首条消息**发送的内容（shell 钩子用） */
+  | { kind: "tui"; initialPrompt?: string }
+  /** `--tui` 明确要求交互界面，但终端不支持：报错退出，**绝不**降级成 stdio */
+  | { kind: "tui-rejected" };
 
 /** shell 兜底钩子的子动作 */
 const HOOK_ACTIONS = new Set(["install", "uninstall"]);
@@ -43,6 +50,8 @@ const HOOK_ACTIONS = new Set(["install", "uninstall"]);
  * - 有位置参数 → stdio（脚本/管道优先，绝不进 TUI）
  * - 无参数但 stdin 或 stdout 非 TTY → stdio（管道、重定向、CI）
  * - 无参数且 stdin/stdout 均为 TTY → TUI
+ *
+ * `--tui` 不经过本函数：它是显式覆盖，在 `resolveInvocation()` 里优先处理。
  */
 export function decideMode(tty: TtyState, hasArgs: boolean): RunMode {
   if (hasArgs) return "stdio";
@@ -61,6 +70,7 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
   let save = false;
   let wantHelp = false;
   let wantVersion = false;
+  let wantTui = false;
   let passthrough = false;
 
   for (const arg of argv) {
@@ -74,6 +84,10 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
     }
     if (arg === "--save") {
       save = true;
+      continue;
+    }
+    if (arg === "--tui") {
+      wantTui = true;
       continue;
     }
     if (arg === "--help" || arg === "-h") {
@@ -99,6 +113,14 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
   if (wantVersion) return { kind: "version" };
 
   const instruction = positional.join(" ").trim();
+
+  // 显式要求 TUI（shell 钩子走这条）：参数不再是「脚本提问」，而是待发送的首条消息。
+  // 非 TTY 时宁可报错，也不能默默降级成 stdio—— 否则界面内容会写进管道。
+  if (wantTui) {
+    if (!tty.stdinIsTTY || !tty.stdoutIsTTY) return { kind: "tui-rejected" };
+    return { kind: "tui", initialPrompt: instruction || undefined };
+  }
+
   const mode = decideMode(tty, positional.length > 0);
   if (mode === "tui") return { kind: "tui" };
   return { kind: "stdio", instruction, save };

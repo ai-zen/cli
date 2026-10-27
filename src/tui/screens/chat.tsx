@@ -46,6 +46,14 @@ export interface ChatScreenProps {
   conversationName?: string;
   /** 重挂载时的初始输入（/back 撤回后用于预填） */
   initialInput?: string;
+  /**
+   * 启动后**自动作为首条消息发送**的内容（shell 钩子 `ai --tui "$@"`）。
+   *
+   * 与 `initialInput` 的区别：那个是**预填到输入框**、等用户确认；这个是直接发出去。
+   * 它一律当**普通消息**发送，不经过斜杠命令解析——钩子带来的可能是 `/opt/bin/foo`
+   * 这种以 `/` 开头的命令，否则会被当成 CLI 命令而报「未知命令」。
+   */
+  initialPrompt?: string;
   /** 重挂载后展示一次的系统提示（如 /model 的写入结果，旧实例已卸载） */
   initialNotice?: string;
 }
@@ -167,6 +175,8 @@ export function Chat(props: ChatScreenProps) {
    * 会把「展示一条提示」误变成「重建会话」。
    */
   const initialNoticeRef = useRef(props.initialNotice);
+  /** 钩子带来的首条消息：只在会话建好后发一次，重挂载不再重发 */
+  const initialPromptRef = useRef(props.initialPrompt);
 
   /**
    * 渲染信号 + 合帧：SDK 内容变更 → FrameBuffer 合帧 → setTick 触发重渲染。
@@ -239,6 +249,14 @@ export function Chat(props: ChatScreenProps) {
         if (initialNoticeRef.current) {
           noticeChannel.push(initialNoticeRef.current);
           initialNoticeRef.current = undefined;
+        }
+        // shell 钩子：会话就绪后立即把原命令当**用户消息**发出去（不经命令解析）
+        if (initialPromptRef.current) {
+          const prompt = initialPromptRef.current;
+          initialPromptRef.current = undefined;
+          setTick((t) => t + 1);
+          void runSubmit(prompt, { asMessage: true });
+          return;
         }
         setTick((t) => t + 1);
       })
@@ -471,7 +489,7 @@ export function Chat(props: ChatScreenProps) {
   const slash = input.startsWith("/") && !input.includes("\n") && !input.includes(" ");
   const hints: CommandHint[] = slash ? matchCommandHints(input.slice(1)) : [];
 
-  const runSubmit = async (text: string) => {
+  const runSubmit = async (text: string, options: { asMessage?: boolean } = {}) => {
     const trimmed = text.trim();
     if (!trimmed || !sessionRef.current || busy) return;
     setInputText("");
@@ -479,7 +497,7 @@ export function Chat(props: ChatScreenProps) {
     scrollToBottom();
     setNotice(null);
 
-    if (trimmed.startsWith("/")) {
+    if (!options.asMessage && trimmed.startsWith("/")) {
       // 命令名取首个 token：支持 `/migrate summary`、`/handoff self` 这类带参数的写法
       const name = trimmed.slice(1).split(/\s+/)[0].toLowerCase();
       // 交接/迁移会调用模型写文档（较慢）：期间应像自动迁移一样拦住输入框。

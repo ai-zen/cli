@@ -206,7 +206,7 @@ export const zh: Record<string, string> = {
   // ---------- `ai --help`（在 TUI 之外打印，故单独在 help 分支初始化语言） ----------
   "cli.help.title": "ai — AI-Zen CLI v{version}",
   "cli.help.usage": "\n用法:\n  ai                      进入交互式界面（TUI，需 stdin/stdout 为 TTY）\n  ai <提示词>              以纯 stdio 模式提问，结果写入 stdout\n  cat 文件 | ai “总结要点”  通过管道传入内容，参数作为指令\n  ai hook install         安装 shell 兜底钩子（命令不存在时转发给 AI）\n  ai hook uninstall       卸载 shell 兜底钩子",
-  "cli.help.options": "\n选项:\n  --save                  保存本次对话到存档（默认不落盘）\n  -h, --help              显示本帮助\n  -v, --version           显示版本号",
+  "cli.help.options": "\n选项:\n  --save                  保存本次对话到存档（默认不落盘）\n  --tui [提示词…]          强制进入交互界面，提示词作为首条消息自动发送（shell 钩子用）\n  -h, --help              显示本帮助\n  -v, --version           显示版本号",
   "cli.help.notes": "\n说明:\n  stdio 模式无任何交互，结果走 stdout、日志走 stderr，成功退出码 0。",
 
   // ---------- `ai hook install / uninstall`（非 TUI 输出，同 help 一样在分支内先初始化语言） ----------

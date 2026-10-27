@@ -214,12 +214,17 @@ function targetFromMessages(input: {
  * 运行对话屏；`/clear`、`/back`、`/load` 通过重挂载（新 Ink 实例 + 原生清屏）实现，
  * 其余退出（退出）直接结束。
  */
-async function runChat(target: ChatTarget): Promise<void> {
+async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise<void> {
   let current = target;
   let messages = target.messages;
   let initialInput: string | undefined;
   /** 重挂载后要展示一次的系统提示（如 `/model` 的写入结果，旧实例已卸载，只能传给新屏） */
   let initialNotice: string | undefined;
+  /**
+   * shell 钩子（`ai --tui "$@"`）带来的首条消息。
+   * **只发一次**：挂载后置空，否则重挂载（切模型 / `/lang` 等）会反复重发。
+   */
+  let initialPrompt = options.initialPrompt;
 
   while (true) {
     const result = await mount(
@@ -230,8 +235,10 @@ async function runChat(target: ChatTarget): Promise<void> {
         conversationName={current.conversationName}
         initialInput={initialInput}
         initialNotice={initialNotice}
+        initialPrompt={initialPrompt}
       />,
     );
+    initialPrompt = undefined;
 
     if (result && typeof result === "object") {
       const value = result as {
@@ -280,7 +287,18 @@ async function runChat(target: ChatTarget): Promise<void> {
 
 // ==================== 入口 ====================
 
-export async function runTui(): Promise<void> {
+/** `runTui()` 的可选参数 */
+export interface RunTuiOptions {
+  /**
+   * 进入对话屏后**自动作为首条消息发送**的内容。
+   *
+   * 来源只有一处：shell 兜底钩子 `ai --tui "$@"`（命令不存在时把原命令带进来）。
+   * 不预填到输入框——钩子的语义就是「这条命令跑不了，你帮我处理」，等用户再敲一次回车没有意义。
+   */
+  initialPrompt?: string;
+}
+
+export async function runTui(options: RunTuiOptions = {}): Promise<void> {
   const uninstallSignals = installSignalSafety();
   // 接管 SDK 全局日志：关掉库自带的 console 兜底。必须在任何 Ink 渲染之前——
   // SDK 的 logger 默认是 console.log，直写 stdout 会把界面撕坏
@@ -332,7 +350,7 @@ export async function runTui(): Promise<void> {
       return;
     }
 
-    await runChat(target);
+    await runChat(target, options);
     farewell();
   } finally {
     uninstallSignals();

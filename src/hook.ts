@@ -28,8 +28,16 @@ function detectShell(): { rcFile: string; hookFn: string } | null {
   return null;
 }
 
+/**
+ * 生成被写入 rc 文件的钩子函数体。
+ *
+ * 关键：必须带 `--tui`。钩子的发起场景是「人坐在交互终端前把命令敲错了」，
+ * 不是脚本调用——所以要把原命令带进 TUI 当首条消息（`ai --tui "$@"`），
+ * 而不是落到管道模式吐一段字就退出（那样没有历史、不能追问）。
+ * `"$@"` 保留分词，避免原本带空格的参数被拼坏。
+ */
 function hookCode(hookFn: string): string {
-  return ["", MARKER_START, `${hookFn}() {`, '  ai "$@"', "}", MARKER_END, ""].join(
+  return ["", MARKER_START, `${hookFn}() {`, '  ai --tui "$@"', "}", MARKER_END, ""].join(
     "\n",
   );
 }

@@ -102,3 +102,44 @@ describe("resolveInvocation", () => {
     });
   });
 });
+
+/**
+ * `--tui`：显式覆盖「有参数 → stdio」的规则。shell 钩子（`ai --tui "$@"`）靠它进 TUI，
+ * 把敲错的命令当首条消息发给模型——而不是落到管道模式吐一段字就退出。
+ */
+describe("resolveInvocation / --tui（shell 钩子路径）", () => {
+  it("全 TTY + 有参数 → tui，参数作为待发送的首条消息", () => {
+    expect(resolveInvocation(["--tui", "gti", "status"], TTY)).toEqual({
+      kind: "tui",
+      initialPrompt: "gti status",
+    });
+  });
+
+  it("全 TTY + 无参数 → tui（与不带 --tui 一致）", () => {
+    expect(resolveInvocation(["--tui"], TTY)).toEqual({ kind: "tui", initialPrompt: undefined });
+  });
+
+  it("以 / 开头的命令仍当消息内容，不被当成选项/子命令", () => {
+    expect(resolveInvocation(["--tui", "/opt/bin/foo", "--bar"], TTY)).toEqual({
+      kind: "tui",
+      initialPrompt: "/opt/bin/foo --bar",
+    });
+  });
+
+  it("--tui + --help → help 优先（帮助是即时动作，不该拉界面）", () => {
+    expect(resolveInvocation(["--tui", "--help"], TTY)).toEqual({ kind: "help" });
+  });
+
+  it("非 TTY 时拒绝而不是降级为 stdio（界面内容不能写进管道）", () => {
+    expect(resolveInvocation(["--tui", "gti"], PIPE_IN)).toEqual({ kind: "tui-rejected" });
+    expect(resolveInvocation(["--tui", "gti"], PIPE_OUT)).toEqual({ kind: "tui-rejected" });
+  });
+
+  it("`--` 之后的 --tui 是普通参数，不触发 TUI", () => {
+    expect(resolveInvocation(["--", "--tui"], TTY)).toEqual({
+      kind: "stdio",
+      instruction: "--tui",
+      save: false,
+    });
+  });
+});

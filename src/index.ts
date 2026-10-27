@@ -85,16 +85,24 @@ async function main(): Promise<void> {
       return;
 
     case "tui": {
-      // 无参数且均为 TTY：进入全屏交互界面（Ink）。
+      // 无参数且均为 TTY，或显式 `--tui`：进入全屏交互界面（Ink）。
       // 流式统一走 Ink —— 由 `RENDER_OPTIONS.incrementalRendering`（只重绘变化的行）
       // 压低输出量，SSH / 弱网下实测稳定。
       //
       // 动态 import：确保 React/Ink 的求值发生在上方 `process.env.NODE_ENV ||= "production"`
       // 之后，从而加载 production 版 reconciler（避免 DEV 版 performance.measure 缓冲撑爆堆）。
       const { runTui } = await import("./tui/index.js");
-      await runTui();
+      // `initialPrompt`（来自 shell 钩子 `ai --tui "$@"`）会作为首条消息自动发送
+      await runTui({ initialPrompt: invocation.initialPrompt });
       return;
     }
+
+    case "tui-rejected":
+      // `--tui` 明确要求交互界面，但 stdin/stdout 不是 TTY（如被写进脚本或管道）：
+      // 不悄悄降级成管道模式（那会把整屏界面内容写进管道），直接报错。
+      process.stderr.write("ai: --tui requires an interactive terminal (stdin and stdout must be TTYs)\n");
+      process.exitCode = 2;
+      return;
   }
 }
 
