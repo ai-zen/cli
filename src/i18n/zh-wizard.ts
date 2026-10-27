@@ -141,4 +141,9 @@ export const zh: Record<string, string> = {
   "err.duplicateKey": "已存在 {key}",
   "wiz.promptSecretHint": "（粘贴或输入后按 Enter 保存，Tab 可切明文核对）",
   "wiz.promptHint": "（输入后按 Enter 确认）",
+  "scope.global": "全局",
+  "scope.project": "项目",
+  "common.noUrl": "（未配置 URL）",
+  "common.noCommand": "（未配置命令）",
+  "common.disabledSuffix": " · 已禁用",
 };

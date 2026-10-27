@@ -138,4 +138,9 @@ export const en: Record<string, string> = {
   "err.duplicateKey": "{key} already exists",
   "wiz.promptSecretHint": "(paste or type, then Enter to save; Tab reveals plaintext for checking)",
   "wiz.promptHint": "(type, then Enter to confirm)",
+  "scope.global": "global",
+  "scope.project": "project",
+  "common.noUrl": "(no URL configured)",
+  "common.noCommand": "(no command configured)",
+  "common.disabledSuffix": " · disabled",
 };
