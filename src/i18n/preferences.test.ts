@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, afterAll } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,13 +10,22 @@ import {
   writePreferences,
 } from "./preferences.js";
 
+/** 本文件创建过的临时目录，`afterAll` 统一删除（否则每跑一次测试就在 /tmp 留一堆） */
+const tempDirs: string[] = [];
+
 /** 每个用例一个独立临时文件 */
 function tmpPrefs(): string {
   const dir = mkdtempSync(join(tmpdir(), "aiz-prefs-"));
+  tempDirs.push(dir);
   return join(dir, "preferences.json");
 }
 
 afterEach(() => setLocale(DEFAULT_LOCALE));
+
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+});
 
 describe("readPreferences", () => {
   it("文件不存在 → 空偏好（第一次启动）", async () => {

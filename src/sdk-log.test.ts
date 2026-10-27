@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, afterAll } from "vitest";
 import {
   appendFileSync,
   existsSync,
@@ -20,11 +20,20 @@ import {
   SDK_LOG_FILE,
 } from "./sdk-log.js";
 
+/** 本文件创建过的临时目录，`afterAll` 统一删除（否则每跑一次测试就在 /tmp 留一堆） */
+const tempDirs: string[] = [];
+
 /** 每次测试用独立临时文件，避免互相干扰 */
 function tmpLogFile(): string {
   const dir = mkdtempSync(join(tmpdir(), "aiz-sdk-log-test-"));
+  tempDirs.push(dir);
   return join(dir, "sdk.log");
 }
+
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+});
 
 /** 还原全局日志器，避免污染其它用例 */
 function restoreLogger(): void {

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterAll } from "vitest";
 import { existsSync, promises as fs } from "node:fs";
 import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
@@ -9,6 +9,12 @@ const state = vi.hoisted(() => {
   const dir = `/tmp/aiz-reset-${process.pid}-${Date.now()}`;
   process.env.AI_ZEN_DIR = dir;
   return { dir };
+});
+
+// 本文件把 AI_ZEN_DIR 指到 /tmp 下的临时目录做隔离；跑完删掉，不在 /tmp 留垃圾。
+// （下面用例的注释里提到过「afterAll 会清理 state.dir」，但此前并没有这个 hook）
+afterAll(async () => {
+  await fs.rm(state.dir, { recursive: true, force: true });
 });
 
 // 把 agent-creator 打桩，避免真实构建 Agent / 访问网络
