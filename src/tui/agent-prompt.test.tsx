@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "ink-testing-library";
 import { writeFileSync } from "fs";
 import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
@@ -6,6 +6,10 @@ import { Message } from "@ai-zen/agents-core";
 import { spawnSync } from "child_process";
 import { ConfigWizard } from "./config-wizard/index.js";
 import type { AgentStore } from "../agents-store.js";
+import { setLocale } from "../i18n/index.js";
+
+// 步骤标题已 i18n 化：用例断言的是中文标题，显式锁定语言（不依赖宿主 LANG）
+beforeEach(() => setLocale("zh"));
 
 // 拦截系统编辑器：把「打开编辑器」替换为直接把新内容写回临时文件
 vi.mock("child_process", async (importOriginal) => {
