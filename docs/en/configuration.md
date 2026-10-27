@@ -12,7 +12,7 @@ Configuration is stored under the shared root directory (determined by `AI_ZEN_D
 
 - **Global config**: `$AI_ZEN_DIR/config.json` (default `~/.ai-zen/config.json` when `AI_ZEN_DIR` is not set).
 
-> The config directory is **shared** with other AI-Zen clients: the config file lives in the shared root (`CONFIG_FILE = join(AI_ZEN_DIR, "config.json")` in `src/config.ts`), while `~/.ai-zen/cli/` holds CLI runtime data such as `conversations/` and `last-session.json` (the "last session id" pointer).
+> The config directory is **shared** with other AI-Zen clients: the config file lives in the shared root (`CONFIG_FILE = join(AI_ZEN_DIR, "config.json")` in `src/config.ts`), while `~/.ai-zen/cli/` holds CLI runtime data such as `conversations/`, `last-session.json` (the "last session id" pointer) and `preferences.json` (CLI-local preferences such as the interface language).
 
 Key paths defined in `src/config.ts`:
 
@@ -103,7 +103,8 @@ Each Agent binds its model in its own definition file — this is the **single s
 ~/.ai-zen/                    ← Shared root (AI_ZEN_DIR)
 ├── cli/                      ← CLI runtime data
 │   ├── conversations/        ← CLI conversations
-│   └── last-session.json     ← Pointer to the last session id
+│   ├── last-session.json     ← Pointer to the last session id
+│   └── preferences.json      ← CLI-local preferences (interface language, etc.)
 ├── config.json               ← Global config (endpoints, models, etc., shared by CLI/Desktop)
 ├── agents/                   ← Agent definitions (shared)
 │   ├── default.json

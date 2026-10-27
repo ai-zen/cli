@@ -12,7 +12,7 @@ outline: deep
 
 - **全局配置**：`$AI_ZEN_DIR/config.json`（默认 `~/.ai-zen/config.json`，当未设置 `AI_ZEN_DIR` 时为 `~/.ai-zen/config.json`）。
 
-> 配置目录与 CLI/Desktop **共享**：配置文件在共享根目录（`src/config.ts` 的 `CONFIG_FILE = join(AI_ZEN_DIR, "config.json")`），而 `~/.ai-zen/cli/` 下存放的是 `conversations/` 与 `last-session.json`（「上一轮会话 id」指针）这类 CLI 运行时数据。
+> 配置目录与 CLI/Desktop **共享**：配置文件在共享根目录（`src/config.ts` 的 `CONFIG_FILE = join(AI_ZEN_DIR, "config.json")`），而 `~/.ai-zen/cli/` 下存放的是 `conversations/`、`last-session.json`（「上一轮会话 id」指针）与 `preferences.json`（`interface language` 等 CLI 本地偏好）这类 CLI 运行时数据。
 
 `src/config.ts` 定义的关键路径：
 
@@ -103,7 +103,8 @@ outline: deep
 ~/.ai-zen/                    ← 共享根（AI_ZEN_DIR）
 ├── cli/                      ← CLI 运行时数据
 │   ├── conversations/        ← CLI 对话
-│   └── last-session.json     ← 「上一轮会话 id」指针
+│   ├── last-session.json     ← 「上一轮会话 id」指针
+│   └── preferences.json      ← CLI 本地偏好（界面语言等）
 ├── config.json               ← 全局配置（端点、模型等，CLI/Desktop 共享）
 ├── agents/                   ← Agent 定义（共享）
 │   ├── default.json

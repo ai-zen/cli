@@ -21,6 +21,7 @@ import { Splash, Chat } from "./screens/index.js";
 import { keyDebugStart } from "./key-debug.js";
 import { disableMouseTracking, enableMouseTracking } from "./mouse.js";
 import { installSdkLogger } from "../sdk-log.js";
+import { initLocale } from "../i18n/preferences.js";
 import type { AgentNS } from "@ai-zen/agents-core";
 
 /** ANSI：清屏 + 光标归位 + 显示光标（屏幕间切换时从头绘制，避免行偏移） */
@@ -286,6 +287,9 @@ export async function runTui(): Promise<void> {
   // SDK 的 logger 默认是 console.log，直写 stdout 会把界面撕坏
   // （`load_mcp` 甚至会把整份 manifest 打出来）。AIZ_DEBUG_SDK=1 可改为落盘。
   installSdkLogger();
+  // 界面语言必须在任何渲染之前定下来：首次启动按系统语言识别并落盘，
+  // 之后以 preferences.json 为准（`/lang` 可随时改）。
+  await initLocale();
   // 按键诊断：AIZ_DEBUG_KEYS=1 时把终端环境 + 每次按键写进日志（默认关闭，零开销）
   keyDebugStart();
 

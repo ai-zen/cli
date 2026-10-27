@@ -1,15 +1,22 @@
 import { describe, it, expect, vi } from "vitest";
+import { beforeEach } from "vitest";
 import type { AgentDefinition, AppConfig, Model } from "@ai-zen/agents-sdk";
 import { FACTORY_REASONING_PRESETS } from "@ai-zen/agents-sdk";
 import {
-  EFFORT_LABELS,
+  KNOWN_EFFORT_LEVELS,
   describeEffort,
+  describeEffortView,
   effortChoices,
+  effortDimmed,
   effortLabel,
   isAdjustable,
   setAgentEffort,
 } from "./reasoning-effort.js";
 import { matchLevel, presetFor } from "./reasoning-presets.js";
+import { setLocale } from "./i18n/index.js";
+
+// 档位文案现在由 i18n 词典提供：这些用例断言的是中文文案，故显式锁定语言
+beforeEach(() => setLocale("zh"));
 
 const PRESETS = FACTORY_REASONING_PRESETS;
 
@@ -71,11 +78,19 @@ function makeDefinition(overrides: Partial<AgentDefinition> = {}): AgentDefiniti
 
 describe("档位标签与可选值", () => {
   it("常见档位有中文标签，未知档位原样显示", () => {
-    for (const level of ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max"]) {
-      expect(EFFORT_LABELS[level]).toBeTruthy();
+    for (const level of KNOWN_EFFORT_LEVELS) {
+      // 中文界面下每个已知档位都应有本土化文案（不等于档位名本身）
+      expect(effortLabel(level)).not.toBe(level);
     }
     expect(effortLabel("high")).toBe("高");
     expect(effortLabel("ultra-max")).toBe("ultra-max"); // 用户自建档位名
+  });
+
+  it("英文界面下档位标签跟着变（文案不参与任何逻辑）", () => {
+    setLocale("en");
+    expect(effortLabel("high")).toBe("high");
+    expect(effortLabel("off")).toBe("off");
+    setLocale("zh");
   });
 
   it("可选值完全来自策略表的键（含 off）", () => {
@@ -133,6 +148,33 @@ describe("describeEffort 状态栏文案（从生效参数反查，不做额外�
       modelParams: { thinking: { type: "enabled" }, reasoning_effort: "weird" },
     });
     expect(describeEffort(GLM53, PRESETS, def)).toBe("自定义");
+  });
+});
+
+describe("effortDimmed / describeEffortView（置灰不靠文案判断）", () => {
+  it("不可调档 → 置灰", () => {
+    expect(effortDimmed(FORCED, PRESETS, makeDefinition())).toBe(true);
+    expect(effortDimmed(undefined, PRESETS, null)).toBe(true);
+  });
+
+  it("off 档 → 置灰；其他档位 → 不置灰", () => {
+    const offDef = makeDefinition({ modelParams: { thinking: { type: "disabled" } } });
+    expect(effortDimmed(DEEPSEEK, PRESETS, offDef)).toBe(true);
+    expect(effortDimmed(GLM53, PRESETS, makeDefinition())).toBe(false);
+  });
+
+  it("切到英文后置灰结果不变（证明判断依据是档位而非文案）", () => {
+    const before = effortDimmed(DEEPSEEK, PRESETS, makeDefinition({ modelParams: { thinking: { type: "disabled" } } }));
+    setLocale("en");
+    const after = effortDimmed(DEEPSEEK, PRESETS, makeDefinition({ modelParams: { thinking: { type: "disabled" } } }));
+    setLocale("zh");
+    expect(after).toBe(before);
+  });
+
+  it("describeEffortView 一次给出文案与置灰", () => {
+    const view = describeEffortView(GLM53, PRESETS, makeDefinition());
+    expect(view.text).toBe("最高");
+    expect(view.dimmed).toBe(false);
   });
 });
 

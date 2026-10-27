@@ -16,6 +16,7 @@
 import { AgentRepository } from "@ai-zen/agents-sdk";
 import type { AgentDefinition, AppConfig, Model } from "@ai-zen/agents-sdk";
 import { AGENTS_DIR } from "./config.js";
+import { t } from "./i18n/index.js";
 import {
   levelsOf,
   matchLevel,
@@ -27,25 +28,26 @@ import {
 } from "./reasoning-presets.js";
 
 /**
- * 已知档位的中文标签。
+ * 已知档位名清单。
  *
  * 不设成穷举映射：档位名由策略表定义（用户可自建策略、自定档位名），
- * 未知名字直接显示原文，比显示「?」有用得多。
+ * 未收录的名字直接显示原文，比显示「?」有用得多。
+ * 文案本身在 i18n 词典的 `effort.<档位名>` 里（中 / 英各一份）。
  */
-export const EFFORT_LABELS: Record<string, string> = {
-  off: "关",
-  none: "关",
-  minimal: "极低",
-  low: "低",
-  medium: "中",
-  high: "高",
-  xhigh: "极高",
-  max: "最高",
-};
+export const KNOWN_EFFORT_LEVELS: readonly string[] = [
+  "off",
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
 
-/** 档位 → 显示文案（未知档位名原样显示） */
+/** 档位 → 显示文案（未收录的档位名原样显示） */
 export function effortLabel(level: string): string {
-  return EFFORT_LABELS[level] ?? level;
+  return KNOWN_EFFORT_LEVELS.includes(level) ? t(`effort.${level}`) : level;
 }
 
 /** 模型关联的策略 */
@@ -96,13 +98,47 @@ export function describeEffort(
   presets?: ReasoningPresets | null,
   definition?: Pick<AgentDefinition, "modelParams"> | null,
 ): string {
-  if (!presets || !isAdjustable(model, presets)) return "—";
+  if (!presets || !isAdjustable(model, presets)) return t("effort.unsupported");
   const params = effectiveParams(model, definition);
   const matched = matchLevel(presetOf(model, presets), params);
   if (matched) return effortLabel(matched);
   return definition?.modelParams && Object.keys(definition.modelParams).length > 0
-    ? "自定义"
-    : "默认";
+    ? t("effort.custom")
+    : t("effort.default");
+}
+
+/**
+ * 状态栏用的思考强度视图：文案 + 是否置灰。
+ *
+ * 合成一个对象返回，是为了让调用方**一次取全**——分成两个函数调用容易出现
+ * 「文案更新了、置灰没跟上」这种漂移。
+ */
+export function describeEffortView(
+  model?: Model | null,
+  presets?: ReasoningPresets | null,
+  definition?: Pick<AgentDefinition, "modelParams"> | null,
+): { text: string; dimmed: boolean } {
+  return {
+    text: describeEffort(model, presets, definition),
+    dimmed: effortDimmed(model, presets, definition),
+  };
+}
+
+/**
+ * 状态栏里思考强度是否该置灰 —— **不靠文案判断**。
+ *
+ * 旧实现是 `effort === "关" || effort === "—"`，而那两个字本身就是显示文案：
+ * 一切语言，判断就失效（英文界面下 `"off"` 永远不等于 `"关"`）。
+ * 这里改成基于档位值的语义判断：不可调档，或档位是 off / none。
+ */
+export function effortDimmed(
+  model?: Model | null,
+  presets?: ReasoningPresets | null,
+  definition?: Pick<AgentDefinition, "modelParams"> | null,
+): boolean {
+  if (!presets || !isAdjustable(model, presets)) return true;
+  const level = matchLevel(presetOf(model, presets), effectiveParams(model, definition));
+  return level === "off" || level === "none";
 }
 
 export interface SetAgentEffortOptions {

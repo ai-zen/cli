@@ -186,6 +186,7 @@ key input="" flags=[pageUp] raw=false
 | `/agent` | 快速切换主 Agent（选择器列出全部 Agent，选中后写入 `defaultAgent` 并重建会话；切过去跑不起来的会被标为不可用并给出原因） |
 | `/reload` | 刷新运行环境：重建 scope 并重新发现工具 / Skill / MCP（手工改过 `mcp.json` 等配置文件后用；消息与上下文保留） |
 | `/mcp` | 管理 MCP 服务器（直接打开配置中心里的 MCP 界面：新增 / 删除 / 编辑 / 启停 / 切换全局与项目作用域；`/mcp global`、`/mcp project` 可指定落点） |
+| `/lang` | 切换界面语言（中文 / English）；`/lang zh`、`/lang en` 可直指定，不带参数则在两者间切换 |
 | `/think` `/effort` | 切换思考强度（可选档位来自模型的思考策略表，如 `low/high/max`），写入当前 Agent 定义并立即生效；`/think default` 恢复跟随模型默认 |
 | `/key` | 设置当前端点的 API Key（保存后自动重建会话） |
 | `/handoff` | 编写任务交接文档（会话照旧，不弹确认） |
@@ -290,7 +291,8 @@ ai hook uninstall
 ├── config.json               ← 端点与模型配置（与其他 AI-Zen 客户端共享）
 ├── cli/                      ← CLI 运行时数据
 │   ├── conversations/        ← CLI 对话记录
-│   └── last-session.json     ← 「上一轮会话 id」指针
+│   ├── last-session.json     ← 「上一轮会话 id」指针
+│   └── preferences.json      ← CLI 本地偏好（界面语言等）
 ├── agents/                   ← Agent 定义（共享）
 │   ├── default.json          ← 默认 Agent（首次运行自动创建）
 │   └── my-custom-agent.json

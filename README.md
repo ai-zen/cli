@@ -186,6 +186,7 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 | `/agent` | Quickly switch the main Agent (a picker lists every Agent; picking one writes `defaultAgent` and rebuilds the session; Agents that cannot run are marked unavailable with the reason) |
 | `/reload` | Refresh the runtime: rebuild the scope and rediscover tools / skills / MCP servers (use it after hand-editing `mcp.json` etc.; messages and context are kept) |
 | `/mcp` | Manage MCP servers (opens the MCP screen of the configuration center: add / remove / edit / toggle / switch between global and project scope; `/mcp global` and `/mcp project` jump straight to a scope) |
+| `/lang` | Switch the interface language (中文 / English); `/lang zh` and `/lang en` set it explicitly, no argument toggles |
 | `/think` `/effort` | Switch reasoning effort (available levels come from the model's reasoning preset, e.g. `low/high/max`); persisted into the current Agent definition; `/think default` falls back to the model default |
 | `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
 | `/handoff` | Write a handoff document only (session keeps running; no confirmation) |
@@ -290,7 +291,8 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
 ├── config.json               ← Endpoints & models (shared with other AI-Zen clients)
 ├── cli/                      ← CLI runtime data
 │   ├── conversations/        ← CLI conversations
-│   └── last-session.json     ← Pointer to the last session id
+│   ├── last-session.json     ← Pointer to the last session id
+│   └── preferences.json      ← CLI-local preferences (interface language, etc.)
 ├── agents/                   ← Agent definitions (shared)
 │   ├── default.json          ← Default agent (created on first run)
 │   └── my-custom-agent.json

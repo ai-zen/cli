@@ -19,6 +19,11 @@
   - 根因在上游：core 的 `abort()` 只管打标记、`formatHistory()` 只按状态过滤，两者都不关心「已经输出了什么」。core `4.5.3` 新增 `abortedMessageStrategy`（`drop` / `keep`，默认 `drop`），并导出 `reconcileAbortedMessages()`，在工具轮次归一**之后**收尾纯内容消息。
   - CLI 显式设成 `keep`：确有输出的被中断 assistant 会被恢复为 `completed` 进入上下文。**空输出不保留**（避免空消息污染上下文）、**带工具调用的不归它管**（仍走「整轮进出」，否则会出现「有调用无结果」的非法历史）。
   - SDK 依赖随之升级到 `1.0.0-alpha.20`（`createAgent` 新增第三参 `CreateAgentOptions`，顺带把此前完全没暴露的 `abortedToolRoundStrategy` / `abortedToolRoundReason` 一起接出来），core 升到 `4.5.3`。
+- **界面国际化（中文 / English）** —— 首次启动按系统语言识别（`LC_ALL` → `LC_MESSAGES` → `LANG` → Node 的 `Intl` locale，**兜底英文**），识别结果写入 `~/.ai-zen/cli/preferences.json`，之后以偏好为准（改了系统语言也不会让界面语言惄惄漂移）。`/lang` 可随时切换，`/lang zh` / `/lang en` 直接指定。
+  - 词典编译进产物（`src/i18n/{zh,en}.ts`）：key 扁平化，`{n}` 插值，英文 `_one` / `_other` 复数变体由 `Intl.PluralRules` 选；切换语言只换一个引用，不重读磁盘、不重启。缺词条时返回 key 本身（不做跨语言静默回退，否则英文界面里会突然冒出中文）。
+  - 语言偏好放 CLI 独立的 `preferences.json`，**不塞进共享的 `config.json`** —— 那是 CLI 与 Desktop 共用的 `AppConfig` 契约，塞进去会被桌面端当未知字段丢掉。
+  - 本版覆盖**主对话框**：状态栏三块、输入框占位与提示、通知、思考档位标签、生成中提示。命令名与命令描述、配置向导等仍为中文，按阶段后续覆盖。
+  - 顺带排掉一个隐藏的地雷：状态栏之前用**文案**判断思考强度是否置灰（`effort === "关"`），英文界面下这个判断永远不成立；现在改为基于档位语义的 `effortDimmed()`，与语言彻底解耦。
 
 ### 🔧 行为变更
 
@@ -49,6 +54,7 @@
 - `docs/{zh,en}/mcp.md` 的「管理」章节补充 `/mcp` 直达入口与 `/reload` 刷新；`docs/{zh,en}/migration.md` 去掉「别名 `/migration`」。
 - `docs/manifest.json` 与 README 中的版本号更新为 `1.0.0-alpha.21`。
 - README（中 / 英）的「环境变量」补 `AIZ_DEBUG_SDK=0` / `AIZ_SDK_LOG_FILE`，「文件系统布局」补 `~/.ai-zen/logs/`，键位表下补一段「中断后已输出的思考与内容会保留」的说明。
+- README（中 / 英）与 `docs/{zh,en}/getting-started.md` 的命令表补 `/lang`；「文件系统布局」与 `docs/{zh,en}/configuration.md` 的目录树补 `~/.ai-zen/cli/preferences.json`（CLI 本地偏好）。
 
 ### ⚠️ 已知取舍
 
@@ -61,7 +67,9 @@
 
 ### ✅ 测试
 
-- 全量 **31 文件 / 411 例通过**，`npx tsc --noEmit -p tsconfig.test.json` 干净。
+- 全量 **33 文件 / 439 例通过**，`npx tsc --noEmit -p tsconfig.test.json` 干净。
+- 新增 `src/i18n/index.test.ts`（14 例：语言识别优先级 / `C`·`POSIX` 跳过 / 兜底英文 / 插值 / 缺词条回退 key / 中英词条一一对应）与 `src/i18n/preferences.test.ts`（9 例：文件缺失·损坏·非法值的容错、原子写、`initLocale` 只识别一次并落盘）；`reasoning-effort.test.ts` 补 5 例「置灰不靠文案判断」。
+- pty 真机验收：`LANG=en_US.UTF-8` 首次启动→英文并落盘 `en`；`/lang` 切中文→状态栏/输入框/通知全部跟随，且**重启后保持中文**（偏好先于系统语言）；`/lang en` 切回英文正常。
 - 新增 `src/agent-switch.test.ts`（10 例）、`src/mcp-command.test.ts`（6 例）、`src/tui/token-rate.test.ts`（20 例）、`src/tui/status-segments.test.ts`（17 例）、`src/tui/screens/input-row.test.tsx`（7 例）、`src/tui/text.test.ts`（18 例）；`input-editing.test.ts` 补 3 例「emoji 不被拆半个」的用例。
 - `src/tui/screens.test.tsx` 增加状态栏三块顺序、块内不被拆、宽屏并排、以及「Ink 实际渲染行数 == `statusBarRows` 量出行数」的断言；`computeInputCursorPosition` 补「通知栏行数参与 y」的用例。
 - `input-row.test.tsx` 里那条 `⚡` 用例同时断言「手算给 8、实测给 9」——本次改动的理由就在这两行里。

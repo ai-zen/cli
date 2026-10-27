@@ -20,9 +20,12 @@ import {
   effortChoices,
   effortLabel,
   describeEffort,
+  describeEffortView,
   setAgentEffort,
 } from "../../reasoning-effort.js";
 import { matchLevel, presetFor } from "../../reasoning-presets.js";
+import { getLocale, t } from "../../i18n/index.js";
+import { persistLocale } from "../../i18n/preferences.js";
 import { readAgentStore } from "../../agents-store.js";
 import { WizardStep } from "../config-wizard/index.js";
 import { truncate } from "./render.js";
@@ -45,8 +48,15 @@ export interface ChatCommandHost {
   >;
   setConfirmState: Dispatch<SetStateAction<{ question: string; resolve: (value: boolean) => void } | null>>;
   setInputText: (text: string) => void;
-  /** 更新状态栏的思考强度展示（`/think` 写入后由上层重取） */
-  setEffortText: (text: string) => void;
+  /** 更新状态栏的思考强度展示（`/think` 写入后由上层重取）；文案与置灰一起给，避免漂移 */
+  setEffortView: (view: { text: string; dimmed: boolean } | null) => void;
+  /**
+   * 触发一次界面重渲染（`/lang` 切换语言后用）。
+   *
+   * `t()` 是模块级函数，语言一变，已渲染的文案不会自己更新 —— 必须让 React
+   * 重新执行一遍渲染函数才能取到新语言。这里只递增一个计数，不携带任何状态。
+   */
+  refreshLocale: () => void;
 }
 
 /**
@@ -71,7 +81,8 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
     doExit,
     setPickerState,
     setInputText,
-    setEffortText,
+    setEffortView,
+    refreshLocale,
   } = host;
 
   const push = (text: string, tone: "info" | "error" = "info") => {
@@ -237,6 +248,21 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       await openWizard({ kind: "mcp", scope });
       break;
     }
+    case "lang": {
+      // `/lang` 无参在中文 / 英文之间切；`/lang zh`、`/lang en` 直接指定。
+      // 状态栏、输入行、通知等界面文案都走 `t()`，但它是模块级函数 —— 语言变了
+      // 已渲染的内容不会自己更新，必须让 React 重跑一遍渲染函数（refreshLocale）。
+      const wanted = args[0]?.toLowerCase();
+      if (wanted && wanted !== "zh" && wanted !== "en") {
+        push(`未知语言：${wanted}（可选 zh / en，或不带参数切换）`, "error");
+        break;
+      }
+      const target = (wanted as "zh" | "en" | undefined) ?? (getLocale() === "zh" ? "en" : "zh");
+      await persistLocale(target);
+      refreshLocale();
+      push(t("notice.languageChanged"));
+      break;
+    }
     case "reload": {
       // 手改配置文件（mcp.json / skills / tools / config.json）后不用重启 CLI：
       // `session.reload()` 内含 resetScope()（断开旧 MCP 连接）→ 重建 Agent → 重新发现。
@@ -334,7 +360,7 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
           readAgent: async () => definition,
         });
         // 状态栏先跟上；档位要通过重建 Agent 才会进请求参数
-        setEffortText(describeEffort(result.model, presets, result.definition));
+        setEffortView(describeEffortView(result.model, presets, result.definition));
         await session.reload();
         push(result.summary);
       } catch (error: any) {

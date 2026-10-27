@@ -33,7 +33,8 @@ import { PickerOverlay, Confirm } from "./overlays.js";
 import { CursorInputRow, type CursorPosition } from "./input-row.js";
 import { chooseHandoffMode } from "./handoff-choice.js";
 import { runCommand } from "./chat-commands.js";
-import { describeEffort } from "../../reasoning-effort.js";
+import { describeEffortView } from "../../reasoning-effort.js";
+import { t } from "../../i18n/index.js";
 import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
 
 // ==================== 对话屏幕 ====================
@@ -120,7 +121,12 @@ export function Chat(props: ChatScreenProps) {
    * 真相在配置里（模型的 `defaultParams`），这里只镜像一份供状态栏用：
    * `/think` 写入后由命令层回调刷新，切模型（会话重建）时靠 `modelId` 变化重读。
    */
-  const [effortText, setEffortText] = useState<string | null>(null);
+  const [effortView, setEffortView] = useState<{ text: string; dimmed: boolean } | null>(null);
+  /**
+   * 语言切换计数（`/lang`）：`t()` 是模块级函数，语言变了已渲染的文案不会自更新，
+   * 递增这个计数只为逼 React 重跑一遍渲染函数。
+   */
+  const [localeTick, bumpLocale] = useState(0);
   /**
    * IME 光标位置：由光标所在行**渲染后实测**而来（渲染器给的帧内坐标）。
    * 带上 key —— 只有「产生它的那个输入状态」与当前一致时才能用，否则就是上一帧的陈旧值。
@@ -183,15 +189,16 @@ export function Chat(props: ChatScreenProps) {
         const model = config.models?.find((item) => item.id === modelId);
         const agentId = props.agentId ?? "default";
         const definition = store.agents.find((item) => item.id === agentId) ?? null;
-        if (alive) setEffortText(describeEffort(model, presets, definition));
+        if (alive) setEffortView(describeEffortView(model, presets, definition));
       })
       .catch(() => {
-        if (alive) setEffortText(null);
+        if (alive) setEffortView(null);
       });
     return () => {
       alive = false;
     };
-  }, [modelId, props.agentId]);
+    // localeTick：切语言后档位文案要重算（它缓存的是已本地化的字符串，不是档位名）
+  }, [modelId, props.agentId, localeTick]);
 
   // 创建会话
   useEffect(() => {
@@ -325,7 +332,7 @@ export function Chat(props: ChatScreenProps) {
     if (endpointChanged || result.mcpChanged || result.agentsChanged) {
       sessionRef.current
         .reload()
-        .then(() => noticeChannel.push("已按新配置重建会话（消息与上下文保留）"))
+        .then(() => noticeChannel.push(t("notice.reloaded")))
         .catch((error: any) => noticeChannel.push(`重建会话失败：${error?.message ?? error}`, "error"));
     }
   };
@@ -427,7 +434,7 @@ export function Chat(props: ChatScreenProps) {
     if (input.length > 0) {
       stashRef.current = { text: input, cursor };
       setInputText("");
-      noticeChannel.push("已暂存输入（Ctrl+S 恢复）");
+      noticeChannel.push(t("notice.draftSaved"));
       return;
     }
     const stashed = stashRef.current;
@@ -435,11 +442,11 @@ export function Chat(props: ChatScreenProps) {
     stashRef.current = null;
     setInput(stashed.text);
     setCursor(stashed.cursor);
-    noticeChannel.push("已恢复暂存的输入");
+    noticeChannel.push(t("notice.draftRestored"));
   };
   /** Ctrl+V：粘粘图片 —— 暂未支持（需先做「文件 → 内容块」能力探测，见 SKILL/后续迭代） */
   const pasteImageUnsupported = () => {
-    noticeChannel.push("暂不支持粘贴图片（Ctrl+V 预留给图片粘贴，当前未实现）", "error");
+    noticeChannel.push(t("notice.pasteImageUnsupported"), "error");
   };
   const moveCursor = (delta: number) => {
     const len = graphemes(input).length;
@@ -492,7 +499,8 @@ export function Chat(props: ChatScreenProps) {
           setPickerState,
           setConfirmState,
           setInputText,
-          setEffortText,
+          setEffortView,
+          refreshLocale: () => bumpLocale((n) => n + 1),
         });
       } finally {
         if (blocksInput) setBusy(false);
@@ -571,7 +579,7 @@ export function Chat(props: ChatScreenProps) {
         if (busy) sessionRef.current?.abort();
         else if (input.length > 0) {
           setInputText("");
-          noticeChannel.push("已清空输入 · 再按一次 Ctrl+C 退出");
+          noticeChannel.push(t("notice.inputCleared"));
         } else void doExit();
         return;
       }
@@ -587,7 +595,7 @@ export function Chat(props: ChatScreenProps) {
           return;
         }
         ctrlDAtRef.current = now;
-        noticeChannel.push("再按一次 Ctrl+D 退出");
+        noticeChannel.push(t("notice.pressCtrlDAgain"));
         return;
       }
       if (char === "l" && key.ctrl) {
@@ -798,7 +806,7 @@ export function Chat(props: ChatScreenProps) {
           return;
         }
         ctrlDAtRef.current = now;
-        noticeChannel.push("再按一次 Ctrl+D 退出");
+        noticeChannel.push(t("notice.pressCtrlDAgain"));
         return;
       }
       if (key.pageUp) {
@@ -890,15 +898,16 @@ export function Chat(props: ChatScreenProps) {
   const statusProps: StatusBarProps = {
     model: modelId,
     agent: props.agentId ?? "default",
-    effort: effortText,
+    effort: effortView?.text ?? null,
+    effortDimmed: effortView?.dimmed ?? false,
     lastTokens,
     totalTokens,
     busy,
     hint: !ready
-      ? "初始化中…"
+      ? t("input.hint.initializing")
       : viewTop != null
-        ? "↕ 滚动中 · PgUp/PgDn 翻页 · 发送回到底部"
-        : "Enter 发送 · Ctrl+J 换行 · / 命令 · PgUp 看历史",
+        ? t("input.hint.scrolling")
+        : t("input.hint.ready"),
     rate,
     columns: cols,
   };
@@ -920,7 +929,7 @@ export function Chat(props: ChatScreenProps) {
   layoutRef.current = layout;
   const isPlaceholder = input.length === 0;
   const inputLayout = layoutInput(
-    isPlaceholder ? "输入消息，/ 查看命令…" : input,
+    isPlaceholder ? t("input.placeholder") : input,
     isPlaceholder ? 0 : cursor,
     Math.max(4, cols - 4),
   );
@@ -995,7 +1004,7 @@ export function Chat(props: ChatScreenProps) {
           </Box>
           <Box flexDirection="column" paddingX={1}>
             {busy ? (
-              <Spinner label="思考中…" />
+              <Spinner label={t("spinner.thinking")} />
             ) : (
               bodyLines.map((line, i) => {
                 const prompt =

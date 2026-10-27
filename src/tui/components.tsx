@@ -10,6 +10,7 @@ import { clipWidth } from "./text.js";
 import type { CommandHint } from "../conversation-commands/registry.js";
 import type { RateSample } from "./token-rate.js";
 import { packSegments, type StatusSegment } from "./status-segments.js";
+import { t } from "../i18n/index.js";
 
 // ==================== Spinner ====================
 
@@ -107,8 +108,15 @@ export function SelectList<T>({ items, onSelect, isActive = true, initialIndex =
 export interface StatusBarProps {
   model: string;
   agent: string;
-  /** 思考强度文案（关 / 低 / 中 / 高 / 最高 / 开 / —）；不传则不展示该段 */
+  /** 思考强度文案（已按当前语言本地化）；不传则不展示该段 */
   effort?: string | null;
+  /**
+   * 思考强度是否置灰（不可调档 / 关档）。
+   *
+   * **不能靠文案判断**（旧实现是 `effort === "关"`，英文界面下永远不成立），
+   * 由调用方基于档位语义计算（见 `reasoning-effort.ts` 的 `effortDimmed()`）。
+   */
+  effortDimmed?: boolean;
   /** 最近一轮的 token 用量（lastUsage.total_tokens） */
   lastTokens?: number;
   /** 本会话累计 token 用量（含子 Agent） */
@@ -144,18 +152,18 @@ const INNER_SEPARATOR = " · ";
  * `space-between` 把两侧各切一半。块内空的部分（如本轮没有速率）直接不占位。
  */
 export function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
-  const { model, agent, effort, lastTokens, totalTokens, busy, hint, rate } = props;
+  const { model, agent, effort, effortDimmed, lastTokens, totalTokens, busy, hint, rate } = props;
 
   // ① 身份块
   const identity: StatusSegment[] = [];
   const pushIdentity = (text: string, color: string) => identity.push({ text, color });
   pushIdentity("◆ ", theme.brand[0]);
   pushIdentity(model, theme.accent);
-  pushIdentity(" · agent ", theme.dim);
+  pushIdentity(t("status.agent"), theme.dim);
   pushIdentity(agent, theme.assistant);
   if (effort != null && effort !== "") {
-    pushIdentity(" · 思考 ", theme.dim);
-    pushIdentity(effort, effort === "关" || effort === "—" ? theme.faint : theme.reasoning);
+    pushIdentity(t("status.effort"), theme.dim);
+    pushIdentity(effort, effortDimmed ? theme.faint : theme.reasoning);
   }
 
   // ② 用量块
@@ -164,8 +172,8 @@ export function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
     if (usage.length > 0) usage.push({ text: INNER_SEPARATOR, color: theme.dim });
     usage.push({ text, color });
   };
-  if (lastTokens != null) pushUsage(`本轮${NBSP}${lastTokens}${NBSP}tok`, theme.dim);
-  if (totalTokens != null) pushUsage(`累计${NBSP}${totalTokens}${NBSP}tok`, theme.dim);
+  if (lastTokens != null) pushUsage(t("status.lastTokens", { n: lastTokens }), theme.dim);
+  if (totalTokens != null) pushUsage(t("status.totalTokens", { n: totalTokens }), theme.dim);
   // 生成中只认实时值（没有就留白，避免把上一轮的均速冒充成本轮）；空闲时展示本轮平均。
   // 用 `busy` 而不是 `rate.running` 做门闸：`/migrate` 这类命令也会 busy，但不算一轮对话。
   const rateText = busy
@@ -173,10 +181,10 @@ export function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
       ? `⚡${NBSP}${formatRate(rate.live)}`
       : ""
     : rate?.average != null
-      ? `⚡${NBSP}均${NBSP}${formatRate(rate.average)}`
+      ? t("status.avgRate", { rate: formatRate(rate.average) })
       : "";
   if (rateText) pushUsage(rateText, theme.tool);
-  if (busy) pushUsage("⏳ 生成中", theme.tool);
+  if (busy) pushUsage(t("status.busy"), theme.tool);
 
   // ③ 快捷键块：能被挤掉的永远是它，所以排在最末
   const keys: StatusSegment[] = hint ? [{ text: hint, color: theme.faint }] : [];

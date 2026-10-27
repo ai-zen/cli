@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "ink-testing-library";
 import { StatusBar, statusBarRows, SlashMenu, SelectList } from "./components.js";
 import {
@@ -27,6 +27,7 @@ import { getCommandHints, matchCommandHints } from "../conversation-commands/reg
 import { isTerminalReply } from "./text.js";
 import { RENDER_OPTIONS } from "./index.js";
 import { AgentNS } from "@ai-zen/agents-core";
+import { setLocale } from "../i18n/index.js";
 
 const tick = () => new Promise((r) => setTimeout(r, 25));
 
@@ -76,6 +77,9 @@ describe("RENDER_OPTIONS（终端协议决策锁定）", () => {
 });
 
 describe("StatusBar", () => {
+  // 状态栏文案已 i18n 化：这些用例断言的是中文文案，显式锁定语言，
+  // 不依赖宿主环境的 LANG（CI 上通常是 C / en_US）
+  beforeEach(() => setLocale("zh"));
   it("展示模型、Agent、本轮与累计 token", () => {
     const { lastFrame, unmount } = render(
       <StatusBar model="deepseek-v4-flash" agent="default" lastTokens={123} totalTokens={4567} />,

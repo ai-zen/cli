@@ -32,6 +32,7 @@ export const COMMAND_REGISTRY: readonly CommandMeta[] = [
   { name: "agent", description: "切换主 Agent（写入默认 Agent，重建会话）" },
   { name: "reload", description: "刷新运行环境（重建 scope，重新发现工具 / Skill / MCP）" },
   { name: "mcp", description: "管理 MCP 服务器（打开配置中心里的 MCP 界面：增删改 / 启停）" },
+  { name: "lang", description: "切换界面语言（中文 / English）" },
   { name: "think", aliases: ["effort"], description: "切换思考强度（写入模型配置）" },
   { name: "key", description: "设置当前端点的 API Key" },
   { name: "handoff", description: "编写任务交接文档（不切换会话）" },
