@@ -10,7 +10,7 @@
  */
 
 import { AgentNS, sumUsage } from "@ai-zen/agents-core";
-import type { SubAgentContext } from "@ai-zen/agents-core";
+import type { AgentPlugin, SubAgentContext } from "@ai-zen/agents-core";
 import { t } from "../i18n/index.js";
 
 import {
@@ -34,6 +34,21 @@ import { writeLastSession } from "../session-pointer.js";
 import type { ConversationContext } from "../types.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, deltaText, type RateSample } from "./token-rate.js";
+import { PhaseTracker, type PhaseInfo } from "./phase.js";
+
+/**
+ * 把「请求即将发出」报给阶段跟踪器。
+ *
+ * SDK 的 `open` 事件是在 `chat.completions.create()` **await 返回之后**才发的，
+ * 也就是说它只代表响应头到了；在那之前的 DNS / TCP / TLS / 服务端受理都是静黙的。
+ * 所以要一个插件钩子把这一段补上——否则首轮会一直停在上一个状态。
+ */
+class PhasePlugin implements AgentPlugin {
+  constructor(private readonly tracker: PhaseTracker) {}
+  onInnerLoopStart(): void {
+    this.tracker.connecting();
+  }
+}
 
 /** 会话 → UI 的对外信号 */
 export interface ChatSessionNotifier {
@@ -104,6 +119,8 @@ export class ChatSession {
   private readonly disposers: Array<() => void> = [];
   /** 生成过程的 token 速率统计（状态栏展示，见 `token-rate.ts`） */
   private readonly rate = new TokenRateMeter();
+  /** 当前生成阶段（消息栏 spinner 文案，见 `phase.ts`） */
+  private readonly phaseTracker = new PhaseTracker();
 
   private constructor(
     handoffService: HandoffService,
@@ -183,15 +200,22 @@ export class ChatSession {
     return this.rate.snapshot();
   }
 
+  /** 当前生成阶段；空闲时为 null（消息栏据此显示「处理中」或不起 spinner） */
+  get phase(): PhaseInfo | null {
+    return this.phaseTracker.phase;
+  }
+
   /** 发送一条消息；内容变化经 `notifier.onChange` 通知，`resolve` 表示本轮结束 */
   async send(input: string): Promise<void> {
     this.rate.begin();
+    this.phaseTracker.connecting();
     try {
       await this.agent.send(input);
     } catch (error: any) {
       this.notifier.onNotice(error?.message ?? String(error), "error");
     } finally {
       this.rate.finish();
+      this.phaseTracker.reset();
       this.notifier.onChange(true);
     }
   }
@@ -312,11 +336,13 @@ export class ChatSession {
   dispose(): void {
     for (const off of this.disposers.splice(0)) off();
     this.rate.reset();
+    this.phaseTracker.reset();
   }
 
   // ==================== 内部：装配 Agent 与插件 ====================
 
   private async attach(agent: SdkAgent): Promise<void> {
+    agent.use(new PhasePlugin(this.phaseTracker));
     agent.use(new CwdTrackerPlugin());
     agent.use(new AutoRefreshToolsPlugin());
     agent.use(
@@ -358,7 +384,10 @@ export class ChatSession {
   private wire(agent: SdkAgent): void {
     const notify = (immediate: boolean) => this.notifier.onChange(immediate);
 
-    const onOpen = () => notify(true);
+    const onOpen = () => {
+      this.phaseTracker.opened();
+      notify(true);
+    };
     /**
      * 每片 delta 应用后：除了通知重渲染，还要把这段文本计入速率统计。
      *
@@ -369,9 +398,22 @@ export class ChatSession {
       this.rate.addDelta(deltaText(chunk));
       // 流末 chunk 携带真实用量（`stream_options.include_usage`）：多轮工具调用逐轮累加
       this.rate.addExact(chunk?.usage?.completion_tokens);
+      this.phaseTracker.delta(chunk);
       notify(false);
     };
-    const onParsed = () => notify(true);
+    const onParsed = (receiver: unknown) => {
+      // 该轮带工具调用 → 接下来是工具执行（模型不在跑），阶段转「等工具返回」
+      this.phaseTracker.streamEnded(receiver);
+      notify(true);
+    };
+
+    /** 子 Agent 的事件：只重绘，不推进主阶段（理由见 `onSubStart`） */
+    const onSubOpen = () => notify(true);
+    const onSubChunk = (_receiver: unknown, chunk: any) => {
+      this.rate.addDelta(deltaText(chunk));
+      this.rate.addExact(chunk?.usage?.completion_tokens);
+      notify(false);
+    };
     const onFinally = () => notify(true);
     const onError = (error: any) => {
       this.notifier.onNotice(error?.message ?? String(error), "error");
@@ -381,8 +423,12 @@ export class ChatSession {
     const onSubStart = ({ subAgent, toolCallContext }: SubAgentContext) => {
       const name = toolCallContext?.tool_call?.function?.name || t("chat.subagentLabel");
       this.notifier.onNotice(t("chat.subagentRunning", { name }), "info");
-      subAgent.events.on("open", onOpen);
-      subAgent.events.on("chunk-parsed", onChunk);
+      // 子 Agent 的流只计入速率并触发重绘，**不推进主阶段**：此刻主 Agent 正在等
+      // 这个工具（委派）返回，阶段应停在「等待 xxx 返回」；而子 Agent 自己的思考 / 输出
+      // 是工具内部的事，拿它的 delta 去改主阶段，界面会变成「输出中」——正好盖掉了
+      // 用户最需要知道的那句话。
+      subAgent.events.on("open", onSubOpen);
+      subAgent.events.on("chunk-parsed", onSubChunk);
       subAgent.events.on("error", onError);
       notify(true);
     };

@@ -17,19 +17,43 @@ afterAll(async () => {
   await fs.rm(state.dir, { recursive: true, force: true });
 });
 
+// 让假 Agent 真的能分发事件（阶段测试要按 SDK 的事件时序驱动）
+const harness = vi.hoisted(() => ({ agents: [] as any[] }));
+
+/** 一个最小的事件总线（SDK 的 EventBus 只用到 on / off / emit） */
+function makeEvents() {
+  const listeners = new Map<string, Set<(...args: any[]) => void>>();
+  return {
+    on: (name: string, fn: (...args: any[]) => void) => {
+      if (!listeners.has(name)) listeners.set(name, new Set());
+      listeners.get(name)!.add(fn);
+    },
+    off: (name: string, fn: (...args: any[]) => void) => {
+      listeners.get(name)?.delete(fn);
+    },
+    emit: (name: string, ...args: any[]) => {
+      for (const fn of listeners.get(name) ?? []) fn(...args);
+    },
+  };
+}
+
 // 把 agent-creator 打桩，避免真实构建 Agent / 访问网络
 vi.mock("../agent-creator.js", () => ({
-  createAgent: vi.fn(async (opts: any) => ({
-    // definition 是模型真相源（ChatSession.modelId 从它读）
-    definition: { id: opts?.agentId ?? "default", modelId: "m1", messages: [] },
-    messages: opts?.messages ? [...opts.messages] : [],
-    lastUsage: undefined,
-    use: () => {},
-    init: async () => {},
-    abort: () => {},
-    send: async () => {},
-    events: { on: () => {}, off: () => {}, emit: () => {} },
-  })),
+  createAgent: vi.fn(async (opts: any) => {
+    const agent: any = {
+      // definition 是模型真相源（ChatSession.modelId 从它读）
+      definition: { id: opts?.agentId ?? "default", modelId: "m1", messages: [] },
+      messages: opts?.messages ? [...opts.messages] : [],
+      lastUsage: undefined,
+      use: () => {},
+      init: async () => {},
+      abort: () => {},
+      send: async () => {},
+      events: makeEvents(),
+    };
+    harness.agents.push(agent);
+    return agent;
+  }),
   resetScope: vi.fn(async () => {}),
   listSkillDirs: vi.fn(() => []),
 }));
@@ -177,5 +201,67 @@ describe("ChatSession.totalUsage（本会话累计用量）", () => {
       completion_tokens: 33,
       total_tokens: 163,
     });
+  });
+});
+
+describe("生成阶段（消息栏 spinner 的六态）", () => {
+  /** 造一个带事件总线的子 Agent（onSubStart 会给它挂监听） */
+  const makeSubAgent = () => {
+    const listeners = new Map<string, Set<(...args: any[]) => void>>();
+    return {
+      events: {
+        on: (name: string, fn: (...args: any[]) => void) => {
+          if (!listeners.has(name)) listeners.set(name, new Set());
+          listeners.get(name)!.add(fn);
+        },
+        off: (name: string, fn: (...args: any[]) => void) => listeners.get(name)?.delete(fn),
+        emit: (name: string, ...args: any[]) => {
+          for (const fn of listeners.get(name) ?? []) fn(...args);
+        },
+      },
+    };
+  };
+
+  it("按 SDK 事件时序推进：open → queued，delta → thinking/streaming，parsed+tool_calls → tool-waiting", async () => {
+    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const agent = harness.agents.at(-1)!;
+
+    agent.events.emit("open");
+    expect(session.phase).toEqual({ kind: "queued" });
+
+    agent.events.emit("chunk-parsed", {}, { choices: [{ delta: { reasoning_content: "想" } }] });
+    expect(session.phase).toEqual({ kind: "thinking" });
+
+    agent.events.emit("chunk-parsed", {}, { choices: [{ delta: { content: "说" } }] });
+    expect(session.phase).toEqual({ kind: "streaming" });
+
+    agent.events.emit("parsed", { tool_calls: [{ function: { name: "grep" } }] });
+    expect(session.phase).toEqual({ kind: "tool-waiting", tool: "grep" });
+  });
+
+  it("子 Agent 的输出**不**覆盖主阶段（主 Agent 此刻在等工具返回）", async () => {
+    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const agent = harness.agents.at(-1)!;
+
+    agent.events.emit("open");
+    agent.events.emit("parsed", { tool_calls: [{ function: { name: "sub_agent_default" } }] });
+    expect(session.phase).toEqual({ kind: "tool-waiting", tool: "sub_agent_default" });
+
+    const subAgent = makeSubAgent();
+    agent.events.emit("sub-agent-start", {
+      subAgent,
+      toolCallContext: { tool_call: { function: { name: "sub_agent_default" } } },
+    });
+    // 子 Agent 开始吐内容 / 换轮次：主阶段必须仍停在「等待 xxx 返回」
+    subAgent.events.emit("open");
+    subAgent.events.emit("chunk-parsed", {}, { choices: [{ delta: { content: "子任务输出" } }] });
+    expect(session.phase).toEqual({ kind: "tool-waiting", tool: "sub_agent_default" });
+  });
+
+  it("send 结束时阶段归零（spinner 消失后不留残影）", async () => {
+    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    // send() 内部会调用 agent.send()，此处假 Agent 立即返回
+    await session.send("你好");
+    expect(session.phase).toBeNull();
   });
 });

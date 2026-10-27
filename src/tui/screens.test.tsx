@@ -109,9 +109,8 @@ describe("StatusBar", () => {
     expect(at("本轮 10 tok")).toBeGreaterThan(at("agent a1"));
     expect(at("累计 20 tok")).toBeGreaterThan(at("本轮 10 tok"));
     expect(at("⚡ 42 tok/s")).toBeGreaterThan(at("累计 20 tok"));
-    expect(at("生成中")).toBeGreaterThan(at("⚡"));
-    // 快捷键提示优先级最低，必须排在最后
-    expect(at("Enter 发送")).toBeGreaterThan(at("生成中"));
+    // 状态栏不再挂笼统的「生成中」（阶段信息归消息栏 spinner），这里只锁顺序
+    expect(at("Enter 发送")).toBeGreaterThan(at("⚡"));
     unmount();
   });
 

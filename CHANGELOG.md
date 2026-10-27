@@ -35,6 +35,13 @@
 
 ### 🔧 行为变更
 
+- **消息栏的「思考中…」拆成六态：连接中 / 排队中 / 思考中 / 调用工具 / 等待工具返回 / 输出中** —— 原先那行只有「思考中…」一个词，但一轮对话里模型其实走过几个阶段，用同一个词概括在多数时候是**说错话**：等首 token 时并没有在思考，工具执行时模型根本没在跑。
+  - 判据只用**事件与 delta 的形状**（`src/tui/phase.ts`，纯逻辑可单测）：`connecting` = 请求发出到响应头到达；`queued` = `open` 之后、首个内容 chunk 之前；`thinking` = 收到 `reasoning_content`；`tool-calling` = 收到 `tool_calls` / `function_call`（带工具名，后续只带参数分片时沿用首个 delta 里的名字）；`tool-waiting` = `parsed` 且本轮带工具调用；`streaming` = 收到 `content`。一个 chunk 里同时出现时优先级是 tool_calls > content > reasoning。
+  - 「连接中」这一段靠新增的 `PhasePlugin`（`chat-session.ts`）提供：SDK 的 `open` 事件是在 `chat.completions.create()` **await 返回之后**才发的，只代表响应头到了，之前的 DNS / TCP / TLS / 服务端受理全静默。
+  - **子 Agent 的输出不推进主阶段**：委派期间主 Agent 正在等工具返回，若把子 Agent 的 delta 也算进主阶段，界面会跳成「输出中」，正好盖掉用户最需要知道的那句话。子 Agent 的 chunk 仍计入速率、仍触发重绘。
+  - spinner 那一行加了 `truncate`：busy 时输入区高度被 `computeChatLayout` 固定为 1 行（`inputHeight = 1`），标签一旦折行就会把输入框顶出屏幕。
+- **状态栏去掉「⏳ 生成中」** —— 本轮到底在干什么已由消息栏 spinner 逐阶段说明，状态栏再挂一个笼统的「生成中」只是重复占宽度（窄屏下还把快捷键提示挤到下一行）。
+
 - **shell 钩子改为进入 TUI（此前的管道模式是实现错误）** —— 钩子装在 `command_not_found_handle` / `command_not_found_handler` 上，触发场景是「人坐在交互终端前把命令敲错了」，但函数体写的是 `ai "$@"`，而 `decideMode()` 的规则是「有位置参数 → stdio」，于是钩子会话必然落到管道模式：吐一段文字到 stdout 就退出，**没有历史、不能追问**。`mode.ts` 头顶那张分类表把「脚本调用」与「人手动触发」混成了一个判据，所以这不是补丁能修的，是分类本身错了。
   - 函数体现在是 `ai --tui --new "$@"`：新增 `--tui` 标志显式覆盖「有参数 → stdio」的判定，进 TUI 并把原命令**作为首条消息自动发送**（不预填到输入框——钩子的语义就是「这条命令跑不了，你帮我处理」，再让人敲一次回车没有意义）。
   - 首条消息**强制当普通用户消息**发送，不经斜杠命令解析：敲错的可能是 `/opt/bin/foo` 这种以 `/` 开头的命令，否则会被当成 CLI 命令而报「未知命令」。`runSubmit()` 为此多了 `asMessage` 选项。
@@ -95,7 +102,9 @@
 - 新增 `src/hook.test.ts`（9 例，全部在临时 HOME 下跑，**不触碰真实 `~/.bashrc`**）：写入的函数体含 `ai --tui --new "$@"` 且只有一个块、保留 rc 原有内容、重复安装幂等、**已装旧函数体（`ai --tui "$@"`）时原地升级**、历史 aiz 块迁移、zsh 走 `command_not_found_handler` 且写入 `.zshrc`；卸载移除块并保留其余内容、未安装时不动文件、rc 文件不存在时不报错。
 - pty 真机验收（钩子路径）：`ai --tui gti status` 进 TUI 并自动把 `gti status` 当用户消息发出（界面显示 `❯ 你 / gti status`），模型报错（故意的本地假端点）后界面仍存活可继续追问；`ai --tui /opt/bin/nonexistent --flag` 同样当**普通消息**发出，不被斜杠命令解析吃掉；`ai --tui` 在非 TTY 下退出码 2；写进 `~/.bashrc` 的函数体为 `ai --tui --new "$@"` 且 `bash -n` 语法通过。
 - pty 真机验收（`--new`，隔离 `AI_ZEN_DIR` + 预置 `last-session.json` 指向旧会话）：`ai` 续接并显示旧消息 `MARKER-OLD-QUESTION`；`ai --new` 停在**空对话**；`ai --tui --new gti status` 空对话且首条消息自动发出；`--help` 中英两个界面都列出 `--new`。
-- 本次改动后全量 **35 文件 / 469 例通过**，`npx tsc --noEmit` 与 `-p tsconfig.test.json` 均干净。
+- 本次改动后全量 **36 文件 / 487 例通过**，`npx tsc --noEmit` 与 `-p tsconfig.test.json` 均干净。
+- 新增 `src/tui/phase.test.ts`（15 例：六态各自的推进、工具名沿用、无 delta 的收尾 chunk 不改阶段、content 压过 reasoning、`reset` 归零、中英文案六者互不相同）；`chat-session.test.ts` 补 3 例（按 SDK 事件时序推进、子 Agent 输出不覆盖主阶段、`send` 结束阶段归零）。
+- pty 真机验收（本地 mock SSE 服务端按阶段分段吐流）：依次抓到「连接中…」→「排队中…（等待首 token）」→「思考中…」→「输出中…」→「调用工具 no_such_tool…」→「等待 sub_agent_default 返回…」；状态栏同期只有 `⚡ 4.2 tok/s` 与本轮 / 累计 token，无「生成中」。
 - 新增 `src/agent-switch.test.ts`（10 例）、`src/mcp-command.test.ts`（6 例）、`src/tui/token-rate.test.ts`（20 例）、`src/tui/status-segments.test.ts`（17 例）、`src/tui/screens/input-row.test.tsx`（7 例）、`src/tui/text.test.ts`（18 例）；`input-editing.test.ts` 补 3 例「emoji 不被拆半个」的用例。
 - `src/tui/screens.test.tsx` 增加状态栏三块顺序、块内不被拆、宽屏并排、以及「Ink 实际渲染行数 == `statusBarRows` 量出行数」的断言；`computeInputCursorPosition` 补「通知栏行数参与 y」的用例。
 - `input-row.test.tsx` 里那条 `⚡` 用例同时断言「手算给 8、实测给 9」——本次改动的理由就在这两行里。

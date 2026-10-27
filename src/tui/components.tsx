@@ -23,7 +23,9 @@ export function Spinner({ label }: { label?: string }) {
     return () => clearInterval(timer);
   }, []);
   return (
-    <Text>
+    // `truncate`：busy 时输入区高度被 `computeChatLayout` 固定为 1 行（`inputHeight = 1`），
+    // 标签（如「排队中…（等待首 token）」）一旦折行就会把输入框顶出屏幕。
+    <Text wrap="truncate">
       <Text color={theme.brand[0]}>{SPINNER_FRAMES[frame]}</Text>
       {label ? <Text color={theme.dim}> {label}</Text> : null}
     </Text>
@@ -184,7 +186,8 @@ export function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
       ? t("status.avgRate", { rate: formatRate(rate.average) })
       : "";
   if (rateText) pushUsage(rateText, theme.tool);
-  if (busy) pushUsage(t("status.busy"), theme.tool);
+  // 「生成中」这一段不再往状态栏放：本轮到底在干什么（连上没、等首字、想、调工具、出字）
+  // 已由消息栏 spinner 逐阶段说明，状态栏再挂一个笼统的「生成中」只是重复占宽度。
 
   // ③ 快捷键块：能被挤掉的永远是它，所以排在最末
   const keys: StatusSegment[] = hint ? [{ text: hint, color: theme.faint }] : [];

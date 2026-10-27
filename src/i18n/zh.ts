@@ -20,7 +20,6 @@ export const zh: Record<string, string> = {
   "status.lastTokens": "本轮\u00a0{n}\u00a0tok",
   "status.totalTokens": "累计\u00a0{n}\u00a0tok",
   "status.avgRate": "⚡\u00a0均\u00a0{rate}",
-  "status.busy": "⏳ 生成中",
 
   // ---------- 思考档位 ----------
   "effort.off": "关",
@@ -35,8 +34,16 @@ export const zh: Record<string, string> = {
   "effort.default": "默认",
   "effort.unsupported": "—",
 
-  // ---------- 生成状态 ----------
-  "spinner.thinking": "思考中…",
+  // ---------- 生成阶段（消息栏 spinner；六态见 `tui/phase.ts`） ----------
+  "phase.working": "处理中…",
+  "phase.connecting": "连接中…",
+  "phase.queued": "排队中…（等待首 token）",
+  "phase.thinking": "思考中…",
+  "phase.toolCalling": "调用工具…",
+  "phase.toolCallingWith": "调用工具 {name}…",
+  "phase.toolWaiting": "等待工具返回…",
+  "phase.toolWaitingWith": "等待 {name} 返回…",
+  "phase.streaming": "输出中…",
 
   // ---------- 通知 ----------
   "notice.reloaded": "已按新配置重建会话（消息与上下文保留）",

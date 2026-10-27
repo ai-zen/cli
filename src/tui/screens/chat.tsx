@@ -4,6 +4,7 @@ import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
 import { keyDebug } from "../key-debug.js";
 import { parseWheel, WHEEL_STEP } from "../mouse.js";
 import type { RateSample } from "../token-rate.js";
+import { phaseLabel } from "../phase.js";
 import { AgentNS } from "@ai-zen/agents-core";
 import { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
@@ -1022,7 +1023,10 @@ export function Chat(props: ChatScreenProps) {
           </Box>
           <Box flexDirection="column" paddingX={1}>
             {busy ? (
-              <Spinner label={t("spinner.thinking")} />
+              // 阶段随 SDK 事件推进：连接中 → 排队中 → 思考 / 输出 / 调用工具 → 等工具返回。
+              // 渲染期现取（不另存 state）：chunk 与轮次边界都会触发重渲染，
+              // 而 `busy` 置 true 本身也会重渲一次，捕得到首轮的「连接中」。
+              <Spinner label={phaseLabel(sessionRef.current?.phase ?? null)} />
             ) : (
               bodyLines.map((line, i) => {
                 const prompt =

@@ -17,7 +17,6 @@ export const en: Record<string, string> = {
   "status.lastTokens": "turn\u00a0{n}\u00a0tok",
   "status.totalTokens": "total\u00a0{n}\u00a0tok",
   "status.avgRate": "⚡\u00a0avg\u00a0{rate}",
-  "status.busy": "⏳ generating",
 
   // ---------- Reasoning effort ----------
   "effort.off": "off",
@@ -32,8 +31,16 @@ export const en: Record<string, string> = {
   "effort.default": "default",
   "effort.unsupported": "—",
 
-  // ---------- Generation state ----------
-  "spinner.thinking": "Thinking…",
+  // ---------- Generation phases (message-area spinner; see `tui/phase.ts`) ----------
+  "phase.working": "Working…",
+  "phase.connecting": "Connecting…",
+  "phase.queued": "Queued… (waiting for the first token)",
+  "phase.thinking": "Thinking…",
+  "phase.toolCalling": "Calling tool…",
+  "phase.toolCallingWith": "Calling {name}…",
+  "phase.toolWaiting": "Waiting for the tool…",
+  "phase.toolWaitingWith": "Waiting for {name}…",
+  "phase.streaming": "Streaming…",
 
   // ---------- Notices ----------
   "notice.reloaded": "Session rebuilt with the new config (messages and context kept)",
