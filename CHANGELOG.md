@@ -22,7 +22,9 @@
 - **界面国际化（中文 / English）** —— 首次启动按系统语言识别（`LC_ALL` → `LC_MESSAGES` → `LANG` → Node 的 `Intl` locale，**兜底英文**），识别结果写入 `~/.ai-zen/cli/preferences.json`，之后以偏好为准（改了系统语言也不会让界面语言惄惄漂移）。`/lang` 可随时切换，`/lang zh` / `/lang en` 直接指定。
   - 词典编译进产物（`src/i18n/{zh,en}.ts`）：key 扁平化，`{n}` 插值，英文 `_one` / `_other` 复数变体由 `Intl.PluralRules` 选；切换语言只换一个引用，不重读磁盘、不重启。缺词条时返回 key 本身（不做跨语言静默回退，否则英文界面里会突然冒出中文）。
   - 语言偏好放 CLI 独立的 `preferences.json`，**不塞进共享的 `config.json`** —— 那是 CLI 与 Desktop 共用的 `AppConfig` 契约，塞进去会被桌面端当未知字段丢掉。
-  - 本版覆盖**主对话框**：状态栏三块、输入框占位与提示、通知、思考档位标签、生成中提示。命令名与命令描述、配置向导等仍为中文，按阶段后续覆盖。
+  - 本版覆盖**主对话框 + 命令层**：状态栏三块、输入框占位与提示、通知、思考档位标签、生成中提示；`/help` 与斜杠菜单的命令说明，以及各命令的选择器标题与反馈文案（`/model` `/agent` `/think` `/save` `/load` `/handoff` `/migrate` `/back` `/reload` `/mcp` 等）。
+  - `COMMAND_REGISTRY` 里存的是 **i18n key 而不是文案** —— 它是纯数据模块、加载时机早于语言初始化，存文案会把「加载那一刻的语言」定死；渲染时由 `getCommandHints()` 现取。
+  - 配置向导、`/config` 相关界面，以及业务模块返回的 summary（如 `agent-switch` 的切换结果）仍为中文，按阶段后续覆盖。
   - 顺带排掉一个隐藏的地雷：状态栏之前用**文案**判断思考强度是否置灰（`effort === "关"`），英文界面下这个判断永远不成立；现在改为基于档位语义的 `effortDimmed()`，与语言彻底解耦。
 
 ### 🔧 行为变更
@@ -67,9 +69,10 @@
 
 ### ✅ 测试
 
-- 全量 **33 文件 / 439 例通过**，`npx tsc --noEmit -p tsconfig.test.json` 干净。
+- 全量 **33 文件 / 440 例通过**，`npx tsc --noEmit -p tsconfig.test.json` 干净。
 - 新增 `src/i18n/index.test.ts`（14 例：语言识别优先级 / `C`·`POSIX` 跳过 / 兜底英文 / 插值 / 缺词条回退 key / 中英词条一一对应）与 `src/i18n/preferences.test.ts`（9 例：文件缺失·损坏·非法值的容错、原子写、`initLocale` 只识别一次并落盘）；`reasoning-effort.test.ts` 补 5 例「置灰不靠文案判断」。
 - pty 真机验收：`LANG=en_US.UTF-8` 首次启动→英文并落盘 `en`；`/lang` 切中文→状态栏/输入框/通知全部跟随，且**重启后保持中文**（偏好先于系统语言）；`/lang en` 切回英文正常。
+- pty 真机验收（阶段 2）：英文下斜杠菜单显示 `❯ /help  Show this help`、`/help` 输出全英文列表；`/lang zh` 后斜杠菜单与 `/help` 整体切回中文。
 - 新增 `src/agent-switch.test.ts`（10 例）、`src/mcp-command.test.ts`（6 例）、`src/tui/token-rate.test.ts`（20 例）、`src/tui/status-segments.test.ts`（17 例）、`src/tui/screens/input-row.test.tsx`（7 例）、`src/tui/text.test.ts`（18 例）；`input-editing.test.ts` 补 3 例「emoji 不被拆半个」的用例。
 - `src/tui/screens.test.tsx` 增加状态栏三块顺序、块内不被拆、宽屏并排、以及「Ink 实际渲染行数 == `statusBarRows` 量出行数」的断言；`computeInputCursorPosition` 补「通知栏行数参与 y」的用例。
 - `input-row.test.tsx` 里那条 `⚡` 用例同时断言「手算给 8、实测给 9」——本次改动的理由就在这两行里。

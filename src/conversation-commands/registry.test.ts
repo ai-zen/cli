@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   COMMAND_LABEL_WIDTH,
   COMMAND_REGISTRY,
@@ -6,6 +6,10 @@ import {
   getCommandNames,
   matchCommandHints,
 } from "./registry.js";
+import { setLocale } from "../i18n/index.js";
+
+// 命令说明已 i18n 化：这些用例断言中文文案，显式锁定语言（不依赖宿主 LANG）
+beforeEach(() => setLocale("zh"));
 
 describe("对话命令元数据", () => {
   it("展示条目折叠别名（exit/quit 折叠为一条），且 exit 置于末尾", () => {
@@ -22,6 +26,14 @@ describe("对话命令元数据", () => {
     for (const hint of getCommandHints()) {
       expect(hint.description.trim().length).toBeGreaterThan(0);
     }
+  });
+
+  it("命令说明跟随界面语言（key 存表、渲染时取词）", () => {
+    setLocale("en");
+    const exitHint = getCommandHints().at(-1)!;
+    expect(exitHint.description).toBe("Exit the conversation (offers to save first)");
+    setLocale("zh");
+    expect(getCommandHints().at(-1)!.description).toBe("退出对话（会提示是否保存）");
   });
 
   it("展示宽度按最长命令串对齐", () => {

@@ -9,37 +9,44 @@
  * 不依赖 chalk / React 等 UI 依赖，可直接单测。
  */
 
+import { t } from "../i18n/index.js";
+
 /** 单个对话命令的元数据 */
 export interface CommandMeta {
   /** 主命令名（不含 `/` 前缀），同时是处理函数表的键 */
   name: string;
   /** 等价别名（不含 `/` 前缀） */
   aliases?: string[];
-  /** 一句话说明 */
-  description: string;
+  /**
+   * 一句话说明的 i18n key。
+   *
+   * 这里存 **key 而不是文案**：本模块是纯数据，加载时机靠前（甚至早于语言初始化），
+   * 存成文案就定死了「加载那一刻的语言」。渲染时由 `getCommandHints()` 用 `t()` 现取。
+   */
+  descriptionKey: string;
 }
 
 /** 命令元数据表（数组顺序即展示顺序） */
 export const COMMAND_REGISTRY: readonly CommandMeta[] = [
-  { name: "save", description: "保存当前对话" },
-  { name: "load", description: "加载已保存的对话（替换当前会话）" },
-  { name: "new", description: "重置会话（清空历史）" },
-  { name: "back", description: "撤回消息（可修改后重发）" },
-  { name: "editor", description: "使用系统编辑器输入长消息" },
-  { name: "clear", description: "清屏" },
-  { name: "config", description: "打开配置中心（默认模型 / 端点管理）" },
-  { name: "model", description: "切换当前会话使用的模型（写入配置）" },
-  { name: "agent", description: "切换主 Agent（写入默认 Agent，重建会话）" },
-  { name: "reload", description: "刷新运行环境（重建 scope，重新发现工具 / Skill / MCP）" },
-  { name: "mcp", description: "管理 MCP 服务器（打开配置中心里的 MCP 界面：增删改 / 启停）" },
-  { name: "lang", description: "切换界面语言（中文 / English）" },
-  { name: "think", aliases: ["effort"], description: "切换思考强度（写入模型配置）" },
-  { name: "key", description: "设置当前端点的 API Key" },
-  { name: "handoff", description: "编写任务交接文档（不切换会话）" },
-  { name: "migrate", description: "交接并开启新会话（生成交接文档）" },
-  { name: "help", description: "显示此帮助" },
+  { name: "save", descriptionKey: "cmd.save.desc" },
+  { name: "load", descriptionKey: "cmd.load.desc" },
+  { name: "new", descriptionKey: "cmd.new.desc" },
+  { name: "back", descriptionKey: "cmd.back.desc" },
+  { name: "editor", descriptionKey: "cmd.editor.desc" },
+  { name: "clear", descriptionKey: "cmd.clear.desc" },
+  { name: "config", descriptionKey: "cmd.config.desc" },
+  { name: "model", descriptionKey: "cmd.model.desc" },
+  { name: "agent", descriptionKey: "cmd.agent.desc" },
+  { name: "reload", descriptionKey: "cmd.reload.desc" },
+  { name: "mcp", descriptionKey: "cmd.mcp.desc" },
+  { name: "lang", descriptionKey: "cmd.lang.desc" },
+  { name: "think", aliases: ["effort"], descriptionKey: "cmd.think.desc" },
+  { name: "key", descriptionKey: "cmd.key.desc" },
+  { name: "handoff", descriptionKey: "cmd.handoff.desc" },
+  { name: "migrate", descriptionKey: "cmd.migrate.desc" },
+  { name: "help", descriptionKey: "cmd.help.desc" },
   // exit 置于末尾：斜杠菜单回车执行高亮项，避免「只输入 / 就回车」直接退出
-  { name: "exit", aliases: ["quit"], description: "退出对话（会提示是否保存）" },
+  { name: "exit", aliases: ["quit"], descriptionKey: "cmd.exit.desc" },
 ];
 
 /** 命令展示条目：等价写法（如 `/exit` `/quit`）折叠为一条 */
@@ -59,7 +66,7 @@ export function getCommandHints(): CommandHint[] {
     return {
       names,
       label: names.map((name) => `/${name}`).join(" "),
-      description: command.description,
+      description: t(command.descriptionKey),
     };
   });
 }
