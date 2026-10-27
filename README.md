@@ -167,11 +167,12 @@ On first launch the language is detected from the system: `LC_ALL` → `LC_MESSA
 
 The preference lives in the CLI's own `preferences.json`, **not in the shared `config.json`** — the latter is the config contract shared by the CLI and the Desktop app.
 
-The whole TUI is covered: the chat screen (status bar / input hints / notices), commands and `/help`, every configuration-center screen, the handoff picker, and the splash / boot-error screens. **Deliberately not translated:**
+The whole TUI is covered (chat screen, commands and `/help`, every configuration-center screen, the handoff picker, the splash / boot-error screens), plus the terminal output of `ai --help` and `ai hook install / uninstall`. **Deliberately not translated:**
 
-- protocol content sent to the model (Sub-agent tool-schema descriptions, the working-directory change note injected into history) — translating them makes model behaviour drift;
-- terminal output printed outside the TUI and before the locale is initialised, such as `ai --help` / `ai hook install`;
-- the default conversation name and `formatShortTime()` format that end up in file names — following the UI language would interleave old and new files.
+- **pipe mode (`ai "prompt"` / piped input) prints and errors in English only** — it is meant for scripts and should not follow a human user's UI language;
+- the working-directory note injected into the model's history: English plus a `[system-injected: …]` marker saying it was not typed by the user. This is the only piece of protocol content left untranslated (the `task` parameter description of a new Sub-agent does follow the UI language);
+- the three code-block markers `ai hook` writes into `~/.bashrc` (`# === ai hook … ===`) — translating them would lose track of the old block;
+- the conversation-id stamp `chat_YYYY_MM_DD_HH_mm_ss` — it doubles as the file name, so following the UI language would interleave old and new files.
 
 ### Conversation Commands
 

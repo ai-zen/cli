@@ -257,5 +257,9 @@ export function bottomPadding(terminalRows: number, contentLines: number): numbe
  * 该提示是喂给模型的上下文，不该显示给用户。
  */
 export function stripCwdNote(text: string): string {
-  return text.replace(/\n+(?:\[工作目录变更\]\n)?当前工作目录: [^\n]*$/, "");
+  // 两代格式都要认：新（英文 + system-injected 标记）与旧存档里的中文格式。
+  // 旧格式不认会把磁盘上已有会话的 cwd 笔记渲染出来。
+  return text
+    .replace(/\n+\[system-injected: [^\]\n]*\]\nCurrent working directory: [^\n]*$/, "")
+    .replace(/\n+(?:\[工作目录变更\]\n)?当前工作目录: [^\n]*$/, "");
 }

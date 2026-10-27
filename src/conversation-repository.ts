@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { EntityRepository } from "@ai-zen/agents-sdk";
 import type { AgentNS } from "@ai-zen/agents-core";
 import { CONVERSATIONS_DIR } from "./config.js";
-import { formatShortTime } from "./format-time.js";
+import { formatFileStamp } from "./format-time.js";
 import { writeLastSession } from "./session-pointer.js";
 import type { ConversationContext } from "./types.js";
 
@@ -35,11 +35,11 @@ export interface Conversation {
 export const conversationRepository = new EntityRepository<Conversation>(CONVERSATIONS_DIR);
 
 /**
- * 生成文件名安全的会话 id（语义化中文时间戳，天然不含非法字符）。
- * 形如 `对话_2025年07月01日14时30分00秒`。
+ * 生成文件名安全的会话 id：英文前缀 + 全下划线时间戳，中英一致。
+ * 形如 `chat_2026_10_28_00_56_34`。
  */
 export function generateConversationId(date: Date = new Date()): string {
-  return `对话_${formatShortTime(date.toISOString())}`.replace(/[\\/:*?"<>|]/g, "_");
+  return `chat_${formatFileStamp(date.toISOString())}`;
 }
 
 /**

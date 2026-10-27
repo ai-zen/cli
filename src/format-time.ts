@@ -6,7 +6,7 @@
  *   - 英文：`Jul 1, 14:30`、`Yesterday 14:30`
  *
  * 语言从 `i18n` 现取（不同模块级常量），因此 `/lang` 切完下一帧就生效。
- * 例外：`formatShortTime()` 用于**文件名 / 会话 id**，不随语言变（否则新旧文件混排）。
+ * 例外：`formatFileStamp()` 用于**文件名 / 会话 id**，不随语言变（否则新旧文件混排）。
  */
 
 import dayjs from "dayjs";
@@ -55,14 +55,21 @@ export function formatFullTime(isoString: string): string {
 }
 
 /**
- * 格式化时间戳为保存名称用的格式，兼容文件名。
- * 例：2025年07月01日_14时30分00秒
+ * 文件名安全的时间戳：全下划线、纯数字，用作会话 id。
+ * 例：2026_10_28_00_56_34
  *
- * **刻意不随界面语言变**：这个串进了文件名与会话 id，跟着语言变会让历史文件
- * 与新文件混排、也破掉「同一秒内创建的两个会话 id 相同」这类隐含假设。
+ * **刻意不随界面语言变**：它进了文件名与会话 id，跟着语言变会让历史文件与新文件混排。
+ */
+export function formatFileStamp(isoString: string): string {
+  return dayjs(isoString).format("YYYY_MM_DD_HH_mm_ss");
+}
+
+/**
+ * 紧凑时间戳（列表/详情提示显示用），随界面语言变：
+ * 中文 `2025年07月01日15时30分00秒`，英文 `Jul 1, 2025 15:30:00`。
  */
 export function formatShortTime(isoString: string): string {
-  return dayjs(isoString).format("YYYY年MM月DD日HH时mm分ss秒");
+  return dayjs(isoString).locale(dayjsLocale()).format(t("time.pattern.short"));
 }
 
 /**

@@ -22,8 +22,7 @@ import { AGENTS_DIR, readConfig } from "./config.js";
 import { CwdTrackerPlugin } from "./cwd-tracker-plugin.js";
 import { SubAgentGuardInstallerPlugin } from "./sub-agent-guard-plugin.js";
 import type { TokenThresholds } from "@ai-zen/agents-sdk";
-import { conversationRepository } from "./conversation-repository.js";
-import { formatShortTime } from "./format-time.js";
+import { conversationRepository, generateConversationId } from "./conversation-repository.js";
 
 export interface StdioRunOptions {
   /** 位置参数拼接而成的指令（可空，此时全部内容来自 stdin） */
@@ -162,10 +161,11 @@ export async function runStdio(options: StdioRunOptions): Promise<number> {
     }
 
     if (save) {
-      const name = `对话_${formatShortTime(new Date().toISOString())}`;
+      // 会话名与 TUI 同源（避免两处拼接各自漂移）
+      const name = generateConversationId();
       const now = new Date().toISOString();
       await conversationRepository.write({
-        id: name.replace(/[\\/:*?"<>|]/g, "_"),
+        id: name,
         agentId,
         modelId,
         messages: agent.messages,

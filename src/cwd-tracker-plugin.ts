@@ -52,7 +52,11 @@ export class CwdTrackerPlugin implements AgentPlugin {
 
     if (!lastUserMsg || typeof lastUserMsg.content !== "string") return;
 
-    const prefix = isFirstTime ? "" : "\n\n[工作目录变更]";
-    lastUserMsg.content += `${prefix}\n当前工作目录: ${currentCwd}`;
+    // 注入给模型的提示词：用英文，并显式标注「系统注入」—— 翻存档 / 交接文档时
+    // 一眼能分辨哪些内容不是用户敲的。（协议内容，不走 i18n）
+    const tag = isFirstTime
+      ? "[system-injected: current working directory — not written by the user]"
+      : "[system-injected: working directory changed — not written by the user]";
+    lastUserMsg.content += `\n\n${tag}\nCurrent working directory: ${currentCwd}`;
   }
 }

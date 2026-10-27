@@ -596,7 +596,7 @@ export function createSubAgentDefinition(input: {
       description: input.name,
       parameters: {
         type: "object",
-        properties: { task: { type: "string", description: "完整的任务描述" } },
+        properties: { task: { type: "string", description: t("agent.subAgentTaskParam") } },
         required: ["task"],
         additionalProperties: false,
       },

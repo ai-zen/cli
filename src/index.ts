@@ -67,10 +67,12 @@ async function main(): Promise<void> {
       return;
 
     case "hook":
+      // hook 的输出是给人看的终端文案，与 help 同理：先初始化语言，再打印
+      await initLocale();
       if (invocation.action === "install") await installHook();
       else if (invocation.action === "uninstall") await uninstallHook();
       else {
-        process.stderr.write("用法: ai hook install|uninstall\n");
+        process.stderr.write(`${t("cli.hookUsage")}\n`);
         process.exitCode = 1;
       }
       return;

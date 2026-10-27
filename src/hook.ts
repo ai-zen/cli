@@ -1,8 +1,12 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promises as fs } from "node:fs";
+import { t } from "./i18n/index.js";
 
-/** 当前标记（ai hook 时代） */
+/** 当前标记（ai hook 时代）
+ *
+ * **不得翻译**：这两行是写进 rc 文件的代码块标记，靠它识别「哪段是本工具的」；
+ * 翻了字面串就再也找不到旧块，用户会冒出一堆重复 hook。 */
 const MARKER_START = "# === ai hook (开始) ===";
 const MARKER_END = "# === ai hook (结束) ===";
 
@@ -63,7 +67,7 @@ function stripHookBlocks(content: string): { content: string; removed: boolean }
 export async function installHook(): Promise<void> {
   const shell = detectShell();
   if (!shell) {
-    console.error("❌ 不支持的 shell（仅支持 bash / zsh）");
+    console.error(t("hook.unsupportedShell"));
     process.exit(1);
   }
 
@@ -75,7 +79,7 @@ export async function installHook(): Promise<void> {
   }
 
   if (current.includes(MARKER_START)) {
-    console.log("ℹ️  ai hook 已安装，无需重复操作");
+    console.log(t("hook.alreadyInstalled"));
     return;
   }
 
@@ -84,16 +88,16 @@ export async function installHook(): Promise<void> {
   const base = cleaned.replace(/\n+$/, "");
   await fs.writeFile(shell.rcFile, base + "\n" + hookCode(shell.hookFn), "utf-8");
 
-  console.log(`✅ ai hook 已安装到 ${shell.rcFile}`);
-  if (removed) console.log("   （已自动升级旧版 aiz hook）");
-  console.log(`   重启终端或执行 source ${shell.rcFile} 即可生效`);
-  console.log(`   之后输入不存在的命令会自动转发给 AI 处理`);
+  console.log(t("hook.installed", { file: shell.rcFile }));
+  if (removed) console.log(t("hook.upgraded"));
+  console.log(t("hook.restartHint", { file: shell.rcFile }));
+  console.log(t("hook.forwardHint"));
 }
 
 export async function uninstallHook(): Promise<void> {
   const shell = detectShell();
   if (!shell) {
-    console.error("❌ 不支持的 shell（仅支持 bash / zsh）");
+    console.error(t("hook.unsupportedShell"));
     process.exit(1);
   }
 
@@ -101,16 +105,16 @@ export async function uninstallHook(): Promise<void> {
   try {
     content = await fs.readFile(shell.rcFile, "utf-8");
   } catch {
-    console.log("ℹ️  ai hook 未安装（文件不存在）");
+    console.log(t("hook.notInstalledNoFile"));
     return;
   }
 
   const { content: cleaned, removed } = stripHookBlocks(content);
   if (!removed) {
-    console.log("ℹ️  ai hook 未安装");
+    console.log(t("hook.notInstalled"));
     return;
   }
 
   await fs.writeFile(shell.rcFile, cleaned, "utf-8");
-  console.log(`✅ ai hook 已从 ${shell.rcFile} 卸载`);
+  console.log(t("hook.uninstalled", { file: shell.rcFile }));
 }

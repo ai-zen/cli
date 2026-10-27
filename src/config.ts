@@ -50,6 +50,7 @@ import { promises as fs } from "fs";
 import { dirname, join } from "path";
 import { ConfigManager as SdkConfigManager } from "@ai-zen/agents-sdk";
 import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
+import { t } from "./i18n/index.js";
 
 // ==================== 根目录 ====================
 
@@ -130,7 +131,7 @@ export async function ensureConfigDir(): Promise<void> {
       await fs.access(dir);
     } catch {
       try { await fs.mkdir(dir, { recursive: true }); }
-      catch { console.warn(`⚠️  无法创建目录: ${dir}`); }
+      catch { console.warn(t("app.mkdirFailed", { dir })); }
     }
   }
 }

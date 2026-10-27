@@ -300,6 +300,18 @@ describe("stripCwdNote", () => {
   it("去除带变更标记的后缀", () => {
     expect(stripCwdNote("你好\n\n[工作目录变更]\n当前工作目录: /tmp/x")).toBe("你好");
   });
+  it("去除新一代英文注入后缀（带 system-injected 标记）", () => {
+    expect(
+      stripCwdNote(
+        "你好\n\n[system-injected: working directory changed — not written by the user]\nCurrent working directory: /tmp/x",
+      ),
+    ).toBe("你好");
+    expect(
+      stripCwdNote(
+        "你好\n\n[system-injected: current working directory — not written by the user]\nCurrent working directory: /tmp/x",
+      ),
+    ).toBe("你好");
+  });
   it("无后缀时原样返回", () => {
     expect(stripCwdNote("纯文本")).toBe("纯文本");
   });
