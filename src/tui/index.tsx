@@ -221,7 +221,7 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
   /** 重挂载后要展示一次的系统提示（如 `/model` 的写入结果，旧实例已卸载，只能传给新屏） */
   let initialNotice: string | undefined;
   /**
-   * shell 钩子（`ai --tui "$@"`）带来的首条消息。
+   * shell 钩子（`ai --tui --new "$@"`）带来的首条消息。
    * **只发一次**：挂载后置空，否则重挂载（切模型 / `/lang` 等）会反复重发。
    */
   let initialPrompt = options.initialPrompt;
@@ -292,10 +292,16 @@ export interface RunTuiOptions {
   /**
    * 进入对话屏后**自动作为首条消息发送**的内容。
    *
-   * 来源只有一处：shell 兜底钩子 `ai --tui "$@"`（命令不存在时把原命令带进来）。
+   * 来源只有一处：shell 兜底钩子 `ai --tui --new "$@"`（命令不存在时把原命令带进来）。
    * 不预填到输入框——钩子的语义就是「这条命令跑不了，你帮我处理」，等用户再敲一次回车没有意义。
    */
   initialPrompt?: string;
+  /**
+   * `--new`：**开一条新会话**，跳过「续接该目录上一轮对话」（`last-session.json` 指针）。
+   *
+   * 默认（不带 `--new`）保持续接行为：`ai` 回到上次的对话是常用预期。
+   */
+  newSession?: boolean;
 }
 
 export async function runTui(options: RunTuiOptions = {}): Promise<void> {
@@ -321,8 +327,9 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
     // 启动界面（一次性）
     await mount(<Splash />);
 
-    // 直达对话：优先续接「上一轮会话」，否则新建对话
-    let target: ChatTarget | null = await resumeLastSession();
+    // 直达对话：优先续接「上一轮会话」，否则新建对话。
+    // `--new` 跳过续接（不读 last-session.json 指针），直接走新建路径
+    let target: ChatTarget | null = options.newSession ? null : await resumeLastSession();
     if (!target) {
       try {
         target = await resolveTarget();

@@ -36,10 +36,12 @@
 ### 🔧 行为变更
 
 - **shell 钩子改为进入 TUI（此前的管道模式是实现错误）** —— 钩子装在 `command_not_found_handle` / `command_not_found_handler` 上，触发场景是「人坐在交互终端前把命令敲错了」，但函数体写的是 `ai "$@"`，而 `decideMode()` 的规则是「有位置参数 → stdio」，于是钩子会话必然落到管道模式：吐一段文字到 stdout 就退出，**没有历史、不能追问**。`mode.ts` 头顶那张分类表把「脚本调用」与「人手动触发」混成了一个判据，所以这不是补丁能修的，是分类本身错了。
-  - 函数体现在是 `ai --tui "$@"`：新增 `--tui` 标志显式覆盖「有参数 → stdio」的判定，进 TUI 并把原命令**作为首条消息自动发送**（不预填到输入框——钩子的语义就是「这条命令跑不了，你帮我处理」，再让人敲一次回车没有意义）。
+  - 函数体现在是 `ai --tui --new "$@"`：新增 `--tui` 标志显式覆盖「有参数 → stdio」的判定，进 TUI 并把原命令**作为首条消息自动发送**（不预填到输入框——钩子的语义就是「这条命令跑不了，你帮我处理」，再让人敲一次回车没有意义）。
   - 首条消息**强制当普通用户消息**发送，不经斜杠命令解析：敲错的可能是 `/opt/bin/foo` 这种以 `/` 开头的命令，否则会被当成 CLI 命令而报「未知命令」。`runSubmit()` 为此多了 `asMessage` 选项。
   - `--tui` 在非 TTY 环境（脚本 / 管道）报错退出（退出码 2、英文提示），**不**降级成管道模式 —— 否则整屏界面内容会被写进管道。
-  - 首条消息只在首次挂载时发送：切模型 / `/lang` 等引起的重挂载不会重发。已安装的旧钩子重新执行 `ai hook install` 即可原地覆盖（`MARKER` 未变）。
+  - 首条消息只在首次挂载时发送：切模型 / `/lang` 等引起的重挂载不会重发。
+  - **钩子会话总是新开会话**：函数体多一个 `--new`（`ai --tui --new "$@"`）。否则敲错一次命令，那条命令就被追加进该目录原有的长对话里，上下文与会话名一起被搅乱。`--new` 是通用标志，手动用同样有效：`ai --new` 跳过 `last-session.json` 指针直接新建；它**只作用于 TUI 路径**，出现在 stdio 路径上时静默忽略（一次 stdio 调用本就是一次性会话，不存在续接）。
+  - **`ai hook install` 现在会自我升级**：此前只要 rc 文件里存在 `MARKER_START` 就打印「已安装」直接返回，于是函数体改过之后（比如本次加了 `--new`）老用户永远升不上去。现在会把已安装块与当前版本归一化比对（去空行、逐行 trim），不一致就原地覆盖并提示「已更新到最新版本」（新增词条 `hook.updated`）。
 
 - **`/migration` 不再是 `/migrate` 的别名** —— 只保留 `/migrate`，`/migration` 现在报「未知命令」。registry、命令执行器、`blocksInput` 判定与四份文档同步。
 - **SDK 全局日志默认写入 `~/.ai-zen/logs/sdk.log`** —— 以前默认**丢弃**，只有 `AIZ_DEBUG_SDK=1` 才落盘到 `/tmp`。但 SDK 的 `warn` / `error` 承载「MCP 连不上」「Skill 解析失败」这类关键诊断，默认丢弃等于故障无痕。现在默认落盘（单文件 2MB 封顶后轮转为 `sdk.log.1`），`AIZ_DEBUG_SDK=0` 可彻底关掉，`AIZ_SDK_LOG_FILE` 可改路径。界面上依旧一个字都不显示。
@@ -89,7 +91,11 @@
 - pty 真机验收（阶段 3 / 4，隔离的 `AI_ZEN_DIR` + `LANG=en_US.UTF-8`）：首次启动识别为英文并落盘；启动屏 `The AI collaboration desk in your terminal`；主屏 `Type a message, / for commands…`、`thinking default · total 0 tok`；配置中心 `◆ Configuration` 与 `+ New model — marked as custom automatically` / `openai · factory-managed · vision`；模型详情 `◆ Model · GPT-6 Astra` / `factory-managed (editing switches it to custom)` / `Delete model`；新建模型与新建端点引导屏全英文。把 `preferences.json` 改回 `zh` 后**在 `LANG=en_US.UTF-8` 下重启仍为中文界面**（偏好优先于系统语言），配置中心与模型列表中文文案与改造前一致。
 - **断言中文的测试一律显式锁语言**：`setLocale("zh")` 加在 `screens.test.tsx`、`config-wizard.test.tsx`、`reasoning-effort.test.ts`、`registry.test.ts`、`agent-prompt.test.tsx`、`handoff-choice.test.ts`、`config-editor.test.ts`、`agent-switch.test.ts`、`model-switch.test.ts`、`handoff-service.test.ts`、`auto-migrate-confirm.test.ts` —— 默认语言是 `en`，不锁就会在 CI 上莫名其妙地红。
 - `mode.test.ts` 新增 6 例 `--tui`：有参数进 TUI 且参数作为首条消息、无参数时同不带 `--tui`、以 `/` 开头的命令不被当选项 / 子命令、`--tui --help` 时 help 优先、非 TTY 拒绝而非降级、`--` 之后的 `--tui` 是普通参数。
-- pty 真机验收（钩子路径）：`ai --tui gti status` 进 TUI 并自动把 `gti status` 当用户消息发出（界面显示 `❯ 你 / gti status`），模型报错（故意的本地假端点）后界面仍存活可继续追问；`ai --tui /opt/bin/nonexistent --flag` 同样当**普通消息**发出，不被斜杠命令解析吃掉；`ai --tui` 在非 TTY 下退出码 2；写进 `~/.bashrc` 的函数体为 `ai --tui "$@"` 且 `bash -n` 语法通过。
+- `mode.test.ts` 新增 8 例 `--new`：单独用时进 TUI 且 `newSession: true`、`--tui --new <命令>` 同时带首条消息与新会话、与 `--tui` 顺序无关、有参数时落到 stdio 并被忽略、非 TTY 时落到 stdio 并被忽略、`--tui --new` 非 TTY 仍拒绝而非降级、`--new --help` 时 help 优先、`--` 之后的 `--new` 是普通参数。
+- 新增 `src/hook.test.ts`（9 例，全部在临时 HOME 下跑，**不触碰真实 `~/.bashrc`**）：写入的函数体含 `ai --tui --new "$@"` 且只有一个块、保留 rc 原有内容、重复安装幂等、**已装旧函数体（`ai --tui "$@"`）时原地升级**、历史 aiz 块迁移、zsh 走 `command_not_found_handler` 且写入 `.zshrc`；卸载移除块并保留其余内容、未安装时不动文件、rc 文件不存在时不报错。
+- pty 真机验收（钩子路径）：`ai --tui gti status` 进 TUI 并自动把 `gti status` 当用户消息发出（界面显示 `❯ 你 / gti status`），模型报错（故意的本地假端点）后界面仍存活可继续追问；`ai --tui /opt/bin/nonexistent --flag` 同样当**普通消息**发出，不被斜杠命令解析吃掉；`ai --tui` 在非 TTY 下退出码 2；写进 `~/.bashrc` 的函数体为 `ai --tui --new "$@"` 且 `bash -n` 语法通过。
+- pty 真机验收（`--new`，隔离 `AI_ZEN_DIR` + 预置 `last-session.json` 指向旧会话）：`ai` 续接并显示旧消息 `MARKER-OLD-QUESTION`；`ai --new` 停在**空对话**；`ai --tui --new gti status` 空对话且首条消息自动发出；`--help` 中英两个界面都列出 `--new`。
+- 本次改动后全量 **35 文件 / 469 例通过**，`npx tsc --noEmit` 与 `-p tsconfig.test.json` 均干净。
 - 新增 `src/agent-switch.test.ts`（10 例）、`src/mcp-command.test.ts`（6 例）、`src/tui/token-rate.test.ts`（20 例）、`src/tui/status-segments.test.ts`（17 例）、`src/tui/screens/input-row.test.tsx`（7 例）、`src/tui/text.test.ts`（18 例）；`input-editing.test.ts` 补 3 例「emoji 不被拆半个」的用例。
 - `src/tui/screens.test.tsx` 增加状态栏三块顺序、块内不被拆、宽屏并排、以及「Ink 实际渲染行数 == `statusBarRows` 量出行数」的断言；`computeInputCursorPosition` 补「通知栏行数参与 y」的用例。
 - `input-row.test.tsx` 里那条 `⚡` 用例同时断言「手算给 8、实测给 9」——本次改动的理由就在这两行里。

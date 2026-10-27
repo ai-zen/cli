@@ -203,7 +203,7 @@ export const en: Record<string, string> = {
   // ---------- `ai --help` (printed outside the TUI, hence the locale init in the help branch) ----------
   "cli.help.title": "ai — AI-Zen CLI v{version}",
   "cli.help.usage": "\nUsage:\n  ai                              Start the interactive UI (TUI; stdin/stdout must be a TTY)\n  ai <prompt>                     Ask in pure stdio mode; the result goes to stdout\n  cat file | ai \"summarize it\"   Pipe content in; the argument is the instruction\n  ai hook install                 Install the shell fallback hook (route unknown commands to the AI)\n  ai hook uninstall               Uninstall the shell fallback hook",
-  "cli.help.options": "\nOptions:\n  --save                          Save this conversation to the archive (off by default)\n  --tui [prompt…]                 Force the interactive UI; the prompt is auto-sent as the first message (used by the shell hook)\n  -h, --help                      Show this help\n  -v, --version                   Show the version",
+  "cli.help.options": "\nOptions:\n  --save                          Save this conversation to the archive (off by default)\n  --tui [prompt…]                 Force the interactive UI; the prompt is auto-sent as the first message (used by the shell hook)\n  --new                           Start a new conversation instead of resuming the last one\n  -h, --help                      Show this help\n  -v, --version                   Show the version",
   "cli.help.notes": "\nNotes:\n  stdio mode is non-interactive: the result goes to stdout, logs to stderr, exit code 0 on success.",
 
   // ---------- `ai hook install / uninstall` (outside the TUI, locale initialised in that branch) ----------
@@ -211,6 +211,7 @@ export const en: Record<string, string> = {
   "hook.unsupportedShell": "❌ Unsupported shell (bash / zsh only)",
   "hook.alreadyInstalled": "ℹ️  ai hook is already installed — nothing to do",
   "hook.installed": "✅ ai hook installed into {file}",
+  "hook.updated": "✅ ai hook updated to the latest version ({file})",
   "hook.upgraded": "   (legacy aiz hook upgraded automatically)",
   "hook.restartHint": "   Restart the terminal or run `source {file}` to take effect",
   "hook.forwardHint": "   Unknown commands will then be forwarded to the AI",

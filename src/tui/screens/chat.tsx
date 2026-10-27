@@ -47,7 +47,7 @@ export interface ChatScreenProps {
   /** 重挂载时的初始输入（/back 撤回后用于预填） */
   initialInput?: string;
   /**
-   * 启动后**自动作为首条消息发送**的内容（shell 钩子 `ai --tui "$@"`）。
+   * 启动后**自动作为首条消息发送**的内容（shell 钩子 `ai --tui --new "$@"`）。
    *
    * 与 `initialInput` 的区别：那个是**预填到输入框**、等用户确认；这个是直接发出去。
    * 它一律当**普通消息**发送，不经过斜杠命令解析——钩子带来的可能是 `/opt/bin/foo`

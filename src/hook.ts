@@ -32,14 +32,36 @@ function detectShell(): { rcFile: string; hookFn: string } | null {
  * 生成被写入 rc 文件的钩子函数体。
  *
  * 关键：必须带 `--tui`。钩子的发起场景是「人坐在交互终端前把命令敲错了」，
- * 不是脚本调用——所以要把原命令带进 TUI 当首条消息（`ai --tui "$@"`），
+ * 不是脚本调用——所以要把原命令带进 TUI 当首条消息（`ai --tui --new "$@"`），
  * 而不是落到管道模式吐一段字就退出（那样没有历史、不能追问）。
+ *
+ * 另带 `--new`：钩子会话**总是开新的一条对话**，不续接该目录的上一轮会话。
+ * 敲错一次命令就把内容追加进原有的长对话里，上下文和会话名都会被打乱。
  * `"$@"` 保留分词，避免原本带空格的参数被拼坏。
  */
 function hookCode(hookFn: string): string {
-  return ["", MARKER_START, `${hookFn}() {`, '  ai --tui "$@"', "}", MARKER_END, ""].join(
+  return ["", MARKER_START, `${hookFn}() {`, '  ai --tui --new "$@"', "}", MARKER_END, ""].join(
     "\n",
   );
+}
+
+/** 规范化钩子块（去空行、逐行 trim），用于判断已安装的内容是否就是当前版本 */
+function normalizeBlock(block: string): string {
+  return block
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** 取出文件中已安装的钩子块（含首尾标记）；未安装时返回 null */
+function readHookBlock(content: string): string | null {
+  const lines = content.split("\n");
+  const start = lines.findIndex((line) => line.trim() === MARKER_START);
+  if (start < 0) return null;
+  const end = lines.findIndex((line, index) => index > start && line.trim() === MARKER_END);
+  if (end < 0) return null;
+  return lines.slice(start, end + 1).join("\n");
 }
 
 /**
@@ -86,15 +108,28 @@ export async function installHook(): Promise<void> {
     // 文件不存在：视为空内容
   }
 
-  if (current.includes(MARKER_START)) {
-    console.log(t("hook.alreadyInstalled"));
+  const desired = hookCode(shell.hookFn);
+
+  // 已安装：只在函数体与当前版本一致时才算「无需操作」。
+  // 若不一致（例如升级后给钩子加了 `--new`），原地覆盖——否则用户永远升不上去。
+  const installedBlock = readHookBlock(current);
+  if (installedBlock !== null) {
+    if (normalizeBlock(installedBlock) === normalizeBlock(desired)) {
+      console.log(t("hook.alreadyInstalled"));
+      return;
+    }
+    const { content: cleaned } = stripHookBlocks(current);
+    const base = cleaned.replace(/\n+$/, "");
+    await fs.writeFile(shell.rcFile, base + "\n" + desired, "utf-8");
+    console.log(t("hook.updated", { file: shell.rcFile }));
+    console.log(t("hook.restartHint", { file: shell.rcFile }));
     return;
   }
 
-  // 迁移：先移除历史 aiz 块，再写入新块
+  // 首次安装：先移除历史 aiz 块，再写入新块
   const { content: cleaned, removed } = stripHookBlocks(current);
   const base = cleaned.replace(/\n+$/, "");
-  await fs.writeFile(shell.rcFile, base + "\n" + hookCode(shell.hookFn), "utf-8");
+  await fs.writeFile(shell.rcFile, base + "\n" + desired, "utf-8");
 
   console.log(t("hook.installed", { file: shell.rcFile }));
   if (removed) console.log(t("hook.upgraded"));

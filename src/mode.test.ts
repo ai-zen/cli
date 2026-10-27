@@ -104,7 +104,7 @@ describe("resolveInvocation", () => {
 });
 
 /**
- * `--tui`：显式覆盖「有参数 → stdio」的规则。shell 钩子（`ai --tui "$@"`）靠它进 TUI，
+ * `--tui`：显式覆盖「有参数 → stdio」的规则。shell 钩子（`ai --tui --new "$@"`）靠它进 TUI，
  * 把敲错的命令当首条消息发给模型——而不是落到管道模式吐一段字就退出。
  */
 describe("resolveInvocation / --tui（shell 钩子路径）", () => {
@@ -139,6 +139,65 @@ describe("resolveInvocation / --tui（shell 钩子路径）", () => {
     expect(resolveInvocation(["--", "--tui"], TTY)).toEqual({
       kind: "stdio",
       instruction: "--tui",
+      save: false,
+    });
+  });
+});
+
+/**
+ * `--new`：只影响 TUI 路径的「是否续接上一轮会话」，不改变模式判定本身。
+ */
+describe("resolveInvocation / --new（强制新会话）", () => {
+  it("全 TTY + 无参数 → tui + newSession", () => {
+    expect(resolveInvocation(["--new"], TTY)).toEqual({ kind: "tui", newSession: true });
+  });
+
+  it("--tui --new <命令> → tui + 首条消息 + newSession（钩子带 --new 的形态）", () => {
+    expect(resolveInvocation(["--tui", "--new", "gti", "status"], TTY)).toEqual({
+      kind: "tui",
+      initialPrompt: "gti status",
+      newSession: true,
+    });
+  });
+
+  it("与顺序无关（--new 在 --tui 之前）", () => {
+    expect(resolveInvocation(["--new", "--tui", "gti status"], TTY)).toEqual({
+      kind: "tui",
+      initialPrompt: "gti status",
+      newSession: true,
+    });
+  });
+
+  it("不在 TUI 路径时被忽略：有参数 → stdio", () => {
+    expect(resolveInvocation(["--new", "总结要点"], TTY)).toEqual({
+      kind: "stdio",
+      instruction: "总结要点",
+      save: false,
+    });
+  });
+
+  it("不在 TUI 路径时被忽略：非 TTY → stdio", () => {
+    expect(resolveInvocation(["--new"], PIPE_IN)).toEqual({
+      kind: "stdio",
+      instruction: "",
+      save: false,
+    });
+  });
+
+  it("--tui --new 非 TTY → tui-rejected（不降级为 stdio）", () => {
+    expect(resolveInvocation(["--tui", "--new", "gti"], PIPE_OUT)).toEqual({
+      kind: "tui-rejected",
+    });
+  });
+
+  it("--new + --help → help 优先", () => {
+    expect(resolveInvocation(["--new", "--help"], TTY)).toEqual({ kind: "help" });
+  });
+
+  it("`--` 之后的 --new 是普通参数", () => {
+    expect(resolveInvocation(["--", "--new"], TTY)).toEqual({
+      kind: "stdio",
+      instruction: "--new",
       save: false,
     });
   });

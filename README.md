@@ -236,9 +236,11 @@ ai hook install
 ai hook uninstall
 ```
 
-The hook calls **`ai --tui "$@"`**: it opens the interactive UI and **auto-sends the mistyped command as the first message**. A hook fires when a human at an interactive prompt typed something wrong, so the session should continue (you can follow up, and there is history) rather than dump a paragraph to stdout and exit. If you installed an older hook, re-running `ai hook install` overwrites it in place; you can also `ai hook uninstall` first.
+The hook calls **`ai --tui --new "$@"`**: it opens the interactive UI and **auto-sends the mistyped command as the first message**. A hook fires when a human at an interactive prompt typed something wrong, so it should open the TUI (you can follow up, and there is history) rather than dump a paragraph to stdout and exit. `--new` additionally makes each hook session a **fresh conversation**, instead of appending the mistyped command to whatever you had been doing in that directory. If you installed an older hook, re-running `ai hook install` upgrades it in place — the installed function body is compared with the current one and overwritten when it differs; you can also `ai hook uninstall` first.
 
 `--tui` is usable by hand too: `ai --tui explain this error` opens the TUI and sends it. In a non-TTY environment (a script or a pipe) it fails with an error instead of degrading to pipe mode — otherwise the whole full-screen UI would be written into the pipe.
+
+`--new` works on its own as well: `ai --new` starts a fresh conversation instead of resuming the last one in this directory. It only affects the TUI path; in stdio mode it is ignored (a stdio run is always a one-off session).
 
 ## Configuration
 

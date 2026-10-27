@@ -92,8 +92,12 @@ async function main(): Promise<void> {
       // 动态 import：确保 React/Ink 的求值发生在上方 `process.env.NODE_ENV ||= "production"`
       // 之后，从而加载 production 版 reconciler（避免 DEV 版 performance.measure 缓冲撑爆堆）。
       const { runTui } = await import("./tui/index.js");
-      // `initialPrompt`（来自 shell 钩子 `ai --tui "$@"`）会作为首条消息自动发送
-      await runTui({ initialPrompt: invocation.initialPrompt });
+      // `initialPrompt`（来自 shell 钩子 `ai --tui --new "$@"`）会作为首条消息自动发送；
+      // `newSession`（`--new`）要求跳过续接、开一条新会话
+      await runTui({
+        initialPrompt: invocation.initialPrompt,
+        newSession: invocation.newSession,
+      });
       return;
     }
 

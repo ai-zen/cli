@@ -8,8 +8,11 @@
  * | 纯 stdio    | 带位置参数，或 stdin/stdout 非 TTY          | 脚本、管道             |
  * | TUI         | 无参数且 stdin/stdout 均为 TTY；或 `--tui` | 人类用户               |
  *
+ * `--new` 是 TUI 路径上的修饰项，不改变模式判定：它只表示「跳过续接、开一条新会话」。
+ * 出现在 stdio 路径上时被忽略（stdio 本就是一次性会话，不存在续接）。
+ *
  * 注意：**shell 钩子不属于纯 stdio**。钩子的发起场景是「人坐在交互终端前敲错了命令」，
- * 因此它走 `ai --tui "$@"` 进 TUI，并把原命令作为首条消息自动发送。
+ * 因此它走 `ai --tui --new "$@"` 进 TUI，并把原命令作为首条消息自动发送。
  * （早期版本写成 `ai "$@"`，于是钩子会话被当成脚本调用落到管道模式——那是实现错误。）
  *
  * 本模块为纯函数与纯数据，不触碰 stdin/stdout、不 import chalk 等 UI 依赖，
@@ -36,8 +39,11 @@ export type Invocation =
   | { kind: "help" }
   | { kind: "version" }
   | { kind: "stdio"; instruction: string; save: boolean }
-  /** `initialPrompt`：进 TUI 后**自动作为首条消息**发送的内容（shell 钩子用） */
-  | { kind: "tui"; initialPrompt?: string }
+  /**
+   * `initialPrompt`：进 TUI 后**自动作为首条消息**发送的内容（shell 钩子用）
+   * `newSession`：`--new` 要求**开新会话**，跳过「续接该目录上一轮对话」
+   */
+  | { kind: "tui"; initialPrompt?: string; newSession?: boolean }
   /** `--tui` 明确要求交互界面，但终端不支持：报错退出，**绝不**降级成 stdio */
   | { kind: "tui-rejected" };
 
@@ -71,6 +77,7 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
   let wantHelp = false;
   let wantVersion = false;
   let wantTui = false;
+  let wantNew = false;
   let passthrough = false;
 
   for (const arg of argv) {
@@ -88,6 +95,10 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
     }
     if (arg === "--tui") {
       wantTui = true;
+      continue;
+    }
+    if (arg === "--new") {
+      wantNew = true;
       continue;
     }
     if (arg === "--help" || arg === "-h") {
@@ -118,10 +129,11 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
   // 非 TTY 时宁可报错，也不能默默降级成 stdio—— 否则界面内容会写进管道。
   if (wantTui) {
     if (!tty.stdinIsTTY || !tty.stdoutIsTTY) return { kind: "tui-rejected" };
-    return { kind: "tui", initialPrompt: instruction || undefined };
+    return { kind: "tui", initialPrompt: instruction || undefined, newSession: wantNew || undefined };
   }
 
   const mode = decideMode(tty, positional.length > 0);
-  if (mode === "tui") return { kind: "tui" };
+  // `--new` 只在 TUI 路径有意义；走到 stdio（脚本 / 管道）时静默忽略
+  if (mode === "tui") return { kind: "tui", newSession: wantNew || undefined };
   return { kind: "stdio", instruction, save };
 }
