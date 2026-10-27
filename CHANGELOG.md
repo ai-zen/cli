@@ -19,13 +19,14 @@
   - 根因在上游：core 的 `abort()` 只管打标记、`formatHistory()` 只按状态过滤，两者都不关心「已经输出了什么」。core `4.5.3` 新增 `abortedMessageStrategy`（`drop` / `keep`，默认 `drop`），并导出 `reconcileAbortedMessages()`，在工具轮次归一**之后**收尾纯内容消息。
   - CLI 显式设成 `keep`：确有输出的被中断 assistant 会被恢复为 `completed` 进入上下文。**空输出不保留**（避免空消息污染上下文）、**带工具调用的不归它管**（仍走「整轮进出」，否则会出现「有调用无结果」的非法历史）。
   - SDK 依赖随之升级到 `1.0.0-alpha.20`（`createAgent` 新增第三参 `CreateAgentOptions`，顺带把此前完全没暴露的 `abortedToolRoundStrategy` / `abortedToolRoundReason` 一起接出来），core 升到 `4.5.3`。
-- **界面国际化（中文 / English）** —— 首次启动按系统语言识别（`LC_ALL` → `LC_MESSAGES` → `LANG` → Node 的 `Intl` locale，**兜底英文**），识别结果写入 `~/.ai-zen/cli/preferences.json`，之后以偏好为准（改了系统语言也不会让界面语言惄惄漂移）。`/lang` 可随时切换，`/lang zh` / `/lang en` 直接指定。
-  - 词典编译进产物（`src/i18n/{zh,en}.ts`）：key 扁平化，`{n}` 插值，英文 `_one` / `_other` 复数变体由 `Intl.PluralRules` 选；切换语言只换一个引用，不重读磁盘、不重启。缺词条时返回 key 本身（不做跨语言静默回退，否则英文界面里会突然冒出中文）。
+- **界面国际化（中文 / English）** —— 首次启动按系统语言识别（`LC_ALL` → `LC_MESSAGES` → `LANG` → Node 的 `Intl` locale，**兜底英文**），识别结果写入 `~/.ai-zen/cli/preferences.json`，之后以偏好为准（改了系统语言也不会让界面语言悄悄漂移）。`/lang` 可随时切换，`/lang zh` / `/lang en` 直接指定。
+  - 词典编译进产物（`src/i18n/{zh,en}.ts` + 配置中心专区 `{zh,en}-wizard.ts`）：key 扁平化，`{n}` 插值；切换语言只换一个引用，不重读磁盘、不重启。缺词条时返回 key 本身（不做跨语言静默回退，否则英文界面里会突然冒出中文）。`t()` 支持 `_one` / `_other` 复数变体（由 `Intl.PluralRules` 选），但 `i18n/index.test.ts` 要求**中英 key 集合完全一致**，故现有词条统一用 `(s)` 写法，不开变体。
   - 语言偏好放 CLI 独立的 `preferences.json`，**不塞进共享的 `config.json`** —— 那是 CLI 与 Desktop 共用的 `AppConfig` 契约，塞进去会被桌面端当未知字段丢掉。
-  - 本版覆盖**主对话框 + 命令层**：状态栏三块、输入框占位与提示、通知、思考档位标签、生成中提示；`/help` 与斜杠菜单的命令说明，以及各命令的选择器标题与反馈文案（`/model` `/agent` `/think` `/save` `/load` `/handoff` `/migrate` `/back` `/reload` `/mcp` 等）。
-  - `COMMAND_REGISTRY` 里存的是 **i18n key 而不是文案** —— 它是纯数据模块、加载时机早于语言初始化，存文案会把「加载那一刻的语言」定死；渲染时由 `getCommandHints()` 现取。
-  - 配置向导、`/config` 相关界面，以及业务模块返回的 summary（如 `agent-switch` 的切换结果）仍为中文，按阶段后续覆盖。
-  - 顺带排掉一个隐藏的地雷：状态栏之前用**文案**判断思考强度是否置灰（`effort === "关"`），英文界面下这个判断永远不成立；现在改为基于档位语义的 `effortDimmed()`，与语言彻底解耦。
+  - 覆盖范围是**整套 TUI 界面**：主对话框（状态栏三块、输入占位与提示、通知、思考档位标签、生成中提示）、命令层（`/help`、斜杠菜单、各命令的选择器与反馈）、配置中心全部屏幕（端点 / 模型 / 图片模型 / MCP / Agent 定义 / 权限 / 默认项 / 工具输出上限 / 新建引导 / KV 与多行文本编辑器）、交接方式选择器与确认框、启动屏与启动错误屏，以及业务模块返回的 summary（`/model` `/agent` `/think` 的切换结果、交接进度与降级提示）。
+  - `COMMAND_REGISTRY` 里存的是 **i18n key 而不是文案** —— 它是纯数据模块、加载时机早于语言初始化，存文案会把「加载那一刻的语言」定死；渲染时由 `getCommandHints()` 现取。启动屏的 `TAGLINE` 常量同理改成了 `tagline()` 函数。
+  - **刻意不翻的三类**：① 发给模型的协议内容（Sub-agent 的 tool schema 描述、注入历史的工作目录变更提示）—— 翻了会让模型行为漂移；② `ai --help` / `ai hook install` 这类**在 TUI 之外、语言初始化之前**打印的终端输出；③ 进文件名的 `formatShortTime()` 时间格式与会话默认名 —— 跟着界面语言变会让历史文件与新文件混排。
+  - 时间格式随语言切换 dayjs locale 与 pattern：中文 `7月1日 14:30` / `昨天 14:30`，英文 `Jul 1, 14:30` / `Yesterday 14:30`。
+  - 顺带排掉两个隐藏地雷：状态栏曾用**文案**判断思考强度是否置灰（`effort === "关"`），英文界面下永远不成立，改为档位语义的 `effortDimmed()`；输入区占位提示曾硬编码在 `inputLines()` 里（渲染层却走 `t()`），英文界面下量输入行高度会短一行、连带硬件光标 y 偏移，现在两处同源。
 
 ### 🔧 行为变更
 
@@ -54,6 +55,7 @@
 - README（中 / 英）与 `docs/{zh,en}/getting-started.md` 的命令表新增 `/agent`、`/reload`、`/mcp` 三行。
 - README（中 / 英）与 `docs/{zh,en}/index.md` 的状态栏说明从「一条按优先级的文本流」改为「三个信息块 + 按块换行」。
 - `docs/{zh,en}/mcp.md` 的「管理」章节补充 `/mcp` 直达入口与 `/reload` 刷新；`docs/{zh,en}/migration.md` 去掉「别名 `/migration`」。
+- README（中 / 英）新增「界面语言」一节：识别优先级、`preferences.json` 与 `/lang`、覆盖范围，以及刻意不翻的三类内容。
 - `docs/manifest.json` 与 README 中的版本号更新为 `1.0.0-alpha.21`。
 - README（中 / 英）的「环境变量」补 `AIZ_DEBUG_SDK=0` / `AIZ_SDK_LOG_FILE`，「文件系统布局」补 `~/.ai-zen/logs/`，键位表下补一段「中断后已输出的思考与内容会保留」的说明。
 - README（中 / 英）与 `docs/{zh,en}/getting-started.md` 的命令表补 `/lang`；「文件系统布局」与 `docs/{zh,en}/configuration.md` 的目录树补 `~/.ai-zen/cli/preferences.json`（CLI 本地偏好）。
@@ -73,6 +75,8 @@
 - 新增 `src/i18n/index.test.ts`（14 例：语言识别优先级 / `C`·`POSIX` 跳过 / 兜底英文 / 插值 / 缺词条回退 key / 中英词条一一对应）与 `src/i18n/preferences.test.ts`（9 例：文件缺失·损坏·非法值的容错、原子写、`initLocale` 只识别一次并落盘）；`reasoning-effort.test.ts` 补 5 例「置灰不靠文案判断」。
 - pty 真机验收：`LANG=en_US.UTF-8` 首次启动→英文并落盘 `en`；`/lang` 切中文→状态栏/输入框/通知全部跟随，且**重启后保持中文**（偏好先于系统语言）；`/lang en` 切回英文正常。
 - pty 真机验收（阶段 2）：英文下斜杠菜单显示 `❯ /help  Show this help`、`/help` 输出全英文列表；`/lang zh` 后斜杠菜单与 `/help` 整体切回中文。
+- pty 真机验收（阶段 3 / 4，隔离的 `AI_ZEN_DIR` + `LANG=en_US.UTF-8`）：首次启动识别为英文并落盘；启动屏 `The AI collaboration desk in your terminal`；主屏 `Type a message, / for commands…`、`thinking default · total 0 tok`；配置中心 `◆ Configuration` 与 `+ New model — marked as custom automatically` / `openai · factory-managed · vision`；模型详情 `◆ Model · GPT-6 Astra` / `factory-managed (editing switches it to custom)` / `Delete model`；新建模型与新建端点引导屏全英文。把 `preferences.json` 改回 `zh` 后**在 `LANG=en_US.UTF-8` 下重启仍为中文界面**（偏好优先于系统语言），配置中心与模型列表中文文案与改造前一致。
+- **断言中文的测试一律显式锁语言**：`setLocale("zh")` 加在 `screens.test.tsx`、`config-wizard.test.tsx`、`reasoning-effort.test.ts`、`registry.test.ts`、`agent-prompt.test.tsx`、`handoff-choice.test.ts`、`config-editor.test.ts`、`agent-switch.test.ts`、`model-switch.test.ts`、`handoff-service.test.ts`、`auto-migrate-confirm.test.ts` —— 默认语言是 `en`，不锁就会在 CI 上莫名其妙地红。
 - 新增 `src/agent-switch.test.ts`（10 例）、`src/mcp-command.test.ts`（6 例）、`src/tui/token-rate.test.ts`（20 例）、`src/tui/status-segments.test.ts`（17 例）、`src/tui/screens/input-row.test.tsx`（7 例）、`src/tui/text.test.ts`（18 例）；`input-editing.test.ts` 补 3 例「emoji 不被拆半个」的用例。
 - `src/tui/screens.test.tsx` 增加状态栏三块顺序、块内不被拆、宽屏并排、以及「Ink 实际渲染行数 == `statusBarRows` 量出行数」的断言；`computeInputCursorPosition` 补「通知栏行数参与 y」的用例。
 - `input-row.test.tsx` 里那条 `⚡` 用例同时断言「手算给 8、实测给 9」——本次改动的理由就在这两行里。

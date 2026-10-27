@@ -161,6 +161,18 @@ key input="" flags=[pageUp] raw=false
 
 每个会话都会在对话过程中**直接落盘为独立文件**（`cli/conversations/<id>.json`），不再有单独的草稿存储。一个指针文件（`cli/last-session.json`）记录**上一轮会话 id**；下次启动 `ai` 会**自动续接该会话**，接着上次继续。
 
+### 界面语言（中文 / English）
+
+首次启动按系统语言自动识别：`LC_ALL` → `LC_MESSAGES` → `LANG` → 系统 `Intl` locale，**识别不出来兑底英文**。识别结果写进 `~/.ai-zen/cli/preferences.json`，之后以偏好为准 —— 改了系统语言不会让界面语言漂移。`/lang` 可随时切换（无参在两者间切换），`/lang zh` / `/lang en` 直接指定。
+
+偏好存在 CLI 独立的 `preferences.json` 里，**不写共享的 `config.json`** —— 后者是 CLI 与 Desktop 共用的配置契约。
+
+覆盖范围是整套 TUI：主对话框（状态栏 / 输入提示 / 通知）、命令与 `/help`、配置中心全部屏幕、交接方式选择器、启动屏与启动错误屏。**以下刻意不翻**：
+
+- 发给模型的协议内容（Sub-agent 的 tool schema 描述、注入历史的工作目录变更提示）—— 翻了会让模型行为漂移；
+- `ai --help` / `ai hook install` 这类在 TUI 之外、语言初始化之前打印的终端输出；
+- 进文件名的会话默认名与 `formatShortTime()` 时间格式 —— 跟着界面语言变会让历史文件与新文件混排。
+
 ### 对话命令
 
 对话中输入的所有命令以 `/` 开头。输入 `/` 会在输入行下方实时列出可用命令及说明，继续输入即按前缀收敛候选：

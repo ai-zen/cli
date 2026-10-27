@@ -161,6 +161,18 @@ On first launch, if the endpoint bound to the selected model has no API Key yet,
 
 Every conversation is persisted directly as its own file (`cli/conversations/<id>.json`) while you chat — there is no separate draft store. A single pointer (`cli/last-session.json`) remembers the **last session id**; next time you start `ai`, that session is **resumed automatically** so you pick up where you left off.
 
+### UI language (Chinese / English)
+
+On first launch the language is detected from the system: `LC_ALL` → `LC_MESSAGES` → `LANG` → the system `Intl` locale, **falling back to English**. The result is stored in `~/.ai-zen/cli/preferences.json`; from then on the stored preference wins, so changing the system language will not make the UI drift. `/lang` toggles at any time (no argument flips between the two), and `/lang zh` / `/lang en` select one directly.
+
+The preference lives in the CLI's own `preferences.json`, **not in the shared `config.json`** — the latter is the config contract shared by the CLI and the Desktop app.
+
+The whole TUI is covered: the chat screen (status bar / input hints / notices), commands and `/help`, every configuration-center screen, the handoff picker, and the splash / boot-error screens. **Deliberately not translated:**
+
+- protocol content sent to the model (Sub-agent tool-schema descriptions, the working-directory change note injected into history) — translating them makes model behaviour drift;
+- terminal output printed outside the TUI and before the locale is initialised, such as `ai --help` / `ai hook install`;
+- the default conversation name and `formatShortTime()` format that end up in file names — following the UI language would interleave old and new files.
+
 ### Conversation Commands
 
 While in a conversation, all commands start with `/`. Typing `/` lists the available commands, with descriptions, right below the input line; typing more characters narrows the candidates by prefix:
