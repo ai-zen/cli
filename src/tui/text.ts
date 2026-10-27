@@ -5,43 +5,76 @@
  * 避免 `screens.tsx ↔ config-wizard.tsx` 相互 import 形成循环依赖。
  */
 
+import stringWidth from "string-width";
 import { isMouseSequence } from "./mouse.js";
 
 // ==================== 显示宽度 ====================
+//
+// 宽度计算直接交给 `string-width` —— **Ink 排版时用的就是它**
+//（`ink/build/output.js` 第一行 `import stringWidth from 'string-width'`）。
+//
+// 曾经这里手写了一张 `isWide` 区间表，逐 code point 累加。结果是两把尺子：
+//   - `⚡` `✅` `✨` `⭐` 这类 East Asian Wide 符号我们算 1 列、Ink 算 2 列；
+//   - `👨‍👩‍👧` 逐 code point 累加得 8 列，实际只占 2 列；
+//   - `✌️`（VS16 序列）与 `🇨🇳`（国旗对）同样对不上。
+// 于是一切依赖宽度的东西（折行、状态栏装行、光标列号）都差一截，还靠
+// 「预留 1 列余量」硬顶。现在两边用同一把尺子，这类偏差从根上没了。
+//
+// 仍然需要 `graphemes()`：`string-width` 只管宽度，不管「光标该以什么为单位移动」。
 
-/** 是否宽字符（CJK / 全角 / 常见 Emoji），占 2 列 */
-function isWide(cp: number): boolean {
-  return (
-    (cp >= 0x1100 && cp <= 0x115f) ||
-    (cp >= 0x2e80 && cp <= 0x303e) ||
-    (cp >= 0x3041 && cp <= 0x33ff) ||
-    (cp >= 0x3400 && cp <= 0x4dbf) ||
-    (cp >= 0x4e00 && cp <= 0x9fff) ||
-    (cp >= 0xa000 && cp <= 0xa4cf) ||
-    (cp >= 0xac00 && cp <= 0xd7a3) ||
-    (cp >= 0xf900 && cp <= 0xfaff) ||
-    (cp >= 0xfe30 && cp <= 0xfe6f) ||
-    (cp >= 0xff00 && cp <= 0xff60) ||
-    (cp >= 0xffe0 && cp <= 0xffe6) ||
-    (cp >= 0x1f300 && cp <= 0x1faff) ||
-    (cp >= 0x20000 && cp <= 0x3fffd)
-  );
+/**
+ * 单簇宽度缓存 —— `string-width` 内部要跑 emoji / EAW 正则，而折行是每帧热路径；
+ * 字素簇的种类远少于出现次数，缓存后几乎零成本。
+ */
+const clusterWidthCache = new Map<string, number>();
+const CLUSTER_CACHE_LIMIT = 4096;
+
+/** 终端显示宽度（按字素簇，与 Ink 的排版完全一致） */
+export function displayWidth(text: string): number {
+  if (text === "") return 0;
+  return stringWidth(text);
 }
 
-/** 终端显示宽度（宽字符计 2，组合字符计 0） */
-export function displayWidth(text: string): number {
-  let width = 0;
-  for (const ch of text) {
-    const cp = ch.codePointAt(0)!;
-    if (cp >= 0x0300 && cp <= 0x036f) continue; // 组合附加符号
-    width += isWide(cp) ? 2 : 1;
-  }
+/** 单个字素簇的显示宽度（结果带缓存） */
+export function clusterWidth(cluster: string): number {
+  if (cluster === "") return 0;
+  const cached = clusterWidthCache.get(cluster);
+  if (cached !== undefined) return cached;
+  const width = stringWidth(cluster);
+  if (clusterWidthCache.size >= CLUSTER_CACHE_LIMIT) clusterWidthCache.clear();
+  clusterWidthCache.set(cluster, width);
   return width;
 }
 
 /**
+ * 把一个字符串切成**字素簇**（用户感知的「一个字符」）。
+ *
+ * 为什么不能按 code point 切：`✌️` 是 `U+270C U+FE0F` 两个 code point、`👨‍👩‍👧` 是
+ * 五个、`🇨🇳` 是两个区域指示符——它们都是**一个**字素簇。按 code point 切会让光标
+ * 停在簇中间（例如停在 `✌` 与 `U+FE0F` 之间），后果是：
+ *   - 反显光标变成在反显一个变体选择符 —— 屏幕上什么都不显示（实测：Ink 的输出里
+ *     整个反显段直接消失）；
+ *   - 退格只删掉半个 emoji，留下一个孤立的 `U+FE0F`；
+ *   - 光标列号也会因为「半个簇」的宽度而算错。
+ *
+ * 用 `Intl.Segmenter`（Node 内置，无需依赖）；环境不支持时退回 code point 切分。
+ */
+const segmenter =
+  typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter("zh", { granularity: "grapheme" })
+    : null;
+
+export function graphemes(text: string): string[] {
+  if (text === "") return [];
+  if (!segmenter) return Array.from(text);
+  const out: string[] = [];
+  for (const part of segmenter.segment(text)) out.push(part.segment);
+  return out;
+}
+
+/**
  * 按显示宽度把文本折成多行（保留显式换行）。
- * 拉丁文优先在空格处断行，CJK / 超长词按字符硬断；保证每行显示宽度 ≤ limit。
+ * 拉丁文优先在空格处断行，CJK / 超长词按**字素簇**硬断；保证每行显示宽度 ≤ limit。
  */
 export function wrapText(text: string, limit: number): string[] {
   const width = Math.max(1, limit);
@@ -53,8 +86,8 @@ export function wrapText(text: string, limit: number): string[] {
     }
     let line = "";
     let lineWidth = 0;
-    for (const ch of raw) {
-      const w = displayWidth(ch);
+    for (const ch of graphemes(raw)) {
+      const w = clusterWidth(ch);
       if (lineWidth + w > width && line !== "") {
         const space = line.lastIndexOf(" ");
         if (space > 0) {
@@ -83,17 +116,17 @@ export interface InputLayout {
   lines: string[];
   /** 光标所在行（0 起始） */
   cursorRow: number;
-  /** 光标在该行内的字符偏移（code point 计） */
+  /** 光标在该行内的字符偏移（**字素簇**计，不是 code point） */
   cursorCol: number;
 }
 
 /**
- * 把输入文本按显示宽度折行，并定位光标（`cursor` 为字符索引，以 code point 计）。
- * 折行采用逐字符硬断（不做空格优先），以保证光标映射精确、支持跨行编辑。
+ * 把输入文本按显示宽度折行，并定位光标（`cursor` 为**字素簇**索引）。
+ * 折行采用逐簇硬断（不做空格优先），以保证光标映射精确、支持跨行编辑。
  */
 export function layoutInput(text: string, cursor: number, width: number): InputLayout {
   const limit = Math.max(1, width);
-  const chars = Array.from(text);
+  const chars = graphemes(text);
   const pos = Math.max(0, Math.min(cursor, chars.length));
   const lines: string[] = [];
   let line = "";
@@ -103,7 +136,7 @@ export function layoutInput(text: string, cursor: number, width: number): InputL
   let cursorRow = 0;
   let cursorCol = 0;
   let processed = 0;
-  // 记录「处理完 processed 个字符后」的光标位置；processed === pos 即为光标处
+  // 记录「处理完 processed 个簇后」的光标位置；processed === pos 即为光标处
   const mark = () => {
     if (processed === pos) {
       cursorRow = row;
@@ -122,7 +155,7 @@ export function layoutInput(text: string, cursor: number, width: number): InputL
       mark();
       continue;
     }
-    const w = displayWidth(ch);
+    const w = clusterWidth(ch);
     if (col > 0 && lineWidth + w > limit) {
       lines.push(line);
       line = "";
@@ -182,8 +215,8 @@ export function clipWidth(text: string, max: number): string {
   if (displayWidth(text) <= limit) return text;
   let out = "";
   let width = 0;
-  for (const ch of text) {
-    const w = displayWidth(ch);
+  for (const ch of graphemes(text)) {
+    const w = clusterWidth(ch);
     if (width + w > limit - 1) break; // 预留 1 列给省略号
     out += ch;
     width += w;

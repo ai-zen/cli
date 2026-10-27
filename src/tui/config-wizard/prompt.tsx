@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Box, Text, useCursor, useInput } from "ink";
 import { theme } from "../theme.js";
 import { KeyHints } from "../components.js";
-import { INPUT_PREFIX_WIDTH, bottomPadding, displayWidth, layoutInput, isTerminalReply } from "../text.js";
+import { INPUT_PREFIX_WIDTH, bottomPadding, displayWidth, graphemes, layoutInput, isTerminalReply } from "../text.js";
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
 
 // ==================== 输入屏布局（纯函数，便于单测）====================
@@ -39,7 +39,7 @@ export interface PromptLayout {
 export function promptLayout(input: PromptLayoutInput): PromptLayout {
   const contentLines = input.headerLines + input.inputLines + input.extraLines + input.hintLines;
   const topPadding = bottomPadding(input.terminalRows, contentLines);
-  const before = Array.from(input.lineText).slice(0, input.cursorCol).join("");
+  const before = graphemes(input.lineText).slice(0, input.cursorCol).join("");
   return {
     contentLines,
     topPadding,
@@ -81,10 +81,10 @@ export interface PromptScreenProps {
 export function PromptScreen(props: PromptScreenProps) {
   const { setCursorPosition } = useCursor();
   const [value, setValue] = useState(props.initialValue ?? "");
-  const [cursor, setCursor] = useState(Array.from(props.initialValue ?? "").length);
+  const [cursor, setCursor] = useState(graphemes(props.initialValue ?? "").length);
   const [revealed, setRevealed] = useState(!props.mask);
 
-  const chars = Array.from(value);
+  const chars = graphemes(value);
   const caret = Math.max(0, Math.min(cursor, chars.length));
   const display = revealed ? value : "•".repeat(chars.length);
   const layout = layoutInput(display, caret, Math.max(4, props.columns - 4));
@@ -113,7 +113,7 @@ export function PromptScreen(props: PromptScreenProps) {
     props.onChange?.(next);
   };
   const insert = (text: string) => {
-    update(chars.slice(0, caret).join("") + text + chars.slice(caret).join(""), caret + Array.from(text).length);
+    update(chars.slice(0, caret).join("") + text + chars.slice(caret).join(""), caret + graphemes(text).length);
   };
   const deleteBefore = () => {
     if (caret === 0) return;
@@ -192,7 +192,7 @@ export function PromptScreen(props: PromptScreenProps) {
               </Text>
             );
           }
-          const rowChars = Array.from(line);
+          const rowChars = graphemes(line);
           const at = rowChars[layout.cursorCol];
           return (
             <Text key={index} wrap="truncate">

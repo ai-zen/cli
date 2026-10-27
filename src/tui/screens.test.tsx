@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "ink-testing-library";
-import { StatusBar, SlashMenu, SelectList } from "./components.js";
+import { StatusBar, statusBarRows, SlashMenu, SelectList } from "./components.js";
 import {
   Splash,
   displayWidth,
@@ -29,6 +29,9 @@ import { RENDER_OPTIONS } from "./index.js";
 import { AgentNS } from "@ai-zen/agents-core";
 
 const tick = () => new Promise((r) => setTimeout(r, 25));
+
+/** 状态栏把「数字 + 单位」用不换行空格绑定，断言前统一归一化 */
+const normalize = (text: string): string => text.replace(/\u00a0/g, " ");
 
 let seq = 0;
 function msg(partial: Partial<AgentNS.Message> & { role: AgentNS.Role }): AgentNS.Message {
@@ -77,12 +80,130 @@ describe("StatusBar", () => {
     const { lastFrame, unmount } = render(
       <StatusBar model="deepseek-v4-flash" agent="default" lastTokens={123} totalTokens={4567} />,
     );
-    const frame = lastFrame() ?? "";
+    const frame = normalize(lastFrame() ?? "");
     expect(frame).toContain("deepseek-v4-flash");
     expect(frame).toContain("default");
     expect(frame).toContain("本轮 123");
     expect(frame).toContain("累计 4567");
     unmount();
+  });
+
+  it("按优先级排列：身份 → 用量/速率 → 快捷键提示放末尾", () => {
+    const { lastFrame, unmount } = render(
+      <StatusBar
+        model="m1"
+        agent="a1"
+        lastTokens={10}
+        totalTokens={20}
+        busy
+        rate={{ live: 42.4, average: null, running: true }}
+        hint="Enter 发送"
+      />,
+    );
+    const flat = (lastFrame() ?? "").replace(/\s+/g, " ");
+    const at = (needle: string) => flat.indexOf(needle);
+    expect(at("本轮 10 tok")).toBeGreaterThan(at("agent a1"));
+    expect(at("累计 20 tok")).toBeGreaterThan(at("本轮 10 tok"));
+    expect(at("⚡ 42 tok/s")).toBeGreaterThan(at("累计 20 tok"));
+    expect(at("生成中")).toBeGreaterThan(at("⚡"));
+    // 快捷键提示优先级最低，必须排在最后
+    expect(at("Enter 发送")).toBeGreaterThan(at("生成中"));
+    unmount();
+  });
+
+  it("生成结束后展示本轮平均速率（不显示实时段）", () => {
+    const { lastFrame, unmount } = render(
+      <StatusBar model="m1" agent="a1" rate={{ live: null, average: 7.84, running: false }} />,
+    );
+    const frame = normalize(lastFrame() ?? "");
+    expect(frame).toContain("⚡ 均 7.8 tok/s");
+    unmount();
+  });
+
+  it("无速率数据 / 不足跨度时不显示速率段", () => {
+    const idle = render(<StatusBar model="m1" agent="a1" />);
+    expect(idle.lastFrame() ?? "").not.toContain("tok/s");
+    idle.unmount();
+    const early = render(
+      <StatusBar model="m1" agent="a1" busy rate={{ live: null, average: null, running: true }} />,
+    );
+    expect(early.lastFrame() ?? "").not.toContain("tok/s");
+    early.unmount();
+  });
+
+  it("窄屏：三块各自整块占一行（身份 → 用量 → 快捷键）", () => {
+    const props = {
+      model: "deepseek-v4-flash",
+      agent: "default",
+      effort: "高",
+      lastTokens: 1284,
+      totalTokens: 48213,
+      hint: "Enter 发送 · Ctrl+J 换行 · / 命令 · PgUp 看历史",
+    };
+    const rows = normalize(statusBarRows(props, 80).map((row) => row.map((s) => s.text).join("")).join("\n")).split("\n");
+    // 身份块完整占一行，且不混入下一块的内容
+    expect(rows[0]).toContain("◆ deepseek-v4-flash");
+    expect(rows[0]).toContain("agent default");
+    expect(rows[0]).toContain("思考 高");
+    expect(rows[0]).not.toContain("本轮");
+    // 用量块整块同一行：本轮与累计不分家
+    expect(rows[1]).toContain("本轮 1284 tok");
+    expect(rows[1]).toContain("累计 48213 tok");
+    // 快捷键块整块同一行
+    expect(rows[2]).toContain("Enter 发送");
+    expect(rows[2]).toContain("PgUp 看历史");
+    // 每行不得超宽（超了就说明装行算错，会把整帧顶高）
+    for (const row of rows) expect(displayWidth(row)).toBeLessThanOrEqual(80);
+  });
+
+  it("宽屏：三块并排在同一行，行数收缩到 1", () => {
+    const props = {
+      model: "m1",
+      agent: "a1",
+      effort: "高",
+      lastTokens: 1284,
+      totalTokens: 48213,
+      hint: "Enter 发送 · Ctrl+J 换行",
+    };
+    const rows = statusBarRows(props, 200);
+    expect(rows).toHaveLength(1);
+    const line = rows[0]!.map((s) => s.text).join("");
+    expect(line.indexOf("agent a1")).toBeLessThan(line.indexOf("本轮"));
+    expect(line.indexOf("本轮")).toBeLessThan(line.indexOf("Enter 发送"));
+  });
+
+  it("Ink 实际渲染的行数与 statusBarRows 量出的行数一致（否则整帧会高一行）", () => {
+    const props = {
+      model: "deepseek-v4-flash",
+      agent: "default",
+      effort: "高",
+      lastTokens: 1284,
+      totalTokens: 48213,
+      hint: "Enter 发送 · Ctrl+J 换行 · / 命令 · PgUp 看历史",
+      columns: 60,
+    };
+    const expected = statusBarRows(props, 60).length;
+    const { lastFrame, unmount } = render(<StatusBar {...props} />);
+    const actual = normalize(lastFrame() ?? "")
+      .split("\n")
+      .filter((row) => row.trim() !== "").length;
+    expect(actual).toBe(expected);
+    unmount();
+  });
+
+  it("折行行数可由 statusBarRows 预先量出（供布局预留高度）", () => {
+    const props = {
+      model: "deepseek-v4-flash",
+      agent: "default",
+      effort: "高",
+      lastTokens: 1284,
+      totalTokens: 48213,
+      hint: "Enter 发送 · Ctrl+J 换行 · / 命令 · PgUp 看历史",
+    };
+    const wide = statusBarRows(props, 200).length;
+    const narrow = statusBarRows(props, 80).length;
+    expect(wide).toBe(1);
+    expect(narrow).toBeGreaterThan(wide);
   });
 });
 
@@ -351,16 +472,17 @@ describe("computeChatLayout（吸底 + 应用内翻页）", () => {
 
   it("空转录：对话区全部补齐，行数 = rows − 底部区域", () => {
     const layout = computeChatLayout(base);
-    expect(layout.bottomLines).toBe(3);
-    expect(layout.lines).toHaveLength(21);
+    // 通知栏 0 + 分隔线 1 + 斜杠菜单 0 + 输入 1 + 两行状态栏 2
+    expect(layout.bottomLines).toBe(4);
+    expect(layout.lines).toHaveLength(20);
     expect(layout.lines.every((l) => l.kind === "gap")).toBe(true);
   });
 
   it("内容超出时自底部截断，最新一条在最后", () => {
     const transcript = Array.from({ length: 30 }, (_, i) => line(i));
     const layout = computeChatLayout({ ...base, transcript });
-    expect(layout.lines).toHaveLength(21);
-    expect(layout.lines[20].text).toBe("L29");
+    expect(layout.lines).toHaveLength(20);
+    expect(layout.lines[19].text).toBe("L29");
   });
 
   it("通知栏抬高底部区域、压缩对话区", () => {
@@ -370,8 +492,8 @@ describe("computeChatLayout（吸底 + 应用内翻页）", () => {
   });
 
   it("确认 / 选择覆盖层替换输入区高度", () => {
-    expect(computeChatLayout({ ...base, overlay: "confirm" }).bottomLines).toBe(7);
-    expect(computeChatLayout({ ...base, overlay: "picker", pickerItems: 3 }).bottomLines).toBe(11);
+    expect(computeChatLayout({ ...base, overlay: "confirm" }).bottomLines).toBe(8);
+    expect(computeChatLayout({ ...base, overlay: "picker", pickerItems: 3 }).bottomLines).toBe(12);
   });
 
   it("viewTop 指定时显示对应窗口，越界钳制", () => {
@@ -381,8 +503,17 @@ describe("computeChatLayout（吸底 + 应用内翻页）", () => {
     expect(top.scrolled).toBe(true);
     expect(top.lines[0].text).toBe("L0");
     const high = computeChatLayout({ ...base, transcript, viewTop: 9999 });
-    expect(high.viewTop).toBe(9);
+    expect(high.viewTop).toBe(10);
     expect(high.scrolled).toBe(false);
+  });
+
+  it("状态栏折行时按实测行数预留高度", () => {
+    const two = computeChatLayout({ ...base, statusBarLines: 2 });
+    const three = computeChatLayout({ ...base, statusBarLines: 3 });
+    expect(three.bottomLines).toBe(two.bottomLines + 1);
+    expect(three.lines).toHaveLength(two.lines.length - 1);
+    // 不传时按下限 2 行算（与改动前一致）
+    expect(computeChatLayout(base).bottomLines).toBe(two.bottomLines);
   });
 
   it("多行输入抬高底部区域、压缩对话区", () => {
@@ -444,6 +575,29 @@ describe("computeInputCursorPosition（IME 光标定位）", () => {
     expect(
       computeInputCursorPosition({ ...base, transcriptLines: 5, hintCount: 2, cursorRow: 1 }).y,
     ).toBe(9);
+  });
+
+  it("y 计入通知栏行数（否则多行通知一出现，IME 候选框就浮到输入行上方）", () => {
+    // 对话区 5 + 通知 3 + 菜单 0 + 分隔线 1 + 行内 1
+    expect(
+      computeInputCursorPosition({ ...base, transcriptLines: 5, noticeCount: 3, cursorRow: 1 }).y,
+    ).toBe(10);
+  });
+
+  it("通知与菜单同时存在时按渲染顺序累加（通知在上、菜单在下）", () => {
+    expect(
+      computeInputCursorPosition({
+        ...base,
+        transcriptLines: 2,
+        noticeCount: 4,
+        hintCount: 3,
+        cursorRow: 0,
+      }).y,
+    ).toBe(10);
+  });
+
+  it("不传 noticeCount 时视为 0（与旧行为一致）", () => {
+    expect(computeInputCursorPosition({ ...base, transcriptLines: 7 }).y).toBe(8);
   });
 });
 

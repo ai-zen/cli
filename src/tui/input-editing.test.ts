@@ -90,3 +90,23 @@ describe("撤销栈（Ctrl+_）", () => {
     expect(stack[stack.length - 1].text).toBe(`t${UNDO_LIMIT + 9}`);
   });
 });
+
+describe("emoji / 字素簇：编辑不拆半个字符", () => {
+  /**
+   * `✌️` 是 `U+270C U+FE0F` 两个 code point、一个簇。按 code point 删会留下孤立的
+   * `U+FE0F`（屏幕上什么都看不到，但下次退格会先吃掉它，表现为「退格没反应」）。
+   */
+  it("Ctrl+W 整簇删除，不留孤立变体选择符", () => {
+    expect(deleteToPrevWhitespace("a ✌️", 3)).toEqual({ text: "a ", cursor: 2 });
+    expect(deleteToPrevWhitespace("✌️", 1)).toEqual({ text: "", cursor: 0 });
+  });
+
+  it("ZWJ 组合 emoji 也整簇删除", () => {
+    expect(deleteToPrevWhitespace("👨‍👩‍👧", 1)).toEqual({ text: "", cursor: 0 });
+  });
+
+  it("killedText 取被删段落时按簇比对（不会切出半个 emoji）", () => {
+    expect(killedText("a ✌️", "a ")).toBe("✌️");
+    expect(killedText("✌️✌️", "✌️")).toBe("✌️");
+  });
+});

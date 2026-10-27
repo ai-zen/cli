@@ -4,12 +4,17 @@
  * 全部函数都是「(文本, 光标) → (文本, 光标)」的纯变换，便于单测；
  * chat.tsx 只负责把按键映射过来、套用结果、维护 kill ring 与撤销栈。
  *
+ * 光标单位是**字素簇**（`graphemes`），不是 code point：`✌️` 是 2 个 code point
+ * 但只是 1 个簇，按 code point 删会只删掉半个 emoji、留下孤立的变体选择符。
+ *
  * 键位语义依据 Claude Code 官方文档（interactive-mode.md）：
  * - `Ctrl+W` 删到**前一空白**（标点不切分：`src/utils/foo.ts` 一次删掉整条路径）
  * - `Alt+B/F/D` 按「词」处理（标点算分隔符：停在 `ts` / `foo` / `utils` / `src`）
  */
 
-/** 一段可撤销的编辑状态（文本 + code point 光标） */
+import { graphemes } from "./text.js";
+
+/** 一段可撤销的编辑状态（文本 + 字素簇光标） */
 export interface EditState {
   text: string;
   cursor: number;
@@ -26,7 +31,7 @@ function clampCursor(chars: string[], cursor: number): number {
  * 因此 `src/utils/foo.ts` 会被整段删除，而不是只删 `foo.ts`。
  */
 export function deleteToPrevWhitespace(text: string, cursor: number): EditState {
-  const chars = Array.from(text);
+  const chars = graphemes(text);
   const cp = clampCursor(chars, cursor);
   let from = cp;
   while (from > 0 && /\s/.test(chars[from - 1])) from -= 1;
@@ -44,8 +49,8 @@ export function deleteToPrevWhitespace(text: string, cursor: number): EditState 
  * 免去每个删除函数各自返回「删了什么」。
  */
 export function killedText(before: string, after: string): string {
-  const a = Array.from(before);
-  const b = Array.from(after);
+  const a = graphemes(before);
+  const b = graphemes(after);
   let prefix = 0;
   while (prefix < b.length && a[prefix] === b[prefix]) prefix += 1;
   let suffix = 0;

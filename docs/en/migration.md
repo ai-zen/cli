@@ -80,7 +80,7 @@ Sections produced by the default template:
 /handoff                # write the document only, keep this session
 /handoff self           # specify the executor explicitly: this session writes (no prompt)
 /handoff summary        # specify the executor explicitly: separate summary
-/migrate                # handoff + start a new session (alias: /migration)
+/migrate                # handoff + start a new session
 /migrate self           # specify the executor explicitly
 ```
 

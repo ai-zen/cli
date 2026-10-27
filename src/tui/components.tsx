@@ -8,6 +8,8 @@ import { useInput } from "ink";
 import { theme } from "./theme.js";
 import { clipWidth } from "./text.js";
 import type { CommandHint } from "../conversation-commands/registry.js";
+import type { RateSample } from "./token-rate.js";
+import { packSegments, type StatusSegment } from "./status-segments.js";
 
 // ==================== Spinner ====================
 
@@ -113,29 +115,119 @@ export interface StatusBarProps {
   totalTokens?: number;
   busy?: boolean;
   hint?: string;
+  /** 生成速率：生成中看 `live`（实时估算），结束后看 `average`（本轮平均） */
+  rate?: RateSample | null;
+  /** 终端列数（用于折行与行数测量）；缺省 80 */
+  columns?: number;
 }
 
-export function StatusBar({ model, agent, effort, lastTokens, totalTokens, busy, hint }: StatusBarProps) {
+/** 不换行空格：把「数字 + 单位」绑成一个整体，折行时不会被拆成「1284」/「tok」两行 */
+const NBSP = "\u00a0";
+
+/** 速率文案：两位数以上取整（避免小数跳得眼花），个位数保留一位 */
+function formatRate(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return "";
+  return value >= 10 ? `${Math.round(value)}${NBSP}tok/s` : `${value.toFixed(1)}${NBSP}tok/s`;
+}
+
+/** 块内并排用的分隔符（同色的不属于任何块，折行时随块边界消失） */
+const INNER_SEPARATOR = " · ";
+
+/**
+ * 状态栏的三个信息块 —— **换行以块为单位**：
+ *
+ * 1. 身份块：模型 · Agent · 思考强度（最优先，任何情况下先占首行）；
+ * 2. 用量块：本轮 / 累计 token · 生成速率 · 生成状态；
+ * 3. 快捷键块（优先级最低，放末尾）。
+ *
+ * 每块内部不再拆行（除单块宽度超一整行），窄屏时整块顺延到下一行——而不是用
+ * `space-between` 把两侧各切一半。块内空的部分（如本轮没有速率）直接不占位。
+ */
+export function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
+  const { model, agent, effort, lastTokens, totalTokens, busy, hint, rate } = props;
+
+  // ① 身份块
+  const identity: StatusSegment[] = [];
+  const pushIdentity = (text: string, color: string) => identity.push({ text, color });
+  pushIdentity("◆ ", theme.brand[0]);
+  pushIdentity(model, theme.accent);
+  pushIdentity(" · agent ", theme.dim);
+  pushIdentity(agent, theme.assistant);
+  if (effort != null && effort !== "") {
+    pushIdentity(" · 思考 ", theme.dim);
+    pushIdentity(effort, effort === "关" || effort === "—" ? theme.faint : theme.reasoning);
+  }
+
+  // ② 用量块
+  const usage: StatusSegment[] = [];
+  const pushUsage = (text: string, color: string) => {
+    if (usage.length > 0) usage.push({ text: INNER_SEPARATOR, color: theme.dim });
+    usage.push({ text, color });
+  };
+  if (lastTokens != null) pushUsage(`本轮${NBSP}${lastTokens}${NBSP}tok`, theme.dim);
+  if (totalTokens != null) pushUsage(`累计${NBSP}${totalTokens}${NBSP}tok`, theme.dim);
+  // 生成中只认实时值（没有就留白，避免把上一轮的均速冒充成本轮）；空闲时展示本轮平均。
+  // 用 `busy` 而不是 `rate.running` 做门闸：`/migrate` 这类命令也会 busy，但不算一轮对话。
+  const rateText = busy
+    ? rate?.live != null
+      ? `⚡${NBSP}${formatRate(rate.live)}`
+      : ""
+    : rate?.average != null
+      ? `⚡${NBSP}均${NBSP}${formatRate(rate.average)}`
+      : "";
+  if (rateText) pushUsage(rateText, theme.tool);
+  if (busy) pushUsage("⏳ 生成中", theme.tool);
+
+  // ③ 快捷键块：能被挤掉的永远是它，所以排在最末
+  const keys: StatusSegment[] = hint ? [{ text: hint, color: theme.faint }] : [];
+
+  return [identity, usage, keys];
+}
+
+/**
+ * 折行后的实际行 —— **行数即状态栏占用的终端行数**。
+ *
+ * 调用方（`chat.tsx`）先拿它算行数交给 `computeChatLayout`，再交给 `StatusBar` 渲染，
+ * 两处用的是同一个纯函数，测量与渲染不会脱节。
+ *
+ * 装行以块为单位（见 `packSegments`）：放得下就并排，放不下就把整块挪到下一行。
+ */
+export function statusBarRows(props: StatusBarProps, columns = 80): StatusSegment[][] {
+  // 可用宽度 = 列数 − 2（两侧 paddingX(1)）− 1（安全余量）。
+  //
+  // 那 1 列余量原本是必需的：当时我们自己算宽度，`◆` / `·` / `⚡` 这类字符与 Ink 的
+  // 测量差 1 列，按满宽算时会被 Ink 的 `truncate` 吃掉行尾半个词。现在 `displayWidth()`
+  // 直接就是 Ink 用的 `string-width`，两边不会再对不上；这 1 列降级为纯安全边际
+  //（终端自己的 Ambiguous 宽度判定仍可能与 Unicode 表不同），所以保留。
+  const width = Math.max(8, columns - 3);
+  return packSegments(statusBarBlocks(props), width, [{ text: INNER_SEPARATOR, color: theme.dim }]);
+}
+
+/**
+ * 底部状态栏 —— 三个信息块，窄屏时按块换行：
+ *
+ * 模型 · Agent · 思考强度 ｜ 本轮 / 累计 token · 生成速率 · 生成状态 ｜ 快捷键提示。
+ *
+ * 行数不固定：放不下的块（从最末的快捷键提示开始）整块顺延到下一行，而不是与
+ * 高位信息一起被截掉一半，也不会把某块劈成两半。
+ */
+export function StatusBar(props: StatusBarProps) {
+  const rows = statusBarRows(props, props.columns ?? 80);
   return (
-    <Box paddingX={1} justifyContent="space-between" flexShrink={0} width="100%">
-      <Text wrap="truncate">
-        <Text color={theme.brand[0]}>◆ </Text>
-        <Text color={theme.accent}>{model}</Text>
-        <Text color={theme.dim}> · agent </Text>
-        <Text color={theme.assistant}>{agent}</Text>
-        {effort != null && effort !== "" ? (
-          <>
-            <Text color={theme.dim}> · 思考 </Text>
-            <Text color={effort === "关" || effort === "—" ? theme.faint : theme.reasoning}>{effort}</Text>
-          </>
-        ) : null}
-        {lastTokens != null ? <Text color={theme.dim}> · 本轮 {lastTokens}</Text> : null}
-        {totalTokens != null ? <Text color={theme.dim}> · 累计 {totalTokens} tok</Text> : null}
-        {busy ? <Text color={theme.tool}> · ⏳ 生成中</Text> : null}
-      </Text>
-      <Text color={theme.faint} wrap="truncate">
-        {hint ?? ""}
-      </Text>
+    <Box flexDirection="column" flexShrink={0} width="100%">
+      {rows.map((row, index) => (
+        <Box key={index} paddingX={1} width="100%">
+          {/* `truncate` 是兜底：折行已在 statusBarRows 里算好，万一有出入也不允许 Ink
+              再折出第 N+1 行（多一行就把输入框顶出屏幕）。 */}
+          <Text wrap="truncate">
+            {row.map((segment, i) => (
+              <Text key={i} color={segment.color} bold={segment.bold}>
+                {segment.text}
+              </Text>
+            ))}
+          </Text>
+        </Box>
+      ))}
     </Box>
   );
 }

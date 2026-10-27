@@ -1,6 +1,6 @@
 {
   "name": "@ai-zen/cli",
-  "version": "1.0.0-alpha.20",
+  "version": "1.0.0-alpha.21",
   "description": "AI-ZEN CLI - dual-mode AI terminal: pure stdio pipelines and an interactive TUI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -40,6 +40,7 @@
     "ink": "^7.1.1",
     "lowlight": "^3.3.0",
     "react": "^19.3.0",
+    "string-width": "^8.3.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -64,4 +64,11 @@ describe("命令前缀匹配", () => {
   it("无匹配时返回空数组", () => {
     expect(matchCommandHints("zzz")).toEqual([]);
   });
+
+  it("/agent 已注册：能在菜单里前缀匹配到，且说明不是空的", () => {
+    expect(matchCommandHints("age")).toEqual([
+      { names: ["agent"], label: "/agent", description: "切换主 Agent（写入默认 Agent，重建会话）" },
+    ]);
+    expect(getCommandNames()).toContain("agent");
+  });
 });

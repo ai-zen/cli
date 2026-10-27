@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Box, Text, useCursor, useInput } from "ink";
 import { theme } from "../theme.js";
 import { KeyHints } from "../components.js";
-import { bottomPadding, displayWidth, isTerminalReply } from "../text.js";
+import { bottomPadding, displayWidth, graphemes, isTerminalReply } from "../text.js";
 import { Header, WizardFrame, Row, textRows, padDisplay } from "./frame.js";
 import { ListStep } from "./list.js";
 
@@ -81,7 +81,7 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
   const field = index < fields.length ? fields[index] : undefined;
   const onActionRow = Boolean(action) && index === fields.length;
 
-  const chars = Array.from(value);
+  const chars = graphemes(value);
   const caret = Math.max(0, Math.min(cursor, chars.length));
   const masked = field?.kind === "secret" && !revealed;
 
@@ -89,7 +89,7 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
     if (!field) return;
     const current = field.initial ?? field.value;
     setValue(current);
-    setCursor(Array.from(current).length);
+    setCursor(graphemes(current).length);
     setRevealed(false);
     setError(null);
     setEditing(true);
@@ -99,7 +99,7 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
     setCursor(nextCursor);
   };
   const insert = (text: string) =>
-    update(chars.slice(0, caret).join("") + text + chars.slice(caret).join(""), caret + Array.from(text).length);
+    update(chars.slice(0, caret).join("") + text + chars.slice(caret).join(""), caret + graphemes(text).length);
   const deleteBefore = () => {
     if (caret === 0) return;
     update(chars.slice(0, caret - 1).join("") + chars.slice(caret).join(""), caret - 1);
@@ -269,7 +269,7 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
 
   if (editing && field) {
     const shown = masked ? "•".repeat(chars.length) : value;
-    const shownChars = Array.from(shown);
+    const shownChars = graphemes(shown);
     setCursorPosition({
       x: valueX + displayWidth(shownChars.slice(0, caret).join("")),
       y: bottomPadding(rows, contentLines) + headerRows.length + 1 + index,
@@ -332,7 +332,7 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
           let after = "";
           if (active) {
             const shown = rowMasked ? "•".repeat(chars.length) : value;
-            const shownChars = Array.from(shown);
+            const shownChars = graphemes(shown);
             before = shownChars.slice(0, caret).join("");
             at = shownChars[caret] ?? " ";
             after = shownChars.slice(caret + 1).join("");

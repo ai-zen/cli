@@ -28,7 +28,7 @@ export {
   deleteToLineStart,
 } from "./input.js";
 
-export { CONFIRM_LINES, pickerLines, computeChatLayout, clampViewTop } from "./layout.js";
+export { CONFIRM_LINES, STATUS_BAR_LINES, pickerLines, computeChatLayout, clampViewTop } from "./layout.js";
 export type { ChatLayoutInput, ChatLayout } from "./layout.js";
 
 export { Splash } from "./splash.js";

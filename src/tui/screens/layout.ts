@@ -4,6 +4,9 @@ import { inputLines } from "./input.js";
 
 /** 确认框固定高度（外 marginTop 1 + 上下边框 2 + 问题 1 + marginTop 1 + 选项 1） */
 export const CONFIRM_LINES = 6;
+/** 底部状态栏行数下限：模型/Agent 一行 + 用量与速率一行（宽度不够时会折成更多行，
+ *  实际值由 `statusBarRows()` 量出后传入 `computeChatLayout({ statusBarLines })`） */
+export const STATUS_BAR_LINES = 2;
 /** 选择覆盖层高度（相对条目数） */
 export function pickerLines(itemCount: number): number {
   return 7 + itemCount;
@@ -23,6 +26,11 @@ export interface ChatLayoutInput {
   pickerItems: number;
   /** 视口顶部行索引（相对整个对话行）；null / undefined = 贴底（自动跟随最新） */
   viewTop?: number | null;
+  /**
+   * 状态栏实际占据的行数（由 `statusBarRows()` 实测得出 —— 它会随终端宽度折行）。
+   * 缺省用 `STATUS_BAR_LINES`。
+   */
+  statusBarLines?: number;
 }
 
 export interface ChatLayout {
@@ -72,10 +80,11 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
         ? pickerLines(input.pickerItems)
         : 0;
   const noticeCount = input.noticeCount ?? 0;
+  const statusBarLines = Math.max(1, input.statusBarLines ?? STATUS_BAR_LINES);
   const bottomLines =
     input.overlay === "none"
-      ? noticeCount /* 通知栏 */ + 1 /* 分隔线 */ + input.hintCount + inputHeight + 1 /* 状态栏 */
-      : overlayHeight + 1 /* 状态栏 */;
+      ? noticeCount /* 通知栏 */ + 1 /* 分隔线 */ + input.hintCount + inputHeight + statusBarLines
+      : overlayHeight + statusBarLines;
 
   const budget = Math.max(0, input.rows - bottomLines);
   const totalLines = transcript.length;

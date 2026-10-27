@@ -80,7 +80,7 @@ outline: deep
 /handoff                # 只写交接文档，保持当前会话
 /handoff self           # 显式指定执行者：当前会话自己写（不再询问）
 /handoff summary        # 显式指定执行者：单独 Agent 摘要
-/migrate                # 交接 + 开启新会话（别名 /migration）
+/migrate                # 交接 + 开启新会话
 /migrate self           # 显式指定执行者
 ```
 

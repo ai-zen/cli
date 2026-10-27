@@ -102,6 +102,9 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 | `/clear` | Clear the screen |
 | `/config` | Open the configuration center (default model / endpoint management) |
 | `/model` | Switch the model of the current session and persist it (written to the Agent's `modelId`; thinking level reset to the model default); the status bar shows the model name |
+| `/agent` | Quickly switch the main Agent (a picker lists every top-level Agent; picking one writes the default Agent and rebuilds the session) |
+| `/reload` | Refresh the runtime (rebuild the scope and rediscover tools / skills / MCP servers; useful after hand-editing config files) |
+| `/mcp` | Manage MCP servers (opens the MCP screen of the configuration center: add, remove, edit, toggle) |
 | `/think` `/effort` | Switch reasoning effort (available levels come from the model's reasoning preset), persisted into the current Agent definition's `reasoningEffort`; the status bar shows the current level |
 | `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
 | `/migrate` | Manually trigger task migration (generate a handoff document and start a new session) |

@@ -66,10 +66,10 @@ When run with no arguments on an interactive terminal, the CLI opens a full-scre
 ╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
 
               AI workbench in your terminal
-              v1.0.0-alpha.20 · sdk x · core y
+              v1.0.0-alpha.21 · sdk x · core y
 ```
 
-After the splash, you land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and the status bar (model · agent · this-round / cumulative tokens · generating) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line.
+After the splash, you land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and a **status bar** (three priority-ordered blocks: model · agent · reasoning effort | this-round / cumulative tokens · generation rate · generating | key hints; a block that does not fit moves to the next line whole, so nothing is truncated and no block gets split) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line. The generation rate shows a live value while streaming (2-second sliding window, estimated from output deltas) and switches to this round's average once it finishes (preferring the real `completion_tokens` from the API).
 
 The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word; `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word; `Ctrl+K` kills to end of line; `Ctrl+U` kills to line start; `PgUp`/`PgDn` (or `Alt+V`/`Ctrl+V`) scroll the transcript, the mouse wheel scrolls by line; on macOS `⌘← →` moves by word, `⌘⌫`/`⌘⌦` deletes by word, `⌘[`/`⌘]` pages and `⌘;`/`⌘'` scrolls by line (depending on whether the terminal reports Cmd — see below)., and an inline `/` command menu (↑↓ to choose, `Tab` to complete). Tool calls render as `⚙ name(args)` with **JSON syntax highlighting**; the answer / reasoning is **Markdown-source-colored** (headings, bold, italic, inline code, lists, quotes, links), and fenced code blocks are **syntax-highlighted by language with the fence markers kept** (highlight data from `highlight.js` via `lowlight`). `Ctrl+C` cancels the current request while generating, and exits when idle.
 
@@ -181,10 +181,13 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 | `/clear` | Clear the screen |
 | `/config` | Open the configuration center (endpoints / models / image models / MCP servers / agent definitions / defaults / tool-output cap) |
 | `/model` | Switch the model of the current session and persist it (written to the Agent's `modelId`; thinking level is reset to the model default) |
+| `/agent` | Quickly switch the main Agent (a picker lists every Agent; picking one writes `defaultAgent` and rebuilds the session; Agents that cannot run are marked unavailable with the reason) |
+| `/reload` | Refresh the runtime: rebuild the scope and rediscover tools / skills / MCP servers (use it after hand-editing `mcp.json` etc.; messages and context are kept) |
+| `/mcp` | Manage MCP servers (opens the MCP screen of the configuration center: add / remove / edit / toggle / switch between global and project scope; `/mcp global` and `/mcp project` jump straight to a scope) |
 | `/think` `/effort` | Switch reasoning effort (available levels come from the model's reasoning preset, e.g. `low/high/max`); persisted into the current Agent definition; `/think default` falls back to the model default |
 | `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
 | `/handoff` | Write a handoff document only (session keeps running; no confirmation) |
-| `/migrate` `/migration` | Handoff + start a new session (discards history; asks for confirmation) |
+| `/migrate` | Handoff + start a new session (discards history; asks for confirmation) |
 | `/help` | Show available commands |
 
 ### Task Handoff & Migration

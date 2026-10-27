@@ -32,6 +32,7 @@ import { conversationRepository, generateConversationId } from "../conversation-
 import { writeLastSession } from "../session-pointer.js";
 import type { ConversationContext } from "../types.js";
 import { stripCwdNote } from "./text.js";
+import { TokenRateMeter, deltaText, type RateSample } from "./token-rate.js";
 
 /** 会话 → UI 的对外信号 */
 export interface ChatSessionNotifier {
@@ -100,6 +101,8 @@ export class ChatSession {
   private readonly notifier: ChatSessionNotifier;
   private readonly requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
   private readonly disposers: Array<() => void> = [];
+  /** 生成过程的 token 速率统计（状态栏展示，见 `token-rate.ts`） */
+  private readonly rate = new TokenRateMeter();
 
   private constructor(
     handoffService: HandoffService,
@@ -174,13 +177,20 @@ export class ChatSession {
     return sumUsage(this.agent.messages);
   }
 
+  /** 当前速率快照：生成中看 `live`（实时），结束后看 `average`（本轮平均） */
+  get rateSample(): RateSample {
+    return this.rate.snapshot();
+  }
+
   /** 发送一条消息；内容变化经 `notifier.onChange` 通知，`resolve` 表示本轮结束 */
   async send(input: string): Promise<void> {
+    this.rate.begin();
     try {
       await this.agent.send(input);
     } catch (error: any) {
       this.notifier.onNotice(error?.message ?? String(error), "error");
     } finally {
+      this.rate.finish();
       this.notifier.onChange(true);
     }
   }
@@ -300,6 +310,7 @@ export class ChatSession {
   /** 释放事件监听（重建 Agent 时调用，避免监听器泄漏） */
   dispose(): void {
     for (const off of this.disposers.splice(0)) off();
+    this.rate.reset();
   }
 
   // ==================== 内部：装配 Agent 与插件 ====================
@@ -347,7 +358,18 @@ export class ChatSession {
     const notify = (immediate: boolean) => this.notifier.onChange(immediate);
 
     const onOpen = () => notify(true);
-    const onChunk = () => notify(false);
+    /**
+     * 每片 delta 应用后：除了通知重渲染，还要把这段文本计入速率统计。
+     *
+     * 子 Agent 的 chunk 也走这个回调（`onSubStart` 里同样订阅），因此速率包含
+     * 委派出去的子任务输出——它们也是真实从网络接收的 token。
+     */
+    const onChunk = (_receiver: unknown, chunk: any) => {
+      this.rate.addDelta(deltaText(chunk));
+      // 流末 chunk 携带真实用量（`stream_options.include_usage`）：多轮工具调用逐轮累加
+      this.rate.addExact(chunk?.usage?.completion_tokens);
+      notify(false);
+    };
     const onParsed = () => notify(true);
     const onFinally = () => notify(true);
     const onError = (error: any) => {

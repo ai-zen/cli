@@ -11,9 +11,11 @@ import { ChatSession, stripCwdNote } from "../chat-session.js";
 import { matchCommandHints } from "../../conversation-commands/registry.js";
 import { conversationRepository, listConversations } from "../../conversation-repository.js";
 import { formatShortTime } from "../../format-time.js";
-import { readConfig, readReasoningPresets } from "../../config.js";
+import { readConfig, readMcpConfig, readReasoningPresets, saveConfig } from "../../config.js";
 import { resetScope } from "../../agent-creator.js";
 import { switchModel } from "../../model-switch.js";
+import { listAgentChoices, switchAgent } from "../../agent-switch.js";
+import { parseMcpScope, pickStartScope } from "../../mcp-command.js";
 import {
   effortChoices,
   effortLabel,
@@ -153,6 +155,97 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
         });
       } catch (error: any) {
         push(`切换模型失败：${error?.message ?? error}`, "error");
+      }
+      break;
+    }
+    case "agent": {
+      const config = await readConfig();
+      const store = await readAgentStore();
+      const choices = listAgentChoices(config, store.agents);
+      if (choices.length === 0) {
+        push("还没有任何主 Agent，请用 /config 创建", "error");
+        break;
+      }
+
+      // 支持 `/agent <id>` 直切，无参时弹选择器（与 /model 同一套做法）
+      let chosen: string | undefined = args[0];
+      if (chosen && !choices.some((choice) => choice.id === chosen)) {
+        push(`未知 Agent：${chosen}（可选：${choices.map((choice) => choice.id).join(" / ")}）`, "error");
+        break;
+      }
+      if (!chosen) {
+        const items: SelectItem<string>[] = choices.map((choice) => {
+          const current = choice.id === session.agentId;
+          return {
+            label: `${choice.name}${current ? "（当前）" : ""}${choice.selectable ? "" : " · 不可用"}`,
+            value: choice.id,
+            // 可用时给模型名（切换等于连模型一起换，得让用户看见换成哪个）；
+            // 不可用时给原因，否则用户只能干看着选不动
+            hint: choice.selectable ? (choice.modelName ?? choice.id) : (choice.reason ?? ""),
+          };
+        });
+        const picked = await new Promise<string | null>((resolve) =>
+          setPickerState({ title: "切换主 Agent（会写入默认 Agent）", items, resolve }),
+        );
+        if (picked == null) {
+          push("已取消切换主 Agent");
+          break;
+        }
+        chosen = picked;
+      }
+
+      const target = choices.find((choice) => choice.id === chosen)!;
+      // 切过去跑不起来（未绑模型 / 端点缺 Key）就别切：重挂载后用户会卡在启动错误屏
+      if (!target.selectable) {
+        push(`Agent「${target.name}」不可用：${target.reason}`, "error");
+        break;
+      }
+
+      try {
+        const result = switchAgent({ config, agents: store.agents, targetAgentId: chosen });
+        await saveConfig(result.config);
+        if (chosen === session.agentId) {
+          // 会话已经在这个 Agent 上：只需把「默认 Agent」记号写对，不必重建
+          push(`${result.summary}（当前会话已在该 Agent 上）`);
+          break;
+        }
+        // Scope 持有 Agent / 配置快照：不重建的话下一轮请求还是旧 Agent
+        await resetScope();
+        // 重挂载对话屏：提示词、工具集、模型都跟着 Agent 变；消息与上下文保留
+        exit({ restart: true, agentId: chosen, messages: session.messages, notice: result.summary });
+      } catch (error: any) {
+        push(`切换主 Agent 失败：${error?.message ?? error}`, "error");
+      }
+      break;
+    }
+    case "mcp": {
+      // 不另建一套 MCP 编辑界面：直接打开配置中心里已有的 MCP 屏。
+      // 增 / 删 / 改 / 启停 / 切换作用域都在那一屏里；关闭后宿主会因 `mcpChanged`
+      // 自动 `session.reload()`，新服务器当场生效（与 /config 走同一条路径）。
+      const rawScope = args[0];
+      const explicit = parseMcpScope(rawScope);
+      if (rawScope && !explicit) {
+        push(`未知作用域：${rawScope}（可选 global / project，或不带参数）`, "error");
+        break;
+      }
+      const scope =
+        explicit ??
+        pickStartScope({
+          global: await readMcpConfig("global"),
+          project: await readMcpConfig("project"),
+        });
+      await openWizard({ kind: "mcp", scope });
+      break;
+    }
+    case "reload": {
+      // 手改配置文件（mcp.json / skills / tools / config.json）后不用重启 CLI：
+      // `session.reload()` 内含 resetScope()（断开旧 MCP 连接）→ 重建 Agent → 重新发现。
+      // 消息与上下文保留，所以自己“刷新一下就看到新东西”不需要新开对话。
+      try {
+        await session.reload();
+        push("已刷新运行环境：配置 / 工具 / Skill / MCP 已重新发现（消息与上下文保留）");
+      } catch (error: any) {
+        push(`刷新失败：${error?.message ?? error}`, "error");
       }
       break;
     }
@@ -341,8 +434,7 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       }
       break;
     }
-    case "migrate":
-    case "migration": {
+    case "migrate": {
       if (invalidMode) {
         push(`未知的执行者：${modeArg}（可选 self / summary）`, "error");
         break;

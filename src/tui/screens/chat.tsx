@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
 import { keyDebug } from "../key-debug.js";
 import { parseWheel, WHEEL_STEP } from "../mouse.js";
+import type { RateSample } from "../token-rate.js";
 import { AgentNS } from "@ai-zen/agents-core";
 import { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
-import { Spinner, StatusBar, SlashMenu, SelectItem } from "../components.js";
-import { layoutInput, usableFrameRows, isTerminalReply } from "../text.js";
+import { Spinner, StatusBar, statusBarRows, SlashMenu, SelectItem, type StatusBarProps } from "../components.js";
+import { graphemes, layoutInput, usableFrameRows, isTerminalReply } from "../text.js";
 import { ChatSession, type ChatSessionNotifier } from "../chat-session.js";
 import { CommandHint, matchCommandHints } from "../../conversation-commands/registry.js";
 import { readConfig, readMcpConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "../../config.js";
@@ -29,6 +30,7 @@ import { FrameBuffer } from "./frame-buffer.js";
 import { LineView } from "./render.js";
 import { messageToLines, transcriptLines } from "./messages-view.js";
 import { PickerOverlay, Confirm } from "./overlays.js";
+import { CursorInputRow, type CursorPosition } from "./input-row.js";
 import { chooseHandoffMode } from "./handoff-choice.js";
 import { runCommand } from "./chat-commands.js";
 import { describeEffort } from "../../reasoning-effort.js";
@@ -69,7 +71,7 @@ export function Chat(props: ChatScreenProps) {
 
   const [input, setInput] = useState(props.initialInput ?? "");
   /** 光标位置：以 code point 计的字符索引（0..len） */
-  const [cursor, setCursor] = useState(Array.from(props.initialInput ?? "").length);
+  const [cursor, setCursor] = useState(graphemes(props.initialInput ?? "").length);
   const [menuIndex, setMenuIndex] = useState(0);
   useEffect(() => {
     setMenuIndex(0);
@@ -102,6 +104,8 @@ export function Chat(props: ChatScreenProps) {
 
   /** 本轮是否在生成中（spinner / 输入禁用） */
   const [busy, setBusy] = useState(false);
+  /** 生成速率快照（token/s）：生成中为实时值，结束后保留本轮平均 */
+  const [rate, setRate] = useState<RateSample | null>(null);
   /**
    * 当前模型 id —— **从会话（即 Agent 定义）读**，不作为 prop 传入。
    *
@@ -117,6 +121,14 @@ export function Chat(props: ChatScreenProps) {
    * `/think` 写入后由命令层回调刷新，切模型（会话重建）时靠 `modelId` 变化重读。
    */
   const [effortText, setEffortText] = useState<string | null>(null);
+  /**
+   * IME 光标位置：由光标所在行**渲染后实测**而来（渲染器给的帧内坐标）。
+   * 带上 key —— 只有「产生它的那个输入状态」与当前一致时才能用，否则就是上一帧的陈旧值。
+   */
+  const [imePosition, setImePosition] = useState<{
+    key: string;
+    position: CursorPosition;
+  } | null>(null);
   /** 乐观回显：提交后、真实 user 消息落进 messages 之前，先显示用户提问 */
   const [pendingUser, setPendingUser] = useState<{ text: string; base: number } | null>(null);
   /** 转录显示起点（/clear 清屏用：隐藏此索引之前的消息，但不改上下文） */
@@ -236,6 +248,16 @@ export function Chat(props: ChatScreenProps) {
     props.conversationName,
   ]);
 
+  // 速率采样：Spinner 的重渲染只影响它自己，不会带着状态栏一起刷，所以生成中要自己定时读快照。
+  // 生成结束（busy → false）时再读一次，拿本轮平均速率并留在状态栏上。
+  useEffect(() => {
+    const read = () => setRate(sessionRef.current?.rateSample ?? null);
+    read();
+    if (!busy) return;
+    const timer = setInterval(read, 250);
+    return () => clearInterval(timer);
+  }, [busy]);
+
   const resolveConfirm = (value: boolean) => {
     setConfirmState((cs) => {
       cs?.resolve(value);
@@ -341,23 +363,23 @@ export function Chat(props: ChatScreenProps) {
   // ---- 输入编辑（光标感知）----
   const setInputText = (text: string) => {
     setInput(text);
-    setCursor(Array.from(text).length);
+    setCursor(graphemes(text).length);
   };
   const insertAtCursor = (text: string) => {
-    const chars = Array.from(input);
+    const chars = graphemes(input);
     const cp = Math.max(0, Math.min(cursor, chars.length));
     setInput(chars.slice(0, cp).join("") + text + chars.slice(cp).join(""));
-    setCursor(cp + Array.from(text).length);
+    setCursor(cp + graphemes(text).length);
   };
   const deleteBeforeCursor = () => {
-    const chars = Array.from(input);
+    const chars = graphemes(input);
     const cp = Math.max(0, Math.min(cursor, chars.length));
     if (cp === 0) return;
     setInput(chars.slice(0, cp - 1).join("") + chars.slice(cp).join(""));
     setCursor(cp - 1);
   };
   const deleteAfterCursor = () => {
-    const chars = Array.from(input);
+    const chars = graphemes(input);
     const cp = Math.max(0, Math.min(cursor, chars.length));
     if (cp >= chars.length) return;
     setInput(chars.slice(0, cp).join("") + chars.slice(cp + 1).join(""));
@@ -420,18 +442,18 @@ export function Chat(props: ChatScreenProps) {
     noticeChannel.push("暂不支持粘贴图片（Ctrl+V 预留给图片粘贴，当前未实现）", "error");
   };
   const moveCursor = (delta: number) => {
-    const len = Array.from(input).length;
+    const len = graphemes(input).length;
     setCursor((c) => Math.max(0, Math.min(len, c + delta)));
   };
   const moveCursorToLineStart = () => {
-    const chars = Array.from(input);
+    const chars = graphemes(input);
     const cp = Math.max(0, Math.min(cursor, chars.length));
     let i = cp;
     while (i > 0 && chars[i - 1] !== "\n") i -= 1;
     setCursor(i);
   };
   const moveCursorToLineEnd = () => {
-    const chars = Array.from(input);
+    const chars = graphemes(input);
     const cp = Math.max(0, Math.min(cursor, chars.length));
     let i = cp;
     while (i < chars.length && chars[i] !== "\n") i += 1;
@@ -454,7 +476,7 @@ export function Chat(props: ChatScreenProps) {
       // 命令名取首个 token：支持 `/migrate summary`、`/handoff self` 这类带参数的写法
       const name = trimmed.slice(1).split(/\s+/)[0].toLowerCase();
       // 交接/迁移会调用模型写文档（较慢）：期间应像自动迁移一样拦住输入框。
-      const blocksInput = name === "migrate" || name === "migration" || name === "handoff";
+      const blocksInput = name === "migrate" || name === "handoff";
       if (blocksInput) setBusy(true);
       try {
         await runCommand(name, trimmed, {
@@ -861,6 +883,27 @@ export function Chat(props: ChatScreenProps) {
   }
 
   const noticeTextLines = notice ? noticeLines(notice, cols) : [];
+
+  // 状态栏：先按当前状态算出「折行后实际几行」，交给布局预留高度（否则窄屏下一旦提示折行，
+  // 整帧就会高出一行，把输入框顶出屏幕）。这里用 `viewTop` 状态判断滚动，而不是
+  // `layout.scrolled` —— 后者要等布局算完才有，会与行数测量形成循环。
+  const statusProps: StatusBarProps = {
+    model: modelId,
+    agent: props.agentId ?? "default",
+    effort: effortText,
+    lastTokens,
+    totalTokens,
+    busy,
+    hint: !ready
+      ? "初始化中…"
+      : viewTop != null
+        ? "↕ 滚动中 · PgUp/PgDn 翻页 · 发送回到底部"
+        : "Enter 发送 · Ctrl+J 换行 · / 命令 · PgUp 看历史",
+    rate,
+    columns: cols,
+  };
+  const statusRows = statusBarRows(statusProps, cols);
+
   const layout = computeChatLayout({
     columns: cols,
     rows: usableFrameRows(rows ?? 24),
@@ -872,6 +915,7 @@ export function Chat(props: ChatScreenProps) {
     overlay: confirmState ? "confirm" : pickerState ? "picker" : "none",
     pickerItems: pickerState?.items.length ?? 0,
     viewTop,
+    statusBarLines: statusRows.length,
   });
   layoutRef.current = layout;
   const isPlaceholder = input.length === 0;
@@ -882,17 +926,41 @@ export function Chat(props: ChatScreenProps) {
   );
   const bodyLines = inputLayout.lines;
 
-  // 把终端硬件光标移到编辑光标处，让 IME（输入法）候选框正确定位
+  // 光标所在行的三段拆分（与 `CursorInputRow` 的渲染一一对应）
+  const cursorRowIndex = inputLayout.cursorRow;
+  const cursorRowChars = graphemes(bodyLines[cursorRowIndex] ?? "");
+  const cursorColInRow = Math.min(inputLayout.cursorCol, cursorRowChars.length);
+  const cursorBefore = cursorRowChars.slice(0, cursorColInRow).join("");
+  const cursorAt = cursorRowChars[cursorColInRow] ?? " ";
+  const cursorAfter = cursorRowChars.slice(cursorColInRow + 1).join("");
+  /** 实测结果的身份标记：输入段落一改，上一帧的实测值就作废 */
+  const cursorKey = `${cursorRowIndex}\u0000${cursorBefore}\u0000${cursorAt}\u0000${cursorAfter}`;
+  /** 渲染后实测（值不变则不会重渲染）；闭包捕获当帧的 key，保证标的是「这一帧」的结果 */
+  const onCursorMeasure = (position: CursorPosition) => {
+    setImePosition((prev) =>
+      prev && prev.position.x === position.x && prev.position.y === position.y
+        ? prev
+        : { key: cursorKey, position },
+    );
+  };
+
+  // 把终端硬件光标移到编辑光标处，让 IME（输入法）候选框正确定位：
+  // 首选「渲染器实测」（宽字符 / emoji 的宽度由 Ink 自己算，不会偏）；
+  // 首次渲染还没量到时，退回手算值顶一帧（下一帧即被实测值纠正）。
   if (!busy && !confirmState && !pickerState) {
+    const measured = imePosition && imePosition.key === cursorKey ? imePosition.position : null;
     setCursorPosition(
-      computeInputCursorPosition({
-        transcriptLines: layout.lines.length,
-        hintCount: hints.length,
-        cursorRow: inputLayout.cursorRow,
-        cursorCol: inputLayout.cursorCol,
-        lineText: bodyLines[inputLayout.cursorRow] ?? "",
-        placeholder: isPlaceholder,
-      }),
+      measured ??
+        computeInputCursorPosition({
+          transcriptLines: layout.lines.length,
+          // 通知栏夹在对话区与斜杠菜单之间：漏算会让硬件光标整体偏上（多行通知如 /help 最明显）
+          noticeCount: noticeTextLines.length,
+          hintCount: hints.length,
+          cursorRow: inputLayout.cursorRow,
+          cursorCol: inputLayout.cursorCol,
+          lineText: bodyLines[inputLayout.cursorRow] ?? "",
+          placeholder: isPlaceholder,
+        }),
     );
   } else {
     setCursorPosition(undefined);
@@ -939,30 +1007,27 @@ export function Chat(props: ChatScreenProps) {
                     <Text>{"  "}</Text>
                   );
                 if (isPlaceholder) {
+                  // 占位态不画「假光标」（那个行尾的 ▏）：硬件光标这时就停在提示语开头
+                  // （x = 前缀宽），终端自己会把它显示出来；再画一个方块等于屏幕上两个光标，
+                  // 而且位置还在提示语末尾，反而误导。
                   return (
                     <Text key={i} wrap="truncate">
                       {prompt}
                       <Text color={theme.faint}>{line}</Text>
-                      {i === bodyLines.length - 1 ? (
-                        <Text color={theme.brand[1]}>▏</Text>
-                      ) : null}
                     </Text>
                   );
                 }
-                if (i === inputLayout.cursorRow) {
-                  const rowChars = Array.from(line);
-                  const before = rowChars.slice(0, inputLayout.cursorCol).join("");
-                  const at = rowChars[inputLayout.cursorCol];
-                  const after = rowChars.slice(inputLayout.cursorCol + 1).join("");
+                // 光标行：把光标字符包成独立节点，渲染后由渲染器给出真实坐标（IME 定位）
+                if (i === cursorRowIndex) {
                   return (
-                    <Text key={i} wrap="truncate">
-                      {prompt}
-                      <Text>{before}</Text>
-                      <Text inverse color={theme.brand[0]}>
-                        {at ?? " "}
-                      </Text>
-                      <Text>{after}</Text>
-                    </Text>
+                    <CursorInputRow
+                      key={i}
+                      firstLine={i === 0}
+                      before={cursorBefore}
+                      at={cursorAt}
+                      after={cursorAfter}
+                      onMeasure={onCursorMeasure}
+                    />
                   );
                 }
                 return (
@@ -977,21 +1042,7 @@ export function Chat(props: ChatScreenProps) {
         </Box>
       )}
 
-      <StatusBar
-        model={modelId}
-        agent={props.agentId ?? "default"}
-        effort={effortText}
-        lastTokens={lastTokens}
-        totalTokens={totalTokens}
-        busy={busy}
-        hint={
-          !ready
-            ? "初始化中…"
-            : layout.scrolled
-              ? "↕ 滚动中 · PgUp/PgDn 翻页 · 发送回到底部"
-              : "Enter 发送 · Ctrl+J 换行 · / 命令 · PgUp 看历史"
-        }
-      />
+      <StatusBar {...statusProps} />
     </Box>
   );
 }

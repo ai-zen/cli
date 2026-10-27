@@ -63,6 +63,8 @@ The MCP OAuth 2.0 authorization flow (the `oauth` field in `mcp.json`) is define
 
 In the TUI, `/config` → "MCP servers" lets you manage `mcp.json` interactively — no hand-editing needed:
 
+> Typing **`/mcp`** in the chat opens the very same screen: with no argument it enters "project" when the project scope has servers (otherwise "global"); `/mcp global` and `/mcp project` pick the scope explicitly. After hand-editing `mcp.json`, run **`/reload`** to apply the change (it rebuilds the scope and rediscovers everything; messages are kept).
+
 - **Scope switch**: toggle in-screen between "global" `~/.ai-zen/mcp.json` and "project" `<cwd>/.ai-zen/mcp.json`.
 - Add / delete / rename MCP servers; edit transport (stdio / http / sse), enable·disable, and description.
 - Edit the fields for the chosen transport: stdio → command, args (split on whitespace into argv), env; http·sse → URL, headers. Env and headers use a `KEY=VALUE` editor.

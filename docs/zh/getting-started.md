@@ -102,6 +102,9 @@ cat README.md | ai "用三句话总结"
 | `/clear` | 清屏 |
 | `/config` | 打开配置中心（默认模型 / 端点管理） |
 | `/model` | 切换当前会话的模型并写入配置（写 Agent 的 `modelId`，思考强度重置为模型默认）；状态栏显示模型名 |
+| `/agent` | 快速切换主 Agent（选择器列出全部主 Agent，选中即写入默认 Agent 并重建会话） |
+| `/reload` | 刷新运行环境（重建 scope，重新发现工具 / Skill / MCP；手工改配置文件后用） |
+| `/mcp` | 管理 MCP 服务器（直接打开配置中心里的 MCP 界面，可增删改与启停） |
 | `/think` `/effort` | 切换思考强度（可选档位来自模型的思考策略表），写入当前 Agent 定义的 `reasoningEffort`，状态栏显示当前强度 |
 | `/key` | 设置当前端点的 API Key（保存后自动重建会话） |
 | `/migrate` | 手动触发任务迁移（生成交接文档并开启新会话） |
