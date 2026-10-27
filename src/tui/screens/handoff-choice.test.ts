@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import {
   chooseHandoffMode,
   handoffModeItems,
   HANDOFF_SKIP,
   type HandoffPickerState,
 } from "./handoff-choice.js";
+import { setLocale } from "../../i18n/index.js";
+
+// 选项文案已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
+beforeEach(() => setLocale("zh"));
 
 /** 捕获 pickerState 的假 setter（chooseHandoffMode 以「值」形式调用它） */
 function makeSetter() {

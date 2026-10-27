@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { theme } from "../theme.js";
 import { SelectList, KeyHints, SelectItem } from "../components.js";
+import { t } from "../../i18n/index.js";
 
 // ==================== 选择覆盖层（/back）====================
 
@@ -27,7 +28,7 @@ export function PickerOverlay({
         <SelectList items={items} columns={columns} onSelect={(v) => onPick(v)} />
       </Box>
       <Box marginTop={1}>
-        <KeyHints hints={[["↑ ↓", "选择"], ["Enter", "确认"], ["Esc", "取消"]]} />
+        <KeyHints hints={[["↑ ↓", t("ui.select")], ["Enter", t("ui.confirm")], ["Esc", t("ui.cancel")]]} />
       </Box>
     </Box>
   );
@@ -57,12 +58,12 @@ export function Confirm({
       <Text color={theme.warn} wrap="truncate">? {question}</Text>
       <Box marginTop={1} gap={2}>
         <Text inverse={yes} color={yes ? theme.ok : theme.dim}>
-          {" 是 "}
+          {` ${t("common.yes")} `}
         </Text>
         <Text inverse={!yes} color={!yes ? theme.error : theme.dim}>
-          {" 否 "}
+          {` ${t("common.no")} `}
         </Text>
-        <Text color={theme.faint} wrap="truncate">← → 选择 · y/n · Enter 确认</Text>
+        <Text color={theme.faint} wrap="truncate">{t("confirm.hint")}</Text>
       </Box>
     </Box>
   );

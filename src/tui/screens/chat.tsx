@@ -222,7 +222,7 @@ export function Chat(props: ChatScreenProps) {
         requestMode: (info) =>
           chooseHandoffMode(
             setPickerState,
-            `上下文即将超限（${info.promptTokens}/${info.handoffTokens} tokens）· 选择交接方式`,
+            t("handoff.pickTitle", { used: info.promptTokens, limit: info.handoffTokens }),
           ),
       },
       notifier,
@@ -293,7 +293,7 @@ export function Chat(props: ChatScreenProps) {
       setWizardMcp({ global: await readMcpConfig("global"), project: await readMcpConfig("project") });
       setWizardStep(step);
     } catch (error: any) {
-      noticeChannel.push(`读取配置失败：${error?.message ?? error}`, "error");
+      noticeChannel.push(t("chat.configReadFailed", { error: error?.message ?? error }), "error");
     }
   };
 
@@ -303,14 +303,14 @@ export function Chat(props: ChatScreenProps) {
       const config = await readConfig();
       const credential = resolveCredential(config, modelId);
       if (!credential) {
-        noticeChannel.push(`模型 ${modelId} 未绑定可用端点，请用 /config 检查配置`, "error");
+        noticeChannel.push(t("chat.modelNoEndpoint", { id: modelId }), "error");
         return;
       }
       currentEndpointRef.current = credential.endpointId;
       setWizardConfig(config);
       setWizardStep({ kind: "edit", field: "apiKey", endpointId: credential.endpointId });
     } catch (error: any) {
-      noticeChannel.push(`读取配置失败：${error?.message ?? error}`, "error");
+      noticeChannel.push(t("chat.configReadFailed", { error: error?.message ?? error }), "error");
     }
   };
 
@@ -320,7 +320,7 @@ export function Chat(props: ChatScreenProps) {
     setWizardConfig(null);
     setWizardMcp(null);
     setWizardAgentStore(null);
-    for (const line of result.summary) noticeChannel.push(`配置已更新：${line}`);
+    for (const line of result.summary) noticeChannel.push(t("chat.configUpdated", { line }));
     if (!result.dirty) return;
 
     if (!sessionRef.current) {
@@ -333,7 +333,7 @@ export function Chat(props: ChatScreenProps) {
       sessionRef.current
         .reload()
         .then(() => noticeChannel.push(t("notice.reloaded")))
-        .catch((error: any) => noticeChannel.push(`重建会话失败：${error?.message ?? error}`, "error"));
+        .catch((error: any) => noticeChannel.push(t("chat.sessionReloadFailed", { error: error?.message ?? error }), "error"));
     }
   };
 
@@ -862,10 +862,10 @@ export function Chat(props: ChatScreenProps) {
     return (
       <Box flexDirection="column" paddingX={1}>
         <Text color={theme.error} wrap="truncate">
-          ✖ 无法启动对话：{bootError}
+          {t("chat.bootFailed", { error: bootError })}
         </Text>
         <Text color={theme.dim} wrap="truncate">
-          按 k 打开配置中心（可设置 API Key / 端点地址）· Enter 返回
+          {t("chat.bootHint")}
         </Text>
       </Box>
     );

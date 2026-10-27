@@ -5,10 +5,13 @@ import { theme, pickLogo, logoGradientColors } from "../theme.js";
 import { Spinner } from "../components.js";
 import { isTerminalReply } from "../text.js";
 import { CLI_VERSION, SDK_VERSION, CORE_VERSION } from "../../version.js";
+import { t } from "../../i18n/index.js";
 
 // ==================== Splash（启动界面）====================
 
-export const TAGLINE = "终端里的 AI 协作台";
+export function tagline(): string {
+  return t("splash.tagline");
+}
 
 export function Splash({ onDone }: { onDone?: () => void }) {
   const { exit } = useApp();
@@ -74,7 +77,7 @@ export function Splash({ onDone }: { onDone?: () => void }) {
         ))}
       </Box>
       <Box marginTop={1}>
-        <Text color={theme.accent}>{TAGLINE}</Text>
+        <Text color={theme.accent}>{tagline()}</Text>
       </Box>
       <Box marginTop={1}>
         <Text color={theme.dim}>
@@ -83,9 +86,9 @@ export function Splash({ onDone }: { onDone?: () => void }) {
       </Box>
       <Box marginTop={2} flexDirection="column" alignItems="center">
         {ready ? (
-          <Text color={theme.faint}>按任意键开始…</Text>
+          <Text color={theme.faint}>{t("splash.pressAnyKey")}</Text>
         ) : (
-          <Spinner label="正在准备" />
+          <Spinner label={t("splash.preparing")} />
         )}
       </Box>
     </Box>

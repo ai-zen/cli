@@ -11,6 +11,7 @@
 
 import { AgentNS, sumUsage } from "@ai-zen/agents-core";
 import type { SubAgentContext } from "@ai-zen/agents-core";
+import { t } from "../i18n/index.js";
 
 import {
   AutoRefreshToolsPlugin,
@@ -249,7 +250,7 @@ export class ChatSession {
   /** 手动任务迁移（`/migrate`）：交接 + 开新会话；与自动迁移共用同一服务实例 */
   async migrate(mode?: HandoffMode): Promise<string> {
     if (!this.messages.some((m) => m.role === AgentNS.Role.User)) {
-      throw new Error("当前对话还没有可迁移的内容");
+      throw new Error(t("chat.noMigratable"));
     }
     const ctx = await this.handoffService.migrate({
       agent: this.agent,
@@ -270,7 +271,7 @@ export class ChatSession {
    */
   async handoff(mode?: HandoffMode): Promise<string> {
     if (!this.messages.some((m) => m.role === AgentNS.Role.User)) {
-      throw new Error("当前对话还没有可交接的内容");
+      throw new Error(t("chat.noHandoffable"));
     }
     const ctx = await this.handoffService.handoff({
       agent: this.agent,
@@ -378,18 +379,18 @@ export class ChatSession {
     };
 
     const onSubStart = ({ subAgent, toolCallContext }: SubAgentContext) => {
-      const name = toolCallContext?.tool_call?.function?.name || "子任务";
-      this.notifier.onNotice(`🧩 子任务 ${name} 运行中…`, "info");
+      const name = toolCallContext?.tool_call?.function?.name || t("chat.subagentLabel");
+      this.notifier.onNotice(t("chat.subagentRunning", { name }), "info");
       subAgent.events.on("open", onOpen);
       subAgent.events.on("chunk-parsed", onChunk);
       subAgent.events.on("error", onError);
       notify(true);
     };
     const onSubEnd = ({ toolCallContext }: SubAgentContext) => {
-      const name = toolCallContext?.tool_call?.function?.name || "子任务";
+      const name = toolCallContext?.tool_call?.function?.name || t("chat.subagentLabel");
       // 子 Agent 的用量由 core 在委派边界钉到父侧 tool 消息的 subAgentUsage 上，
       // 故此处只需提示，累计经 sumUsage(agent.messages) 自然包含
-      this.notifier.onNotice(`✓ 子任务 ${name} 完成`, "info");
+      this.notifier.onNotice(t("chat.subagentDone", { name }), "info");
       notify(true);
     };
 

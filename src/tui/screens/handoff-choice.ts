@@ -14,6 +14,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { HandoffMode } from "@ai-zen/agents-sdk";
 import type { SelectItem } from "../components.js";
+import { t } from "../../i18n/index.js";
 
 /** 选择器状态（与 Chat / ChatCommandHost 的 `pickerState` 结构一致） */
 export interface HandoffPickerState {
@@ -33,9 +34,9 @@ export const HANDOFF_SKIP = "__skip__";
  */
 export function handoffModeItems(): SelectItem<string>[] {
   return [
-    { label: "当前会话自己写交接文档", value: "self", hint: "保真 · 可核实真实状态" },
-    { label: "单独 Agent 写交接文档", value: "summary", hint: "独立摘要 · 快且省，不核实文件" },
-    { label: "不交接", value: HANDOFF_SKIP, hint: "跳过本次" },
+    { label: t("handoff.modeSelf"), value: "self", hint: t("handoff.modeSelfHint") },
+    { label: t("handoff.modeSummary"), value: "summary", hint: t("handoff.modeSummaryHint") },
+    { label: t("handoff.modeSkip"), value: HANDOFF_SKIP, hint: t("handoff.modeSkipHint") },
   ];
 }
 

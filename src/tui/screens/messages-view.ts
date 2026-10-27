@@ -7,6 +7,7 @@
 import { AgentNS } from "@ai-zen/agents-core";
 import { RLine, contentLines, indentLines, clipSpans, toolSpans, spanLine, innerWidth } from "./lines.js";
 import { stripCwdNote } from "../text.js";
+import { t } from "../../i18n/index.js";
 
 /** 从消息内容提取纯文本；非文本块（图片 / 文件）以占位文本表示 */
 export function messageText(content: AgentNS.MessageContent | undefined): string {
@@ -15,10 +16,10 @@ export function messageText(content: AgentNS.MessageContent | undefined): string
   return content
     .map((part) => {
       if (part.type === "text") return part.text;
-      if (part.type === "image_url") return `[图片: ${part.image_url.url}]`;
+      if (part.type === "image_url") return t("msg.image", { url: part.image_url.url });
       if (part.type === "file") {
         const file = part as { file_id?: string; filename?: string };
-        return `[文件: ${file.file_id ?? file.filename ?? "内联文件"}]`;
+        return t("msg.file", { name: file.file_id ?? file.filename ?? t("msg.inlineFile") });
       }
       return "";
     })
@@ -36,7 +37,7 @@ export function messageToLines(message: AgentNS.Message, columns: number): RLine
     if (!text.trim()) return [];
     return [
       { key: `${key}-gap`, kind: "gap", text: " " },
-      { key: `${key}-h`, kind: "user-header", text: "❯ 你" },
+      { key: `${key}-h`, kind: "user-header", text: t("msg.userHeader") },
       ...indentLines("user-text", key, text, width),
     ];
   }
