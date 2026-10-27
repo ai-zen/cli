@@ -4,6 +4,7 @@ import { theme } from "../theme.js";
 import { SelectList, KeyHints, SelectItem } from "../components.js";
 import { usableFrameRows } from "../text.js";
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
+import { t } from "../../i18n/index.js";
 
 // ==================== 列表选择屏 ====================
 
@@ -45,16 +46,16 @@ export function ListStep<T>({ columns, rows, title, subtitle, items, onPick, onC
           <SelectList key={title} items={visible} onSelect={onPick} columns={columns} />
         ) : (
           <Text color={theme.faint} wrap="truncate">
-            {"  （无可选项）"}
+            {t("wiz.listEmpty")}
           </Text>
         )}
         {truncated ? (
           <Text color={theme.faint} wrap="truncate">
-            {`  （共 ${items.length} 项，仅显示前 ${visible.length} 项）`}
+            {t("wiz.truncated", { n: items.length, m: visible.length })}
           </Text>
         ) : null}
       </Box>
-      <KeyHints hints={[["↑ ↓", "选择"], ["Enter", "确认"], ["Esc", "返回"]]} />
+      <KeyHints hints={[["↑ ↓", t("ui.select")], ["Enter", t("ui.confirm")], ["Esc", t("ui.back")]]} />
     </WizardFrame>
   );
 }

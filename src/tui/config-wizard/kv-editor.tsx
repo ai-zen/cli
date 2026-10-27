@@ -7,6 +7,7 @@ import { usableFrameRows } from "../text.js";
 import { kvEntries, parseKvInput } from "../../config-editor.js";
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
 import { PromptScreen } from "./prompt.js";
+import { t } from "../../i18n/index.js";
 
 // ==================== 键值编辑屏（MCP env / headers）====================
 
@@ -51,12 +52,12 @@ export function KvEditorScreen({ columns, rows, title, subtitle, map, notice, on
   const submit = async (raw: string) => {
     const parsed = parseKvInput(raw);
     if (!parsed) {
-      setError("格式应为 KEY=VALUE");
+      setError(t("err.keyValueFormat"));
       return;
     }
     const target = editing!;
     if (target.mode === "add" && Object.prototype.hasOwnProperty.call(map, parsed.key)) {
-      setError(`已存在 ${parsed.key}`);
+      setError(t("err.duplicateKey", { key: parsed.key }));
       return;
     }
     const next: Record<string, string> = {};
@@ -108,11 +109,14 @@ export function KvEditorScreen({ columns, rows, title, subtitle, map, notice, on
         key={`kv:${editing.mode}:${editing.key ?? "new"}`}
         columns={columns}
         rows={rows}
-        title={`${title} · ${editing.mode === "add" ? "新增" : "编辑"}`}
-        details={["格式：KEY=VALUE（键与值以首个 = 分隔）", "例如 PATH=/usr/bin 或 Authorization=Bearer xxx"]}
+        title={t("wiz.kvTitle", {
+          title,
+          mode: editing.mode === "add" ? t("wiz.kvModeAdd") : t("wiz.kvModeEdit"),
+        })}
+        details={[t("wiz.kvHint"), t("wiz.kvExample")]}
         initialValue={editing.initial}
         error={error}
-        hints={[["Enter", "保存"], ["Esc", "取消"]]}
+        hints={[["Enter", t("ui.save")], ["Esc", t("ui.cancel")]]}
         onSubmit={(value) => void submit(value)}
         onCancel={() => {
           setEditing(null);
@@ -149,7 +153,7 @@ export function KvEditorScreen({ columns, rows, title, subtitle, map, notice, on
         </Text>
         {shown.length === 0 ? (
           <Text color={theme.faint} wrap="truncate">
-            {"  （暂无，按 Enter 新增）"}
+            {t("wiz.kvEmpty")}
           </Text>
         ) : (
           shown.map((entry, i) => {
@@ -167,11 +171,11 @@ export function KvEditorScreen({ columns, rows, title, subtitle, map, notice, on
         )}
         {truncated ? (
           <Text color={theme.faint} wrap="truncate">
-            {`  （共 ${entries.length} 项，仅显示前 ${shown.length} 项）`}
+            {t("wiz.truncated", { n: entries.length, m: shown.length })}
           </Text>
         ) : null}
       </Box>
-      <KeyHints hints={[["Enter", "编辑/新增"], ["Ctrl+D", "删除"], ["↑ ↓", "移动"], ["Esc", "返回"]]} />
+      <KeyHints hints={[["Enter", t("ui.edit")], ["Ctrl+D", t("ui.delete")], ["↑ ↓", t("ui.move")], ["Esc", t("ui.back")]]} />
     </WizardFrame>
   );
 }

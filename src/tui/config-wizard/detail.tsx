@@ -6,6 +6,7 @@ import { KeyHints } from "../components.js";
 import { bottomPadding, displayWidth, graphemes, isTerminalReply } from "../text.js";
 import { Header, WizardFrame, Row, textRows, padDisplay } from "./frame.js";
 import { ListStep } from "./list.js";
+import { t } from "../../i18n/index.js";
 
 // ==================== 通用详情屏（就地编辑）====================
 
@@ -225,8 +226,8 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
       <ListStep
         columns={columns}
         rows={rows}
-        title={`${target.label} · 选择`}
-        items={enumOptions.map((option) => ({ label: option.label || "（空）", value: option.value }))}
+        title={t("wiz.pickTitle", { label: target.label })}
+        items={enumOptions.map((option) => ({ label: option.label || t("common.empty"), value: option.value }))}
         onPick={(picked) => {
           setChoosing(false);
           if (target.commit) void apply(() => target.commit!(picked));
@@ -243,11 +244,11 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
       <ListStep
         columns={columns}
         rows={rows}
-        title={`${target.label}？`}
-        subtitle={`${title} —— 此操作不可撤销`}
+        title={t("wiz.confirmTitle", { label: target.label })}
+        subtitle={t("wiz.irreversible", { title })}
         items={[
-          { label: `确认${target.label}`, value: "yes" },
-          { label: "取消", value: "no" },
+          { label: t("wiz.confirmAction", { label: target.label }), value: "yes" },
+          { label: t("ui.cancel"), value: "no" },
         ]}
         onPick={(picked) => {
           setConfirming(false);
@@ -281,42 +282,42 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
   const hints: [string, string][] = editing
     ? masked
       ? [
-          ["Enter", "保存"],
-          ["Tab", "明文/掩码"],
-          ["Esc", "取消"],
+          ["Enter", t("ui.save")],
+          ["Tab", t("ui.plainOrMasked")],
+          ["Esc", t("ui.cancel")],
         ]
       : [
-          ["Enter", "保存"],
-          ["Esc", "取消"],
+          ["Enter", t("ui.save")],
+          ["Esc", t("ui.cancel")],
         ]
     : onActionRow
       ? [
-          ["Enter", "执行"],
-          ["↑ ↓", "移动"],
-          ["Esc", "返回"],
+          ["Enter", t("ui.run")],
+          ["↑ ↓", t("ui.move")],
+          ["Esc", t("ui.back")],
         ]
       : field?.kind === "bool"
         ? [
-            ["Enter", "切换"],
-            ["↑ ↓", "移动"],
-            ["Esc", "返回"],
+            ["Enter", t("ui.toggle")],
+            ["↑ ↓", t("ui.move")],
+            ["Esc", t("ui.back")],
           ]
         : field?.kind === "enum"
           ? [
-              ["Enter", "选择"],
-              ["↑ ↓", "移动"],
-              ["Esc", "返回"],
+              ["Enter", t("ui.select")],
+              ["↑ ↓", t("ui.move")],
+              ["Esc", t("ui.back")],
             ]
           : field?.kind === "map"
             ? [
-                ["Enter", "打开"],
-                ["↑ ↓", "移动"],
-                ["Esc", "返回"],
+                ["Enter", t("ui.open")],
+                ["↑ ↓", t("ui.move")],
+                ["Esc", t("ui.back")],
               ]
             : [
-              ["Enter", "编辑"],
-              ["↑ ↓", "移动"],
-              ["Esc", "返回"],
+              ["Enter", t("ui.edit")],
+              ["↑ ↓", t("ui.move")],
+              ["Esc", t("ui.back")],
             ];
 
   return (

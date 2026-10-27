@@ -79,9 +79,13 @@ describe("t", () => {
   });
 
   it("中英文词条一一对应（英文不缺 key）", async () => {
-    const { zh } = await import("./zh.js");
-    const { en } = await import("./en.js");
-    expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
+    const pairs = [
+      [await import("./zh.js"), await import("./en.js")],
+      [await import("./zh-wizard.js"), await import("./en-wizard.js")],
+    ] as const;
+    for (const [zhMod, enMod] of pairs) {
+      expect(Object.keys(enMod.en).sort()).toEqual(Object.keys(zhMod.zh).sort());
+    }
   });
 
   it("两种语言都不含未替换的占位符残留", async () => {

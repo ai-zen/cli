@@ -5,6 +5,7 @@ import { theme } from "../theme.js";
 import { KeyHints } from "../components.js";
 import { INPUT_PREFIX_WIDTH, bottomPadding, displayWidth, graphemes, layoutInput, isTerminalReply } from "../text.js";
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
+import { t } from "../../i18n/index.js";
 
 // ==================== 输入屏布局（纯函数，便于单测）====================
 
@@ -210,7 +211,7 @@ export function PromptScreen(props: PromptScreenProps) {
       {chars.length === 0 ? (
         <Box paddingX={1}>
           <Text color={theme.faint} wrap="truncate">
-            {props.mask ? "（粘贴或输入后按 Enter 保存，Tab 可切明文核对）" : "（输入后按 Enter 确认）"}
+            {props.mask ? t("wiz.promptSecretHint") : t("wiz.promptHint")}
           </Text>
         </Box>
       ) : null}

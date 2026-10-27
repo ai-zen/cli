@@ -22,6 +22,8 @@
 
 import { en } from "./en.js";
 import { zh } from "./zh.js";
+import { en as enWizard } from "./en-wizard.js";
+import { zh as zhWizard } from "./zh-wizard.js";
 
 /** 支持的语言 */
 export type Locale = "zh" | "en";
@@ -35,7 +37,11 @@ export const SUPPORTED_LOCALES: readonly Locale[] = ["zh", "en"];
 /** 无法识别系统语言时的兜底 */
 export const DEFAULT_LOCALE: Locale = "en";
 
-const DICTS: Record<Locale, Record<string, string>> = { zh, en };
+// 主词典 + 配置中心专区，合并成同一张表（对 `t()` 而言无区别，只是拆文件便于维护）
+const DICTS: Record<Locale, Record<string, string>> = {
+  zh: { ...zh, ...zhWizard },
+  en: { ...en, ...enWizard },
+};
 
 let currentLocale: Locale = DEFAULT_LOCALE;
 let pluralRules = new Intl.PluralRules(DEFAULT_LOCALE);

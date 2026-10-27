@@ -9,6 +9,7 @@ import { findModel, summarizeEndpoints } from "../../config-editor.js";
 import { McpSnapshot } from "./types.js";
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
 import { mcpCount } from "./mcp-helpers.js";
+import { t } from "../../i18n/index.js";
 
 // ==================== 配置中心菜单 ====================
 
@@ -36,51 +37,63 @@ export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, n
   const defaultImage = (config.imageModels ?? []).find((model) => model.id === config.defaultImageModel);
   const items: SelectItem<string>[] = [
     {
-      label: "端点管理",
+      label: t("wiz.menu.endpoints"),
       value: "endpoints",
       hint: summarizeEndpoints(config),
     },
     {
-      label: "模型管理",
+      label: t("wiz.menu.models"),
       value: "models",
-      hint: `${config.models.length} 个`,
+      hint: t("wiz.menu.count", { n: config.models.length }),
     },
     {
-      label: "图片模型",
+      label: t("wiz.menu.imageModels"),
       value: "imageModels",
-      hint: `${config.imageModels?.length ?? 0} 个 · 默认 ${defaultImage?.name ?? config.defaultImageModel ?? "未设置"}`,
+      hint: t("wiz.menu.imageModelsSummary", {
+        n: config.imageModels?.length ?? 0,
+        name: defaultImage?.name ?? config.defaultImageModel ?? t("common.unsetPlain"),
+      }),
     },
     {
-      label: "MCP 服务器",
+      label: t("wiz.menu.mcp"),
       value: "mcp",
-      hint: `全局 ${mcpCount(mcp, "global")} · 项目 ${mcpCount(mcp, "project")}`,
+      hint: t("wiz.menu.mcpSummary", {
+        global: mcpCount(mcp, "global"),
+        project: mcpCount(mcp, "project"),
+      }),
     },
     {
-      label: "Agent 定义",
+      label: t("wiz.menu.agents"),
       value: "agents",
-      hint: `Agent ${agentStore.agents.length} · Sub-agent ${agentStore.subAgents.length}`,
+      hint: t("wiz.menu.agentsSummary", {
+        agent: agentStore.agents.length,
+        sub: agentStore.subAgents.length,
+      }),
     },
     {
-      label: "默认项",
+      label: t("wiz.menu.defaults"),
       value: "defaults",
-      hint: `Agent ${config.defaultAgent ?? "未设置"} · 迁移 ${config.defaultMigrationModel ?? "未设置"}`,
+      hint: t("wiz.menu.defaultsSummary", {
+        agent: config.defaultAgent ?? t("common.unsetPlain"),
+        model: config.defaultMigrationModel ?? t("common.unsetPlain"),
+      }),
     },
     {
-      label: "工具输出上限",
+      label: t("wiz.menu.maxToolOutput"),
       value: "maxToolOutput",
-      hint: `${config.maxToolOutput ?? 32768} 字符`,
+      hint: t("wiz.menu.maxToolOutputSummary", { n: config.maxToolOutput ?? 32768 }),
     },
     {
-      label: "完成",
+      label: t("wiz.menu.done"),
       value: "done",
-      hint: savedCount > 0 ? `已保存 ${savedCount} 项改动` : "返回对话",
+      hint: savedCount > 0 ? t("wiz.menu.savedCount", { n: savedCount }) : t("wiz.menu.backToChat"),
     },
   ];
 
   const headerRows: Row[] = [
-    ...textRows("◆ 配置中心", columns, theme.highlight, true),
-    ...textRows(`配置文件：${CONFIG_FILE}`, columns, theme.faint),
-    ...textRows("改动即时写入磁盘；涉及当前端点的改动会重建会话（消息保留）。", columns, theme.dim),
+    ...textRows(t("wiz.menu.title"), columns, theme.highlight, true),
+    ...textRows(t("wiz.menu.configFile", { path: CONFIG_FILE }), columns, theme.faint),
+    ...textRows(t("wiz.menu.hint"), columns, theme.dim),
     ...(notice ? textRows(`✔ ${notice}`, columns, theme.ok) : []),
   ];
   const contentLines = headerRows.length + 1 + items.length + 1;
@@ -91,7 +104,7 @@ export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, n
       <Box marginTop={1}>
         <SelectList items={items} onSelect={onPick} columns={columns} />
       </Box>
-      <KeyHints hints={[["↑ ↓", "选择"], ["Enter", "确认"], ["Esc", "完成返回"]]} />
+      <KeyHints hints={[["↑ ↓", t("ui.select")], ["Enter", t("ui.confirm")], ["Esc", t("wiz.menu.doneReturn")]]} />
     </WizardFrame>
   );
 }
