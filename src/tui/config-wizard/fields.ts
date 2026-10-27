@@ -319,8 +319,8 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         value: type,
         options: [
           { label: t("common.transportStdio"), value: "stdio" },
-          { label: "http（Streamable HTTP）", value: "http" },
-          { label: "sse（Server-Sent Events）", value: "sse" },
+          { label: t("common.transportHttp"), value: "http" },
+          { label: t("common.transportSse"), value: "sse" },
         ],
         commit: (raw) =>
           raw === type ? Promise.resolve(null) : save({ type: raw as McpServerEntry["type"] }, t("common.transportMode")),

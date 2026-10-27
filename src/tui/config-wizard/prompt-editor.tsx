@@ -9,6 +9,7 @@ import { theme } from "../theme.js";
 import { KeyHints } from "../components.js";
 import { usableFrameRows, wrapText } from "../text.js";
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
+import { t } from "../../i18n/index.js";
 
 // ==================== 多行文本编辑屏（系统编辑器）====================
 
@@ -72,7 +73,7 @@ export function PromptEditorScreen({
       if (failure) setError(failure);
       else setDraft(null); // 成功：交回父级最新值
     } catch (cause: any) {
-      setError(`打开编辑器失败：${cause?.message ?? cause}`);
+      setError(t("wiz.openEditorFailed", { error: cause?.message ?? cause }));
     } finally {
       try {
         unlinkSync(file);
@@ -101,7 +102,7 @@ export function PromptEditorScreen({
     ...(error ? textRows(`✖ ${error}`, columns, theme.error) : []),
   ];
   const previewBudget = Math.max(3, usableFrameRows(rows) - headerRows.length - 3);
-  const preview = current ? wrapText(current, Math.max(8, columns - 4)).slice(0, previewBudget) : ["（空）"];
+  const preview = current ? wrapText(current, Math.max(8, columns - 4)).slice(0, previewBudget) : [t("common.empty")];
   const contentLines = headerRows.length + 1 + preview.length + 1;
 
   return (
@@ -114,7 +115,7 @@ export function PromptEditorScreen({
           </Text>
         ))}
       </Box>
-      <KeyHints hints={[["Enter", busy ? "编辑中…" : "打开系统编辑器"], ["Esc", "返回"]]} />
+      <KeyHints hints={[["Enter", busy ? t("wiz.editorBusy") : t("wiz.openSystemEditor")], ["Esc", t("ui.back")]]} />
     </WizardFrame>
   );
 }

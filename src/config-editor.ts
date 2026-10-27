@@ -21,6 +21,7 @@ import type {
 import type { AgentNS } from "@ai-zen/agents-core";
 import { Message } from "@ai-zen/agents-core";
 import type { McpConfig, McpServerEntry, McpServersMap } from "./config.js";
+import { t } from "./i18n/index.js";
 
 // ==================== 查询 ====================
 
@@ -82,7 +83,7 @@ export function resolveCredential(config: AppConfig, modelId: string | undefined
 
 /** 端点清单的一行摘要，如 `OpenAI ✗ · DeepSeek ✓` */
 export function summarizeEndpoints(config: AppConfig): string {
-  if (config.endpoints.length === 0) return "无端点";
+  if (config.endpoints.length === 0) return t("common.noEndpoints");
   return config.endpoints
     .map((endpoint) => `${endpoint.name || endpoint.id} ${isApiKeySet(endpoint.apiKey) ? "✓" : "✗"}`)
     .join(" · ");
@@ -94,7 +95,7 @@ export function summarizeEndpoints(config: AppConfig): string {
  */
 export function maskApiKey(apiKey: string | undefined): string {
   const key = (apiKey ?? "").trim();
-  if (!key) return "未设置";
+  if (!key) return t("common.unsetPlain");
   if (key.length <= 8) return "*".repeat(key.length);
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
 }
@@ -106,20 +107,20 @@ export interface ApiKeyGuide {
   url?: string;
 }
 
-const VENDOR_GUIDES: ReadonlyArray<{ match: string; vendor: string; url: string }> = [
-  { match: "bigmodel.cn", vendor: "智谱 AI（BigModelCN）", url: "https://open.bigmodel.cn/usercenter/apikeys" },
-  { match: "deepseek.com", vendor: "DeepSeek", url: "https://platform.deepseek.com/api_keys" },
-  { match: "openai.com", vendor: "OpenAI", url: "https://platform.openai.com/api-keys" },
-  { match: "moonshot", vendor: "Moonshot（Kimi）", url: "https://platform.moonshot.cn/console/api-keys" },
-  { match: "dashscope", vendor: "阿里云百炼（DashScope）", url: "https://bailian.console.aliyun.com/" },
+const VENDOR_GUIDES: ReadonlyArray<{ match: string; vendorKey: string; url: string }> = [
+  { match: "bigmodel.cn", vendorKey: "vendor.zhipu", url: "https://open.bigmodel.cn/usercenter/apikeys" },
+  { match: "deepseek.com", vendorKey: "vendor.deepseek", url: "https://platform.deepseek.com/api_keys" },
+  { match: "openai.com", vendorKey: "vendor.openai", url: "https://platform.openai.com/api-keys" },
+  { match: "moonshot", vendorKey: "vendor.moonshot", url: "https://platform.moonshot.cn/console/api-keys" },
+  { match: "dashscope", vendorKey: "vendor.dashscope", url: "https://bailian.console.aliyun.com/" },
 ];
 
 export function apiKeyGuide(baseUrl: string | undefined): ApiKeyGuide {
   const url = (baseUrl ?? "").toLowerCase();
   for (const guide of VENDOR_GUIDES) {
-    if (url.includes(guide.match)) return { vendor: guide.vendor, url: guide.url };
+    if (url.includes(guide.match)) return { vendor: t(guide.vendorKey), url: guide.url };
   }
-  return { vendor: "OpenAI 兼容端点" };
+  return { vendor: t("vendor.openaiCompatible") };
 }
 
 // ==================== 不可变改写 ====================
@@ -381,8 +382,8 @@ export function kvEntries(map: Record<string, string> | undefined): { key: strin
 /** 键值映射的展示摘要，如 `2 项（PATH, HOME）` / `（空）` */
 export function kvSummary(map: Record<string, string> | undefined): string {
   const keys = Object.keys(map ?? {});
-  if (keys.length === 0) return "（空）";
-  return `${keys.length} 项（${keys.join(", ")}）`;
+  if (keys.length === 0) return t("common.empty");
+  return t("common.kvSummary", { n: keys.length, keys: keys.join(", ") });
 }
 
 /** 按 id 查找 MCP 服务器 */
@@ -475,13 +476,13 @@ export function parsePermission(raw: string): PermissionPolicy | null | string {
   const text = raw.trim();
   if (!text) return null;
   const match = /^(allow|deny)\s*:\s*(.*)$/i.exec(text);
-  if (!match) return "格式应为「allow: a, b」或「deny: x」";
+  if (!match) return t("err.permissionFormat");
   const mode = match[1]!.toLowerCase();
   const list = match[2]!
     .split(",")
     .map((piece) => piece.trim())
     .filter(Boolean);
-  if (list.length === 0) return "至少需要一个模式（如 `*`）";
+  if (list.length === 0) return t("err.permissionNeedsPattern");
   return mode === "allow" ? { allow: list } : { deny: list };
 }
 
@@ -496,8 +497,8 @@ export function formatAgentPermission(
 /** 权限总览：列出已配置的维度（如 `4 维（tools, skills, mcps, subagents）`） */
 export function summarizePermissions(permissions: AgentPermissions | undefined): string {
   const set = PERMISSION_DIMENSIONS.filter((dim) => permissions?.[dim]);
-  if (set.length === 0) return "（未设置）";
-  return `${set.length} 维（${set.join(", ")}）`;
+  if (set.length === 0) return t("common.unset");
+  return t("common.permissionSummary", { n: set.length, dims: set.join(", ") });
 }
 
 /** 写入某一维权限（`policy` 为 null 时删除该维） */
@@ -525,14 +526,14 @@ export function formatFunctionParameters(fn: AgentNS.FunctionDefine | undefined)
 /** 解析函数参数 JSON；合法返回对象，非法返回错误文本 */
 export function parseFunctionParameters(raw: string): Record<string, unknown> | string {
   const text = raw.trim();
-  if (!text) return "参数 schema 不能为空（至少为 {}）";
+  if (!text) return t("err.paramsSchemaEmpty");
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch (cause: any) {
-    return `JSON 解析失败：${cause?.message ?? cause}`;
+    return t("err.jsonParseFailed", { error: cause?.message ?? cause });
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "参数需为 JSON 对象";
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return t("err.paramsSchemaNotObject");
   return parsed as Record<string, unknown>;
 }
 

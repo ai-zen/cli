@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import type { AppConfig } from "@ai-zen/agents-sdk";
 import type { McpConfig } from "./config.js";
 import {
@@ -54,6 +54,10 @@ import {
   updateMcpServer,
   updateModel,
 } from "./config-editor.js";
+import { setLocale } from "./i18n/index.js";
+
+// 摘要与校验文案已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
+beforeEach(() => setLocale("zh"));
 
 function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {

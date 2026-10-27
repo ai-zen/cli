@@ -6,6 +6,7 @@ import { agentKindLabel, agentList, AgentStore, AgentKind, findAgentDefinition, 
 import { findEndpoint, findMcpServer, findModel } from "../../config-editor.js";
 import { WizardStep, NewEndpointDraft, WizardCloseResult, McpSnapshot, ConfigWizardProps } from "./types.js";
 import { createFieldBuilders } from "./fields.js";
+import { t } from "../../i18n/index.js";
 
 export interface WizardEngine extends ReturnType<typeof createFieldBuilders> {
   config: AppConfig;
@@ -81,7 +82,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     try {
       await props.onSave(next);
     } catch (cause: any) {
-      return `写入配置失败：${cause?.message ?? cause}`;
+      return t("wiz.writeConfigFailed", { error: cause?.message ?? cause });
     }
     record(next, message, changedEndpointIds);
     return null;
@@ -93,7 +94,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
       if (props.onSaveMcp) await props.onSaveMcp(scope, next);
       else await writeMcpConfigAt(mcpConfigPath(scope), next);
     } catch (cause: any) {
-      return `写入 MCP 配置失败：${cause?.message ?? cause}`;
+      return t("wiz.writeMcpFailed", { error: cause?.message ?? cause });
     }
     setMcp((prev) => ({ ...prev, [scope]: next }));
     acc.current.dirty = true;
@@ -109,7 +110,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     try {
       await store.save(kind, next);
     } catch (cause: any) {
-      return `写入 Agent 定义失败：${cause?.message ?? cause}`;
+      return t("wiz.writeAgentFailed", { error: cause?.message ?? cause });
     }
     setStore((prev) => {
       const list = [...agentList(prev, kind)];
@@ -130,7 +131,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     try {
       await store.remove(kind, id);
     } catch (cause: any) {
-      return `删除 Agent 定义失败：${cause?.message ?? cause}`;
+      return t("wiz.deleteAgentFailed", { error: cause?.message ?? cause });
     }
     setStore((prev) => {
       const list = agentList(prev, kind).filter((item) => item.id !== id);
@@ -145,8 +146,8 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     if (failure) return failure;
     acc.current.dirty = true;
     acc.current.agentsChanged = true;
-    acc.current.summary.push(`已删除 ${agentKindLabel(kind)} ${id}`);
-    setNotice(`已删除 ${agentKindLabel(kind)} ${id}`);
+    acc.current.summary.push(t("wiz.agentDeleted", { kind: agentKindLabel(kind), id }));
+    setNotice(t("wiz.agentDeleted", { kind: agentKindLabel(kind), id }));
     return null;
   };
 

@@ -227,7 +227,7 @@ export function PromptScreen(props: PromptScreenProps) {
       {props.mask && revealed ? (
         <Box paddingX={1}>
           <Text color={theme.warn} wrap="truncate">
-            ⚠ 当前为明文显示（Tab 切回掩码）
+            {t("wiz.plaintextRevealed")}
           </Text>
         </Box>
       ) : null}

@@ -148,7 +148,7 @@ export function KvEditorScreen({ columns, rows, title, subtitle, map, notice, on
         <Text wrap="truncate">
           <Text color={safeIndex === 0 ? theme.brand[0] : theme.faint}>{safeIndex === 0 ? "❯ " : "  "}</Text>
           <Text bold={safeIndex === 0} color={safeIndex === 0 ? theme.highlight : theme.assistant}>
-            ＋ 新增
+            {t("wiz.kvAddRow")}
           </Text>
         </Text>
         {shown.length === 0 ? (
