@@ -6,16 +6,15 @@ import { parseWheel } from "../mouse.js";
 import type { RateSample } from "../token-rate.js";
 import { phaseLabel } from "../phase.js";
 import { AgentNS } from "@ai-zen/agents-core";
-import { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
 import { Spinner, StatusBar, statusBarRows, SlashMenu, type StatusBarProps } from "../components.js";
 import { graphemes, layoutInput, usableFrameRows, isTerminalReply } from "../text.js";
 import { ChatSession, type ChatSessionNotifier } from "../chat-session.js";
 import { CommandHint, matchCommandHints } from "../../conversation-commands/registry.js";
-import { readConfig, readMcpConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "../../config.js";
-import { readAgentStore, AgentStore } from "../../agents-store.js";
+import { readConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "../../config.js";
+import { readAgentStore } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
-import { ConfigWizard, McpSnapshot, WizardCloseResult, WizardStep } from "../config-wizard/index.js";
+import { ConfigWizard } from "../config-wizard/index.js";
 import { computeInputCursorPosition, deleteToLineEnd, deleteToLineStart, deleteWordLeft, deleteWordRight, wordLeft, wordRight } from "./input.js";
 import {
   deleteToPrevWhitespace,
@@ -40,6 +39,7 @@ import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
 import { NoticeBar } from "./notice-bar.js";
 import { useChatViewport } from "./use-chat-viewport.js";
 import { useChatOverlays } from "./use-overlays.js";
+import { useWizardHost } from "./use-wizard-host.js";
 
 // ==================== 对话屏幕 ====================
 
@@ -93,15 +93,6 @@ export function Chat(props: ChatScreenProps) {
   /** 覆盖层（确认框 / 选择器）：弹窗与 resolve 生命周期见 use-overlays.ts */
   const { confirmState, pickerState, setConfirmState, setPickerState, resolveConfirm, resolvePicker } =
     useChatOverlays();
-  /** 配置向导：非 null 时整屏接管（凭据设置 / 配置中心） */
-  const [wizardStep, setWizardStep] = useState<WizardStep | null>(null);
-  const [wizardConfig, setWizardConfig] = useState<AppConfig | null>(null);
-  const [wizardPresets, setWizardPresets] = useState<ReasoningPresets>({});
-  const [wizardAgents, setWizardAgents] = useState<{ id: string; name: string }[]>([]);
-  const [wizardMcp, setWizardMcp] = useState<McpSnapshot | null>(null);
-  const [wizardAgentStore, setWizardAgentStore] = useState<AgentStore | null>(null);
-  const currentEndpointRef = useRef<string | null>(null);
-
   const [history, setHistory] = useState<string[]>([]);
   const historyIndex = useRef<number>(-1);
   const sessionRef = useRef<ChatSession | null>(null);
@@ -170,6 +161,35 @@ export function Chat(props: ChatScreenProps) {
    */
   const [notices, setNotices] = useState<readonly Notice[]>(noticeChannel.notices);
   useEffect(() => noticeChannel.subscribe(setNotices), [noticeChannel]);
+
+  /**
+   * 配置向导宿主（凭据 / 配置中心）：整屏接管与「关闭后让改动生效」见
+   * use-wizard-host.ts。这里只提供出口：通知走通知通道、重启 / 重载走会话。
+   */
+  const {
+    wizardStep,
+    wizardConfig,
+    wizardPresets,
+    wizardAgents,
+    wizardMcp,
+    wizardAgentStore,
+    openWizard,
+    openKeyEditor,
+    closeWizard,
+  } = useWizardHost({
+    modelId,
+    notify: (text, tone) => noticeChannel.push(text, tone),
+    hasSession: () => sessionRef.current != null,
+    restart: () => exit({ restart: true, messages: props.messages }),
+    reloadSession: () => {
+      void sessionRef.current
+        ?.reload()
+        .then(() => noticeChannel.push(t("notice.reloaded")))
+        .catch((error: any) =>
+          noticeChannel.push(t("chat.sessionReloadFailed", { error: error?.message ?? error }), "error"),
+        );
+    },
+  });
 
   /**
    * 重挂载附带的系统提示（如 `/model` 的切换结果）。
@@ -285,73 +305,6 @@ export function Chat(props: ChatScreenProps) {
     const timer = setInterval(read, 250);
     return () => clearInterval(timer);
   }, [busy]);
-
-  // ---- 配置向导（凭据 / 配置中心）----
-
-  const openWizard = async (step: WizardStep) => {
-    try {
-      const config = await readConfig();
-      currentEndpointRef.current = resolveCredential(config, modelId)?.endpointId ?? null;
-      const agentStore = await readAgentStore();
-      setWizardConfig(config);
-      setWizardPresets(await readReasoningPresets());
-      setWizardAgents(agentStore.agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id })));
-      setWizardAgentStore(agentStore);
-      setWizardMcp({ global: await readMcpConfig("global"), project: await readMcpConfig("project") });
-      setWizardStep(step);
-    } catch (error: any) {
-      noticeChannel.push(t("chat.configReadFailed", { error: error?.message ?? error }), "error");
-    }
-  };
-
-  /** `/key`：直达「当前模型所用端点」的 API Key 编辑步骤 */
-  const openKeyEditor = async () => {
-    try {
-      const config = await readConfig();
-      const credential = resolveCredential(config, modelId);
-      if (!credential) {
-        noticeChannel.push(t("chat.modelNoEndpoint", { id: modelId }), "error");
-        return;
-      }
-      currentEndpointRef.current = credential.endpointId;
-      setWizardConfig(config);
-      setWizardStep({ kind: "edit", field: "apiKey", endpointId: credential.endpointId });
-    } catch (error: any) {
-      noticeChannel.push(t("chat.configReadFailed", { error: error?.message ?? error }), "error");
-    }
-  };
-
-  /** 向导关闭：渲染变更摘要；若改到当前端点则重建会话（消息保留） */
-  const closeWizard = (result: WizardCloseResult) => {
-    setWizardStep(null);
-    setWizardConfig(null);
-    setWizardMcp(null);
-    setWizardAgentStore(null);
-    // 同一批摘要合成**一条**（多行）：既能全部显示，又只占通知队列的一个槽位。
-    // 逐条 push 在单槽时代只剩最后一条，在队列时代则会挤掉更早的进度提示。
-    const { summary } = result;
-    if (summary.length === 1) {
-      noticeChannel.push(t("chat.configUpdated", { line: summary[0]! }));
-    } else if (summary.length > 1) {
-      noticeChannel.push(
-        t("chat.configUpdatedMulti", { lines: summary.map((line) => `  · ${line}`).join("\n") }),
-      );
-    }
-    if (!result.dirty) return;
-
-    if (!sessionRef.current) {
-      exit({ restart: true, messages: props.messages });
-      return;
-    }
-    const endpointChanged =
-      !!currentEndpointRef.current && result.changedEndpointIds.includes(currentEndpointRef.current);
-    if (endpointChanged || result.mcpChanged || result.agentsChanged) {
-      sessionRef.current
-        .reload()
-        .then(() => noticeChannel.push(t("notice.reloaded")))
-        .catch((error: any) => noticeChannel.push(t("chat.sessionReloadFailed", { error: error?.message ?? error }), "error"));
-    }
-  };
 
   /** 清屏但保留上下文：把显示起点推到当前消息末尾 */
   const clearTranscript = () => {
