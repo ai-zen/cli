@@ -20,7 +20,7 @@ import { readAgentStore } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
 import { ConfigWizard } from "../config-wizard/index.js";
 import { computeInputCursorPosition } from "./input.js";
-import { computeChatLayout } from "./layout.js";
+import { AGENT_TABS_LINES, computeChatLayout } from "./layout.js";
 import { FrameBuffer } from "./frame-buffer.js";
 import { LineView } from "./render.js";
 import { messageToLines, transcriptLines } from "./messages-view.js";
@@ -32,6 +32,7 @@ import { describeEffortView } from "../../reasoning-effort.js";
 import { t } from "../../i18n/index.js";
 import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
 import { NoticeBar } from "./notice-bar.js";
+import { AgentTabs, type AgentTab } from "./agent-tabs.js";
 import { useChatViewport } from "./use-chat-viewport.js";
 import { useChatOverlays } from "./use-overlays.js";
 import { useWizardHost } from "./use-wizard-host.js";
@@ -125,6 +126,13 @@ export function Chat(props: ChatScreenProps) {
   const [pendingUser, setPendingUser] = useState<{ text: string; base: number } | null>(null);
   /** 转录显示起点（/clear 清屏用：隐藏此索引之前的消息，但不改上下文） */
   const [transcriptFrom, setTranscriptFrom] = useState(0);
+  /**
+   * 当前查看的 Agent 视图：`"main"` 或某个子 Agent 的视图 id。
+   *
+   * 只影响**消息列表的数据源**（主 Agent 的 `messages` / 子 Agent 自己的 `messages`），
+   * 不改上下文、不影响发送目标：发出的消息永远属于主 Agent。
+   */
+  const [activeAgentId, setActiveAgentId] = useState("main");
 
   /** Ctrl+D 双击退出计时 */
   const ctrlDAtRef = useRef(0);
@@ -338,6 +346,8 @@ export function Chat(props: ChatScreenProps) {
     if (!trimmed || !sessionRef.current || busy) return;
     clearDraft();
     scrollToBottom();
+    // 发出去的消息永远属于主 Agent：停在子 Agent 视图上会让用户看不到自己的提问
+    setActiveAgentId("main");
     noticeChannel.clear();
 
     // 斜杠命令：命令名怎么解析、哪些命令会调用模型（要拦输入框），都来自命令元数据
@@ -382,6 +392,24 @@ export function Chat(props: ChatScreenProps) {
   };
   const doExit = () => {
     exit("done");
+  };
+
+  /** 本次会话已出现的子 Agent（渲染期现取；`sessionRef` 在首次渲染时为 null） */
+  const subAgentViews = sessionRef.current?.subAgents ?? [];
+
+  /**
+   * Agent 栏目切换（← / →）：在「主 Agent + 各子 Agent」之间循环。
+   *
+   * 键位分流见下方两个 `useInput`：输入框**为空**或**生成中**（输入框已被 Spinner 顶替）
+   * 时，左右键本来就无事可做，正好用来切换；输入框**有内容**时左右键仍然是移光标——
+   * 不能为了切栏目把文本编辑的左右移动废掉。
+   */
+  const switchAgentView = (dir: -1 | 1) => {
+    const ids = ["main", ...subAgentViews.map((item) => item.id)];
+    // 旧 id 已失效（会话重建）时 indexOf 为 -1，归一后从主 Agent 起步
+    const current = Math.max(0, ids.indexOf(activeAgentId));
+    setActiveAgentId(ids[(current + dir + ids.length) % ids.length]!);
+    scrollToBottom();
   };
 
   /**
@@ -531,6 +559,11 @@ export function Chat(props: ChatScreenProps) {
         else historyNext();
         return;
       }
+      // Agent 栏目：输入框为空时光标停在 0，←/→ 本无作用 → 拿来切换主 / 子 Agent
+      if ((key.leftArrow || key.rightArrow) && input.length === 0 && subAgentViews.length > 0) {
+        switchAgentView(key.leftArrow ? -1 : 1);
+        return;
+      }
       if (key.leftArrow) {
         if (key.ctrl || key.meta || key.super) moveCursorByWord(-1);
         else moveCursor(-1);
@@ -607,6 +640,11 @@ export function Chat(props: ChatScreenProps) {
         scrollByLine(key.upArrow ? -1 : 1);
         return;
       }
+      // Agent 栏目：生成中输入框已失活，←/→ 空闲 → 直接切换（此时最想看子 Agent 在干什么）
+      if ((key.leftArrow || key.rightArrow) && subAgentViews.length > 0) {
+        switchAgentView(key.leftArrow ? -1 : 1);
+        return;
+      }
       if (char === "v" && key.super) {
         scrollByPage(-1);
         return;
@@ -655,10 +693,19 @@ export function Chat(props: ChatScreenProps) {
   const cols = columns ?? 80;
 
   const messages = session?.messages ?? [];
-  const userCount = messages.filter((m) => m.role === AgentNS.Role.User).length;
-  const showPending = pendingUser != null && userCount <= pendingUser.base;
+  const subAgents = session?.subAgents ?? [];
+  /** 当前查看的子 Agent；不在列表里（会话重建后 id 失效）时回落到主 Agent */
+  const activeSub = subAgents.find((item) => item.id === activeAgentId) ?? null;
 
-  const transcript = transcriptLines(messages.slice(transcriptFrom), cols);
+  const userCount = messages.filter((m) => m.role === AgentNS.Role.User).length;
+  // 乐观回显只属于主 Agent 的视图（子 Agent 不会收到用户直接发的消息）
+  const showPending = !activeSub && pendingUser != null && userCount <= pendingUser.base;
+
+  // 子 Agent 视图读它**自己**的 messages（从第 0 条起，不受主会话 /clear 的显示起点影响）
+  const transcript = transcriptLines(
+    activeSub ? activeSub.agent.messages : messages.slice(transcriptFrom),
+    cols,
+  );
   if (showPending) {
     transcript.push(
       ...messageToLines(
@@ -669,6 +716,17 @@ export function Chat(props: ChatScreenProps) {
   }
 
   const noticeTextLines = noticeLines(notices, cols);
+
+  /** Agent 栏目条目：无子 Agent 时整条栏目不存在（不占高度、也不接管左右键） */
+  const agentTabs: AgentTab[] =
+    subAgents.length > 0
+      ? [
+          { id: "main", label: t("agentTabs.main") },
+          ...subAgents.map((item) => ({ id: item.id, label: item.name })),
+        ]
+      : [];
+  const activeTabId = activeSub ? activeSub.id : "main";
+  const agentTabLines = agentTabs.length > 0 ? AGENT_TABS_LINES : 0;
 
   // 状态栏：先按当前状态算出「折行后实际几行」，交给布局预留高度（否则窄屏下一旦提示折行，
   // 整帧就会高出一行，把输入框顶出屏幕）。这里用 `viewTop` 状态判断滚动，而不是
@@ -699,6 +757,7 @@ export function Chat(props: ChatScreenProps) {
     busy,
     hintCount: hints.length,
     noticeCount: noticeTextLines.length,
+    agentTabLines,
     overlay: confirmState ? "confirm" : pickerState ? "picker" : "none",
     pickerItems: pickerState?.items.length ?? 0,
     viewTop,
@@ -740,7 +799,8 @@ export function Chat(props: ChatScreenProps) {
       measured ??
         computeInputCursorPosition({
           transcriptLines: layout.lines.length,
-          // 通知栏夹在对话区与斜杠菜单之间：漏算会让硬件光标整体偏上（多行通知如 /help 最明显）
+          // Agent 栏目与通知栏都夹在对话区与输入行之间：漏算会让硬件光标整体偏上
+          agentTabCount: agentTabLines,
           noticeCount: noticeTextLines.length,
           hintCount: hints.length,
           cursorRow: inputLayout.cursorRow,
@@ -765,6 +825,7 @@ export function Chat(props: ChatScreenProps) {
         <PickerOverlay title={pickerState.title} items={pickerState.items} columns={cols} onPick={resolvePicker} />
       ) : (
         <Box flexDirection="column">
+          {agentTabs.length > 0 ? <AgentTabs tabs={agentTabs} activeId={activeTabId} /> : null}
           <NoticeBar lines={noticeTextLines} />
           {hints.length > 0 ? <SlashMenu hints={hints} selected={menuIndex} /> : null}
           <Box paddingX={1}>

@@ -10,7 +10,7 @@
  */
 
 import { AgentNS, sumUsage } from "@ai-zen/agents-core";
-import type { AgentPlugin, SubAgentContext } from "@ai-zen/agents-core";
+import type { AgentPlugin, SubAgentContext, Agent as CoreAgent } from "@ai-zen/agents-core";
 import { t } from "../i18n/index.js";
 
 import {
@@ -49,12 +49,46 @@ class PhasePlugin implements AgentPlugin {
   }
 }
 
+/**
+ * 子 Agent 的展示名。
+ *
+ * `call_skill_sub_agent` 本身没有信息量（它只是委派工具的固定名字），能拿到参数里的
+ * `skill_id` 就用 skill 名；其余展示工具名（SubAgent 的工具名就是它的 function.name）。
+ */
+function subAgentLabel(toolCallContext: SubAgentContext["toolCallContext"]): string {
+  const parsed = toolCallContext as { parsedArgs?: { skill_id?: unknown } };
+  const skillId = parsed.parsedArgs?.skill_id;
+  if (typeof skillId === "string" && skillId) return skillId;
+  const toolName = toolCallContext?.tool_call?.function?.name;
+  if (toolName && toolName !== "call_skill_sub_agent") return toolName;
+  return t("chat.subagentLabel");
+}
+
 /** 会话 → UI 的对外信号 */
 export interface ChatSessionNotifier {
   /** 转录可能已变化（内容以 `agent.messages` 为准）；`immediate=true` 表示应立即上屏 */
   onChange(immediate: boolean): void;
   /** 系统级提示（notice / error），走独立栏位，绝不进 messages */
   onNotice(text: string, tone: "info" | "error"): void;
+}
+
+/**
+ * 子 Agent 视图：委派期间收集，供对话屏的 Agent 栏目切换查看。
+ *
+ * 为何能一直可读：core 的 `AgentTool` / `AgentToolLazy` 在 `exec()` 里 `new Agent(...)` /
+ * `buildAgent()` 出子 Agent，委派结束后**实例不销毁**（`onSubAgentEnd` 只是钩子），
+ * 所以 `agent.messages` 始终是本子 Agent 的完整对话。这里只要持有引用，栏目就能回看。
+ *
+ * 生命周期：随会话（`ChatSession`）存在。会话重建（`/reload`、`/agent`、`/new`）后旧实例
+ * 不再被引用，栏目自然清空——这是预期行为，不另做清理。
+ */
+export interface SubAgentView {
+  /** 稳定 id（React key / 选中态标识；展示名可能重复，不能当 key） */
+  id: string;
+  /** 展示名：skill id 优先，否则 SubAgent 工具名 */
+  name: string;
+  /** 子 Agent 实例：`.messages` 即它自己的完整对话 */
+  agent: CoreAgent;
 }
 
 export interface ChatSessionOptions {
@@ -130,6 +164,10 @@ export class ChatSession {
    * 所以交接必须自己带一条 `AbortSignal`。
    */
   private handoffAbort: AbortController | null = null;
+  /** 本次会话中已出现的子 Agent（按出现顺序；`/reload` 等重建后随新会话清空） */
+  private readonly subAgentViews: SubAgentView[] = [];
+  /** 子 Agent 视图 id 序号（展示名可重复，id 必须唯一） */
+  private subAgentSeq = 0;
 
   private constructor(
     handoffService: HandoffService,
@@ -184,6 +222,11 @@ export class ChatSession {
   /** 对话消息（唯一真相源） */
   get messages(): AgentNS.Message[] {
     return this.agent.messages;
+  }
+
+  /** 本次会话已出现的子 Agent（按出现顺序）；对话屏据此渲染 Agent 栏目 */
+  get subAgents(): readonly SubAgentView[] {
+    return this.subAgentViews;
   }
 
   /** 最近一次响应的 token 用量（供「本轮 / 当前上下文占用」展示与阈值判定） */
@@ -445,8 +488,11 @@ export class ChatSession {
     };
 
     const onSubStart = ({ subAgent, toolCallContext }: SubAgentContext) => {
-      const name = toolCallContext?.tool_call?.function?.name || t("chat.subagentLabel");
+      const name = subAgentLabel(toolCallContext);
       this.notifier.onNotice(t("chat.subagentRunning", { name }), "info");
+      // 记进 Agent 栏目：实例在委派结束后仍保留 messages，所以这里存引用即可随时回看。
+      // 不看 `sub_agent_*` 与 `call_skill_sub_agent` 的差别——两条路径现在都走 core 的
+      // AgentToolLazy，全部会在 onSubAgentStart 出现。
       // 子 Agent 的流只计入速率并触发重绘，**不推进主阶段**：此刻主 Agent 正在等
       // 这个工具（委派）返回，阶段应停在「等待 xxx 返回」；而子 Agent 自己的思考 / 输出
       // 是工具内部的事，拿它的 delta 去改主阶段，界面会变成「输出中」——正好盖掉了
@@ -457,10 +503,11 @@ export class ChatSession {
       subAgent.events.on("open", onSubOpen);
       subAgent.events.on("chunk-parsed", onSubChunk);
       subAgent.events.on("error", onError);
+      this.subAgentViews.push({ id: `sub-${++this.subAgentSeq}`, name, agent: subAgent });
       notify(true);
     };
     const onSubEnd = ({ toolCallContext }: SubAgentContext) => {
-      const name = toolCallContext?.tool_call?.function?.name || t("chat.subagentLabel");
+      const name = subAgentLabel(toolCallContext);
       // 子 Agent 的用量由 core 在委派边界钉到父侧 tool 消息的 subAgentUsage 上，
       // 故此处只需提示，累计经 sumUsage(agent.messages) 自然包含
       this.notifier.onNotice(t("chat.subagentDone", { name }), "info");

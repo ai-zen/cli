@@ -28,13 +28,16 @@ export {
   deleteToLineStart,
 } from "./input.js";
 
-export { CONFIRM_LINES, STATUS_BAR_LINES, pickerLines, computeChatLayout, clampViewTop } from "./layout.js";
+export { CONFIRM_LINES, STATUS_BAR_LINES, AGENT_TABS_LINES, pickerLines, computeChatLayout, clampViewTop } from "./layout.js";
 export type { ChatLayoutInput, ChatLayout } from "./layout.js";
 
 export { Splash } from "./splash.js";
 
 export { NoticeChannel, noticeLines, MAX_NOTICE_LINES } from "./notice.js";
 export type { Notice } from "./notice.js";
+
+export { AgentTabs } from "./agent-tabs.js";
+export type { AgentTab, AgentTabsProps } from "./agent-tabs.js";
 
 export { Chat, resolveSubmitText } from "./chat.js";
 export type { ChatScreenProps } from "./chat.js";

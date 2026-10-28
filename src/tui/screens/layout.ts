@@ -12,6 +12,9 @@ export function pickerLines(itemCount: number): number {
   return 7 + itemCount;
 }
 
+/** Agent 栏目行数：只有「存在子 Agent」时才出现，且恒为一行（超出宽度由组件截断） */
+export const AGENT_TABS_LINES = 1;
+
 export interface ChatLayoutInput {
   columns: number;
   rows: number;
@@ -22,6 +25,11 @@ export interface ChatLayoutInput {
   hintCount: number;
   /** 通知栏行数（notice / error 独立栏位），缺省 0 */
   noticeCount?: number;
+  /**
+   * Agent 栏目行数（主 / 子 Agent 切换条，位于对话区与底栏之间）。
+   * 无子 Agent 时为 0（不占位）；缺省 0。
+   */
+  agentTabLines?: number;
   overlay: "none" | "confirm" | "picker";
   pickerItems: number;
   /** 视口顶部行索引（相对整个对话行）；null / undefined = 贴底（自动跟随最新） */
@@ -80,10 +88,16 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
         ? pickerLines(input.pickerItems)
         : 0;
   const noticeCount = input.noticeCount ?? 0;
+  const agentTabLines = input.agentTabLines ?? 0;
   const statusBarLines = Math.max(1, input.statusBarLines ?? STATUS_BAR_LINES);
   const bottomLines =
     input.overlay === "none"
-      ? noticeCount /* 通知栏 */ + 1 /* 分隔线 */ + input.hintCount + inputHeight + statusBarLines
+      ? agentTabLines /* Agent 栏目 */ +
+        noticeCount /* 通知栏 */ +
+        1 /* 分隔线 */ +
+        input.hintCount +
+        inputHeight +
+        statusBarLines
       : overlayHeight + statusBarLines;
 
   const budget = Math.max(0, input.rows - bottomLines);

@@ -145,6 +145,7 @@ export const zh: Record<string, string> = {
   "chat.subagentLabel": "子任务",
   "chat.subagentRunning": "🧩 子任务 {name} 运行中…",
   "chat.subagentDone": "✓ 子任务 {name} 完成",
+  "agentTabs.main": "主 AGENT",
   "chat.noMigratable": "当前对话还没有可迁移的内容",
   "chat.noHandoffable": "当前对话还没有可交接的内容",
   "chat.configReadFailed": "读取配置失败：{error}",

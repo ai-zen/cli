@@ -142,6 +142,7 @@ export const en: Record<string, string> = {
   "chat.subagentLabel": "sub-task",
   "chat.subagentRunning": "🧩 Sub-task {name} running…",
   "chat.subagentDone": "✓ Sub-task {name} done",
+  "agentTabs.main": "MAIN AGENT",
   "chat.noMigratable": "This conversation has nothing to migrate yet",
   "chat.noHandoffable": "This conversation has nothing to hand off yet",
   "chat.configReadFailed": "Failed to read the config: {error}",

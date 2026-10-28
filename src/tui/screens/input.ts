@@ -26,6 +26,8 @@ export function inputLines(text: string, columns: number): string[] {
 export function computeInputCursorPosition(input: {
   /** 对话区行数（输入区之前的行偏移基数） */
   transcriptLines: number;
+  /** Agent 栏目行数（位于对话区与通知栏之间；不传视为 0） */
+  agentTabCount?: number;
   /** 通知栏行数（位于对话区与斜杠菜单之间；不传视为 0） */
   noticeCount?: number;
   /** 斜杠命令菜单行数 */
@@ -43,8 +45,14 @@ export function computeInputCursorPosition(input: {
     : graphemes(input.lineText).slice(0, input.cursorCol).join("");
   return {
     x: INPUT_PREFIX_WIDTH + displayWidth(before),
-    // 对话区 + 通知栏 + 斜杠菜单 + 分隔线 + 输入行内偏移
-    y: input.transcriptLines + (input.noticeCount ?? 0) + input.hintCount + 1 + input.cursorRow,
+    // 对话区 + Agent 栏目 + 通知栏 + 斜杠菜单 + 分隔线 + 输入行内偏移
+    y:
+      input.transcriptLines +
+      (input.agentTabCount ?? 0) +
+      (input.noticeCount ?? 0) +
+      input.hintCount +
+      1 +
+      input.cursorRow,
   };
 }
 

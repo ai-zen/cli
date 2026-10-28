@@ -18,6 +18,7 @@ import {
   deleteToLineEnd,
   deleteToLineStart,
   computeChatLayout,
+  AGENT_TABS_LINES,
   clampViewTop,
   resolveSubmitText,
   stripCwdNote,
@@ -537,6 +538,15 @@ describe("computeChatLayout（吸底 + 应用内翻页）", () => {
     expect(multi.bottomLines).toBe(single.bottomLines + 2);
     expect(multi.lines.length).toBe(single.lines.length - 2);
   });
+
+  it("Agent 栏目占一行底部高度、压缩对话区（无子 Agent 时为 0）", () => {
+    const without = computeChatLayout(base);
+    const withTabs = computeChatLayout({ ...base, agentTabLines: AGENT_TABS_LINES });
+    expect(withTabs.bottomLines).toBe(without.bottomLines + 1);
+    expect(withTabs.lines).toHaveLength(without.lines.length - 1);
+    // 缺省 0：没有子 Agent 时不开销任何高度
+    expect(computeChatLayout({ ...base, agentTabLines: 0 }).bottomLines).toBe(without.bottomLines);
+  });
 });
 
 describe("clampViewTop（翻页 / 按行 / 滚轮共用的滚动钳制）", () => {
@@ -613,6 +623,23 @@ describe("computeInputCursorPosition（IME 光标定位）", () => {
 
   it("不传 noticeCount 时视为 0（与旧行为一致）", () => {
     expect(computeInputCursorPosition({ ...base, transcriptLines: 7 }).y).toBe(8);
+  });
+
+  it("y 计入 Agent 栏目行数（否则硬件光标与 IME 候选框整体偏上）", () => {
+    // 对话区 5 + 栏目 1 + 菜单 0 + 分隔线 1 + 行内 1 = 8
+    expect(
+      computeInputCursorPosition({ ...base, transcriptLines: 5, agentTabCount: 1, cursorRow: 1 }).y,
+    ).toBe(8);
+    // 与菜单叠加时按渲染顺序累加（栏目在菜单之上）
+    expect(
+      computeInputCursorPosition({
+        ...base,
+        transcriptLines: 5,
+        agentTabCount: 1,
+        hintCount: 2,
+        cursorRow: 1,
+      }).y,
+    ).toBe(10);
   });
 });
 

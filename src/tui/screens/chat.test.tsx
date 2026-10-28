@@ -22,6 +22,8 @@ const { created, createFakeSession } = vi.hoisted(() => {
       currentId: "chat_test",
       currentName: "chat_test",
       messages,
+      /** 主 / 子 Agent 切换条的数据源；用例里直接 push 进去 */
+      subAgents: [] as any[],
       lastUsage: undefined,
       totalUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       rateSample: { live: null, average: null, running: false },
@@ -173,6 +175,105 @@ describe("Chat 集成（拆分前的护栏）", () => {
     const frame = lastFrame() ?? "";
     // `/save` 的说明来自词典，出现即说明候选菜单已渲染
     expect(frame).toContain("/save");
+    unmount();
+  });
+
+  // ==================== Agent 栏目（主 / 子 Agent 切换）====================
+
+  /** 造一个子 Agent 视图（只需 messages，组件只读它） */
+  const addSubAgent = (name: string, content: string) => {
+    created.session.subAgents.push({
+      id: `sub-${created.session.subAgents.length + 1}`,
+      name,
+      agent: { messages: [{ id: `sub-${name}`, role: "assistant", content }] },
+    });
+  };
+  /** 触发一帧重绘（不走输入框：敲字符会让「输入为空」的前提失效） */
+  const repaint = async () => {
+    created.notifier.onChange(true);
+    await flush();
+  };
+
+  it("有子 Agent 时出现栏目（主 AGENT + 各子 Agent）", async () => {
+    const { lastFrame, unmount } = mount();
+    await flush();
+    // 没有子 Agent 时整条栏目不存在
+    expect(lastFrame() ?? "").not.toContain("主 AGENT");
+
+    addSubAgent("总结子任务", "子结论");
+    addSubAgent("code-review", "审查结论");
+    await repaint();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("主 AGENT");
+    expect(frame).toContain("总结子任务");
+    expect(frame).toContain("code-review");
+    unmount();
+  });
+
+  it("输入框为空时 ←/→ 切换消息列表数据源（主 ↔ 子）", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    created.session.messages.push({ id: "m1", role: "user", content: "主 Agent 的提问" });
+    addSubAgent("总结子任务", "子 Agent 的结论");
+    await repaint();
+    expect(lastFrame() ?? "").toContain("主 Agent 的提问");
+
+    // →：切到子 Agent，列表换成它自己的 messages
+    stdin.write("\u001b[C");
+    await flush();
+    const subFrame = lastFrame() ?? "";
+    expect(subFrame).toContain("子 Agent 的结论");
+    expect(subFrame).not.toContain("主 Agent 的提问");
+
+    // →：再切一格循环回主 Agent
+    stdin.write("\u001b[C");
+    await flush();
+    const mainFrame = lastFrame() ?? "";
+    expect(mainFrame).toContain("主 Agent 的提问");
+    expect(mainFrame).not.toContain("子 Agent 的结论");
+
+    // ←：从主 Agent 反向切到最后一个子 Agent
+    stdin.write("\u001b[D");
+    await flush();
+    expect(lastFrame() ?? "").toContain("子 Agent 的结论");
+    unmount();
+  });
+
+  it("输入框有内容时 ←/→ 仍是移光标，不切栏目", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    created.session.messages.push({ id: "m1", role: "user", content: "主 Agent 的提问" });
+    addSubAgent("总结子任务", "子 Agent 的结论");
+    await repaint();
+
+    stdin.write("abc");
+    await flush();
+    stdin.write("\u001b[C");
+    await flush();
+    const frame = lastFrame() ?? "";
+    // 视图没变，输入内容也没被破坏（左右键只移光标）
+    expect(frame).toContain("主 Agent 的提问");
+    expect(frame).not.toContain("子 Agent 的结论");
+    unmount();
+  });
+
+  it("发送消息时自动切回主 Agent 视图（否则看不到自己的提问）", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    addSubAgent("总结子任务", "子 Agent 的结论");
+    await repaint();
+    stdin.write("\u001b[C");
+    await flush();
+    expect(lastFrame() ?? "").toContain("子 Agent 的结论");
+
+    stdin.write("继续干");
+    await flush();
+    stdin.write("\r");
+    await flush();
+    const frame = lastFrame() ?? "";
+    expect(created.session.send).toHaveBeenCalledWith("继续干");
+    expect(frame).toContain("继续干");
+    expect(frame).not.toContain("子 Agent 的结论");
     unmount();
   });
 });

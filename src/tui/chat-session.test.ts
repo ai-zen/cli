@@ -265,3 +265,65 @@ describe("生成阶段（消息栏 spinner 的六态）", () => {
     expect(session.phase).toBeNull();
   });
 });
+
+describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
+  /** 带事件总线的假子 Agent（onSubStart 会给它挂监听） */
+  const makeSubAgent = () => {
+    const listeners = new Map<string, Set<(...args: any[]) => void>>();
+    return {
+      messages: [] as any[],
+      events: {
+        on: (name: string, fn: (...args: any[]) => void) => {
+          if (!listeners.has(name)) listeners.set(name, new Set());
+          listeners.get(name)!.add(fn);
+        },
+        off: (name: string, fn: (...args: any[]) => void) => listeners.get(name)?.delete(fn),
+        emit: (name: string, ...args: any[]) => {
+          for (const fn of listeners.get(name) ?? []) fn(...args);
+        },
+      },
+    };
+  };
+
+  it("按出现顺序收集，展示名取工具名或 skill id", async () => {
+    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const agent = harness.agents.at(-1)!;
+    expect(session.subAgents).toEqual([]);
+
+    // 1) SubAgent 委派：工具名就是它的 function.name
+    agent.events.emit("sub-agent-start", {
+      subAgent: makeSubAgent(),
+      toolCallContext: { tool_call: { function: { name: "sub_agent_default" } } },
+    });
+    // 2) skill 子 Agent：`call_skill_sub_agent` 本身无信息量，取参数里的 skill_id
+    agent.events.emit("sub-agent-start", {
+      subAgent: makeSubAgent(),
+      toolCallContext: {
+        tool_call: { function: { name: "call_skill_sub_agent" } },
+        parsedArgs: { skill_id: "code-review" },
+      },
+    });
+
+    expect(session.subAgents.map((view) => view.name)).toEqual([
+      "sub_agent_default",
+      "code-review",
+    ]);
+    // 展示名可能重复（同名 skill 调两次），id 必须唯一
+    expect(new Set(session.subAgents.map((view) => view.id)).size).toBe(2);
+  });
+
+  it("委派结束后仍保留实例（栏目可回看子 Agent 自己的 messages）", async () => {
+    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const agent = harness.agents.at(-1)!;
+    const subAgent = makeSubAgent();
+    subAgent.messages.push({ role: AgentNS.Role.Assistant, content: "子 Agent 的结论" });
+    const toolCallContext = { tool_call: { function: { name: "sub_agent_default" } } };
+
+    agent.events.emit("sub-agent-start", { subAgent, toolCallContext });
+    agent.events.emit("sub-agent-end", { subAgent, toolCallContext });
+
+    expect(session.subAgents).toHaveLength(1);
+    expect(session.subAgents[0]!.agent).toBe(subAgent);
+    expect(session.subAgents[0]!.agent.messages[0]!.content).toBe("子 Agent 的结论");
+  });
+});

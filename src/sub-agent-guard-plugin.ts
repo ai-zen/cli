@@ -21,8 +21,11 @@
  * （`执行工具 X 时出错: …`），父 Agent 继续下一轮——即「软中断」：停掉越界的子 Agent，但不
  * 终止用户对话（如需硬停，父 Agent 须设 allowJsonParseError=false）。
  *
- * 覆盖范围：仅覆盖 core 的 `AgentTool` / `AgentToolLazy` 两条委派路径（均分发 onSubAgentStart）。
- * SDK 的 `call_skill_sub_agent`（技能子 Agent）不分发该钩子，暂不覆盖。
+ * 覆盖范围：core 只有两条委派路径（`AgentTool` / `AgentToolLazy`），均分发 onSubAgentStart，
+ * 故本插件对**全部**子 Agent 生效。SDK 的 `call_skill_sub_agent`（技能子 Agent）也走
+ * `AgentToolLazy`（见 `skillTools.ts`：工具由 AgentToolLazy 承载，复用统一的委派边界），
+ * 同样被覆盖——早期版本的注释说它「不分发该钩子」，那个说法在 skill 子 Agent 统一到
+ * core 委派原语之后已不成立。
  */
 
 import { ContextGuardPlugin } from "@ai-zen/agents-sdk";
