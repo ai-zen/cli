@@ -23,12 +23,9 @@ import type { SdkAgent, HandoffService } from "@ai-zen/agents-sdk";
 
 export interface ConversationContext {
   agent: SdkAgent;
-  input: string;
   currentName: string;
   currentId: string;
   agentId: string | undefined;
-  running: boolean;
-  shouldSend?: boolean;
   /**
    * 交接服务实例：自动迁移、`/migrate`、`/handoff` 共用同一实例。
    * 先建 ctx 再回填（交接前必已赋值）。

@@ -6,6 +6,20 @@ import { WizardStep, McpSnapshot } from "./types.js";
 import { t } from "../../i18n/index.js";
 import { DetailField } from "./detail.js";
 import { scopeLabel } from "./mcp-helpers.js";
+import type { PermissionDimension } from "../../config-editor.js";
+
+/**
+ * 权限四维的显示名。
+ *
+ * 维度名（`tools` / `skills` / …）是配置里的键，直接上屏等于把内部标识暴露给用户；
+ * 这里映射到词条，`Record<PermissionDimension, …>` 保证四个维度都有对应文案。
+ */
+const PERMISSION_DIMENSION_LABEL_KEY: Record<PermissionDimension, string> = {
+  tools: "perm.tools",
+  skills: "perm.skills",
+  mcps: "perm.mcps",
+  subagents: "perm.subagents",
+};
 
 // 由 src/tui/config-wizard.tsx 拆分而来 —— 详情屏字段构造器（工厂）
 
@@ -519,7 +533,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
   const agentPermFields = (kind: AgentKind, def: AgentDefinition): DetailField[] =>
     PERMISSION_DIMENSIONS.map((dim) => ({
       key: dim,
-      label: dim,
+      label: t(PERMISSION_DIMENSION_LABEL_KEY[dim]),
       kind: "text" as const,
       value: formatAgentPermission(def.permissions, dim) || t("common.unset"),
       initial: formatAgentPermission(def.permissions, dim),

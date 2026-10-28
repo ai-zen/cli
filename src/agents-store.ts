@@ -22,7 +22,12 @@ export function agentDir(kind: AgentKind): string {
   return kind === "agent" ? AGENTS_DIR : SUB_AGENTS_DIR;
 }
 
-/** kind 的中文名 */
+/**
+ * kind 的显示名（`Agent` / `Sub-agent`）。
+ *
+ * 刻意**不本地化**：这两个词在配置中心的英文界面与中文界面里是同一个行业惯用写法，
+ * 翻译成「代理 / 子代理」反而难认。真要本地化，应该走 `t()` 而不是在这里硬编码。
+ */
 export function agentKindLabel(kind: AgentKind): string {
   return kind === "agent" ? "Agent" : "Sub-agent";
 }

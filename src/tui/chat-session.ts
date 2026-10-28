@@ -155,11 +155,9 @@ export class ChatSession {
     const currentId = options.conversationId || generateConversationId();
     const ctx: ConversationContext = {
       agent,
-      input: "",
       currentName: options.conversationName || currentId,
       currentId,
       agentId: options.agentId,
-      running: true,
     };
     const handoffService = createHandoffService(ctx, {
       // 迁移进度/结果经通知通道渲染，避免直接写 stdout 撕裂画面

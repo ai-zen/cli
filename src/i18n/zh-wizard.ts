@@ -10,6 +10,10 @@
 export const zh: Record<string, string> = {
   // ---------- 字段名（详情屏 label，大量复用） ----------
   "field.name": "名称",
+  "perm.tools": "工具",
+  "perm.skills": "技能",
+  "perm.mcps": "MCP",
+  "perm.subagents": "子 Agent",
   "field.description": "描述",
   "field.endpoint": "端点",
   "field.modelName": "模型名",

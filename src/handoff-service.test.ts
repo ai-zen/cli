@@ -56,7 +56,6 @@ function makeAgent(lastUsage: unknown) {
 function makeCtx(agent: ReturnType<typeof makeAgent>): ConversationContext {
   return {
     agent: agent as any,
-    input: "",
     currentName: "会话_x",
     modelId: "m",
     currentId: "会话_x",

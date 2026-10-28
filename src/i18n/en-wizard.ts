@@ -7,6 +7,10 @@
 export const en: Record<string, string> = {
   // ---------- Field labels (reused heavily) ----------
   "field.name": "Name",
+  "perm.tools": "Tools",
+  "perm.skills": "Skills",
+  "perm.mcps": "MCP",
+  "perm.subagents": "Sub-agents",
   "field.description": "Description",
   "field.endpoint": "Endpoint",
   "field.modelName": "Model name",

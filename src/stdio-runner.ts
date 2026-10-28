@@ -131,7 +131,9 @@ export async function runStdio(options: StdioRunOptions): Promise<number> {
     return 2;
   }
 
-  // 保持 stdout 纯净：SDK 全局日志与 console.log 统一改道 stderr
+  // 保持 stdout 纯净：SDK 全局日志走 setLogger 改道，
+  // 但 SDK（及第三方依赖）内部仍有**直接调用 console.log** 的地方，不经我们的 logger；
+  // 管道模式下那会把日志混进模型输出，所以这里连 console.log 一起改道。
   const stderrLogger = (message: string): void => logStderr(message);
   setLogger({ info: stderrLogger, warn: stderrLogger, error: stderrLogger });
   const originalLog = console.log;

@@ -1418,8 +1418,9 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     await tick();
     const frame = lastFrame()!;
     expect(frame).toContain("格式：");
-    // 权限屏仅 4 行，索引应被收敛到有效范围（末行 subagents）
-    expect(frame).toMatch(/❯\s+subagents/);
+    // 权限屏仅 4 行，索引应被收敛到有效范围（末行 = 子 Agent 维度）
+    // 上屏的是词条里的显示名，内部维度名（subagents）只作字段 key
+    expect(frame).toMatch(/❯\s+子 Agent/);
     unmount();
   });
 });

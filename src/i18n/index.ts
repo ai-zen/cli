@@ -44,7 +44,6 @@ const DICTS: Record<Locale, Record<string, string>> = {
 };
 
 let currentLocale: Locale = DEFAULT_LOCALE;
-let pluralRules = new Intl.PluralRules(DEFAULT_LOCALE);
 
 /** 当前语言 */
 export function getLocale(): Locale {
@@ -54,7 +53,6 @@ export function getLocale(): Locale {
 /** 设置当前语言（只改内存，落盘由 `preferences.ts` 负责） */
 export function setLocale(locale: Locale): void {
   currentLocale = normalizeLocale(locale) ?? DEFAULT_LOCALE;
-  pluralRules = new Intl.PluralRules(currentLocale);
 }
 
 /**
@@ -101,17 +99,14 @@ export function detectLocale(
 /**
  * 取词条。
  *
- * - `params.n` 为数字且存在 `key_<复数类别>` 时优先用变体（英文 `1 tool` / `2 tools`）；
  * - `{name}` 占位符用 params 替换，缺参数时保留原样（便于一眼看出漏传）；
  * - 词条不存在时返回 key 本身。
+ *
+ * 刻意不做复数变体（Intl.PluralRules）：本项目的数量词都写成「{n} 个 / (s)」，
+ * 一套从未启用的复数机制只会让词条表看起来支持它、实际没有一条在用。
  */
 export function t(key: string, params?: InterpolateParams): string {
-  const dict = DICTS[currentLocale];
-  let template = dict[key];
-  if (params && typeof params.n === "number") {
-    const category = pluralRules.select(params.n);
-    template = dict[`${key}_${category}`] ?? template;
-  }
+  const template = DICTS[currentLocale][key];
   if (template === undefined) return key;
   return interpolate(template, params);
 }
