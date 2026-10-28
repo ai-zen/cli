@@ -26,9 +26,51 @@ export function messageText(content: AgentNS.MessageContent | undefined): string
     .join("");
 }
 
-/** 单条消息 → 预折行（不可渲染的消息返回空数组） */
+/**
+ * 这条消息会不会进入下一轮上下文 —— 与 core `Agent.formatHistory()` 同一判据：
+ * `status == undefined || status === Completed`，且未被 `omit`。
+ *
+ * 策略**不需要**在这里重新推断：`core/Agent.run()` 收尾时已经把策略结算进字段里了
+ * （`reconcileAbortedToolRounds()` + `reconcileAbortedMessages()`）：
+ *   - `abortedMessageStrategy: keep` → 有内容的中断消息恢复 `Completed`（进上下文）；
+ *     `drop` → 保持 `Aborted`（不进）；
+ *   - `abortedToolRoundStrategy: fill` → 整轮恢复 `Completed`；`drop` → 整轮 `omit`（不进）。
+ * 所以「进不进」读 `status` / `omit` 就是**结果**，渲染层不重复推导策略。
+ */
+export function entersContext(message: AgentNS.Message): boolean {
+  const status = message.status;
+  return (status == null || status === AgentNS.MessageStatus.Completed) && !message.omit;
+}
+
+/**
+ * 流式中那条还没定局：`Pending`（占位）/ `Writing`（正在输出）。
+ *
+ * 它们在 `formatHistory()` 里同样不在（此刻确实还没进历史），但那是「尚未」而不是
+ * 「被丢弃」——本轮结束会变 `Completed` 或被策略改写成 `Aborted`，届时候选才确定。
+ */
+function isInFlight(message: AgentNS.Message): boolean {
+  const status = message.status;
+  return status === AgentNS.MessageStatus.Pending || status === AgentNS.MessageStatus.Writing;
+}
+
+/**
+ * 单条消息 → 预折行（不可渲染的消息返回空数组）。
+ *
+ * - `hidden`：渲染层要求彻底不出现（内部注入 / 占位消息）→ 返回空数组；
+ * - **不进上下文**（`!entersContext()`，如中断后按 `drop` 结算的消息、`Error`）：
+ *   照常渲染、整行划删除线 —— 消息凭空消失会让人以为丢了内容，划掉则明确表示
+ *   「还在，但没发给模型」。
+ */
 export function messageToLines(message: AgentNS.Message, columns: number): RLine[] {
-  if (message.hidden || message.omit) return [];
+  if (message.hidden) return [];
+  const lines = renderMessageLines(message, columns);
+  if (entersContext(message) || isInFlight(message)) return lines;
+  // 空行不划（没有文字，划线只会变成一条无来由的横杠）
+  return lines.map((line) => (line.kind === "gap" ? line : { ...line, struck: true }));
+}
+
+/** 按角色把一条消息折成若干行（不含 `hidden` / `omit` 判定，见 {@link messageToLines}） */
+function renderMessageLines(message: AgentNS.Message, columns: number): RLine[] {
   const key = `m${message.id}`;
   const width = innerWidth(columns);
 
@@ -91,7 +133,9 @@ function signature(message: AgentNS.Message): string {
       (sum, t) => sum + (t.function?.name?.length ?? 0) + (t.function?.arguments?.length ?? 0),
       0,
     ) ?? 0;
-  return `${reasoning}:${content}:${tools}:${message.status ?? ""}`;
+  // `omit` 也要进签名：它同样影响「进不进上下文」（决定要不要划删除线），
+  // 且可能在状态不变的情况下翻转（如交接的 omit 策略）——不重算就会拿到旧行
+  return `${reasoning}:${content}:${tools}:${message.status ?? ""}:${message.omit ? "omit" : ""}`;
 }
 
 /**

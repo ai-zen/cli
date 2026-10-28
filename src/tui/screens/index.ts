@@ -14,6 +14,7 @@ export {
   cachedMessageToLines,
   transcriptLines,
   messageText,
+  entersContext,
 } from "./messages-view.js";
 
 export {

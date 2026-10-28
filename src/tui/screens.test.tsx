@@ -394,9 +394,39 @@ describe("messageToLines（直接按 messages 渲染）", () => {
     expect(messageToLines(msg({ role: AgentNS.Role.Tool, content: "r" }), 80)).toEqual([]);
   });
 
-  it("hidden / omit 跳过", () => {
+  it("hidden 跳过渲染", () => {
     expect(messageToLines(msg({ role: AgentNS.Role.User, content: "x", hidden: true }), 80)).toEqual([]);
-    expect(messageToLines(msg({ role: AgentNS.Role.User, content: "x", omit: true }), 80)).toEqual([]);
+  });
+
+  it("不进上下文的消息划删除线（status 非 undefined/Completed）", () => {
+    // 中断后按 drop 结算 / 出错的 assistant：会渲染，但整行划掉
+    for (const status of [AgentNS.MessageStatus.Aborted, AgentNS.MessageStatus.Error]) {
+      const lines = messageToLines(msg({ role: AgentNS.Role.User, content: "x", status }), 80);
+      expect(lines.length, status).toBeGreaterThan(0);
+      expect(lines.filter((l) => l.kind !== "gap").every((l) => l.struck === true), status).toBe(true);
+      // 空行不划
+      expect(lines.filter((l) => l.kind === "gap").every((l) => l.struck === undefined)).toBe(true);
+    }
+  });
+
+  it("进上下文的消息不划线：undefined / Completed / 流式中（Pending・Writing）", () => {
+    const statuses = [
+      undefined,
+      AgentNS.MessageStatus.Completed,
+      AgentNS.MessageStatus.Pending,
+      AgentNS.MessageStatus.Writing,
+    ];
+    for (const status of statuses) {
+      const lines = messageToLines(msg({ role: AgentNS.Role.User, content: "x", status }), 80);
+      expect(lines.some((l) => l.struck), String(status)).toBe(false);
+    }
+  });
+
+  it("状态翻转后缓存必须失效（删除线不能沿用旧结果）", () => {
+    const message = msg({ role: AgentNS.Role.User, content: "x" });
+    expect(cachedMessageToLines(message, 80).some((l) => l.struck)).toBe(false);
+    message.status = AgentNS.MessageStatus.Aborted;
+    expect(cachedMessageToLines(message, 80).some((l) => l.struck)).toBe(true);
   });
 
   it("内容数组中的图片 / 文件以占位文本呈现", () => {
