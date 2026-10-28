@@ -42,6 +42,37 @@ describe("graphemes：按用户感知的「一个字符」切分", () => {
   it("换行符自成一簇（layoutInput 靠它判断行边界）", () => {
     expect(graphemes("a\nb")).toEqual(["a", "\n", "b"]);
   });
+
+  // 下面这组是「快速路径」（见 text.ts::NEEDS_SEGMENTER）的护栏。
+  // `graphemes()` 对普通文本跳过 `Intl.Segmenter` 直接按 code point 切，快一个数量级；
+  // 但一旦判定该走分词器的码位集漏了、就会静默切错 —— 所以把各类「多 code point 一簇」
+  // 的形态都钉在这里。漏一个就让这些用例红。
+  it("CRLF 是一个簇（不是两个）", () => {
+    expect(graphemes("a\r\nb")).toEqual(["a", "\r\n", "b"]);
+  });
+
+  it("组合附加符跟着基字走（拉丁 / 天城文 / 阿拉伯文）", () => {
+    expect(graphemes("a\u0301")).toEqual(["a\u0301"]);
+    expect(graphemes("नमस्ते")).toEqual(["न", "म", "स्ते"]);
+    expect(graphemes("مَرْحَبًا")).toEqual(["مَ", "رْ", "حَ", "بً", "ا"]);
+  });
+
+  it("韩文组合字母合成一簇", () => {
+    expect(graphemes("\u1100\u1161\u11A8")).toHaveLength(1);
+  });
+
+  it("ZWNJ / ZWJ 不断开字素簇", () => {
+    expect(graphemes("a\u200Cb")).toEqual(["a\u200C", "b"]);
+    expect(graphemes("क्‍ष")).toEqual(["क्‍ष"]);
+  });
+
+  it("tag 序列（旗帜细分）不按码位切散", () => {
+    expect(graphemes("🏴󠁧󠁢󠁥󠁮󠁧󠁿‌")).toHaveLength(1);
+  });
+
+  it("astral 平面汉字（扩展 B）是一个簇", () => {
+    expect(graphemes("𠮷𪚥")).toEqual(["𠮷", "𪚥"]);
+  });
 });
 
 describe("displayWidth / clusterWidth：直接使用 Ink 同款 string-width", () => {
