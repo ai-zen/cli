@@ -41,6 +41,8 @@ import { matchLevel, presetFor } from "../../reasoning-presets.js";
 import { getLocale, t } from "../../i18n/index.js";
 import { persistLocale } from "../../i18n/preferences.js";
 import { readAgentStore } from "../../agents-store.js";
+import { CLI_VERSION } from "../../version.js";
+import { compareVersions, pickNewest } from "../../version-compare.js";
 import { WizardStep } from "../config-wizard/index.js";
 import { truncate } from "./render.js";
 import { chooseHandoffMode } from "./handoff-choice.js";
@@ -369,6 +371,103 @@ const cmdReload: CommandHandler = async ({ session, push }) => {
   }
 };
 
+// ==================== /update ====================
+
+/** `/update` 的安装目标包 */
+const UPDATE_PACKAGE = "@ai-zen/cli";
+
+/**
+ * 读取包在 registry 上的全部 dist-tag（`{ latest, alpha, … }`）。
+ *
+ * 只拿 `latest` **不够**：本项目的实际发布状态就是「alpha 比正式版新」
+ * （曾经 `latest = 0.9.0`、`alpha = 1.0.0-alpha.23`），只认 `latest` 会把正在跑
+ * alpha 的用户**降级**回去。所以取全部 tag、再挑 semver 最大的那个。
+ *
+ * 失败（npm 不存在 / 网络不通 / 输出不是 JSON）返回 `undefined`，由调用方报错。
+ */
+function readDistTags(pkg: string): Record<string, string> | undefined {
+  const result = spawnSync("npm", ["view", pkg, "dist-tags", "--json"], { encoding: "utf-8" });
+  if (result.error || result.status !== 0) return undefined;
+  try {
+    const parsed = JSON.parse(result.stdout ?? "") as Record<string, unknown>;
+    const tags: Record<string, string> = {};
+    for (const [tag, version] of Object.entries(parsed)) {
+      if (typeof version === "string") tags[tag] = version;
+    }
+    return tags;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 读取**全局安装目录**里某个包的实际版本，读不到返回 `undefined`。
+ *
+ * 走 `npm root -g` + 读 `package.json`，而不是 `npm view`：后者查的是 registry，
+ * 刚装完的版本在 registry 上通常要几分钟才可见（发布经验，见交接文档），
+ * 拿它报「装好了没」会把成功误报成失败。
+ */
+function readGlobalInstalledVersion(pkg: string): string | undefined {
+  try {
+    const root = spawnSync("npm", ["root", "-g"], { encoding: "utf-8" });
+    const dir = (root.stdout ?? "").trim();
+    if (!dir) return undefined;
+    const parsed = JSON.parse(readFileSync(join(dir, pkg, "package.json"), "utf-8")) as {
+      version?: string;
+    };
+    return typeof parsed.version === "string" ? parsed.version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const cmdUpdate: CommandHandler = async ({ push, suspendTerminal }) => {
+  const tags = readDistTags(UPDATE_PACKAGE);
+  if (!tags) {
+    push(t("cmd.update.tagsFailed", { pkg: UPDATE_PACKAGE }), "error");
+    return;
+  }
+  // 全部 dist-tag 里 semver 最大的那个——不管是 alpha 还是正式版
+  const target = pickNewest(Object.values(tags));
+  if (!target) {
+    push(t("cmd.update.noVersion", { pkg: UPDATE_PACKAGE }), "error");
+    return;
+  }
+  // 不比当前进程新就不装：本地跑的开发版（或超前于 registry 的构建）不能被「升级」降级
+  const order = compareVersions(target, CLI_VERSION);
+  if (order !== null && order <= 0) {
+    push(t("cmd.update.same", { version: CLI_VERSION }));
+    return;
+  }
+  const spec = `${UPDATE_PACKAGE}@${target}`;
+
+  // 安装过程交给**真实终端**（`suspendTerminal` 期间 Ink 暂停渲染）：npm 的进度条与
+  // 报错直接打在 TTY 上，比捕获后回放可读；也因为不能阻塞事件循环——阻塞会让 Ink
+  // 帧写坏、进度一条都看不见。
+  let error: string | undefined;
+  await suspendTerminal(() => {
+    const result = spawnSync("npm", ["install", "-g", spec], { stdio: "inherit" });
+    if (result.error) error = result.error.message;
+    else if (result.status !== 0) error = `exit ${result.status ?? result.signal ?? "unknown"}`;
+  });
+
+  if (error) {
+    push(t("cmd.update.failed", { spec, error }), "error");
+    return;
+  }
+
+  // 装完读全局目录里的版本：读不到（自建安装路径 / 别的包管理器）就按目标版本报
+  const installed = readGlobalInstalledVersion(UPDATE_PACKAGE) ?? target;
+  if (installed === CLI_VERSION) {
+    push(t("cmd.update.same", { version: installed }));
+    return;
+  }
+  push(t("cmd.update.done", { spec, current: CLI_VERSION, version: installed }));
+  // 不自动重启：内存里跑的还是旧代码，`exit({restart: true})` 只是重挂载界面；
+  // 也不能替用户杀进程——当前会话会跟着没了。让用户自己决定何时重开。
+  push(t("cmd.update.restart", { current: CLI_VERSION }));
+};
+
 const cmdMcp: CommandHandler = async ({ push, args, openWizard }) => {
   // 不另建一套 MCP 编辑界面：直接打开配置中心里已有的 MCP 屏。
   // 增 / 删 / 改 / 启停 / 切换作用域都在那一屏里；关闭后宿主会因 `mcpChanged`
@@ -573,6 +672,7 @@ const HANDLERS: Record<CommandName, CommandHandler> = {
   model: cmdModel,
   agent: cmdAgent,
   reload: cmdReload,
+  update: cmdUpdate,
   mcp: cmdMcp,
   lang: cmdLang,
   think: cmdThink,

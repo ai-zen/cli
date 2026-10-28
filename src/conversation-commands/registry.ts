@@ -57,6 +57,7 @@ const REGISTRY_ENTRIES = [
   { name: "model", descriptionKey: "cmd.model.desc" },
   { name: "agent", descriptionKey: "cmd.agent.desc" },
   { name: "reload", descriptionKey: "cmd.reload.desc" },
+  { name: "update", descriptionKey: "cmd.update.desc", blocksInput: true },
   { name: "mcp", descriptionKey: "cmd.mcp.desc" },
   { name: "lang", descriptionKey: "cmd.lang.desc" },
   { name: "think", aliases: ["effort"], descriptionKey: "cmd.think.desc" },
