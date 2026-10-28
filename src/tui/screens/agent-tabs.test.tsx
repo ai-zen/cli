@@ -8,7 +8,8 @@
 // 整帧高度跳一下，这正是本设计要避免的。
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
-import { AgentTabs, agentTabStyle, type AgentTab } from "./agent-tabs.js";
+import { AgentTabs, agentTabStyle, agentStatusColor, AGENT_STATUS_DOT, type AgentTab } from "./agent-tabs.js";
+import { theme } from "../theme.js";
 
 const tabs: AgentTab[] = [
   { id: "main", label: "主AGENT" },
@@ -33,7 +34,7 @@ describe("AgentTabs（主 / 子 Agent 切换条）", () => {
     expect(frame.indexOf("子AGENT1")).toBeLessThan(frame.indexOf("子AGENT2"));
   });
 
-  it("执行状态用字符内联在标签尾部（● 运行中 / ✓ 完成 / ✖ 失败）", () => {
+  it("执行状态用圆点内联在标签尾部（同形，靠颜色区分）", () => {
     const frame = draw(
       [
         { id: "main", label: "主AGENT" },
@@ -43,17 +44,37 @@ describe("AgentTabs（主 / 子 Agent 切换条）", () => {
       ],
       "main",
     );
-    // 状态字符紧贴标签，不再额外占一列空白
-    expect(frame).toContain("子AGENT1●");
-    expect(frame).toContain("子AGENT2✓");
-    expect(frame).toContain("子AGENT3✖");
+    // 圆点紧贴标签，不额外占一列空白；中等大小的 • 而非偏大的 ●
+    expect(frame).toContain(`子AGENT1${AGENT_STATUS_DOT}`);
+    expect(frame).toContain(`子AGENT2${AGENT_STATUS_DOT}`);
+    expect(frame).toContain(`子AGENT3${AGENT_STATUS_DOT}`);
+    expect(AGENT_STATUS_DOT).toBe("•");
+  });
+
+  it("状态三色：运行中蓝、完成绿、失败红", () => {
+    // 颜色在测试里断言不了（无 ANSI），所以锁颜色映射：三态必须取到三个不同色，
+    // 且分别对应主题里的 running / ok / error
+    expect(agentStatusColor("running", true)).toBe(theme.running);
+    expect(agentStatusColor("done")).toBe(theme.ok);
+    expect(agentStatusColor("failed")).toBe(theme.error);
+    expect(new Set([theme.running, theme.ok, theme.error]).size).toBe(3);
+  });
+
+  it("运行中的圆点闪烁：亮蓝与暗色交替（其余状态不闪）", () => {
+    const bright = agentStatusColor("running", true);
+    const dim = agentStatusColor("running", false);
+    expect(bright).toBe(theme.running);
+    expect(dim).toBe(theme.faint);
+    expect(bright).not.toBe(dim);
+    // 完成 / 失败不受 blinkOn 影响（不闪）
+    expect(agentStatusColor("done", true)).toBe(agentStatusColor("done", false));
+    expect(agentStatusColor("failed", true)).toBe(agentStatusColor("failed", false));
   });
 
   it("没有状态时不画标记（主 Agent 的忙碌由输入行 Spinner 表示）", () => {
     const frame = draw([{ id: "main", label: "主AGENT" }], "main");
     expect(frame).toContain("主AGENT");
-    expect(frame).not.toContain("●");
-    expect(frame).not.toContain("✓");
+    expect(frame).not.toContain(AGENT_STATUS_DOT);
   });
 
   it("当前项高亮：加粗 + 背景色块，其余项无背景", () => {

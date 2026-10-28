@@ -17,6 +17,8 @@ export const theme = {
   tool: "#fbbf24",
   error: "#f87171",
   ok: "#34d399",
+  /** 进行中（蓝）：与 ok / error 组成「运行 / 完成 / 失败」状态三色 */
+  running: "#60a5fa",
   warn: "#fbbf24",
   dim: "#64748b",
   faint: "#475569",
