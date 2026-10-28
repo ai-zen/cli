@@ -92,19 +92,12 @@ export interface CommandContext extends ChatCommandHost {
   raw: string;
   /** 首个 token 之后的参数（`/migrate summary` → `["summary"]`） */
   args: string[];
-  /** `/handoff` `/migrate` 的执行者参数解析结果（见 {@link HandoffSelection}） */
-  handoff: HandoffSelection;
   /** 通知（默认 info 语气） */
   push: (text: string, tone?: "info" | "error") => void;
   /**
-   * 选一条：给了 `direct` 就直接采用（不弹窗），否则弹选择器。
-   * 用户取消返回 `null` —— 各命令自己决定取消后说什么。
+   * 弹选择器并等用户作答（取消为 `null`），由各命令自己决定取消后说什么。
    */
-  pick: (
-    direct: string | undefined,
-    title: string,
-    items: SelectItem<string>[],
-  ) => Promise<string | null>;
+  pick: (title: string, items: SelectItem<string>[]) => Promise<string | null>;
 }
 
 type CommandHandler = (ctx: CommandContext) => Promise<void>;
@@ -116,6 +109,18 @@ type CommandHandler = (ctx: CommandContext) => Promise<void>;
 export function parseHandoffMode(raw?: string): HandoffMode | undefined {
   const value = raw?.trim().toLowerCase();
   return value === "self" || value === "summary" ? value : undefined;
+}
+
+/**
+ * 解析 `/handoff` `/migrate` 的执行者参数。
+ *
+ * 单独成函数而不是挂在 `CommandContext` 上：16 个命令里只有这两个用得到，
+ * 挂在上下文中会让另外 14 个命令（`/save` `/help` `/clear` …）每次也白算一遍。
+ */
+export function parseHandoffSelection(args: readonly string[]): HandoffSelection {
+  const raw = args[0]?.toLowerCase();
+  const mode = parseHandoffMode(raw);
+  return { mode, invalid: raw !== undefined && mode === undefined ? raw : undefined };
 }
 
 // ==================== 各命令 ====================
@@ -147,7 +152,7 @@ const cmdLoad: CommandHandler = async ({ push, rows, exit, pick }) => {
   const items = allItems.slice(0, maxItems);
   const title =
     allItems.length > maxItems ? t("cmd.load.tooMany", { n: maxItems }) : t("cmd.load.titleReplacing");
-  const choice = await pick(undefined, title, items);
+  const choice = await pick(title, items);
   if (choice == null) {
     push(t("cmd.load.cancelled"));
     return;
@@ -190,7 +195,7 @@ const cmdBack: CommandHandler = async ({ session, push, rows, exit, pick }) => {
   const maxItems = Math.max(1, (rows ?? 24) - 8);
   const items = allItems.reverse().slice(0, maxItems);
   const title = allItems.length > maxItems ? t("cmd.back.tooMany", { n: maxItems }) : t("cmd.back.title");
-  const choice = await pick(undefined, title, items);
+  const choice = await pick(title, items);
   if (choice == null) {
     push(t("cmd.back.cancelled"));
     return;
@@ -251,7 +256,7 @@ const cmdModel: CommandHandler = async ({ session, push, args, exit, pick }) => 
       value: model.id,
       hint: model.id,
     }));
-    const picked = await pick(undefined, t("cmd.model.title"), items);
+    const picked = await pick(t("cmd.model.title"), items);
     if (picked == null) {
       push(t("cmd.model.cancelled"));
       return;
@@ -318,7 +323,7 @@ const cmdAgent: CommandHandler = async ({ session, push, args, exit, pick }) => 
         hint: choice.selectable ? (choice.modelName ?? choice.id) : (choice.reason ?? ""),
       };
     });
-    const picked = await pick(undefined, t("cmd.agent.title"), items);
+    const picked = await pick(t("cmd.agent.title"), items);
     if (picked == null) {
       push(t("cmd.agent.cancelled"));
       return;
@@ -439,11 +444,7 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
         hint: value,
       })),
     ];
-    const choice = await pick(
-      undefined,
-      t("cmd.think.title", { level: describeEffort(model, presets, definition) }),
-      items,
-    );
+    const choice = await pick(t("cmd.think.title", { level: describeEffort(model, presets, definition) }), items);
     if (choice == null) {
       push(t("cmd.think.cancelled"));
       return;
@@ -481,7 +482,8 @@ const cmdKey: CommandHandler = async ({ openKeyEditor }) => {
   await openKeyEditor();
 };
 
-const cmdHandoff: CommandHandler = async ({ session, push, handoff, setPickerState }) => {
+const cmdHandoff: CommandHandler = async ({ session, push, args, setPickerState }) => {
+  const handoff = parseHandoffSelection(args);
   if (handoff.invalid !== undefined) {
     push(t("cmd.handoff.unknownMode", { who: handoff.invalid }), "error");
     return;
@@ -504,13 +506,8 @@ const cmdHandoff: CommandHandler = async ({ session, push, handoff, setPickerSta
   }
 };
 
-const cmdMigrate: CommandHandler = async ({
-  session,
-  push,
-  handoff,
-  setPickerState,
-  clearTranscript,
-}) => {
+const cmdMigrate: CommandHandler = async ({ session, push, args, setPickerState, clearTranscript }) => {
+  const handoff = parseHandoffSelection(args);
   if (handoff.invalid !== undefined) {
     push(t("cmd.handoff.unknownMode", { who: handoff.invalid }), "error");
     return;
@@ -578,19 +575,14 @@ const HANDLERS: Record<CommandName, CommandHandler> = {
 function buildContext(name: CommandName, raw: string, host: ChatCommandHost): CommandContext {
   // 命令参数：首个 token 为命令名，其余为参数（如 `/migrate summary`）
   const args = raw.trim().split(/\s+/).slice(1);
-  const modeArg = args[0]?.toLowerCase();
-  const mode = parseHandoffMode(modeArg);
   return {
     ...host,
     name,
     raw,
     args,
-    handoff: { mode, invalid: modeArg !== undefined && mode === undefined ? modeArg : undefined },
     push: (text, tone = "info") => host.notice(text, tone),
-    pick: (direct, title, items) =>
-      direct !== undefined
-        ? Promise.resolve(direct)
-        : new Promise<string | null>((resolve) => host.setPickerState({ title, items, resolve })),
+    pick: (title, items) =>
+      new Promise<string | null>((resolve) => host.setPickerState({ title, items, resolve })),
   };
 }
 
