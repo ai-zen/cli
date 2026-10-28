@@ -9,7 +9,12 @@ import { theme } from "../theme.js";
 import { Spinner, StatusBar, statusBarRows, SlashMenu, type StatusBarProps } from "../components.js";
 import { graphemes, layoutInput, usableFrameRows } from "../text.js";
 import { ChatSession, type ChatSessionNotifier } from "../chat-session.js";
-import { CommandHint, matchCommandHints } from "../../conversation-commands/registry.js";
+import {
+  CommandHint,
+  commandBlocksInput,
+  matchCommandHints,
+  parseCommandInput,
+} from "../../conversation-commands/registry.js";
 import { readConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "../../config.js";
 import { readAgentStore } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
@@ -335,11 +340,11 @@ export function Chat(props: ChatScreenProps) {
     scrollToBottom();
     noticeChannel.clear();
 
-    if (!options.asMessage && trimmed.startsWith("/")) {
-      // 命令名取首个 token：支持 `/migrate summary`、`/handoff self` 这类带参数的写法
-      const name = trimmed.slice(1).split(/\s+/)[0].toLowerCase();
-      // 交接/迁移会调用模型写文档（较慢）：期间应像自动迁移一样拦住输入框。
-      const blocksInput = name === "migrate" || name === "handoff";
+    // 斜杠命令：命令名怎么解析、哪些命令会调用模型（要拦输入框），都来自命令元数据
+    const command = options.asMessage ? null : parseCommandInput(trimmed);
+    if (command) {
+      const name = command.name;
+      const blocksInput = commandBlocksInput(name);
       if (blocksInput) setBusy(true);
       try {
         await runCommand(name, trimmed, {

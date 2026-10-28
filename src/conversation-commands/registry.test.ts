@@ -2,9 +2,14 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   COMMAND_LABEL_WIDTH,
   COMMAND_REGISTRY,
+  canonicalCommandName,
+  commandAliases,
+  commandBlocksInput,
+  findCommand,
   getCommandHints,
   getCommandNames,
   matchCommandHints,
+  parseCommandInput,
 } from "./registry.js";
 import { setLocale } from "../i18n/index.js";
 
@@ -51,7 +56,7 @@ describe("对话命令元数据", () => {
     const names = new Set(getCommandNames());
     for (const command of COMMAND_REGISTRY) {
       expect(names.has(command.name)).toBe(true);
-      for (const alias of command.aliases ?? []) expect(names.has(alias)).toBe(true);
+      for (const alias of commandAliases(command)) expect(names.has(alias)).toBe(true);
     }
   });
 });
@@ -82,5 +87,42 @@ describe("命令前缀匹配", () => {
       { names: ["agent"], label: "/agent", description: "切换主 Agent（写入默认 Agent，重建会话）" },
     ]);
     expect(getCommandNames()).toContain("agent");
+  });
+});
+
+describe("命令名解析与元数据", () => {
+  it("canonicalCommandName 把别名归一到主名（大小写不敏感）", () => {
+    expect(canonicalCommandName("think")).toBe("think");
+    expect(canonicalCommandName("EFFORT")).toBe("think");
+    expect(canonicalCommandName("quit")).toBe("exit");
+    expect(canonicalCommandName("nope")).toBeUndefined();
+  });
+
+  it("parseCommandInput 拆出命令名与参数；只打一个 `/` 也算命令", () => {
+    expect(parseCommandInput("/migrate")).toEqual({ name: "migrate", args: [] });
+    expect(parseCommandInput("  /MIGRATE  self ")).toEqual({ name: "migrate", args: ["self"] });
+    expect(parseCommandInput("/")).toEqual({ name: "", args: [] });
+    // 非斜杠输入不是命令（宿主会把它当普通消息发出去）
+    expect(parseCommandInput("hello")).toBeNull();
+    expect(parseCommandInput("")).toBeNull();
+  });
+
+  it("blocksInput 只有「会调用模型」的命令为真（别名同样生效）", () => {
+    expect(commandBlocksInput("migrate")).toBe(true);
+    expect(commandBlocksInput("handoff")).toBe(true);
+    // 别名归一到主名后仍应命中
+    expect(commandBlocksInput("MIGRATE")).toBe(true);
+    expect(commandBlocksInput("help")).toBe(false);
+    expect(commandBlocksInput("think")).toBe(false);
+    expect(commandBlocksInput("nope")).toBe(false);
+  });
+
+  it("每个命令的主名都能在表里查到自己的元数据", () => {
+    for (const command of COMMAND_REGISTRY) {
+      expect(findCommand(command.name)?.name).toBe(command.name);
+      for (const alias of commandAliases(command)) {
+        expect(findCommand(alias)?.name).toBe(command.name);
+      }
+    }
   });
 });
