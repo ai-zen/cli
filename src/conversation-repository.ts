@@ -10,7 +10,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { EntityRepository } from "@ai-zen/agents-sdk";
-import type { AgentNS } from "@ai-zen/agents-core";
+import { AgentNS } from "@ai-zen/agents-core";
 import { CONVERSATIONS_DIR } from "./config.js";
 import { formatFileStamp } from "./format-time.js";
 import { writeLastSession } from "./session-pointer.js";
@@ -93,29 +93,67 @@ export async function saveConversation(ctx: ConversationContext): Promise<string
   });
 }
 
+/** `/load` 选择器的一行 */
+export interface ConversationSummary {
+  id: string;
+  /** 文件名（= id），无摘要时的回退显示 */
+  name: string;
+  /** 首条用户消息的第一行（截断）；读不到时为空串 */
+  preview: string;
+  updatedAt: string;
+  size: number;
+}
+
+/** 摘要最大字符数（渲染侧还会按终端宽度再裁一次） */
+const PREVIEW_MAX = 80;
+
 /**
- * 列出已保存的会话（仅读文件名与 mtime，不解析 JSON 内容，快），按更新时间倒序。
- * 供对话内 `/load` 选择器使用。
+ * 会话摘要：首条用户消息的第一行。
+ *
+ * 会话 id 是时间戳（`chat_2026_10_28_00_56_34`），直接当标签列出来完全分不清哪条是哪条。
+ * 取首行而不是整段：`CwdTrackerPlugin` 会在消息末尾追加工作目录注记，末尾对辨认无意义。
  */
-export async function listConversations(): Promise<
-  Array<{ id: string; name: string; updatedAt: string; size: number }>
-> {
+export function conversationPreview(conversation: Conversation | null): string {
+  const first = conversation?.messages?.find((m) => m.role === AgentNS.Role.User);
+  const content = typeof first?.content === "string" ? first.content : "";
+  const line = content.split("\n").find((part) => part.trim()) ?? "";
+  return line.trim().slice(0, PREVIEW_MAX);
+}
+
+/**
+ * 列出已保存的会话，按更新时间倒序。供对话内 `/load` 选择器使用。
+ *
+ * 先只 stat（快），排序后**只为将要显示的那几条**解析内容取摘要 —— 会话攒到上百条时，
+ * 逐个 `JSON.parse` 会明显拖慢 `/load`。
+ */
+export async function listConversations(
+  options: { previewLimit?: number } = {},
+): Promise<ConversationSummary[]> {
   try {
     await fs.access(CONVERSATIONS_DIR);
   } catch {
     return [];
   }
   const files = await fs.readdir(CONVERSATIONS_DIR);
-  const result: Array<{ id: string; name: string; updatedAt: string; size: number }> = [];
+  const stats: Array<{ id: string; name: string; updatedAt: string; size: number }> = [];
   for (const file of files) {
     if (!file.endsWith(".json")) continue;
     const id = file.replace(/\.json$/, "");
     try {
       const st = await fs.stat(join(CONVERSATIONS_DIR, file));
-      result.push({ id, name: id, updatedAt: st.mtime.toISOString(), size: st.size });
+      stats.push({ id, name: id, updatedAt: st.mtime.toISOString(), size: st.size });
     } catch {
       /* 跳过读取失败的条目 */
     }
   }
-  return result.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  stats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+  const previewLimit = Math.max(0, options.previewLimit ?? 0);
+  const withPreview = await Promise.all(
+    stats.map(async (item, index): Promise<ConversationSummary> => {
+      if (index >= previewLimit) return { ...item, preview: "" };
+      return { ...item, preview: conversationPreview(await conversationRepository.read(item.id)) };
+    }),
+  );
+  return withPreview;
 }

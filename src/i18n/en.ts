@@ -159,6 +159,7 @@ export const en: Record<string, string> = {
   "msg.file": "[File: {name}]",
   "msg.inlineFile": "inline file",
   "msg.userHeader": "❯ You",
+  "msg.aiHeader": "✦ AI",
   "confirm.hint": "← → select · y/n · Enter confirm",
 
   // ---------- Summaries / errors returned by business modules ----------

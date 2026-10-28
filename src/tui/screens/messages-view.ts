@@ -51,7 +51,7 @@ export function messageToLines(message: AgentNS.Message, columns: number): RLine
 
     const lines: RLine[] = [
       { key: `${key}-gap`, kind: "gap", text: " " },
-      { key: `${key}-h`, kind: "ai-header", text: "✦ AI" },
+      { key: `${key}-h`, kind: "ai-header", text: t("msg.aiHeader") },
     ];
     if (reasoning) {
       lines.push(...contentLines("reasoning", `${key}-r`, reasoning, width));

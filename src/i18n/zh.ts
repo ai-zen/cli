@@ -163,6 +163,7 @@ export const zh: Record<string, string> = {
   "msg.file": "[文件: {name}]",
   "msg.inlineFile": "内联文件",
   "msg.userHeader": "❯ 你",
+  "msg.aiHeader": "✦ AI",
   "confirm.hint": "← → 选择 · y/n · Enter 确认",
 
   // ---------- 业务模块返回的 summary / 报错（思考档位 / 切模型 / 切 Agent / 交接） ----------

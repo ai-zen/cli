@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateConversationId } from "./conversation-repository.js";
+import { conversationPreview, generateConversationId, type Conversation } from "./conversation-repository.js";
 import { formatFileStamp, formatShortTime } from "./format-time.js";
 import { setLocale } from "./i18n/index.js";
 
@@ -41,5 +41,40 @@ describe("时间戳：文件名用不随语言变，显示用随语言变", () =
     setLocale("en");
     expect(formatShortTime("2026-10-28T00:56:34")).not.toContain("年");
     setLocale("zh");
+  });
+});
+
+describe("conversationPreview（/load 列表摘要）", () => {
+  const conv = (messages: Array<{ role: string; content: unknown }>): Conversation =>
+    ({ id: "x", agentId: "default", messages, createdAt: "", updatedAt: "" }) as unknown as Conversation;
+
+  it("取首条用户消息的第一行（会话 id 是时间戳，列表靠它分辨）", () => {
+    expect(
+      conversationPreview(
+        conv([
+          { role: "assistant", content: "先来的" },
+          { role: "user", content: "第一行\n第二行" },
+        ]),
+      ),
+    ).toBe("第一行");
+  });
+
+  it("跳过消息开头的空行", () => {
+    expect(conversationPreview(conv([{ role: "user", content: "\n\n真正的第一行\n更多" }]))).toBe(
+      "真正的第一行",
+    );
+  });
+
+  it("非字符串 content（多段内容）返回空串，不猜", () => {
+    expect(conversationPreview(conv([{ role: "user", content: [{ type: "text", text: "x" }] }]))).toBe("");
+  });
+
+  it("没有用户消息 / 会话为 null → 空串", () => {
+    expect(conversationPreview(conv([{ role: "assistant", content: "只有回复" }]))).toBe("");
+    expect(conversationPreview(null)).toBe("");
+  });
+
+  it("超长截断到 80 字（渲染侧还会按终端宽度再裁）", () => {
+    expect(conversationPreview(conv([{ role: "user", content: "长".repeat(200) }]))).toHaveLength(80);
   });
 });

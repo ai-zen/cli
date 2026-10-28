@@ -419,6 +419,9 @@ export class ChatSession {
       // 这个工具（委派）返回，阶段应停在「等待 xxx 返回」；而子 Agent 自己的思考 / 输出
       // 是工具内部的事，拿它的 delta 去改主阶段，界面会变成「输出中」——正好盖掉了
       // 用户最需要知道的那句话。
+      // 这里挂的监听**不需要**在 `onSubEnd` 撤销：子 Agent 实例是「每次委派新建」的
+      // （core 的 `AgentTool.exec()` 里 `new Agent(...)`、`AgentToolLazy.exec()` 里
+      // `buildAgent(...)`），随本次 run 结束回收，监听器跟着走。别为此再加 off。
       subAgent.events.on("open", onSubOpen);
       subAgent.events.on("chunk-parsed", onSubChunk);
       subAgent.events.on("error", onError);

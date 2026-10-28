@@ -406,18 +406,20 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       break;
     }
     case "load": {
-      const list = await listConversations();
+      // 先算可见条数：摘要只为将要显示的那几条解析（会话多时不拖慢 /load）
+      const maxItems = Math.max(1, (rows ?? 24) - 8);
+      const list = await listConversations({ previewLimit: maxItems });
       if (list.length === 0) {
         push(t("cmd.load.none"), "error");
         break;
       }
       const allItems: SelectItem<string>[] = list.map((c) => ({
-        label: c.name,
+        // 有首条消息就用它当标签：纯时间戳 id 根本分不清哪条是哪条
+        label: c.preview || c.name,
         value: c.id,
         hint: formatShortTime(c.updatedAt),
       }));
       // 覆盖层不能高于终端：仅展示最近的有限条
-      const maxItems = Math.max(1, (rows ?? 24) - 8);
       const items = allItems.slice(0, maxItems);
       const title =
         allItems.length > maxItems
