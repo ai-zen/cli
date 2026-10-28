@@ -14,6 +14,7 @@
 - **`ai hook install` 漏清重复块** —— rc 里可能残留多个钩子块（老版本 + 新版本各写一次），旧实现只看第一块，于是「第一块恰好是最新版 → 判定已安装 → 后面的旧块永远留着」。改为取全部块，只有「恰好一块且内容一致」才算已安装。
 - **会话落盘不是原子写** —— SDK 的 `EntityRepository.write()` 是直接覆盖，进程在写一半时被杀（Ctrl+C / OOM / 断电）就留下半截 JSON，`read()` 解析失败返回 null，**整段历史就此丢失**（会话文件可达数 MB，写入窗口并不小）。改为「写 `<id>.json.tmp` → `rename`」，任何时刻读到的要么是旧文件、要么是完整新文件。
 - **Ctrl+C 无法中断会话交接** —— 两处根因：`summary` 模式的独立模型请求没有任何取消点；`self` 模式虽能被 `agent.abort()` 打断，但 abort 不抛错，中止后被误判成「模型没写出文档」，于是**重试一轮、再降级 summary 再跑一轮**——用户以为取消了，实际多烧两轮全量输入。现在交接接受 `AbortSignal`：取消时抛 `HandoffAbortedError`、**不降级不重试**、清掉写了一半的文档、`migrate` 也不改动会话历史；TUI 里 Ctrl+C 会先走交接的取消通道，提示「已取消」而不是报错。（依赖 `@ai-zen/agents-sdk` 同名改动）
+- **通知栏文案整体右移 2 列** —— 缩进被加了两遍：`NoticeBar` 的 `paddingX={1}` 一层，`notice.ts` 又硬拼 `  ` 一层，于是文案比同屏的分隔线与 `❯` 输入行多缩 2 列；迁移一次推 4 条通知时最刺眼。现在横向定位只归容器管，逻辑层只管折行。顺带去掉 `· ` / `✖ ` 前缀——语气已由 `tone` 着色表达（error 走红色），符号纯属占位；多行通知每行都从行首开始。配置更新的子项摘要改为「一个汉字宽度」（2 列）缩进，不再带项目符号。
 
 ### ✨ 新功能
 
@@ -27,6 +28,7 @@
 - **会话落盘收敛为唯一入口** —— 「读旧记录拿 `createdAt` → 写 → 更新指针」原先在 5 个地方各写一遍并且已经漂移（`saveConversation()` 漏写 `cwd`、stdio 的 `--save` 不更新指针、还写了一个已废弃的 `modelId`）。收敛到 `persistConversation()`，各处差异只剩「是否更新指针」一个显式开关。
 - **初始化与单例改为缓存 Promise** —— `getScope()` / `ensureConfigDir()` 缓存实例时，`if (x) return x` 之后到赋值之间有一段 `await`，并发调用会一起穿透（建出两个 Scope → MCP 双连接、双份工具发现）。改缓存 Promise 让并发调用共享同一次初始化，失败不缓存。
 - **删死代码与不可达兜底** —— 死字段 `ConversationContext.running|input|shouldSend`、从未启用的 i18n 复数机制（`pluralRules` + `key_one/_other`）、`noticeLines()` 末尾不可达的截断兜底（穷举 84 组证明从不执行）、`pick(direct, …)` 从没人传过的参数、`useChatViewport` 零引用的 `scrollTo` 导出、所有命令都空转一遍的 `parseHandoffMode`；`cwd` / `previewLimit` 从「可选 + 内部兜底」收成必填，兜底只保留在 SDK 可选字段的真实边界上。
+- **命令说明文案精简** —— 斜杠菜单与 `/help` 都是一行一条，说明过长会把整行塞满。按「只写做什么、不写实现细节」重写：砍掉内部概念（`scope`、写入配置、重建会话）与冗余限定词，括号只留用户必须预期的后果（替换会话 / 重建 / 不切换会话）。中文最长 59 → **34**、英文 73 → **49**（平均 19.3 / 33.8），`/mcp` 从全场最长退到中游。
 - **权限四维上屏走词条** —— `tools` / `skills` / `mcps` / `subagents` 是配置里的键，直接上屏等于把内部标识暴露给用户，映射到 `perm.*` 词条。
 
 ### ⚡ 性能
@@ -39,7 +41,7 @@
 
 ### ✅ 测试
 
-- 全量 **46 文件 / 602 例通过**（评审前 36 文件 / 487 例，净增 10 文件 / 115 例护栏）。
+- 全量 **46 文件 / 604 例通过**（评审前 36 文件 / 487 例，净增 10 文件 / 117 例护栏）。
 - 重点新增：`use-chat-viewport` 7 例、`use-overlays` 6 例、`use-wizard-host` 9 例、`use-input-editing` 13 例、`common-keys` 10 例、`chat.test.tsx` 7 例集成护栏、`lines.test.ts` 12 例（字素簇折行）、`notice-bar` 4 例、`conversation-persist` 10 例（含 spy `fs.rename` 钉住原子写）。
 - 破坏性验证（每项都确认护栏会红）：折行改回 code point、`clampCursor` 改 `Array.from`、翻页步长改 `budget`、删掉 PgUp 分支、去掉 `\p{M}`、原子写改回直写、`clearDraft` 去掉历史游标复位。
 

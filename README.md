@@ -187,24 +187,24 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 
 | Command | Description |
 |---------|-------------|
-| `/exit` `/quit` | Exit the conversation |
-| `/save` | Save the current conversation (it is already flushed on every turn) |
-| `/load` | Load a saved conversation (replaces the current session) |
+| `/exit` `/quit` | Exit the conversation (offers to save) |
+| `/save` | Save the conversation (already flushed every turn) |
+| `/load` | Load a conversation (replaces this one) |
 | `/new` | Reset the conversation (clear history) |
-| `/back` | Undo messages (roll back to a specific point and resend) |
-| `/editor` | Open system editor for long-form input |
+| `/back` | Retract a message (roll back to a point and resend) |
+| `/editor` | Compose a long message in your editor (vim/nano) |
 | `/clear` | Clear the screen |
-| `/config` | Open the configuration center (endpoints / models / image models / MCP servers / agent definitions / defaults / tool-output cap) |
-| `/model` | Switch the model of the current session and persist it (written to the Agent's `modelId`; thinking level is reset to the model default) |
-| `/agent` | Quickly switch the main Agent (a picker lists every Agent; picking one writes `defaultAgent` and rebuilds the session; Agents that cannot run are marked unavailable with the reason) |
-| `/reload` | Refresh the runtime: rebuild the scope and rediscover tools / skills / MCP servers (use it after hand-editing `mcp.json` etc.; messages and context are kept) |
-| `/mcp` | Manage MCP servers (opens the MCP screen of the configuration center: add / remove / edit / toggle / switch between global and project scope; `/mcp global` and `/mcp project` jump straight to a scope) |
-| `/lang` | Switch the interface language (中文 / English); `/lang zh` and `/lang en` set it explicitly, no argument toggles |
-| `/think` `/effort` | Switch reasoning effort (available levels come from the model's reasoning preset, e.g. `low/high/max`); persisted into the current Agent definition; `/think default` falls back to the model default |
-| `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
-| `/handoff` | Write a handoff document only (session keeps running; no confirmation) |
-| `/migrate` | Handoff + start a new session (discards history; asks for confirmation) |
-| `/help` | Show available commands |
+| `/config` | Open the configuration center (endpoints / models / image models / MCP / agent definitions / defaults / tool-output cap) |
+| `/model` | Switch model (writes the Agent's `modelId`; thinking level resets to the model default) |
+| `/agent` | Switch the main Agent (writes `defaultAgent` and rebuilds the session; unusable Agents are marked with the reason) |
+| `/reload` | Refresh the runtime (rediscovers tools / MCP; messages and context are kept) |
+| `/mcp` | Manage MCP servers (add / remove / edit / toggle; `/mcp global` and `/mcp project` pick a scope) |
+| `/lang` | Switch the interface language (`/lang zh`, `/lang en` set it explicitly; no argument toggles) |
+| `/think` `/effort` | Switch reasoning effort (`/think default` follows the model default) |
+| `/key` | Set the endpoint API key (rebuilds the session on save) |
+| `/handoff` | Write a handoff document (keeps the session) |
+| `/migrate` | Hand off and start a new session |
+| `/help` | Show help |
 
 ### Task Handoff & Migration
 

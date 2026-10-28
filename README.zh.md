@@ -187,24 +187,24 @@ key input="" flags=[pageUp] raw=false
 
 | 命令 | 说明 |
 |------|------|
-| `/exit` `/quit` | 退出对话 |
-| `/save` | 保存当前对话（会话本就每轮实时落盘） |
-| `/load` | 加载已保存的对话（替换当前会话） |
+| `/exit` `/quit` | 退出对话（提示保存） |
+| `/save` | 保存对话（本就每轮实时落盘） |
+| `/load` | 加载对话（替换当前会话） |
 | `/new` | 重置会话（清空历史） |
-| `/back` | 撤回消息（回退到指定位置并可编辑后重发） |
-| `/editor` | 使用系统编辑器（vim/nano）输入长消息 |
+| `/back` | 撤回上一条（回退到指定位置并可编辑重发） |
+| `/editor` | 用外部编辑器（vim/nano）写长消息 |
 | `/clear` | 清屏 |
-| `/config` | 打开配置中心（端点 / 模型 / 图片模型 / MCP 服务器 / Agent 定义 / 默认项 / 工具上限） |
-| `/model` | 切换当前会话使用的模型并写入配置（写 Agent 的 `modelId`；思考强度重置为模型默认） |
-| `/agent` | 快速切换主 Agent（选择器列出全部 Agent，选中后写入 `defaultAgent` 并重建会话；切过去跑不起来的会被标为不可用并给出原因） |
-| `/reload` | 刷新运行环境：重建 scope 并重新发现工具 / Skill / MCP（手工改过 `mcp.json` 等配置文件后用；消息与上下文保留） |
-| `/mcp` | 管理 MCP 服务器（直接打开配置中心里的 MCP 界面：新增 / 删除 / 编辑 / 启停 / 切换全局与项目作用域；`/mcp global`、`/mcp project` 可指定落点） |
-| `/lang` | 切换界面语言（中文 / English）；`/lang zh`、`/lang en` 可直指定，不带参数则在两者间切换 |
-| `/think` `/effort` | 切换思考强度（可选档位来自模型的思考策略表，如 `low/high/max`），写入当前 Agent 定义并立即生效；`/think default` 恢复跟随模型默认 |
-| `/key` | 设置当前端点的 API Key（保存后自动重建会话） |
-| `/handoff` | 编写任务交接文档（会话照旧，不弹确认） |
-| `/migrate` | 交接 + 开启新会话（清空历史，需确认） |
-| `/help` | 显示可用命令 |
+| `/config` | 打开配置中心（端点 / 模型 / 图片模型 / MCP / Agent 定义 / 默认项 / 工具上限） |
+| `/model` | 切换模型（写入 Agent 的 `modelId`，思考强度重置为模型默认） |
+| `/agent` | 切换主 Agent（写入 `defaultAgent` 并重建会话；跑不起来的标为不可用并给出原因） |
+| `/reload` | 刷新运行环境（重新发现工具 / MCP；消息与上下文保留） |
+| `/mcp` | 管理 MCP 服务器（增删改 / 启停；`/mcp global`、`/mcp project` 指定作用域） |
+| `/lang` | 切换界面语言（`/lang zh`、`/lang en` 直指定，不带参数则切换） |
+| `/think` `/effort` | 切换思考强度（`/think default` 跟随模型默认） |
+| `/key` | 设置端点 API Key（保存后重建会话） |
+| `/handoff` | 生成交接文档（不切换会话） |
+| `/migrate` | 交接并开启新会话 |
+| `/help` | 显示帮助 |
 
 ### 任务交接与迁移
 

@@ -96,22 +96,22 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 
 | Command | Description |
 |---------|-------------|
-| `/exit` `/quit` | Exit the conversation |
-| `/save` | Save the current conversation |
-| `/new` | Reset the session (clear history, replace with the Agent-defined initial message) |
-| `/back` | Undo a message (select a user message to edit and resend, or select a tool result to continue asking) |
-| `/editor` | Use the system editor to enter a long message |
+| `/exit` `/quit` | Exit the conversation (offers to save) |
+| `/save` | Save the conversation |
+| `/new` | Reset the session (clear history) |
+| `/back` | Retract the last message (edit and resend) |
+| `/editor` | Compose a long message in your editor |
 | `/clear` | Clear the screen |
-| `/config` | Open the configuration center (default model / endpoint management) |
-| `/model` | Switch the model of the current session and persist it (written to the Agent's `modelId`; thinking level reset to the model default); the status bar shows the model name |
-| `/agent` | Quickly switch the main Agent (a picker lists every top-level Agent; picking one writes the default Agent and rebuilds the session) |
-| `/reload` | Refresh the runtime (rebuild the scope and rediscover tools / skills / MCP servers; useful after hand-editing config files) |
-| `/mcp` | Manage MCP servers (opens the MCP screen of the configuration center: add, remove, edit, toggle) |
-| `/lang` | Switch the interface language (中文 / English) |
-| `/think` `/effort` | Switch reasoning effort (available levels come from the model's reasoning preset), persisted into the current Agent definition's `reasoningEffort`; the status bar shows the current level |
-| `/key` | Set the API Key of the current endpoint (rebuilds the session on save) |
-| `/migrate` | Manually trigger task migration (generate a handoff document and start a new session) |
-| `/load` | Load a saved conversation (replaces the current session) |
+| `/config` | Open the configuration center (model / endpoints) |
+| `/model` | Switch model (writes to config) |
+| `/agent` | Switch the primary agent (rebuilds the session) |
+| `/reload` | Refresh the runtime (rediscovers tools / MCP) |
+| `/mcp` | Manage MCP servers (add / remove / edit / toggle) |
+| `/lang` | Switch interface language |
+| `/think` `/effort` | Switch reasoning effort |
+| `/key` | Set the endpoint API key |
+| `/migrate` | Hand off and start a new session |
+| `/load` | Load a conversation (replaces this one) |
 | `/help` | Show help |
 
 > Note: typing `/` lists candidate commands below the input line (↑↓ to choose, `Tab` to complete, `Enter` to submit/run). Commands are matched by their full names; an unrecognized `/xxx` reports "Unknown command".
