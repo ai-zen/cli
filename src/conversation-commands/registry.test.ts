@@ -3,7 +3,6 @@ import {
   COMMAND_LABEL_WIDTH,
   COMMAND_REGISTRY,
   canonicalCommandName,
-  commandAliases,
   commandBlocksInput,
   findCommand,
   getCommandHints,
@@ -56,7 +55,7 @@ describe("对话命令元数据", () => {
     const names = new Set(getCommandNames());
     for (const command of COMMAND_REGISTRY) {
       expect(names.has(command.name)).toBe(true);
-      for (const alias of commandAliases(command)) expect(names.has(alias)).toBe(true);
+      for (const alias of command.aliases ?? []) expect(names.has(alias)).toBe(true);
     }
   });
 });
@@ -120,7 +119,7 @@ describe("命令名解析与元数据", () => {
   it("每个命令的主名都能在表里查到自己的元数据", () => {
     for (const command of COMMAND_REGISTRY) {
       expect(findCommand(command.name)?.name).toBe(command.name);
-      for (const alias of commandAliases(command)) {
+      for (const alias of command.aliases ?? []) {
         expect(findCommand(alias)?.name).toBe(command.name);
       }
     }

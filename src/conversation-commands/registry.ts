@@ -16,7 +16,7 @@ export interface CommandMeta {
   /** 主命令名（不含 `/` 前缀），同时是处理函数表的键 */
   name: string;
   /** 等价别名（不含 `/` 前缀） */
-  aliases?: string[];
+  aliases?: readonly string[];
   /**
    * 一句话说明的 i18n key。
    *
@@ -37,10 +37,16 @@ export interface CommandMeta {
 /**
  * 命令元数据表（数组顺序即展示顺序）。
  *
- * `as const` 让它保留字面量类型：命令处理器表以 `Record<CommandName, …>` 声明，
- * 于是「新增命令但忘了写处理器」是**编译错误**，而不是运行时静默落到「未知命令」。
+ * 用 `as const` 声明以保留命令名的字面量类型，从而派生出 `CommandName`：
+ * 命令处理器表以 `Record<CommandName, …>` 声明，于是「新增命令但忘了写处理器」是
+ * **编译错误**，而不是运行时静默落到「未知命令」。
+ *
+ * 但 `as const` 的代价是联合类型里**没有别名的条目压根没有 `aliases` 字段**，
+ * 遍历时访问会报错。所以这里只把它作为内部字面量，对外导出的
+ * {@link COMMAND_REGISTRY} 放宽成 `readonly CommandMeta[]` —— 类型保护一分不少，
+ * 而所有遍历点都能直接读 `command.aliases`，不需要额外的取值 helper。
  */
-export const COMMAND_REGISTRY = [
+const REGISTRY_ENTRIES = [
   { name: "save", descriptionKey: "cmd.save.desc" },
   { name: "load", descriptionKey: "cmd.load.desc" },
   { name: "new", descriptionKey: "cmd.new.desc" },
@@ -63,17 +69,10 @@ export const COMMAND_REGISTRY = [
 ] as const satisfies readonly CommandMeta[];
 
 /** 命令主名的字面量联合（别名已归一到主名） */
-export type CommandName = (typeof COMMAND_REGISTRY)[number]["name"];
+export type CommandName = (typeof REGISTRY_ENTRIES)[number]["name"];
 
-/**
- * 命令的别名列表（无别名返回空数组）。
- *
- * 表用 `as const` 声明以保留命令名的字面量类型，代价是**没有别名的条目压根没有
- * `aliases` 字段**（联合类型里访问会报错）。取值统一走这里，调用方不必转型。
- */
-export function commandAliases(command: CommandMeta): readonly string[] {
-  return command.aliases ?? [];
-}
+/** 命令元数据表：值来自上面的字面量，类型放宽到 `readonly CommandMeta[]` 便于遍历 */
+export const COMMAND_REGISTRY: readonly CommandMeta[] = REGISTRY_ENTRIES;
 
 /**
  * 把命令名（含别名）归一到主名；未知命令返回 `undefined`。
@@ -82,11 +81,11 @@ export function commandAliases(command: CommandMeta): readonly string[] {
  */
 export function canonicalCommandName(name: string): CommandName | undefined {
   const normalized = name.trim().toLowerCase();
-  for (const command of COMMAND_REGISTRY) {
-    if (command.name === normalized) return command.name;
-    if (commandAliases(command).includes(normalized)) return command.name;
-  }
-  return undefined;
+  // 在放宽类型的表上匹配（可直接读 `aliases`），再用同一下标取回字面量类型
+  const index = COMMAND_REGISTRY.findIndex(
+    (command) => command.name === normalized || command.aliases?.includes(normalized),
+  );
+  return index < 0 ? undefined : REGISTRY_ENTRIES[index]!.name;
 }
 
 /** 命中命令的元数据（别名可查） */
@@ -130,8 +129,8 @@ export interface CommandHint {
 
 /** 展开全部命令为展示条目（别名折叠） */
 export function getCommandHints(): CommandHint[] {
-  return COMMAND_REGISTRY.map((command: CommandMeta) => {
-    const names = [command.name, ...commandAliases(command)];
+  return COMMAND_REGISTRY.map((command) => {
+    const names = [command.name, ...(command.aliases ?? [])];
     return {
       names,
       label: names.map((name) => `/${name}`).join(" "),
