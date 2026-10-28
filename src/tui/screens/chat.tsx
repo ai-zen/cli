@@ -2,13 +2,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
 import { keyDebug } from "../key-debug.js";
-import { parseWheel } from "../mouse.js";
 import type { RateSample } from "../token-rate.js";
 import { phaseLabel } from "../phase.js";
 import { AgentNS } from "@ai-zen/agents-core";
 import { theme } from "../theme.js";
 import { Spinner, StatusBar, statusBarRows, SlashMenu, type StatusBarProps } from "../components.js";
-import { graphemes, layoutInput, usableFrameRows, isTerminalReply } from "../text.js";
+import { graphemes, layoutInput, usableFrameRows } from "../text.js";
 import { ChatSession, type ChatSessionNotifier } from "../chat-session.js";
 import { CommandHint, matchCommandHints } from "../../conversation-commands/registry.js";
 import { readConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "../../config.js";
@@ -32,6 +31,7 @@ import { useChatViewport } from "./use-chat-viewport.js";
 import { useChatOverlays } from "./use-overlays.js";
 import { useWizardHost } from "./use-wizard-host.js";
 import { useInputEditing } from "./use-input-editing.js";
+import { handleCtrlDExit, handleScrollKey } from "./common-keys.js";
 
 // ==================== 对话屏幕 ====================
 
@@ -379,6 +379,17 @@ export function Chat(props: ChatScreenProps) {
     exit("done");
   };
 
+  /**
+   * 两个 `useInput`（空闲 / 忙碌）共用的键位上下文 —— 判定逻辑在 common-keys.ts。
+   * 放这里而不是各自内联，是为了让「什么时候能滚、Ctrl+D 怎么退」只有一份定义。
+   */
+  const scrollKeys = { scrollByWheel, scrollByPage, scrollByLine };
+  const ctrlDExit = {
+    lastAt: ctrlDAtRef,
+    notify: () => noticeChannel.push(t("notice.pressCtrlDAgain")),
+    exit: doExit,
+  };
+
   // 输入处理
   useInput(
     (char, key) => {
@@ -392,40 +403,8 @@ export function Chat(props: ChatScreenProps) {
         if (key.return || key.escape) exit("done");
         return;
       }
-      // 鼠标滚轮：滚视口。**必须**排在下面 `isTerminalReply` 之前——那里会把整条鼠标序列
-      // 当「终端上报」吃掉，放后面就永远收不到滚轮。其余鼠标事件（点击 / 拖拽 / 横向滚轮）
-      // 交给 `isTerminalReply` 丢弃，绝不落下到输入框。
-      const wheel = parseWheel(char);
-      if (wheel) {
-        scrollByWheel(wheel.direction);
-        return;
-      }
-      if (isTerminalReply(char)) return;
-      if (key.pageUp) {
-        scrollByPage(-1);
-        return;
-      }
-      if (key.pageDown) {
-        scrollByPage(1);
-        return;
-      }
-      // 翻页的「兜底键」：部分终端把 PgUp/PgDn 留给自己滚 scrollback（应用收不到）。
-      // 注意 `Ctrl+V` 预留给图片粘贴（当前未实现），不再兼任 page-down。
-      if (char === "v" && key.meta) {
-        scrollByPage(-1);
-        return;
-      }
-      // macOS 习惯键：⌘[ / ⌘] 翻页、⌘; / ⌘' 按行滚动。
-      // Cmd 只在 kitty 键盘协议下才会带 super 位（或终端把 ⌘ 组合映射成带 8 号
-      // 修饰位的转义序列，那种会落到上面的 meta 分支里，同样生效）。
-      if (key.super && (char === "[" || char === "]")) {
-        scrollByPage(char === "[" ? -1 : 1);
-        return;
-      }
-      if (key.super && (char === ";" || char === "'")) {
-        scrollByLine(char === ";" ? -1 : 1);
-        return;
-      }
+      // 回看历史类按键（滚轮 / PgUp/PgDn / ⌘[ ⌘] / ⌘; ⌘' / Alt+V）与忙碌态共用
+      if (handleScrollKey(char, key, scrollKeys)) return;
       if (key.return && (key.ctrl || key.meta || key.shift)) {
         insertAtCursor("\n");
         return;
@@ -439,21 +418,12 @@ export function Chat(props: ChatScreenProps) {
         } else void doExit();
         return;
       }
-      if (char === "d" && key.ctrl) {
-        // Claude Code：有草稿时删光标后一个字符；空输入需双击确认退出
-        if (input.length > 0) {
-          deleteAfterCursor();
-          return;
-        }
-        const now = Date.now();
-        if (now - ctrlDAtRef.current < 800) {
-          void doExit();
-          return;
-        }
-        ctrlDAtRef.current = now;
-        noticeChannel.push(t("notice.pressCtrlDAgain"));
+      if (char === "d" && key.ctrl && input.length > 0) {
+        // Claude Code：有草稿时删光标后一个字符（空闲态独有）
+        deleteAfterCursor();
         return;
       }
+      if (handleCtrlDExit(char, key, ctrlDExit)) return;
       if (char === "l" && key.ctrl) {
         clearTranscript();
         return;
@@ -617,12 +587,7 @@ export function Chat(props: ChatScreenProps) {
     (char, key) => {
       keyDebug(char, key);
       // 忙碌期只剩「中止 / 退出 / 回看」，滚轮同样生效（生成时正是最想往回看的时机）
-      const wheel = parseWheel(char);
-      if (wheel) {
-        scrollByWheel(wheel.direction);
-        return;
-      }
-      if (isTerminalReply(char)) return;
+      if (handleScrollKey(char, key, scrollKeys)) return;
       if (char === "c" && key.ctrl) {
         sessionRef.current?.abort();
         return;
@@ -632,38 +597,13 @@ export function Chat(props: ChatScreenProps) {
         sessionRef.current?.abort();
         return;
       }
-      if (char === "d" && key.ctrl) {
-        const now = Date.now();
-        if (now - ctrlDAtRef.current < 800) {
-          void doExit();
-          return;
-        }
-        ctrlDAtRef.current = now;
-        noticeChannel.push(t("notice.pressCtrlDAgain"));
-        return;
-      }
-      if (key.pageUp) {
-        scrollByPage(-1);
-        return;
-      }
-      if (key.pageDown) {
-        scrollByPage(1);
-        return;
-      }
+      if (handleCtrlDExit(char, key, ctrlDExit)) return;
       if ((key.upArrow || key.downArrow) && (key.shift || key.meta || key.super)) {
         scrollByLine(key.upArrow ? -1 : 1);
         return;
       }
-      if (char === "v" && (key.meta || key.super)) {
+      if (char === "v" && key.super) {
         scrollByPage(-1);
-        return;
-      }
-      if (key.super && (char === "[" || char === "]")) {
-        scrollByPage(char === "[" ? -1 : 1);
-        return;
-      }
-      if (key.super && (char === ";" || char === "'")) {
-        scrollByLine(char === ";" ? -1 : 1);
         return;
       }
     },
