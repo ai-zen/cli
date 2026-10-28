@@ -108,6 +108,17 @@ The old conversation is always saved before pruning, so a failed handoff never c
 
 > **The conversation id has exactly one source of truth.** The new id written by `onMigrated` must be visible to the persistence layer immediately (in the CLI, `ChatSession.currentId` proxies `ConversationContext.currentId` instead of holding its own copy). Otherwise the next auto-persist still uses the **old** id and writes the post-`prune` shell (system prompt + breakpoint) **over the old conversation file** — from the user's side, "after the handoff my history was gone and only the handoff doc was left".
 
+## Cancellation
+
+Handoff / migration can be cancelled with an `AbortSignal` (`Ctrl+C` in the TUI): cancellation throws `HandoffAbortedError`, **does not degrade and does not retry**, and discards the half-written document. A cancelled migration **leaves the session history untouched** — no "already migrated" illusion.
+
+Why `agent.abort()` alone is not enough:
+
+- `summary` runs an independent model request (`chat.completions.create`) that belongs to no Agent turn — `agent.abort()` cannot reach it;
+- `self` can be interrupted by `agent.abort()`, but **abort does not throw** (core marks the message `Aborted` and `send()` returns normally), so "the user stopped it" gets misread as "the model never wrote the document" → one retry → a `summary` degradation round. The user thinks it stopped; two extra full-context rounds were burned.
+
+So cancellation has to be passed into `HandoffService` explicitly and checked after every `await` — it never surfaces from `send()` by itself.
+
 ## Cost notes
 
 - Each handoff writes the document **once**; the code never re-generates or re-summarizes it.

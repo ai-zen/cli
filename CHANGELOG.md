@@ -1,3 +1,48 @@
+## [1.0.0-alpha.22] - 2026-10-28
+
+> 这一版是**整体代码评审 + 治本修复**的成果：先通读 `src/` 全部非测试代码做全量评审
+> （P0~P3 共 30 项，其中 3 项经实测查证为非问题、未改代码），再按「能查根因就查、
+> 不加兜底/不吞异常/不做多余校验」的原则逐项落地，最后补上 Ctrl+C 中断交接。
+
+### 🐛 修复
+
+- **折行按字素簇计宽，修掉 emoji 撑破整帧布局（P0）** —— `toCells` / `wrapSpans` / `clipSpans` / `toChars` / `segmentsWidth` 原先按 **code point** 遍历文本：VS16 序列（`✌️` = `U+270C U+FE0F`）被算成 1 列而实际占 2 列 → 行超宽 → Ink 在渲染期二次折行 → 实际帧高比 `computeChatLayout` 预算多一行 → **输入框被顶出屏幕**；ZWJ 家族（`👨‍👩‍👧`）被算成 6 列而实际占 2 列 → 每两个簇就折一次。现在全部改走 `graphemes()` + `clusterWidth()`，与 Ink 排版同一把尺子。
+- **阈值写入不再整对象替换** —— `updateModel` 是浅合并，此前调用方直接构造 `{ handoff, guard }`，会把 `tokenThresholds` 里其它字段（SDK 后续新增的压缩阈值等）一并清空。新增 `mergeTokenThresholds()`，所有阈值写入走它。
+- **`/migrate` 之后屏幕一片空白** —— 迁移用 `prune` 策略把 `messages` 砍到 1~2 条，但 `transcriptFrom` 仍停在旧值，`messages.slice(transcriptFrom)` 恒为空：迁移成功、上下文有内容，屏幕上却什么都没有。现在迁移成功后重置转录显示起点（同 `/new` 的做法）。
+- **通知栏只剩最后一条** —— 订阅端是单值 state，同一批摘要 / 分阶段进度会被逐条覆盖。改为保留最近 4 条的队列（`MAX_NOTICE_HISTORY`），并让同一批摘要合成**一条多行**，既全部显示又只占一个槽位；排版决策（折行 / 多条让位 / 条内截断）收进 `notice.ts` 纯逻辑，新增可独立渲染的 `NoticeBar`。
+- **`ai hook --help` 以非零码退出** —— 「想看用法」与「写错了子动作」此前混为一谈。现在 `ai hook` / `ai hook --help` 正常输出、退出码 0；`ai hook boom` 报错并 exit 1。`ai help` / `ai version` 单词形式等价于对应选项，但**只在它是唯一参数时**判定（`ai help me refactor this` 仍是在提问）。
+- **`ai hook install` 漏清重复块** —— rc 里可能残留多个钩子块（老版本 + 新版本各写一次），旧实现只看第一块，于是「第一块恰好是最新版 → 判定已安装 → 后面的旧块永远留着」。改为取全部块，只有「恰好一块且内容一致」才算已安装。
+- **会话落盘不是原子写** —— SDK 的 `EntityRepository.write()` 是直接覆盖，进程在写一半时被杀（Ctrl+C / OOM / 断电）就留下半截 JSON，`read()` 解析失败返回 null，**整段历史就此丢失**（会话文件可达数 MB，写入窗口并不小）。改为「写 `<id>.json.tmp` → `rename`」，任何时刻读到的要么是旧文件、要么是完整新文件。
+- **Ctrl+C 无法中断会话交接** —— 两处根因：`summary` 模式的独立模型请求没有任何取消点；`self` 模式虽能被 `agent.abort()` 打断，但 abort 不抛错，中止后被误判成「模型没写出文档」，于是**重试一轮、再降级 summary 再跑一轮**——用户以为取消了，实际多烧两轮全量输入。现在交接接受 `AbortSignal`：取消时抛 `HandoffAbortedError`、**不降级不重试**、清掉写了一半的文档、`migrate` 也不改动会话历史；TUI 里 Ctrl+C 会先走交接的取消通道，提示「已取消」而不是报错。（依赖 `@ai-zen/agents-sdk` 同名改动）
+
+### ✨ 新功能
+
+- **`/load` 列表显示会话摘要** —— 会话 id 是时间戳（`chat_2026_10_28_00_56_34`），直接当标签列出来完全分不清哪条是哪条。现在取首条用户消息的第一行作为标签。实现上先只 `stat`、排序后**只为将要显示的那几条**解析内容，会话攒到上百条时 `/load` 也不会被拖慢。
+
+### ♻️ 重构
+
+- **`chat.tsx` 五步拆 hook：1085 → 830 行** —— 只留会话生命周期与渲染组装，其余拆成 5 个可单测的 hook：`use-chat-viewport`（视口与滚动换算，所有动作经 `clampViewTop()`）、`use-overlays`（确认框 / 选择器的 resolve 生命周期，关状态与结算在同一次函数式更新里完成）、`use-wizard-host`（向导宿主，依赖注入）、`use-input-editing`（文本 / 光标 / 历史 / kill ring / undo / stash）、`common-keys`（两个 `useInput` 共用的键位 + Ctrl+D 双击退出）。
+- **斜杠命令改为表驱动** —— 557 行的 `switch` 换成 `HANDLERS: Record<CommandName, CommandHandler>` + 18 个处理器：「新增命令忘了写处理器」从运行时静默落到「未知命令」变成**编译错误**；命令名解析只剩 registry 一处（`parseCommandInput` / `parseCommandArgs` 共用同一套切分），`blocksInput` 成为命令元数据而不再是宿主白名单。
+- **向导字段工厂去噪** —— `commit` / `toggle` 签名放宽为 `string | null | Promise<string | null>`，删掉 23 处 `Promise.resolve(...)` 噪音；`nameField()` / `endpointIdField()` / `customPatch()` 等收掉 8 处重复段；`DetailFieldKind` 的 `"map"` 改名 `"open"`（语义本就是「按 Enter 进子屏」）。
+- **会话落盘收敛为唯一入口** —— 「读旧记录拿 `createdAt` → 写 → 更新指针」原先在 5 个地方各写一遍并且已经漂移（`saveConversation()` 漏写 `cwd`、stdio 的 `--save` 不更新指针、还写了一个已废弃的 `modelId`）。收敛到 `persistConversation()`，各处差异只剩「是否更新指针」一个显式开关。
+- **初始化与单例改为缓存 Promise** —— `getScope()` / `ensureConfigDir()` 缓存实例时，`if (x) return x` 之后到赋值之间有一段 `await`，并发调用会一起穿透（建出两个 Scope → MCP 双连接、双份工具发现）。改缓存 Promise 让并发调用共享同一次初始化，失败不缓存。
+- **删死代码与不可达兜底** —— 死字段 `ConversationContext.running|input|shouldSend`、从未启用的 i18n 复数机制（`pluralRules` + `key_one/_other`）、`noticeLines()` 末尾不可达的截断兜底（穷举 84 组证明从不执行）、`pick(direct, …)` 从没人传过的参数、`useChatViewport` 零引用的 `scrollTo` 导出、所有命令都空转一遍的 `parseHandoffMode`；`cwd` / `previewLimit` 从「可选 + 内部兜底」收成必填，兜底只保留在 SDK 可选字段的真实边界上。
+- **权限四维上屏走词条** —— `tools` / `skills` / `mcps` / `subagents` 是配置里的键，直接上屏等于把内部标识暴露给用户，映射到 `perm.*` 词条。
+
+### ⚡ 性能
+
+- **`graphemes()` 加快速路径** —— 折行是每帧热路径，但绝大多数文本（ASCII / CJK / 代码）每一簇就是一个 code point，不需要 `Intl.Segmenter`。先用一次正则判定「是否可能出现多 code point 合为一簇」（astral / CRLF / ZWNJ·ZWJ / 韩文组合字母 / `\p{M}` 组合附加符），命中才走分词器。一帧 60 行中文：**655 µs → 52 µs**（省 604 µs，帧预算 1%）。判定条件宁可误报不可漏报，新增 6 例护栏覆盖各类形态。
+
+### 🔧 依赖
+
+- 升级 `@ai-zen/agents-sdk` 至 `1.0.0-alpha.21`（交接取消能力）。
+
+### ✅ 测试
+
+- 全量 **46 文件 / 602 例通过**（评审前 36 文件 / 487 例，净增 10 文件 / 115 例护栏）。
+- 重点新增：`use-chat-viewport` 7 例、`use-overlays` 6 例、`use-wizard-host` 9 例、`use-input-editing` 13 例、`common-keys` 10 例、`chat.test.tsx` 7 例集成护栏、`lines.test.ts` 12 例（字素簇折行）、`notice-bar` 4 例、`conversation-persist` 10 例（含 spy `fs.rename` 钉住原子写）。
+- 破坏性验证（每项都确认护栏会红）：折行改回 code point、`clampCursor` 改 `Array.from`、翻页步长改 `budget`、删掉 PgUp 分支、去掉 `\p{M}`、原子写改回直写、`clearDraft` 去掉历史游标复位。
+
 ## [1.0.0-alpha.21] - 2026-10-27
 
 ### ✨ 新功能

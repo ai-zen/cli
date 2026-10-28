@@ -108,6 +108,17 @@ outline: deep
 
 > **会话 id 只有一个真相源。** `onMigrated` 写入的新 id 必须立刻对会话层的落盘逻辑可见（CLI 中 `ChatSession.currentId` 直接代理 `ConversationContext.currentId`，而不是各存一份）。否则下一轮自动落盘仍按旧 id 写盘，会把 `prune` 后的空壳（系统提示 + 断点）覆盖到**旧会话文件**上，表现为「交接之后历史全没了，只剩交接文档」。
 
+## 取消
+
+交接 / 迁移可以用 `AbortSignal` 取消（TUI 里就是 `Ctrl+C`）：取消时抛 `HandoffAbortedError`，**不降级、不重试**，并清掉写了一半的文档；迁移被取消时**不会改动会话历史**（不会留下「已迁移」的假象）。
+
+为什么不能只靠 `agent.abort()`：
+
+- `summary` 模式走的是独立的模型请求（`chat.completions.create`），不属于任何 Agent 回合，`agent.abort()` 根本够不到它；
+- `self` 模式能被 `agent.abort()` 打断，但 **abort 不抛错**（core 把消息标记为 `Aborted` 后 `send()` 正常返回），于是「用户中止」会被文件校验误判成「模型没写出文档」→ 重试一轮 → 再降级 `summary` 跑一轮。用户以为取消了，实际多烧两轮全量输入。
+
+所以取消必须显式传进 `HandoffService`，并在每个 `await` 之后检查（它不会从 `send()` 的返回值里自动冒出来）。
+
 ## 成本说明
 
 - 每次交接文档**只写一次**，代码不会重新生成或再次摘要；
