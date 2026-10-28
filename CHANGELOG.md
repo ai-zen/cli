@@ -1,3 +1,52 @@
+## [1.0.0-alpha.24] - 2026-10-28
+
+> 三件事：**看不见的上下文**现在看得见了（不进上下文的消息划删除线），
+> 升级有了 `/update`，中断策略从写死的常量变成可配置项。
+
+### ✨ 新功能
+
+- **不进上下文的消息划删除线** —— 判据与 core 的 `formatHistory()` 同源
+  （`status == undefined || Completed` 且非 `omit`），而策略早已在 `Agent.run()` 收尾时
+  结算进字段（`keep`→`Completed`、`drop`→`Aborted`，工具轮次 `fill`→`Completed`、
+  `drop`→`omit`），渲染层不重复推导策略。
+  - 流式中那条（`Pending` / `Writing`）不划线：它在 `formatHistory` 里同样不在，但那是
+    「尚未」而不是「被丢弃」。
+  - `hidden` 仍彻底不渲染；`omit` 不再让消息凭空消失（原先 `hidden || omit` 一起
+    `return []`，用户中断一轮工具调用后那几条会无声蒸发）。
+- **`/update`** —— 装 registry 上最新的发布版：读 `npm view @ai-zen/cli dist-tags --json`，
+  取**所有 tag 里 semver 最大**的那个。只认 `latest` 会把跑 alpha 的用户降级（实际发布
+  状态就是 `latest 0.9.0 < alpha 1.0.0-alpha.23`）；目标不比当前进程新则不装（本地开发版
+  不会被「升级」降级）。安装走 `suspendTerminal` + `stdio: inherit`，npm 的进度与报错直接
+  打在真实终端上；装完读 `npm root -g` 下的 `package.json` 判定版本（`npm view` 查 registry
+  有几分钟延迟），并提示重启（内存里还是旧代码，不自动重启以免丢会话）。
+- **中断策略可配置** —— SDK 升级到 `1.0.0-alpha.22`：`AppConfig` 新增
+  `abortedMessageStrategy`（`keep` / `drop`，出厂 `keep`）与 `abortedToolRoundStrategy`
+  （`fill` / `drop`，出厂 `fill`），`createAgent()` 不传参数时直接读 `scope.config`。
+  配置中心「默认项」新增两项即可切换；它们只在**建 Agent** 时读取，所以关掉配置中心时
+  宿主会自动重建会话（`WizardCloseResult.sessionOptionsChanged`），不必再手敲 `/reload`。
+
+### ♻️ 重构
+
+- **CLI 不再写死 `abortedMessageStrategy: "keep"`** —— 写死会盖掉用户的选择。现在配置即
+  事实：`config.json` 里写什么就用什么，`agent-creator` 只负责建 Agent。
+- **配置迁移补齐策略字段**（SDK 侧）—— 缺失或非法值一律写回出厂默认并落盘一次，各端不必
+  各自 `?? "keep"` 兜底。
+- **新增 `src/version-compare.ts`** —— semver 比较（核心段 / 预发布标识 / 忽略 build），
+  供 `/update` 从多个 dist-tag 里挑最新；不为此引 `semver` 依赖。
+
+### ✅ 测试
+
+- 全量 **49 文件 / 649 例通过**（alpha.23 时 626 例）。
+- 新增：`version-compare.test.ts` 10 例、`chat-commands-update.test.ts` 6 例（tag 选择、
+  已是最新不安装、安装失败、npm 缺失、dist-tags 查不到），`messageToLines` 删除线 3 例，
+  策略 setter / 向导两屏 / 宿主重载 4 例。
+- 端到端实测（临时 `AI_ZEN_DIR`）：出厂默认 `config: keep fill → agent: keep fill`，
+  改成 drop 并重建后 `config: drop drop → agent: drop drop`。
+
+### 🔧 依赖
+
+- `@ai-zen/agents-sdk` `1.0.0-alpha.21` → `1.0.0-alpha.22`。
+
 ## [1.0.0-alpha.23] - 2026-10-28
 
 > 子 Agent 从「通知栏里报一句运行中」升级为一条**可切换的栏目**：主 / 子 Agent
