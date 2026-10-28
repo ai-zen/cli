@@ -353,4 +353,43 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
     expect(notices).toEqual([]);
     expect(session.subAgents[0]!.status).toBe("done");
   });
+
+  it("新一轮输入（send）清空上一轮的子 Agent，序号归零", async () => {
+    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const agent = harness.agents.at(-1)!;
+    const toolCallContext = { tool_call: { function: { name: "sub_agent_default" } } };
+
+    agent.events.emit("sub-agent-start", { subAgent: makeSubAgent(), toolCallContext });
+    agent.events.emit("sub-agent-start", { subAgent: makeSubAgent(), toolCallContext });
+    expect(session.subAgents.map((view) => view.index)).toEqual([1, 2]);
+
+    // 用户发出下一条输入 → 上一轮的子 Agent 只能看不能做，整条栏目清掉
+    await session.send("下一步");
+    expect(session.subAgents).toEqual([]);
+
+    // 新一轮的第一个子 Agent 又是「子AGENT1」（标签不跳号）
+    agent.events.emit("sub-agent-start", { subAgent: makeSubAgent(), toolCallContext });
+    expect(session.subAgents.map((view) => view.index)).toEqual([1]);
+  });
+
+  it("reset / reload 换了 Agent 也清空（它们不重建会话实例，不清就会残留）", async () => {
+    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const toolCallContext = { tool_call: { function: { name: "sub_agent_default" } } };
+
+    harness.agents.at(-1)!.events.emit("sub-agent-start", {
+      subAgent: makeSubAgent(),
+      toolCallContext,
+    });
+    expect(session.subAgents).toHaveLength(1);
+    await session.reset();
+    expect(session.subAgents).toEqual([]);
+
+    harness.agents.at(-1)!.events.emit("sub-agent-start", {
+      subAgent: makeSubAgent(),
+      toolCallContext,
+    });
+    expect(session.subAgents).toHaveLength(1);
+    await session.reload();
+    expect(session.subAgents).toEqual([]);
+  });
 });

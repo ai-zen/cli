@@ -44,10 +44,11 @@ describe("AgentTabs（主 / 子 Agent 切换条）", () => {
       ],
       "main",
     );
-    // 圆点紧贴标签，不额外占一列空白；中等大小的 • 而非偏大的 ●
-    expect(frame).toContain(`子AGENT1${AGENT_STATUS_DOT}`);
-    expect(frame).toContain(`子AGENT2${AGENT_STATUS_DOT}`);
-    expect(frame).toContain(`子AGENT3${AGENT_STATUS_DOT}`);
+    // 圆点紧贴标签**之前**（作状态指示符），不额外占一列空白；中等大小的 • 而非偏大的 ●
+    expect(frame).toContain(`${AGENT_STATUS_DOT}子AGENT1`);
+    expect(frame).toContain(`${AGENT_STATUS_DOT}子AGENT2`);
+    expect(frame).toContain(`${AGENT_STATUS_DOT}子AGENT3`);
+    expect(AGENT_STATUS_DOT).toBe("•");
     expect(AGENT_STATUS_DOT).toBe("•");
   });
 

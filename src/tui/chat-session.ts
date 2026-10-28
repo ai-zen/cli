@@ -72,8 +72,10 @@ export type SubAgentStatus = "running" | "done" | "failed";
  * `buildAgent()` 出子 Agent，委派结束后**实例不销毁**（`onSubAgentEnd` 只是钩子），
  * 所以 `agent.messages` 始终是本子 Agent 的完整对话。这里只要持有引用，栏目就能回看。
  *
- * 生命周期：随会话（`ChatSession`）存在。会话重建（`/reload`、`/agent`、`/new`）后旧实例
- * 不再被引用，栏目自然清空——这是预期行为，不另做清理。
+ * 生命周期：**只活在当前这一轮**。栏目能做的事只有「切换看」——一旦用户发出下一条
+ * 输入，主 Agent 就开始了新一轮，上一轮的子 Agent 已经是只能看不能做的历史，留着只会
+ * 把栏目越堆越长。所以 `send()` 开头清空、序号归零；`reset()` / `reload()` / `migrate()`
+ * 换了 Agent 或会话，也同样清空（它们只换 `agent`，不重建本类实例，不显式清就会残留）。
  */
 export interface SubAgentView {
   /** 稳定 id（React key / 选中态标识） */
@@ -159,9 +161,9 @@ export class ChatSession {
    * 所以交接必须自己带一条 `AbortSignal`。
    */
   private handoffAbort: AbortController | null = null;
-  /** 本次会话中已出现的子 Agent（按出现顺序；`/reload` 等重建后随新会话清空） */
-  private readonly subAgentViews: SubAgentView[] = [];
-  /** 子 Agent 视图 id 序号（展示名可重复，id 必须唯一） */
+  /** 本次会话中已出现的子 Agent（只保留当前一轮，见 {@link SubAgentView} 的生命周期说明） */
+  private subAgentViews: SubAgentView[] = [];
+  /** 子 Agent 视图 id 序号（每轮归零，标签回到「子AGENT1」） */
   private subAgentSeq = 0;
 
   private constructor(
@@ -250,8 +252,16 @@ export class ChatSession {
     return this.phaseTracker.phase;
   }
 
+  /** 清空 Agent 栏目（新一轮输入 / 换 Agent / 换会话时调用；序号一并归零） */
+  private clearSubAgents(): void {
+    this.subAgentViews = [];
+    this.subAgentSeq = 0;
+  }
+
   /** 发送一条消息；内容变化经 `notifier.onChange` 通知，`resolve` 表示本轮结束 */
   async send(input: string): Promise<void> {
+    // 新一轮开始：上一轮的子 Agent 只能看不能做，留清（栏目随之消失）
+    this.clearSubAgents();
     this.rate.begin();
     this.phaseTracker.connecting();
     try {
@@ -300,6 +310,7 @@ export class ChatSession {
     const archivedId = hasContent ? await this.save() : null;
 
     this.dispose();
+    this.clearSubAgents();
     const agent = await createAgent({
       agentId: this.agentId === "default" ? undefined : this.agentId,
     });
@@ -323,6 +334,7 @@ export class ChatSession {
   async reload(): Promise<void> {
     const messages = [...this.agent.messages];
     this.dispose();
+    this.clearSubAgents();
     await resetScope();
     const agent = await createAgent({
       messages,
@@ -349,6 +361,7 @@ export class ChatSession {
     );
     // 迁移后服务会开启新会话：新 id 已写进 ctx（唯一真相源），这里只需同步名称并刷新界面
     this.currentName = this.currentId;
+    this.clearSubAgents();
     this.notifier.onChange(true);
     return ctx.handoffPath;
   }

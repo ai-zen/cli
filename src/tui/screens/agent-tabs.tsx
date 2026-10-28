@@ -8,7 +8,7 @@
 // 所以外层 `<Text wrap="truncate">` 兜住宽度，内层嵌套 `<Text>` 保住逐项着色
 // （Ink 里截断发生在带 `wrap` 的那一层，不会把内层样式丢掉）。
 //
-// 执行状态内联在标签尾部（一个圆点 + 颜色），不另推通知：通知栏凭空多一行会让整帧
+// 执行状态内联在标签**前**（一个圆点 + 颜色），不另推通知：通知栏凭空多一行会让整帧
 // 高度跳一下。运行中的圆点会闪烁（亮蓝 ↔ 暗），完成后恒为绿色，失败恒为红色。
 import { useEffect, useState } from "react";
 import { Box, Text } from "ink";
@@ -31,7 +31,8 @@ export type AgentTabStatus = "running" | "done" | "failed";
  * 状态圆点：三种状态**同形不同色**（蓝 / 绿 / 红）。
  *
  * 用 `•`（BULLET，窄终端下宽度为 1）而不是 `●`（GEOMETRIC SHAPE，视觉上偏大）：
- * 栏目是一行密集文本，大圆点会把行撑得松散。
+ * 栏目是一行密集文本，大圆点会把行撑得松散。圆点位于标签**之前**（作状态指示符），
+ * 这样每个标签的文字起始位置对齐，不因有无圆点而错位。
  */
 export const AGENT_STATUS_DOT = "•";
 
@@ -106,10 +107,10 @@ export function AgentTabs({ tabs, activeId }: AgentTabsProps) {
           return (
             <Text key={tab.id} {...agentTabStyle(active)}>
               {index === 0 ? "" : "  "}
-              {tab.label}
               {tab.status ? (
                 <Text color={agentStatusColor(tab.status, blinkOn)}>{AGENT_STATUS_DOT}</Text>
               ) : null}
+              {tab.label}
             </Text>
           );
         })}

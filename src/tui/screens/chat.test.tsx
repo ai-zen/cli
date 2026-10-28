@@ -16,20 +16,23 @@ const { created, createFakeSession } = vi.hoisted(() => {
   /** 只实现 Chat 会用的成员；`send` 默认立即把用户消息追加进 messages */
   const createFakeSession = (notifier: any) => {
     const messages: any[] = [];
+    /** 主 / 子 Agent 切换条的数据源；用例里直接 push 进去 */
+    const subAgents: any[] = [];
     return {
       agentId: "default",
       modelId: "gpt-6-astra",
       currentId: "chat_test",
       currentName: "chat_test",
       messages,
-      /** 主 / 子 Agent 切换条的数据源；用例里直接 push 进去 */
-      subAgents: [] as any[],
+      subAgents,
       lastUsage: undefined,
       totalUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       rateSample: { live: null, average: null, running: false },
       phase: null,
       send: vi.fn(async (input: string) => {
         messages.push({ id: `m${messages.length}`, role: "user", content: input });
+        // 与真实 ChatSession 一致：新一轮输入清空上一轮的子 Agent
+        subAgents.length = 0;
         notifier.onChange(true);
       }),
       abort: vi.fn(),
