@@ -48,7 +48,7 @@
 
 import { promises as fs } from "fs";
 import { dirname, join } from "path";
-import { ConfigManager as SdkConfigManager } from "@ai-zen/agents-sdk";
+import { ConfigManager as SdkConfigManager, getLogger } from "@ai-zen/agents-sdk";
 import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { t } from "./i18n/index.js";
 
@@ -114,24 +114,45 @@ const sdkConfigMgr = new SdkConfigManager(CONFIG_FILE);
 // ==================== 目录初始化 ====================
 
 /**
- * 确保配置目录和默认文件存在。
+ * 一次性初始化的 Promise（进程生命周期内只跑一次）。
+ *
+ * 为什么必须缓存 **Promise** 而不是「已初始化」布尔：`readConfig()` 内部就会调它，而
+ * `readConfig()` 被 TUI 的 effect、命令层、`createAgent()`、`getScope()` 反复调用 ——
+ * 等于每次读配置都重跑一遍全量初始化（bootstrap + 多次 stat/mkdir）。而布尔判据在
+ * `await` 窗口期内不成立，并发调用会一起穿透、重复 bootstrap。
+ */
+let initPromise: Promise<void> | null = null;
+
+/**
+ * 确保配置目录和默认文件存在（进程内只真正执行一次）。
  *
  * 共享实体（Agent、SubAgent、Skill 目录等）委托给 SDK 的 ConfigManager.bootstrap()。
  * CLI 自身的运行时目录（conversations/）由本函数额外创建。
  * SDK 的出厂默认配置会自动写入 config.json（如果不存在）。
  */
 export async function ensureConfigDir(): Promise<void> {
+  if (!initPromise) {
+    initPromise = initOnce().catch((error) => {
+      // 失败不缓存：否则一次瞬时故障（如磁盘短暂只读）会让整个进程永久失能
+      initPromise = null;
+      throw error;
+    });
+  }
+  return initPromise;
+}
+
+async function initOnce(): Promise<void> {
   // SDK bootstrap：目录 + config.json + default Agent + default SubAgent + 出厂思考策略表
   await sdkConfigMgr.bootstrap();
 
-  // CLI 运行时目录
-  const cliDirs = [CLI_DIR, CONVERSATIONS_DIR];
-  for (const dir of cliDirs) {
+  // CLI 运行时目录（recursive 模式已存在时不报错，无需先 access 探测）
+  for (const dir of [CLI_DIR, CONVERSATIONS_DIR]) {
     try {
-      await fs.access(dir);
-    } catch {
-      try { await fs.mkdir(dir, { recursive: true }); }
-      catch { console.warn(t("app.mkdirFailed", { dir })); }
+      await fs.mkdir(dir, { recursive: true });
+    } catch (error: any) {
+      // 走统一日志出口：TUI 下已改道落盘、stdio 下走 stderr。
+      // 这里不能用 console.warn —— 那会绕过日志系统，界面里看不见、日志文件里也查不到。
+      getLogger().warn(t("app.mkdirFailed", { dir, error: error?.message ?? error }));
     }
   }
 }

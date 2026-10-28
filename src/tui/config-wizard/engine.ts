@@ -66,15 +66,31 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     setStep(next);
   };
 
-  /** 记录一次成功写盘：更新配置快照、累加变更、刷新提示 */
-  const record = (next: AppConfig, message: string, changedEndpointIds: string[] = []) => {
-    setConfig(next);
+  /**
+   * 记一次成功写盘：置脏、累加变更摘要、刷新屏内提示。
+   *
+   * 收敛前 `record` / `persistMcp` / `saveAgent` / `deleteAgent` 各抄了一遍这三步，
+   * 外加 `mcpChanged` / `agentsChanged` 两个变体 —— 新增写入点时很容易漏掉其中一步
+   * （漏 `dirty` 会让「有没有改动」判错，关掉向导时该重建的会话不重建）。
+   */
+  const markDirty = (
+    message: string,
+    flags: { changedEndpointIds?: string[]; mcp?: boolean; agents?: boolean } = {},
+  ) => {
     acc.current.dirty = true;
     acc.current.summary.push(message);
-    for (const id of changedEndpointIds) {
+    if (flags.mcp) acc.current.mcpChanged = true;
+    if (flags.agents) acc.current.agentsChanged = true;
+    for (const id of flags.changedEndpointIds ?? []) {
       if (!acc.current.changedEndpointIds.includes(id)) acc.current.changedEndpointIds.push(id);
     }
     setNotice(message);
+  };
+
+  /** 记录一次成功写盘：更新配置快照、累加变更、刷新提示 */
+  const record = (next: AppConfig, message: string, changedEndpointIds: string[] = []) => {
+    setConfig(next);
+    markDirty(message, { changedEndpointIds });
   };
 
   /** 写盘 + 记录变更，**原地停留**；返回错误信息或 `null`（供详情屏字段提交使用） */
@@ -97,10 +113,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
       return t("wiz.writeMcpFailed", { error: cause?.message ?? cause });
     }
     setMcp((prev) => ({ ...prev, [scope]: next }));
-    acc.current.dirty = true;
-    acc.current.mcpChanged = true;
-    acc.current.summary.push(message);
-    setNotice(message);
+    markDirty(message, { mcp: true });
     return null;
   };
 
@@ -119,10 +132,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
       else list.push(next);
       return kind === "agent" ? { ...prev, agents: list } : { ...prev, subAgents: list };
     });
-    acc.current.dirty = true;
-    acc.current.agentsChanged = true;
-    acc.current.summary.push(message);
-    setNotice(message);
+    markDirty(message, { agents: true });
     return null;
   };
 
@@ -144,10 +154,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   const deleteAgent = async (kind: AgentKind, id: string): Promise<string | null> => {
     const failure = await removeAgentQuiet(kind, id);
     if (failure) return failure;
-    acc.current.dirty = true;
-    acc.current.agentsChanged = true;
-    acc.current.summary.push(t("wiz.agentDeleted", { kind: agentKindLabel(kind), id }));
-    setNotice(t("wiz.agentDeleted", { kind: agentKindLabel(kind), id }));
+    markDirty(t("wiz.agentDeleted", { kind: agentKindLabel(kind), id }), { agents: true });
     return null;
   };
 

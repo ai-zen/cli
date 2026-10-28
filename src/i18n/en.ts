@@ -229,6 +229,6 @@ export const en: Record<string, string> = {
 
   // ---------- Shared leftovers ----------
   "agent.subAgentTaskParam": "Full task description",
-  "app.mkdirFailed": "⚠️  Cannot create the directory: {dir}",
+  "app.mkdirFailed": "⚠️  Cannot create the directory: {dir} ({error})",
   "time.pattern.short": "MMM D, YYYY HH:mm:ss",
 };

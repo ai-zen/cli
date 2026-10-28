@@ -233,6 +233,6 @@ export const zh: Record<string, string> = {
 
   // ---------- 其他共用 ----------
   "agent.subAgentTaskParam": "完整的任务描述",
-  "app.mkdirFailed": "⚠️  无法创建目录: {dir}",
+  "app.mkdirFailed": "⚠️  无法创建目录: {dir}（{error}）",
   "time.pattern.short": "YYYY年MM月DD日HH时mm分ss秒",
 };

@@ -25,7 +25,14 @@ import { readConfig } from "./config.js";
 
 // ==================== Scope 创建（单例）====================
 
-let _scope: Scope | null = null;
+/**
+ * Scope 单例缓存的是 **Promise** 而非实例。
+ *
+ * 缓存实例时，`if (_scope) return _scope` 之后到赋值之间有一段 `await`（读配置、初始化），
+ * 并发调用会一起穿透 → 建出两个 Scope（MCP 双连接、双份工具发现、双份子进程）。
+ * 缓存 Promise 让并发调用共享同一次初始化。
+ */
+let _scopePromise: Promise<Scope> | null = null;
 
 /** existsSync 的别名，用于数组 .filter() 场景 */
 const exists = existsSync;
@@ -50,8 +57,17 @@ export function listSkillDirs(): string[] {
 }
 
 export async function getScope(): Promise<Scope> {
-  if (_scope) return _scope;
+  if (!_scopePromise) {
+    _scopePromise = createScopeOnce().catch((error) => {
+      // 初始化失败不缓存：否则一次瞬时故障会让后续所有发送都拿到同一个已 reject 的 Promise
+      _scopePromise = null;
+      throw error;
+    });
+  }
+  return _scopePromise;
+}
 
+async function createScopeOnce(): Promise<Scope> {
   const config = await readConfig();
 
   // MCP 配置合并优先级（从高到低）：
@@ -71,7 +87,7 @@ export async function getScope(): Promise<Scope> {
   // Skills 目录优先级（从高到低）：见 listSkillDirs()
   const skillsPaths = listSkillDirs();
 
-  _scope = new Scope({
+  const scope = new Scope({
     config,
     agentsDir: AGENTS_DIR,
   }).use(
@@ -83,9 +99,9 @@ export async function getScope(): Promise<Scope> {
     }),
   );
 
-  await _scope.init();
+  await scope.init();
 
-  return _scope;
+  return scope;
 }
 
 /**
@@ -95,10 +111,12 @@ export async function getScope(): Promise<Scope> {
  * 读取一次，不重建则新配置不生效。`_scope` 是同步置空的，便于并发调用方立刻拿到新实例。
  */
 export async function resetScope(): Promise<void> {
-  const scope = _scope;
-  _scope = null;
-  if (!scope) return;
+  // 同步置空，便于并发调用方立刻拿到新实例；若初始化仍在进行，等它落地后再释放
+  const pending = _scopePromise;
+  _scopePromise = null;
+  if (!pending) return;
   try {
+    const scope = await pending;
     await scope.dispose();
   } catch {
     /* 释放失败不影响后续重建 */
