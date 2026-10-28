@@ -7,7 +7,7 @@
 // 目录用 mock 顶成临时目录（`CONVERSATIONS_DIR` 是模块级常量，只能在模块求值时替换），
 // 指针函数整体 mock —— 否则会写进真实的 `~/.ai-zen/cli/last-session.json`。
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -102,5 +102,38 @@ describe("persistConversation（会话落盘的唯一入口）", () => {
 
   it("返回会话 id（调用方要用它展示「已保存」）", async () => {
     await expect(persistConversation({ id: "chat_ret", messages: [] })).resolves.toBe("chat_ret");
+  });
+
+  it("写盘是原子的：成功写之后不留临时文件，且内容可读回", async () => {
+    await persistConversation({ id: "chat_atomic", messages: [userMsg("第一轮")] });
+    const files = readdirSync(CONV_DIR);
+    expect(files.filter((f) => f.endsWith(".tmp"))).toEqual([]);
+    expect(readBack("chat_atomic").messages).toHaveLength(1);
+  });
+
+  it("写入走「临时文件 → rename」（不是直接覆盖目标文件）", async () => {
+    // 直写 `fs.writeFile(target)` 在写一半时被杀会留下半截 JSON；改成写 tmp 再 rename
+    // 后，任何时刻读到的都是完整文件。这里钉住机制本身：rename 发生的那一刻，
+    // 临时文件必须已经完整存在，且目标文件在 rename 前不该被创建/截断。
+    const fsp = (await import("node:fs")).promises;
+    const realRename = fsp.rename.bind(fsp);
+    const seen: { from: string; to: string; tmpExisted: boolean }[] = [];
+    const spy = vi.spyOn(fsp, "rename").mockImplementation(async (from, to) => {
+      seen.push({ from: String(from), to: String(to), tmpExisted: existsSync(String(from)) });
+      return realRename(from as never, to as never);
+    });
+
+    try {
+      await persistConversation({ id: "chat_atomic_mech", messages: [userMsg("x")] });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.from.endsWith(".json.tmp")).toBe(true);
+    expect(seen[0]!.to.endsWith("chat_atomic_mech.json")).toBe(true);
+    expect(seen[0]!.tmpExisted).toBe(true);
+    // rename 之后临时文件不残留
+    expect(readdirSync(CONV_DIR).filter((f) => f.endsWith(".tmp"))).toEqual([]);
   });
 });

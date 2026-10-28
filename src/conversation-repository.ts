@@ -8,7 +8,7 @@
  */
 
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { EntityRepository } from "@ai-zen/agents-sdk";
 import { AgentNS } from "@ai-zen/agents-core";
 import { CONVERSATIONS_DIR } from "./config.js";
@@ -31,8 +31,27 @@ export interface Conversation {
   updatedAt: string;
 }
 
-/** 会话仓储：每个会话一个 JSON 文件（${conversationsDir}/${id}.json） */
-export const conversationRepository = new EntityRepository<Conversation>(CONVERSATIONS_DIR);
+/**
+ * 会话仓储：每个会话一个 JSON 文件（${conversationsDir}/${id}.json），**写盘是原子的**。
+ *
+ * 为什么要覆写 `write()`：SDK 的实现是直接 `fs.writeFile`，进程在写一半时被杀
+ * （Ctrl+C、OOM、断电）就留下半截 JSON，`read()` 解析失败返回 null —— 整段历史
+ * 就此丢失。会话文件可达数 MB，写入窗口并不小。这里改成「写临时文件 → rename」：
+ * 同一文件系统内 rename 是原子操作，任何时刻读到的要么是旧文件、要么是完整新文件。
+ *
+ * 临时文件名为 `<id>.json.tmp`：`list()` 按 `.json` 后缀过滤，不会把它当成会话。
+ */
+class AtomicConversationRepository extends EntityRepository<Conversation> {
+  override async write(entity: Conversation): Promise<void> {
+    const target = this.path(entity.id);
+    const tmp = `${target}.tmp`;
+    await fs.mkdir(dirname(target), { recursive: true });
+    await fs.writeFile(tmp, JSON.stringify(entity, null, 2), "utf-8");
+    await fs.rename(tmp, target);
+  }
+}
+
+export const conversationRepository = new AtomicConversationRepository(CONVERSATIONS_DIR);
 
 /**
  * 生成文件名安全的会话 id：英文前缀 + 全下划线时间戳，中英一致。
