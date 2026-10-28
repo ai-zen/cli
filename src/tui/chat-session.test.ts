@@ -354,22 +354,46 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
     expect(session.subAgents[0]!.status).toBe("done");
   });
 
-  it("新一轮输入（send）清空上一轮的子 Agent，序号归零", async () => {
+  it("本轮内循环全部结束（send 收尾）时清空，序号归零", async () => {
     const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
     const agent = harness.agents.at(-1)!;
     const toolCallContext = { tool_call: { function: { name: "sub_agent_default" } } };
 
-    agent.events.emit("sub-agent-start", { subAgent: makeSubAgent(), toolCallContext });
-    agent.events.emit("sub-agent-start", { subAgent: makeSubAgent(), toolCallContext });
-    expect(session.subAgents.map((view) => view.index)).toEqual([1, 2]);
+    // 子 Agent 是内循环里工具调用的产物：让它在本轮执行期间出现
+    let seenDuringSend: number | undefined;
+    agent.send = async () => {
+      agent.events.emit("sub-agent-start", { subAgent: makeSubAgent(), toolCallContext });
+      agent.events.emit("sub-agent-start", { subAgent: makeSubAgent(), toolCallContext });
+      seenDuringSend = session.subAgents.length;
+    };
 
-    // 用户发出下一条输入 → 上一轮的子 Agent 只能看不能做，整条栏目清掉
-    await session.send("下一步");
+    await session.send("统计一下文件数");
+
+    // 执行期间栏目里有东西（能切换看）
+    expect(seenDuringSend).toBe(2);
+    // 内循环结束后清空：主 Agent 已给出答案，子 Agent 只剩历史价值
     expect(session.subAgents).toEqual([]);
 
-    // 新一轮的第一个子 Agent 又是「子AGENT1」（标签不跳号）
-    agent.events.emit("sub-agent-start", { subAgent: makeSubAgent(), toolCallContext });
-    expect(session.subAgents.map((view) => view.index)).toEqual([1]);
+    // 下一轮的第一个子 Agent 又是「子AGENT1」（标签不跳号）
+    agent.send = async () => {
+      agent.events.emit("sub-agent-start", { subAgent: makeSubAgent(), toolCallContext });
+      expect(session.subAgents.map((view) => view.index)).toEqual([1]);
+    };
+    await session.send("再来一次");
+    expect(session.subAgents).toEqual([]);
+  });
+
+  it("中止 / 出错也清空（finally 路径，不留残影）", async () => {
+    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const agent = harness.agents.at(-1)!;
+    const toolCallContext = { tool_call: { function: { name: "sub_agent_default" } } };
+
+    agent.send = async () => {
+      agent.events.emit("sub-agent-start", { subAgent: makeSubAgent(), toolCallContext });
+      throw new Error("boom");
+    };
+    await session.send("会失败的一轮");
+    expect(session.subAgents).toEqual([]);
   });
 
   it("reset / reload 换了 Agent 也清空（它们不重建会话实例，不清就会残留）", async () => {

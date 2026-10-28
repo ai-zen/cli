@@ -72,10 +72,11 @@ export type SubAgentStatus = "running" | "done" | "failed";
  * `buildAgent()` 出子 Agent，委派结束后**实例不销毁**（`onSubAgentEnd` 只是钩子），
  * 所以 `agent.messages` 始终是本子 Agent 的完整对话。这里只要持有引用，栏目就能回看。
  *
- * 生命周期：**只活在当前这一轮**。栏目能做的事只有「切换看」——一旦用户发出下一条
- * 输入，主 Agent 就开始了新一轮，上一轮的子 Agent 已经是只能看不能做的历史，留着只会
- * 把栏目越堆越长。所以 `send()` 开头清空、序号归零；`reset()` / `reload()` / `migrate()`
- * 换了 Agent 或会话，也同样清空（它们只换 `agent`，不重建本类实例，不显式清就会残留）。
+ * 生命周期：**只活在当前这一轮的内循环里**。栏目能做的事只有「切换看」，而子 Agent
+ * 是内循环中工具调用的产物；一旦本轮内循环全部结束（`send()` 即将返回），主 Agent 已经
+ * 给出最终答案，子 Agent 只剩历史价值，留着只会白占一行。
+ * 因此清空发生在 `send()` 的 `finally`（异常 / 中止同样清）；`reset()` / `reload()` /
+ * `migrate()` 换了 Agent 或会话也一并清空一一它们只换 `agent`，不重建本类实例。
  */
 export interface SubAgentView {
   /** 稳定 id（React key / 选中态标识） */
@@ -163,8 +164,15 @@ export class ChatSession {
   private handoffAbort: AbortController | null = null;
   /** 本次会话中已出现的子 Agent（只保留当前一轮，见 {@link SubAgentView} 的生命周期说明） */
   private subAgentViews: SubAgentView[] = [];
-  /** 子 Agent 视图 id 序号（每轮归零，标签回到「子AGENT1」） */
+  /** 展示序号（每轮归零，标签回到「子AGENT1」） */
   private subAgentSeq = 0;
+  /**
+   * 视图 id 序号（**永久递增，每轮也不清零**）。
+   *
+   * 与展示序号分开是必要的：若 id 也跟着归零，下一轮的 `sub-1` 会与上一轮同名，
+   * 而选中态是按 id 匹配的——残留的选中 id 会突然「接上」新一轮的子 Agent。
+   */
+  private subAgentIdSeq = 0;
 
   private constructor(
     handoffService: HandoffService,
@@ -260,8 +268,6 @@ export class ChatSession {
 
   /** 发送一条消息；内容变化经 `notifier.onChange` 通知，`resolve` 表示本轮结束 */
   async send(input: string): Promise<void> {
-    // 新一轮开始：上一轮的子 Agent 只能看不能做，留清（栏目随之消失）
-    this.clearSubAgents();
     this.rate.begin();
     this.phaseTracker.connecting();
     try {
@@ -271,6 +277,9 @@ export class ChatSession {
     } finally {
       this.rate.finish();
       this.phaseTracker.reset();
+      // 本轮内循环（含全部工具调用）已结束：子 Agent 只剩历史价值，栏目随之消失。
+      // 放 `finally` 是为了中止 / 出错时也不留残影；序号一并归零，下一轮又是「子AGENT1」。
+      this.clearSubAgents();
       this.notifier.onChange(true);
     }
   }
@@ -500,7 +509,7 @@ export class ChatSession {
       // 那种通知让通知栏凭空多出一行，整帧高度跟着跳。
       const index = ++this.subAgentSeq;
       const view: SubAgentView = {
-        id: `sub-${index}`,
+        id: `sub-${++this.subAgentIdSeq}`,
         index,
         agent: subAgent,
         status: "running",
