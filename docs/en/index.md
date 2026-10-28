@@ -41,4 +41,4 @@ When collaborating with AI in a bare terminal, you often have to manually switch
 
 ## License
 
-The package `@ai-zen/cli` is released under the **MIT** license (see the `license` field in `package.json`).
+The package `@ai-zen/cli` is released under the **MIT** license (see the `LICENSE` file at the repository root; the full text ships with the package).

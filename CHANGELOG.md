@@ -1,3 +1,46 @@
+## [1.0.0-alpha.25] - 2026-10-29
+
+> 升级到 SDK `1.0.0-alpha.23`（面向模型与用户的文案全面英文化），
+> 并补上缺失的 `LICENSE` 文件。
+
+### 🔧 依赖
+
+- `@ai-zen/agents-sdk` `1.0.0-alpha.22` → `1.0.0-alpha.23`。
+
+### 💬 行为变化（来自 SDK）
+
+- **SDK 内置文案全部改为英文** —— 工具 schema 描述、出厂系统提示词、注入语、
+  工具返回值、错误信息、出厂 Skill 与 catalog 数据一律固定英文，SDK 内不再有
+  任何中文文案，也**不引入 i18n**（理由：`tokenThresholds` / `maxToolOutput`
+  都是绝对量，工具 schema 换语言就是另一组 token 数，性能基准会失去单一变量）。
+- **回复语言改为「跟随用户」** —— 出厂系统提示词里「请用中文回复」被替换为
+  `Always reply in the same language the user writes in.`，按每条消息自适应。
+- **对 CLI 无破坏性影响** —— CLI 自带 `i18n` 字典（`src/i18n`），界面文案与
+  通知全部由 CLI 自己渲染，不解析 SDK 的文案字符串；对 SDK 的用法仅限于类型导入
+  与 `AgentRepository` / `ConfigManager` / `setLogger` / `HandoffService` 等结构性
+  API。49 文件 / 649 例测试在升级前后逐项一致。
+
+### 📄 许可证
+
+- **新增 `LICENSE`** —— 此前 `package.json` 声明了 `"license": "MIT"`，但仓库里
+  没有许可证正文，npm 包内自然也没有。现补上 MIT 全文（与 `agents` 仓库根
+  `LICENSE` 一致，`Copyright (c) 2024 LZQCN`）。
+  `files` 字段未改动：npm 对 `LICENSE` 强制包含，`npm pack` 已确认 tarball 内含该文件。
+
+### 📖 文档
+
+- `docs/{zh,en}/getting-started.md` —— 运行时依赖清单的 SDK 版本从 `1.0.0-alpha.18`
+  订正为 `1.0.0-alpha.23`，`@ai-zen/agents-core` 从 `^4.5.2` 订正为 `^4.5.3`
+  （与实际 `package.json` 对齐）。
+- `docs/{zh,en}/index.md` —— 许可证一节改为指向仓库根的 `LICENSE` 文件，并说明全文
+  随包一同发布。
+- `README.md` / `README.zh.md` —— 启动界面示例中的版本号同步为 `1.0.0-alpha.25`。
+
+### ✅ 测试
+
+- 全量 **49 文件 / 649 例通过**，`tsc --noEmit` 0 错误，与 alpha.24 基线一致
+  （本次仅升依赖，无源码改动）。
+
 ## [1.0.0-alpha.24] - 2026-10-28
 
 > 三件事：**看不见的上下文**现在看得见了（不进上下文的消息划删除线），

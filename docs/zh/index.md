@@ -41,4 +41,4 @@ outline: deep
 
 ## 许可证
 
-包 `@ai-zen/cli` 以 **MIT** 许可发布（见 `package.json` 的 `license` 字段）。
+包 `@ai-zen/cli` 以 **MIT** 许可发布（见仓库根的 `LICENSE` 文件，全文随包一同发布）。
