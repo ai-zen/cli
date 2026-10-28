@@ -149,6 +149,22 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
+  it("PgUp 把视口切到滚动态（状态栏提示变更）", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    // 塞满转录，保证「一屏放不下」——否则贴底时往上翻会被钳制回 null，观察不到变化
+    for (let i = 0; i < 200; i++) {
+      created.session.messages.push({ id: `m${i}`, role: "user", content: `第 ${i} 行` });
+    }
+    stdin.write("x"); // 任意按键触发一次重渲染，让新消息上屏
+    await flush();
+    expect(lastFrame() ?? "").toContain("Enter 发送");
+    stdin.write("\u001b[5~");
+    await flush();
+    expect(lastFrame() ?? "").toContain("滚动中");
+    unmount();
+  });
+
   it("斜杠前缀弹出命令候选菜单", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
 import { keyDebug } from "../key-debug.js";
-import { parseWheel, WHEEL_STEP } from "../mouse.js";
+import { parseWheel } from "../mouse.js";
 import type { RateSample } from "../token-rate.js";
 import { phaseLabel } from "../phase.js";
 import { AgentNS } from "@ai-zen/agents-core";
@@ -26,7 +26,7 @@ import {
   pushUndo,
   type EditState,
 } from "../input-editing.js";
-import { ChatLayout, clampViewTop, computeChatLayout } from "./layout.js";
+import { computeChatLayout } from "./layout.js";
 import { FrameBuffer } from "./frame-buffer.js";
 import { LineView } from "./render.js";
 import { messageToLines, transcriptLines } from "./messages-view.js";
@@ -38,6 +38,7 @@ import { describeEffortView } from "../../reasoning-effort.js";
 import { t } from "../../i18n/index.js";
 import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
 import { NoticeBar } from "./notice-bar.js";
+import { useChatViewport } from "./use-chat-viewport.js";
 
 // ==================== 对话屏幕 ====================
 
@@ -108,10 +109,8 @@ export function Chat(props: ChatScreenProps) {
   const sessionRef = useRef<ChatSession | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  /** 视口顶部行索引；null = 贴底（自动跟随最新内容） */
-  const [viewTop, setViewTop] = useState<number | null>(null);
-  /** 最近一次布局，供键盘回调读取总行数 / 视口高度（应用内翻页） */
-  const layoutRef = useRef<ChatLayout | null>(null);
+  /** 视口：滚动状态与翻页 / 按行 / 滚轮换算（唯一入口见 use-chat-viewport.ts） */
+  const { viewTop, layoutRef, scrollByPage, scrollByLine, scrollByWheel, scrollToBottom } = useChatViewport();
 
   /** 本轮是否在生成中（spinner / 输入禁用） */
   const [busy, setBusy] = useState(false);
@@ -369,30 +368,6 @@ export function Chat(props: ChatScreenProps) {
         .catch((error: any) => noticeChannel.push(t("chat.sessionReloadFailed", { error: error?.message ?? error }), "error"));
     }
   };
-
-  // ---- 滚动视口控制（应用内翻页，回看历史）----
-  const scrollTo = (nextTop: number) => {
-    const L = layoutRef.current;
-    if (!L) return;
-    setViewTop(clampViewTop(L.totalLines, L.budget, nextTop));
-  };
-  const scrollByPage = (dir: -1 | 1) => {
-    const L = layoutRef.current;
-    if (!L) return;
-    scrollTo(L.viewTop + dir * Math.max(1, L.budget - 1));
-  };
-  const scrollByLine = (dir: -1 | 1) => {
-    const L = layoutRef.current;
-    if (!L) return;
-    scrollTo(L.viewTop + dir);
-  };
-  /** 鼠标滚轮：一格滚 `WHEEL_STEP` 行（与按行滚动共用一个钳制入口） */
-  const scrollByWheel = (dir: -1 | 1) => {
-    const L = layoutRef.current;
-    if (!L) return;
-    scrollTo(L.viewTop + dir * WHEEL_STEP);
-  };
-  const scrollToBottom = () => setViewTop(null);
 
   /** 清屏但保留上下文：把显示起点推到当前消息末尾 */
   const clearTranscript = () => {
