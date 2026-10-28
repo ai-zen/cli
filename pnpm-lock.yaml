@@ -12,8 +12,8 @@ importers:
         specifier: ^4.5.3
         version: 4.5.3(ws@8.22.0)(zod@4.5.4)
       '@ai-zen/agents-sdk':
-        specifier: 1.0.0-alpha.23
-        version: 1.0.0-alpha.23(ws@8.22.0)(zod@4.5.4)
+        specifier: 1.0.0-alpha.24
+        version: 1.0.0-alpha.24(ws@8.22.0)(zod@4.5.4)
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.30.0(zod@4.5.4)
@@ -69,8 +69,8 @@ packages:
   '@ai-zen/agents-core@4.5.3':
     resolution: {integrity: sha512-CQEPID8kUdwEb+Kq8w/I5oKBV8WM9I96TTaXIzUWkKZf8dkqULI5xmPpdNyo7bM6w26l6fkhsT3wEXkVRiT3zQ==}
 
-  '@ai-zen/agents-sdk@1.0.0-alpha.23':
-    resolution: {integrity: sha512-G3/S9J0AcQlRU0T28a31dX40v4e/6/nSXLAjqkeeH4JrQG5qScxOIY0x1OiXCjhgw+smAr01KiTAxA9kFhZrow==}
+  '@ai-zen/agents-sdk@1.0.0-alpha.24':
+    resolution: {integrity: sha512-D5KPCqrpX/vK8S4C095A1KpbfJrabf2C7GikfC+WsRve7Ei7ImqepXXT0v280kJZnEF2gd5t09G7RznpupqhEw==}
 
   '@ai-zen/event-bus@1.1.0':
     resolution: {integrity: sha512-xjfQEmUMly++dOSrQMJkwrnBVl7bQHtiw8S09AW5jPuqnFV9OwBk0PsGFc/T+4eP4yWThBJo2X3cCdE5DkAr+Q==}
@@ -1151,7 +1151,7 @@ snapshots:
       - ws
       - zod
 
-  '@ai-zen/agents-sdk@1.0.0-alpha.23(ws@8.22.0)(zod@4.5.4)':
+  '@ai-zen/agents-sdk@1.0.0-alpha.24(ws@8.22.0)(zod@4.5.4)':
     dependencies:
       '@ai-zen/agents-core': 4.5.3(ws@8.22.0)(zod@4.5.4)
       '@modelcontextprotocol/sdk': 1.30.0(zod@4.5.4)

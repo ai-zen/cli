@@ -22,9 +22,12 @@
 
 import { wrapText } from "../text.js";
 
+/** 通知语气：info 普通提示 / warn 警告（不影响使用但需看一眼）/ error 错误 */
+export type NoticeTone = "info" | "warn" | "error";
+
 export interface Notice {
   text: string;
-  tone: "info" | "error";
+  tone: NoticeTone;
   /** 递增序号：同一文本重复推送也能被 React 依赖感知为「新通知」，用于渲染 key */
   seq: number;
 }
@@ -41,7 +44,7 @@ export const MAX_NOTICE_LINES = 8;
 /** 单条通知渲染出的一行（带 tone，供渲染侧逐行着色） */
 export interface NoticeLine {
   text: string;
-  tone: "info" | "error";
+  tone: NoticeTone;
 }
 
 /** 通知队列：`push` 入队并广播整份队列，屏订阅后按队列渲染。 */
@@ -60,7 +63,7 @@ export class NoticeChannel {
   }
 
   /** 推入一条通知；空文本直接忽略（调用方常把错误消息直接透传进来） */
-  push(text: string, tone: "info" | "error" = "info"): void {
+  push(text: string, tone: NoticeTone = "info"): void {
     if (!text) return;
     const notice: Notice = { text, tone, seq: ++this.seq };
     this.queue = [...this.queue, notice].slice(-MAX_NOTICE_HISTORY);

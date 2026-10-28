@@ -65,6 +65,61 @@ function rotateIfNeeded(file: string): void {
   }
 }
 
+/** 通知栏 sink：`warn` / `error` 上界面，`info` 只进文件 */
+export type SdkNoticeSink = (level: "warn" | "error", message: string) => void;
+
+/**
+ * 每会话上栏封顶。
+ *
+ * SDK 的日志量按「每次请求 / 每次刷新」计，不封顶会把栏位和 React 状态一起冲垮；
+ * 封顶后补一句「剩下的看文件」，信息不丢，界面也不废。
+ */
+export const MAX_SDK_NOTICES = 20;
+
+/** 界面起来之前最多攒几条（启动期的问题恰恰最该看见，但不能无限攒） */
+const MAX_PENDING_NOTICES = 5;
+
+let noticeSink: SdkNoticeSink | null = null;
+let delivered = 0;
+let capReported = false;
+/** 上过栏的文案：同一句话反复刷（例如每轮都失败一次）只显示第一次 */
+const deliveredOnce = new Set<string>();
+/** 界面还没起来时攒下的 warn / error，注册 sink 时补推 */
+const pending: Array<{ level: "warn" | "error"; message: string }> = [];
+
+function deliver(level: "warn" | "error", message: string): void {
+  if (!message) return;
+  if (!noticeSink) {
+    pending.push({ level, message });
+    if (pending.length > MAX_PENDING_NOTICES) pending.shift();
+    return;
+  }
+  if (deliveredOnce.has(message)) return;
+  if (delivered >= MAX_SDK_NOTICES) {
+    if (!capReported) {
+      capReported = true;
+      noticeSink("warn", `More SDK warnings suppressed — see ${SDK_LOG_FILE}`);
+    }
+    return;
+  }
+  deliveredOnce.add(message);
+  delivered += 1;
+  noticeSink(level, message);
+}
+
+/**
+ * 注册 / 注销通知栏 sink（`null` 表示界面还没起来 / 已卸载）。
+ *
+ * **晚绑定是必须的**：`installSdkLogger()` 跑在 Ink 渲染之前（启动期日志不能写 stdout），
+ * 而通知栏活在 `Chat` 的 React state 里。启动期先入环形缓冲，注册时补推。
+ * 没注册时 SDK 日志照旧只进文件。
+ */
+export function setSdkNoticeSink(sink: SdkNoticeSink | null): void {
+  noticeSink = sink;
+  if (!sink) return;
+  for (const item of pending.splice(0)) deliver(item.level, item.message);
+}
+
 /**
  * 落盘版日志器。
  *
@@ -81,6 +136,9 @@ export function createFileLogger(file: string): Logger {
       } catch {
         /* 诊断失败绝不能影响主流程 */
       }
+      // warn / error 额外上通知栏：文件是事后取证，界面上还得让人当场看见。
+      // info 只进文件 —— SDK 打 info 很密（mcp manifest / 工具发现），上栏等于刷屏。
+      if (level !== "info") deliver(level, message);
     };
   return { info: write("info"), warn: write("warn"), error: write("error") };
 }

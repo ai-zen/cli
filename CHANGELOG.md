@@ -1,3 +1,45 @@
+## [1.0.0-alpha.27] - 2026-10-29
+
+> SDK 的警告与错误现在会进通知栏——**通用通道**，不为某个功能单独接线。
+
+### ✨ 新功能
+
+- **SDK 日志 → 通知栏**（`sdk-log.ts` 从「只落盘」改成 tee）—— `installSdkLogger()`
+  过去把 SDK 日志**整体接管到文件**（不然 `console.log` 会撕坏 Ink 的帧），代价是
+  「SDK 说了什么」在界面上一个字都看不见，只能事后翻 `~/.ai-zen/logs/sdk.log`。
+  现在 `warn` / `error` 除了落盘，还会转给通知栏：
+  - **晚绑定**：`installSdkLogger()` 跑在 Ink 渲染之前，而通知栏活在 `Chat` 的 React
+    state 里。`Chat` 挂载时注册 sink；注册前攒最近 5 条、注册时补推 —— 启动期的
+    问题恰恰最该看见。
+  - **去重**：同一句话反复刷（例如每轮都失败一次）只上栏一次。
+  - **封顶 20 条**：到顶后补一句 `More SDK warnings suppressed — see <日志路径>`，
+    之后不再刷。SDK 的日志量按「每次请求 / 每次刷新」计，不封顶会把栏位和 React
+    状态一起冲垮。
+  - `info` 只进文件 —— SDK 打 info 很密（mcp manifest、工具发现），上栏等于刷屏。
+  - 以后 SDK 任何新特性只要打 `warn` / `error`，界面上自动就有，**不必再为它传回调**。
+    这条通道只用既有的 `setLogger`，与 SDK 版本解耦。
+- **通知栏新增 `warn` 档** —— `NoticeTone` 由 `info | error` 扩为 `info | warn | error`，
+  `NoticeBar` 用 `theme.warn` 着色。警告既不该降级成普通提示（会漏看），也不该冒充
+  错误（会误导）。
+
+### 🔧 依赖
+
+- `@ai-zen/agents-sdk` `1.0.0-alpha.23` → `1.0.0-alpha.24`：`tools/` 目录的加载改为
+  fail-safe —— 无 `export` 的文件不再被求值、求值期抑制 `process.exit` / `abort`
+  并把 `console` 输出改指 stderr、单文件 import 加超时。
+
+  这修的是一次真实事故：一个无参数时 `process.exit(2)` 的开发脚本放进
+  `.ai-zen/tools/` 后，SDK 在建会话途中 `import()` 了它，于是**每次启动都在初始化
+  途中把 CLI 杀掉**，屏幕上只剩最后一帧，看着像「卡住不启动」；同目录另几个脚本还在
+  每次启动时静默重写项目里的 PNG 资产。现在这类文件会被跳过（或被抑制），并通过上面
+  那条通道在通知栏报出来。
+
+### ✅ 测试
+
+- 新增 `src/sdk-log-notice.test.ts` 6 例：`warn`/`error` 上栏、`info` 不上栏、
+  启动期缓冲补推、去重、封顶收尾、静默模式不上栏。
+- 全量 **50 文件 / 663 例通过**（alpha.26 时 49 文件 / 657 例），`tsc --noEmit` 0 错误。
+
 ## [1.0.0-alpha.26] - 2026-10-29
 
 > `/update` 从「一个转圈 + 一句结果」改成**每一步都说清在干什么**，

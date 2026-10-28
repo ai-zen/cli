@@ -6,14 +6,21 @@
 // 于是「通知有没有真的上屏」始终没有断言。
 import { Box, Text } from "ink";
 import { theme } from "../theme.js";
-import type { NoticeLine } from "./notice.js";
+import type { NoticeLine, NoticeTone } from "./notice.js";
+
+/** 语气 → 颜色。warn 单独一档：它既不是「没事」，也还没到「报错」 */
+const TONE_COLOR: Record<NoticeTone, string> = {
+  info: theme.dim,
+  warn: theme.warn,
+  error: theme.error,
+};
 
 export function NoticeBar({ lines }: { lines: readonly NoticeLine[] }) {
   if (lines.length === 0) return null;
   return (
     <Box flexDirection="column" paddingX={1}>
       {lines.map((line, i) => (
-        <Text key={i} color={line.tone === "error" ? theme.error : theme.dim} wrap="truncate">
+        <Text key={i} color={TONE_COLOR[line.tone]} wrap="truncate">
           {line.text}
         </Text>
       ))}

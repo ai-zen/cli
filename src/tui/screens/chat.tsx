@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
 import { spawn } from "node:child_process";
 import { disableMouseTracking } from "../mouse.js";
+import { setSdkNoticeSink } from "../../sdk-log.js";
 import { keyDebug } from "../key-debug.js";
 import type { RateSample } from "../token-rate.js";
 import { phaseLabel, type PhaseInfo } from "../phase.js";
@@ -166,6 +167,21 @@ export function Chat(props: ChatScreenProps) {
    */
   const [notices, setNotices] = useState<readonly Notice[]>(noticeChannel.notices);
   useEffect(() => noticeChannel.subscribe(setNotices), [noticeChannel]);
+
+  /**
+   * SDK 的 warn / error 直接进通知栏 —— **通用通道**，不为某个功能单独接线。
+   *
+   * 以前 SDK 日志被整体接管到文件里（不然 `console.log` 会撕坏 Ink 的帧），代价是
+   * 「SDK 说了什么」用户在界面上一个字都看不见，只能事后翻 sdk.log —— 排查成本极高
+   * （连「工具文件把进程杀了」这种事都只能靠猜）。这里注册一个 sink 把 warn/error
+   * 引过来：以后 SDK 任何模块只要打日志，界面上自动就有，不必为新特性再传一个回调。
+   *
+   * 晚绑定、启动期缓冲、去重、封顶都在 `sdk-log.ts` 里做，这里只做接线。
+   */
+  useEffect(() => {
+    setSdkNoticeSink((level, message) => noticeChannel.push(message, level));
+    return () => setSdkNoticeSink(null);
+  }, [noticeChannel]);
 
   /**
    * 配置向导宿主（凭据 / 配置中心）：整屏接管与「关闭后让改动生效」见
