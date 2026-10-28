@@ -11,7 +11,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { AgentNS } from "@ai-zen/agents-core";
 import type { HandoffMode } from "@ai-zen/agents-sdk";
 import { HandoffAbortedError } from "@ai-zen/agents-sdk";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -59,6 +59,14 @@ export interface ChatCommandHost {
   openWizard: (step: WizardStep) => Promise<void>;
   openKeyEditor: () => Promise<void>;
   doExit: () => void;
+  /**
+   * **真·重启进程**（`/update` 装完新版本后调用）。
+   *
+   * 与 `exit({ restart: true })` 不是一回事：后者只是同进程重挂载界面，内存里还是
+   * 旧的模块图，对「磁盘上的代码变了」这种升级等于没装。怎么重启（重新 exec 自己）
+   * 由宿主决定，命令层只负责决定**什么时候**重启。
+   */
+  restartProcess: () => Promise<void>;
   setPickerState: Dispatch<
     SetStateAction<{ title: string; items: SelectItem<string>[]; resolve: (value: string | null) => void } | null>
   >;
@@ -102,6 +110,8 @@ export interface CommandContext extends ChatCommandHost {
    * 弹选择器并等用户作答（取消为 `null`），由各命令自己决定取消后说什么。
    */
   pick: (title: string, items: SelectItem<string>[]) => Promise<string | null>;
+  /** 弹确认框并等用户作答（与 `pick` 同一套覆盖层机制，只是答案为 是/否） */
+  confirm: (question: string) => Promise<boolean>;
 }
 
 type CommandHandler = (ctx: CommandContext) => Promise<void>;
@@ -376,6 +386,43 @@ const cmdReload: CommandHandler = async ({ session, push }) => {
 /** `/update` 的安装目标包 */
 const UPDATE_PACKAGE = "@ai-zen/cli";
 
+/** npm 查询类调用的超时：断网 / registry 无响应时不能无限期挂着 */
+const UPDATE_QUERY_TIMEOUT_MS = 20_000;
+
+/**
+ * 跑一次 npm 并收集 stdout（**异步**）。
+ *
+ * 为什么不能用 `spawnSync`：`npm view` 走网络要 1–3 秒，同步执行会把事件循环钉死，
+ * Ink 的动画定时器跟着停摆 —— 用户看到的是一个**冻住的转圈**，既没有进度也不知道
+ * 在等什么。超时主动 kill，避免断网时命令永远不返回。
+ */
+function runNpmCapture(
+  args: string[],
+): Promise<{ code: number | null; stdout: string; error?: string }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const child = spawn("npm", args, { stdio: ["ignore", "pipe", "ignore"] });
+    let stdout = "";
+    const done = (value: { code: number | null; stdout: string; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(value);
+    };
+    child.stdout?.on("data", (chunk: Buffer | string) => {
+      stdout += chunk;
+    });
+    // `error` 与 `close` 可能都触发（`spawn` 失败时先 error 再 close），settled 保证只结算一次
+    child.on("error", (err: Error) => done({ code: null, stdout, error: err.message }));
+    child.on("close", (code) => done({ code, stdout }));
+    timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      done({ code: null, stdout, error: `timeout ${UPDATE_QUERY_TIMEOUT_MS}ms` });
+    }, UPDATE_QUERY_TIMEOUT_MS);
+  });
+}
+
 /**
  * 读取包在 registry 上的全部 dist-tag（`{ latest, alpha, … }`）。
  *
@@ -383,13 +430,16 @@ const UPDATE_PACKAGE = "@ai-zen/cli";
  * （曾经 `latest = 0.9.0`、`alpha = 1.0.0-alpha.23`），只认 `latest` 会把正在跑
  * alpha 的用户**降级**回去。所以取全部 tag、再挑 semver 最大的那个。
  *
+ * `--prefer-online`：npm 会缓存 packument，刚发版时 `npm view` 可能仍拿到旧 tag，
+ * 把「有新版」误判成「已是最新」（发布当天踩过这个坑）。
+ *
  * 失败（npm 不存在 / 网络不通 / 输出不是 JSON）返回 `undefined`，由调用方报错。
  */
-function readDistTags(pkg: string): Record<string, string> | undefined {
-  const result = spawnSync("npm", ["view", pkg, "dist-tags", "--json"], { encoding: "utf-8" });
-  if (result.error || result.status !== 0) return undefined;
+async function readDistTags(pkg: string): Promise<Record<string, string> | undefined> {
+  const result = await runNpmCapture(["view", pkg, "dist-tags", "--json", "--prefer-online"]);
+  if (result.code !== 0) return undefined;
   try {
-    const parsed = JSON.parse(result.stdout ?? "") as Record<string, unknown>;
+    const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
     const tags: Record<string, string> = {};
     for (const [tag, version] of Object.entries(parsed)) {
       if (typeof version === "string") tags[tag] = version;
@@ -400,6 +450,13 @@ function readDistTags(pkg: string): Record<string, string> | undefined {
   }
 }
 
+/** 全局安装目录（`npm root -g`）；读不到返回 `undefined` */
+async function readGlobalRoot(): Promise<string | undefined> {
+  const result = await runNpmCapture(["root", "-g"]);
+  const dir = result.stdout.trim();
+  return result.code === 0 && dir ? dir : undefined;
+}
+
 /**
  * 读取**全局安装目录**里某个包的实际版本，读不到返回 `undefined`。
  *
@@ -407,12 +464,11 @@ function readDistTags(pkg: string): Record<string, string> | undefined {
  * 刚装完的版本在 registry 上通常要几分钟才可见（发布经验，见交接文档），
  * 拿它报「装好了没」会把成功误报成失败。
  */
-function readGlobalInstalledVersion(pkg: string): string | undefined {
+async function readGlobalInstalledVersion(pkg: string): Promise<string | undefined> {
   try {
-    const root = spawnSync("npm", ["root", "-g"], { encoding: "utf-8" });
-    const dir = (root.stdout ?? "").trim();
-    if (!dir) return undefined;
-    const parsed = JSON.parse(readFileSync(join(dir, pkg, "package.json"), "utf-8")) as {
+    const root = await readGlobalRoot();
+    if (!root) return undefined;
+    const parsed = JSON.parse(readFileSync(join(root, pkg, "package.json"), "utf-8")) as {
       version?: string;
     };
     return typeof parsed.version === "string" ? parsed.version : undefined;
@@ -421,8 +477,32 @@ function readGlobalInstalledVersion(pkg: string): string | undefined {
   }
 }
 
-const cmdUpdate: CommandHandler = async ({ push, suspendTerminal }) => {
-  const tags = readDistTags(UPDATE_PACKAGE);
+/**
+ * 安装（`stdio: inherit`，npm 的输出直接打在真实终端上）。成功返回 `undefined`，失败返回原因。
+ *
+ * `--prefer-online` 治 npm 的元数据缓存（否则刚发版的包可能解析失败 / 装到旧版本）；
+ * `--no-fund` 只是减噪 —— 募捐提示对正在等结果的人没有信息量。
+ */
+function installGlobal(spec: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const child = spawn("npm", ["install", "-g", spec, "--prefer-online", "--no-fund"], {
+      stdio: "inherit",
+    });
+    child.on("error", (err: Error) => resolve(err.message));
+    child.on("close", (code) => resolve(code === 0 ? undefined : `exit ${code ?? "unknown"}`));
+  });
+}
+
+const cmdUpdate: CommandHandler = async ({
+  push,
+  suspendTerminal,
+  confirm,
+  restartProcess,
+  session,
+}) => {
+  // 每一步都说清「在干什么、看到什么」：只给一个转圈，无法区分「在查」和「在装」
+  push(t("cmd.update.checking", { pkg: UPDATE_PACKAGE }));
+  const tags = await readDistTags(UPDATE_PACKAGE);
   if (!tags) {
     push(t("cmd.update.tagsFailed", { pkg: UPDATE_PACKAGE }), "error");
     return;
@@ -440,15 +520,22 @@ const cmdUpdate: CommandHandler = async ({ push, suspendTerminal }) => {
     return;
   }
   const spec = `${UPDATE_PACKAGE}@${target}`;
+  push(t("cmd.update.found", { target, current: CLI_VERSION }));
 
   // 安装过程交给**真实终端**（`suspendTerminal` 期间 Ink 暂停渲染）：npm 的进度条与
-  // 报错直接打在 TTY 上，比捕获后回放可读；也因为不能阻塞事件循环——阻塞会让 Ink
-  // 帧写坏、进度一条都看不见。
+  // 报错直接打在 TTY 上，比捕获后回放可读。移交之前先在 TTY 上打一段头部 ——
+  // 否则用户只看到 npm 自己的滚动输出，不知道装的是什么、从哪来、装到哪。
+  const root = await readGlobalRoot();
   let error: string | undefined;
-  await suspendTerminal(() => {
-    const result = spawnSync("npm", ["install", "-g", spec], { stdio: "inherit" });
-    if (result.error) error = result.error.message;
-    else if (result.status !== 0) error = `exit ${result.status ?? result.signal ?? "unknown"}`;
+  await suspendTerminal(async () => {
+    process.stdout.write(
+      t("cmd.update.installHeader", {
+        spec,
+        current: CLI_VERSION,
+        root: root ?? t("cmd.update.rootUnknown"),
+      }) + "\n",
+    );
+    error = await installGlobal(spec);
   });
 
   if (error) {
@@ -457,15 +544,35 @@ const cmdUpdate: CommandHandler = async ({ push, suspendTerminal }) => {
   }
 
   // 装完读全局目录里的版本：读不到（自建安装路径 / 别的包管理器）就按目标版本报
-  const installed = readGlobalInstalledVersion(UPDATE_PACKAGE) ?? target;
+  const installed = (await readGlobalInstalledVersion(UPDATE_PACKAGE)) ?? target;
   if (installed === CLI_VERSION) {
     push(t("cmd.update.same", { version: installed }));
     return;
   }
   push(t("cmd.update.done", { spec, current: CLI_VERSION, version: installed }));
-  // 不自动重启：内存里跑的还是旧代码，`exit({restart: true})` 只是重挂载界面；
-  // 也不能替用户杀进程——当前会话会跟着没了。让用户自己决定何时重开。
-  push(t("cmd.update.restart", { current: CLI_VERSION }));
+
+  // 新代码只在**新进程**里生效：本进程的模块图已经加载完了，连 `exit({ restart: true })`
+  // 都只是重挂载界面、跑的还是旧模块，所以「重启」必须是真的重新 exec 自己。
+  // 用二次确认而不是装完直接重启：否则「装好了什么」这句结果还没看清，画面就换掉了；
+  // 确认框默认停在「是」——敲 `/update` 的人本来就是要升级，一个回车就走完。
+  const ok = await confirm(
+    t("cmd.update.confirmRestart", { current: CLI_VERSION, version: installed }),
+  );
+  if (!ok) {
+    push(t("cmd.update.restart", { current: CLI_VERSION }));
+    return;
+  }
+
+  // 重启前把当前对话落盘：新进程靠 `last-session.json` 指针续接，而指针正是落盘时更新的。
+  // 没有用户消息（刚开的新会话）就不落盘，免得留下一份空会话文件。
+  if (session.messages.some((m) => m.role === AgentNS.Role.User)) {
+    try {
+      await session.save();
+    } catch {
+      // 落盘失败不阻断重启：ConversationPersistPlugin 每轮已落过一次，这里只是补最后一手
+    }
+  }
+  await restartProcess();
 };
 
 const cmdMcp: CommandHandler = async ({ push, args, openWizard }) => {
@@ -694,6 +801,7 @@ function buildContext(name: CommandName, raw: string, host: ChatCommandHost): Co
     push: (text, tone = "info") => host.notice(text, tone),
     pick: (title, items) =>
       new Promise<string | null>((resolve) => host.setPickerState({ title, items, resolve })),
+    confirm: (question) => new Promise<boolean>((resolve) => host.setConfirmState({ question, resolve })),
   };
 }
 

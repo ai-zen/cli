@@ -108,7 +108,7 @@ cat README.md | ai "用三句话总结"
 | `/model` | 切换模型（写入配置） |
 | `/agent` | 切换主 Agent（重建会话） |
 | `/reload` | 刷新运行环境（重新发现工具 / MCP） |
-| `/update` | 升级 CLI（全局安装 alpha 通道，重启生效） |
+| `/update` | 升级 CLI 到最新发布版（在全部 dist-tags 里挑 semver 最大者；逐步骤显示进度，装完弹确认框，确认即重启到新版本） |
 | `/mcp` | 管理 MCP 服务器（增删改 / 启停） |
 | `/lang` | 切换界面语言 |
 | `/think` `/effort` | 切换思考强度 |

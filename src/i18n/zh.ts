@@ -73,6 +73,7 @@ export const zh: Record<string, string> = {
   "cmd.migrate.desc": "交接并开启新会话",
   "cmd.help.desc": "显示帮助",
   "cmd.exit.desc": "退出对话（提示保存）",
+  "cmd.running": "正在执行 /{name}…",
 
   // ---------- 命令交互文案（通知 / 选择器） ----------
   "common.current": "（当前）",
@@ -85,6 +86,11 @@ export const zh: Record<string, string> = {
   "cmd.agent.cancelled": "已取消切换主 Agent",
   "cmd.reload.done": "已刷新运行环境：配置 / 工具 / Skill / MCP 已重新发现（消息与上下文保留）",
   "cmd.update.done": "✅ 已安装 {spec}：v{current} → v{version}",
+  "cmd.update.checking": "正在查询 {pkg} 的最新版本…",
+  "cmd.update.found": "发现新版本 v{target}（当前 v{current}），开始安装…",
+  "cmd.update.installHeader": "\n📦 正在安装 {spec}（当前 v{current}）\n   安装位置  {root}\n   执行命令  npm install -g {spec} --prefer-online --no-fund",
+  "cmd.update.rootUnknown": "未知",
+  "cmd.update.confirmRestart": "已装好 v{version}，重启后才会生效（当前进程仍跑 v{current}）。现在重启？当前对话已保存。",
   "cmd.update.same": "✅ 已是最新版本 v{version}，无需重启",
   "cmd.update.restart": "重启 ai 后生效（当前进程仍在跑 v{current} 的旧代码）",
   "cmd.update.failed": "❌ 安装 {spec} 失败：{error}",

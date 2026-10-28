@@ -108,7 +108,7 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 | `/model` | Switch model (writes to config) |
 | `/agent` | Switch the primary agent (rebuilds the session) |
 | `/reload` | Refresh the runtime (rediscovers tools / MCP) |
-| `/update` | Upgrade the CLI (global install, alpha channel; restart to apply) |
+| `/update` | Upgrade the CLI to the newest published release (highest semver across all dist-tags; shows each step and offers to restart into the new version) |
 | `/mcp` | Manage MCP servers (add / remove / edit / toggle) |
 | `/lang` | Switch interface language |
 | `/think` `/effort` | Switch reasoning effort |

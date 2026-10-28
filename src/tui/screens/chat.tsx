@@ -1,9 +1,11 @@
 // 对话屏幕 —— 以 SDK 的 `agent.messages` 为唯一数据源渲染（无自定义中间模型）
 import { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useCursor, useInput, useWindowSize } from "ink";
+import { spawn } from "node:child_process";
+import { disableMouseTracking } from "../mouse.js";
 import { keyDebug } from "../key-debug.js";
 import type { RateSample } from "../token-rate.js";
-import { phaseLabel } from "../phase.js";
+import { phaseLabel, type PhaseInfo } from "../phase.js";
 import { AgentNS } from "@ai-zen/agents-core";
 import { theme } from "../theme.js";
 import { Spinner, StatusBar, statusBarRows, SlashMenu, type StatusBarProps } from "../components.js";
@@ -75,6 +77,19 @@ export function resolveSubmitText(input: string, hints: CommandHint[], menuIndex
   return picked ? `/${picked}` : input;
 }
 
+/**
+ * 忙碌期那一行 spinner 的文案。
+ *
+ * 生成中由 SDK 的阶段驱动（`phaseLabel`）；但 `/update`、`/migrate` 这类
+ * **阻塞输入的命令**执行时根本没有生成轮次，`phase` 是 `null`，`phaseLabel(null)`
+ * 会兜底成「处理中…」——与实际动作毫无关系。命令期间改显命令名，
+ * 至少能看出「在跑哪条命令」，具体进度由命令自己 push 通知（查版本 / 开始安装 …）。
+ */
+export function busySpinnerLabel(phase: PhaseInfo | null, command: string | null): string {
+  if (phase) return phaseLabel(phase);
+  return command ? t("cmd.running", { name: command }) : phaseLabel(null);
+}
+
 export function Chat(props: ChatScreenProps) {
   const { exit, suspendTerminal } = useApp();
   const { setCursorPosition } = useCursor();
@@ -92,6 +107,8 @@ export function Chat(props: ChatScreenProps) {
 
   /** 本轮是否在生成中（spinner / 输入禁用） */
   const [busy, setBusy] = useState(false);
+  /** 正在执行的**阻塞型命令**名（`blocksInput: true` 的 `/update` / `/migrate` …），见 `busySpinnerLabel` */
+  const [busyCommand, setBusyCommand] = useState<string | null>(null);
   /** 生成速率快照（token/s）：生成中为实时值，结束后保留本轮平均 */
   const [rate, setRate] = useState<RateSample | null>(null);
   /**
@@ -355,7 +372,10 @@ export function Chat(props: ChatScreenProps) {
     if (command) {
       const name = command.name;
       const blocksInput = commandBlocksInput(name);
-      if (blocksInput) setBusy(true);
+      if (blocksInput) {
+        setBusy(true);
+        setBusyCommand(name);
+      }
       try {
         await runCommand(name, trimmed, {
           session: sessionRef.current!,
@@ -367,6 +387,7 @@ export function Chat(props: ChatScreenProps) {
           openWizard,
           openKeyEditor,
           doExit,
+          restartProcess,
           setPickerState,
           setConfirmState,
           setInputText,
@@ -374,7 +395,10 @@ export function Chat(props: ChatScreenProps) {
           refreshLocale: () => bumpLocale((n) => n + 1),
         });
       } finally {
-        if (blocksInput) setBusy(false);
+        if (blocksInput) {
+          setBusy(false);
+          setBusyCommand(null);
+        }
       }
       return;
     }
@@ -393,6 +417,43 @@ export function Chat(props: ChatScreenProps) {
   const doExit = () => {
     exit("done");
   };
+
+  /**
+   * 真·重启进程（`/update` 装完新版本后调用）。
+   *
+   * 不能复用 `exit({ restart: true })`：那条路只是 `continue` 回 `mount(<Chat/>)`，
+   * 同一个进程、内存里还是旧模块图——对「磁盘上的代码变了」这种升级等于没装。
+   * 这里退到 shell 的视角：**spawn 一个新的自己**（新进程重新加载新 dist），
+   * 父进程在挂起态里等子进程退出，然后跟着退出。
+   *
+   * 三个必须注意的细节：
+   *
+   * 1. **在挂起态里退出**。`suspendTerminal` 的 `beginSuspend()` 会 `pauseInput()`
+   *    （raw 模式关闭），而 `endSuspend()` 会 `resumeInput()` 把它重新打开。若等
+   *    `suspendTerminal` 返回后再 `process.exit`，终端就停在 raw 模式，回到 shell
+   *    后按键全是乱码。所以子进程一结束就**就地**退出。
+   * 2. **先关鼠标上报**。`mount()` 按 Ink 实例开关它，而本实例此刻只是「挂起」并未
+   *    退出 —— 不关的话，子进程若异常死亡，终端会一直把滚轮写成转义序列。
+   * 3. **不转发 `process.argv.slice(2)`**。`ai --tui --new "..."` 那套是 shell 兜底
+   *    钩子的一次性载荷，重启时重放会把同一条提示词再发一遍。新进程按常规启动即
+   *    续接上一轮会话（重启前已落盘）。
+   */
+  const restartProcess = () =>
+    suspendTerminal(
+      () =>
+        new Promise<void>((resolve) => {
+          const entry = process.argv[1];
+          if (!entry) {
+            // 拿不到入口脚本（理论上不会发生）：不重启，退回 TUI，由调用方收尾
+            resolve();
+            return;
+          }
+          disableMouseTracking();
+          const child = spawn(process.execPath, [entry], { stdio: "inherit" });
+          child.on("error", () => process.exit(1));
+          child.on("exit", (code) => process.exit(code ?? 0));
+        }),
+    );
 
   /** 本次会话已出现的子 Agent（渲染期现取；`sessionRef` 在首次渲染时为 null） */
   const subAgentViews = sessionRef.current?.subAgents ?? [];
@@ -842,7 +903,8 @@ export function Chat(props: ChatScreenProps) {
               // 阶段随 SDK 事件推进：连接中 → 排队中 → 思考 / 输出 / 调用工具 → 等工具返回。
               // 渲染期现取（不另存 state）：chunk 与轮次边界都会触发重渲染，
               // 而 `busy` 置 true 本身也会重渲一次，捕得到首轮的「连接中」。
-              <Spinner label={phaseLabel(sessionRef.current?.phase ?? null)} />
+              // 阻塞型命令（`/update` 等）没有生成轮次，故回落到命令名，见 `busySpinnerLabel`。
+              <Spinner label={busySpinnerLabel(sessionRef.current?.phase ?? null, busyCommand)} />
             ) : (
               bodyLines.map((line, i) => {
                 const prompt =

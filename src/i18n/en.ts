@@ -70,6 +70,7 @@ export const en: Record<string, string> = {
   "cmd.migrate.desc": "Hand off and start a new session",
   "cmd.help.desc": "Show this help",
   "cmd.exit.desc": "Exit the conversation (offers to save)",
+  "cmd.running": "Running /{name}…",
 
   // ---------- Command interaction text (notices / pickers) ----------
   "common.current": " (current)",
@@ -82,6 +83,11 @@ export const en: Record<string, string> = {
   "cmd.agent.cancelled": "Agent switch cancelled",
   "cmd.reload.done": "Runtime refreshed: config / tools / skills / MCP rediscovered (messages and context kept)",
   "cmd.update.done": "✅ Installed {spec}: v{current} → v{version}",
+  "cmd.update.checking": "Checking the latest version of {pkg}…",
+  "cmd.update.found": "Found v{target} (current v{current}) — installing…",
+  "cmd.update.installHeader": "\n📦 Installing {spec} (current v{current})\n   Location  {root}\n   Command   npm install -g {spec} --prefer-online --no-fund",
+  "cmd.update.rootUnknown": "unknown",
+  "cmd.update.confirmRestart": "Installed v{version}; it takes effect after a restart (this process still runs v{current}). Restart now? The current conversation is saved.",
   "cmd.update.same": "✅ Already on the newest version v{version} — no restart needed",
   "cmd.update.restart": "Restart ai to take effect (this process still runs the old v{current} code)",
   "cmd.update.failed": "❌ Failed to install {spec}: {error}",

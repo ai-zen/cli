@@ -40,5 +40,5 @@ export type { Notice } from "./notice.js";
 export { AgentTabs } from "./agent-tabs.js";
 export type { AgentTab, AgentTabsProps } from "./agent-tabs.js";
 
-export { Chat, resolveSubmitText } from "./chat.js";
+export { Chat, resolveSubmitText, busySpinnerLabel } from "./chat.js";
 export type { ChatScreenProps } from "./chat.js";

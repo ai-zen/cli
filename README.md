@@ -66,7 +66,7 @@ When run with no arguments on an interactive terminal, the CLI opens a full-scre
 ╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
 
               AI workbench in your terminal
-              v1.0.0-alpha.25 · sdk x · core y
+              v1.0.0-alpha.26 · sdk x · core y
 ```
 
 After the splash, you land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and a **status bar** (three priority-ordered blocks: model · agent · reasoning effort | this-round / cumulative tokens · generation rate | key hints; a block that does not fit moves to the next line whole, so nothing is truncated and no block gets split) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line and its label shows **which phase** the round is in: connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming; the two tool phases include the tool name. The generation rate shows a live value while streaming (2-second sliding window, estimated from output deltas) and switches to this round's average once it finishes (preferring the real `completion_tokens` from the API).
@@ -202,7 +202,7 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 | `/model` | Switch model (writes the Agent's `modelId`; thinking level resets to the model default) |
 | `/agent` | Switch the main Agent (writes `defaultAgent` and rebuilds the session; unusable Agents are marked with the reason) |
 | `/reload` | Refresh the runtime (rediscovers tools / MCP; messages and context are kept) |
-| `/update` | Upgrade the CLI (`npm install -g @ai-zen/cli@alpha`; restart `ai` to apply) |
+| `/update` | Upgrade the CLI to the newest published release (the highest semver across **all** dist-tags, so an alpha newer than `latest` wins; shows each step, then offers to restart into the new version) |
 | `/mcp` | Manage MCP servers (add / remove / edit / toggle; `/mcp global` and `/mcp project` pick a scope) |
 | `/lang` | Switch the interface language (`/lang zh`, `/lang en` set it explicitly; no argument toggles) |
 | `/think` `/effort` | Switch reasoning effort (`/think default` follows the model default) |

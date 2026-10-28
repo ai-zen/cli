@@ -21,6 +21,7 @@ import {
   AGENT_TABS_LINES,
   clampViewTop,
   resolveSubmitText,
+  busySpinnerLabel,
   stripCwdNote,
   type RLine,
 } from "./screens/index.js";
@@ -28,7 +29,7 @@ import { getCommandHints, matchCommandHints } from "../conversation-commands/reg
 import { isTerminalReply } from "./text.js";
 import { RENDER_OPTIONS } from "./index.js";
 import { AgentNS } from "@ai-zen/agents-core";
-import { setLocale } from "../i18n/index.js";
+import { setLocale, t } from "../i18n/index.js";
 
 const tick = () => new Promise((r) => setTimeout(r, 25));
 
@@ -731,5 +732,24 @@ describe("按词删除（Ctrl+W / Alt+Backspace、Alt+D / Ctrl+Delete、Ctrl+K�
   });
   it("跨行时只影响当前行", () => {
     expect(deleteWordLeft("foo\nbar baz", 11)).toEqual({ text: "foo\nbar ", cursor: 8 });
+  });
+});
+
+describe("busySpinnerLabel（忙碌期 spinner 文案）", () => {
+  it("生成中：仍由 SDK 阶段驱动", () => {
+    expect(busySpinnerLabel({ kind: "thinking" }, null)).toBe(t("phase.thinking"));
+    expect(busySpinnerLabel({ kind: "streaming" }, "update")).toBe(t("phase.streaming"));
+  });
+
+  it("阻塞命令执行中（无生成轮次）：显示命令名，不是笼统的「处理中」", () => {
+    const label = busySpinnerLabel(null, "update");
+    expect(label).toBe(t("cmd.running", { name: "update" }));
+    // 回归守卫：这正是「光转圈」的病根——命令期间回落成「处理中…」
+    expect(label).not.toBe(t("phase.working"));
+    expect(label).toContain("update");
+  });
+
+  it("两者都没有：才回落到通用的「处理中」", () => {
+    expect(busySpinnerLabel(null, null)).toBe(t("phase.working"));
   });
 });
