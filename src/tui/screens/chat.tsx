@@ -15,16 +15,7 @@ import { readConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "..
 import { readAgentStore } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
 import { ConfigWizard } from "../config-wizard/index.js";
-import { computeInputCursorPosition, deleteToLineEnd, deleteToLineStart, deleteWordLeft, deleteWordRight, wordLeft, wordRight } from "./input.js";
-import {
-  deleteToPrevWhitespace,
-  killedText,
-  killAt,
-  popUndo,
-  pushKill,
-  pushUndo,
-  type EditState,
-} from "../input-editing.js";
+import { computeInputCursorPosition } from "./input.js";
 import { computeChatLayout } from "./layout.js";
 import { FrameBuffer } from "./frame-buffer.js";
 import { LineView } from "./render.js";
@@ -40,6 +31,7 @@ import { NoticeBar } from "./notice-bar.js";
 import { useChatViewport } from "./use-chat-viewport.js";
 import { useChatOverlays } from "./use-overlays.js";
 import { useWizardHost } from "./use-wizard-host.js";
+import { useInputEditing } from "./use-input-editing.js";
 
 // ==================== 对话屏幕 ====================
 
@@ -82,19 +74,10 @@ export function Chat(props: ChatScreenProps) {
   const { setCursorPosition } = useCursor();
   const { columns, rows } = useWindowSize();
 
-  const [input, setInput] = useState(props.initialInput ?? "");
-  /** 光标位置：以 code point 计的字符索引（0..len） */
-  const [cursor, setCursor] = useState(graphemes(props.initialInput ?? "").length);
-  const [menuIndex, setMenuIndex] = useState(0);
-  useEffect(() => {
-    setMenuIndex(0);
-  }, [input]);
 
   /** 覆盖层（确认框 / 选择器）：弹窗与 resolve 生命周期见 use-overlays.ts */
   const { confirmState, pickerState, setConfirmState, setPickerState, resolveConfirm, resolvePicker } =
     useChatOverlays();
-  const [history, setHistory] = useState<string[]>([]);
-  const historyIndex = useRef<number>(-1);
   const sessionRef = useRef<ChatSession | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -138,14 +121,6 @@ export function Chat(props: ChatScreenProps) {
   /** 转录显示起点（/clear 清屏用：隐藏此索引之前的消息，但不改上下文） */
   const [transcriptFrom, setTranscriptFrom] = useState(0);
 
-  // ---- Claude Code 同款编辑状态 ----
-  /** kill ring：Ctrl+W/U/K 删掉的文本，Ctrl+Y 取回、Alt+Y 循环 */
-  const killRingRef = useRef<string[]>([]);
-  const yankIndexRef = useRef(-1);
-  /** 编辑撤销栈（Ctrl+_） */
-  const undoStackRef = useRef<EditState[]>([]);
-  /** 暂存区（Ctrl+S） */
-  const stashRef = useRef<EditState | null>(null);
   /** Ctrl+D 双击退出计时 */
   const ctrlDAtRef = useRef(0);
 
@@ -312,105 +287,42 @@ export function Chat(props: ChatScreenProps) {
     noticeChannel.clear();
   };
 
-  // ---- 输入编辑（光标感知）----
-  const setInputText = (text: string) => {
-    setInput(text);
-    setCursor(graphemes(text).length);
-  };
-  const insertAtCursor = (text: string) => {
-    const chars = graphemes(input);
-    const cp = Math.max(0, Math.min(cursor, chars.length));
-    setInput(chars.slice(0, cp).join("") + text + chars.slice(cp).join(""));
-    setCursor(cp + graphemes(text).length);
-  };
-  const deleteBeforeCursor = () => {
-    const chars = graphemes(input);
-    const cp = Math.max(0, Math.min(cursor, chars.length));
-    if (cp === 0) return;
-    setInput(chars.slice(0, cp - 1).join("") + chars.slice(cp).join(""));
-    setCursor(cp - 1);
-  };
-  const deleteAfterCursor = () => {
-    const chars = graphemes(input);
-    const cp = Math.max(0, Math.min(cursor, chars.length));
-    if (cp >= chars.length) return;
-    setInput(chars.slice(0, cp).join("") + chars.slice(cp + 1).join(""));
-  };
-  /** 套用纯函数算好的「文本 + 光标」结果（无变化则不触发重渲染） */
-  const applyEdit = (r: { text: string; cursor: number }) => {
-    if (r.text === input && r.cursor === cursor) return;
-    undoStackRef.current = pushUndo(undoStackRef.current, { text: input, cursor });
-    setInput(r.text);
-    setCursor(r.cursor);
-  };
-  /** 删除类编辑：额外把删掉的文本放进 kill ring（Ctrl+Y 可取回） */
-  const applyKill = (r: { text: string; cursor: number }) => {
-    if (r.text === input && r.cursor === cursor) return;
-    killRingRef.current = pushKill(killRingRef.current, killedText(input, r.text));
-    yankIndexRef.current = -1;
-    applyEdit(r);
-  };
-  const deleteWordBeforeCursor = () => applyKill(deleteWordLeft(input, cursor));
-  const deleteWordAfterCursor = () => applyKill(deleteWordRight(input, cursor));
-  const deleteToEndOfLine = () => applyKill(deleteToLineEnd(input, cursor));
-  const deleteToStartOfLine = () => applyKill(deleteToLineStart(input, cursor));
-  /** Ctrl+W：删到前一空白（标点不切分，整条路径一次删掉） */
-  const deletePrevWhitespace = () => applyKill(deleteToPrevWhitespace(input, cursor));
-  /** Ctrl+Y / Alt+Y：插入 kill ring 中的一段（index 循环） */
-  const yank = (advance: boolean) => {
-    const ring = killRingRef.current;
-    if (ring.length === 0) return;
-    const next = advance ? yankIndexRef.current + 1 : 0;
-    if (next >= ring.length) return;
-    yankIndexRef.current = next;
-    const text = killAt(ring, next) ?? "";
-    insertAtCursor(text);
-  };
-  /** Ctrl+_：撤销上一次编辑 */
-  const undoEdit = () => {
-    const popped = popUndo(undoStackRef.current);
-    if (!popped) return;
-    undoStackRef.current = popped.rest;
-    setInput(popped.state.text);
-    setCursor(popped.state.cursor);
-  };
-  /** Ctrl+S：暂存 / 恢复输入 */
-  const toggleStash = () => {
-    if (input.length > 0) {
-      stashRef.current = { text: input, cursor };
-      setInputText("");
-      noticeChannel.push(t("notice.draftSaved"));
-      return;
-    }
-    const stashed = stashRef.current;
-    if (!stashed) return;
-    stashRef.current = null;
-    setInput(stashed.text);
-    setCursor(stashed.cursor);
-    noticeChannel.push(t("notice.draftRestored"));
-  };
-  /** Ctrl+V：粘粘图片 —— 暂未支持（需先做「文件 → 内容块」能力探测，见 SKILL/后续迭代） */
-  const pasteImageUnsupported = () => {
-    noticeChannel.push(t("notice.pasteImageUnsupported"), "error");
-  };
-  const moveCursor = (delta: number) => {
-    const len = graphemes(input).length;
-    setCursor((c) => Math.max(0, Math.min(len, c + delta)));
-  };
-  const moveCursorToLineStart = () => {
-    const chars = graphemes(input);
-    const cp = Math.max(0, Math.min(cursor, chars.length));
-    let i = cp;
-    while (i > 0 && chars[i - 1] !== "\n") i -= 1;
-    setCursor(i);
-  };
-  const moveCursorToLineEnd = () => {
-    const chars = graphemes(input);
-    const cp = Math.max(0, Math.min(cursor, chars.length));
-    let i = cp;
-    while (i < chars.length && chars[i] !== "\n") i += 1;
-    setCursor(i);
-  };
+  /**
+   * 输入编辑（文本 / 光标 / 历史 / kill ring / undo / stash）：
+   * 全部语义在 use-input-editing.ts，这里只把通知出口接上。
+   */
+  const {
+    input,
+    cursor,
+    setInputText,
+    insertAtCursor,
+    deleteBeforeCursor,
+    deleteAfterCursor,
+    deleteWordBeforeCursor,
+    deleteWordAfterCursor,
+    deleteToStartOfLine,
+    deleteToEndOfLine,
+    deletePrevWhitespace,
+    yank,
+    undoEdit,
+    toggleStash,
+    moveCursor,
+    moveCursorToLineStart,
+    moveCursorToLineEnd,
+    moveCursorByWord,
+    historyPrev,
+    historyNext,
+    clearDraft,
+    rememberSubmitted,
+  } = useInputEditing({
+    initialText: props.initialInput,
+    notify: (text, tone) => noticeChannel.push(text, tone),
+  });
+  /** 斜杠候选菜单的高亮索引；输入一变就回到第一个候选 */
+  const [menuIndex, setMenuIndex] = useState(0);
+  useEffect(() => {
+    setMenuIndex(0);
+  }, [input]);
 
   // 命令候选人
   const slash = input.startsWith("/") && !input.includes("\n") && !input.includes(" ");
@@ -419,8 +331,7 @@ export function Chat(props: ChatScreenProps) {
   const runSubmit = async (text: string, options: { asMessage?: boolean } = {}) => {
     const trimmed = text.trim();
     if (!trimmed || !sessionRef.current || busy) return;
-    setInputText("");
-    historyIndex.current = -1;
+    clearDraft();
     scrollToBottom();
     noticeChannel.clear();
 
@@ -453,7 +364,7 @@ export function Chat(props: ChatScreenProps) {
       return;
     }
 
-    setHistory((h) => [...h, trimmed]);
+    rememberSubmitted(trimmed);
     const base = sessionRef.current!.messages.filter((m) => m.role === AgentNS.Role.User).length;
     setPendingUser({ text: trimmed, base });
     setBusy(true);
@@ -580,7 +491,8 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if ((char === "v" && key.ctrl) || (key.super && (char === "v" || char === "V"))) {
-        pasteImageUnsupported();
+        // 图片粘贴暂未支持：需要先做「文件 → 内容块」的能力探测（见后续迭代）
+        noticeChannel.push(t("notice.pasteImageUnsupported"), "error");
         return;
       }
       // readline 的行首 / 行尾（macOS 上部分终端把 ⌘← / ⌘→ 发成 ^A / ^E）
@@ -603,20 +515,8 @@ export function Chat(props: ChatScreenProps) {
           setMenuIndex((i) => (up ? (i - 1 + hints.length) % hints.length : (i + 1) % hints.length));
           return;
         }
-        if (up && history.length > 0) {
-          const idx = historyIndex.current < 0 ? history.length - 1 : Math.max(0, historyIndex.current - 1);
-          historyIndex.current = idx;
-          setInputText(history[idx]);
-        } else if (!up && historyIndex.current >= 0) {
-          const idx = historyIndex.current + 1;
-          if (idx >= history.length) {
-            historyIndex.current = -1;
-            setInputText("");
-          } else {
-            historyIndex.current = idx;
-            setInputText(history[idx]);
-          }
-        }
+        if (up) historyPrev();
+        else historyNext();
         return;
       }
       // 按词删除：Alt+Backspace / Ctrl+Backspace 删前一个词；Alt+D / Ctrl+Delete 删后一个词。
@@ -652,29 +552,17 @@ export function Chat(props: ChatScreenProps) {
           );
           return;
         }
-        if (key.upArrow && history.length > 0) {
-          const idx = historyIndex.current < 0 ? history.length - 1 : Math.max(0, historyIndex.current - 1);
-          historyIndex.current = idx;
-          setInputText(history[idx]);
-        } else if (key.downArrow && historyIndex.current >= 0) {
-          const idx = historyIndex.current + 1;
-          if (idx >= history.length) {
-            historyIndex.current = -1;
-            setInputText("");
-          } else {
-            historyIndex.current = idx;
-            setInputText(history[idx]);
-          }
-        }
+        if (key.upArrow) historyPrev();
+        else historyNext();
         return;
       }
       if (key.leftArrow) {
-        if (key.ctrl || key.meta || key.super) setCursor(wordLeft(input, cursor));
+        if (key.ctrl || key.meta || key.super) moveCursorByWord(-1);
         else moveCursor(-1);
         return;
       }
       if (key.rightArrow) {
-        if (key.ctrl || key.meta || key.super) setCursor(wordRight(input, cursor));
+        if (key.ctrl || key.meta || key.super) moveCursorByWord(1);
         else moveCursor(1);
         return;
       }
@@ -682,11 +570,11 @@ export function Chat(props: ChatScreenProps) {
       // （readline 的 backward-word / forward-word），并不带 leftArrow 标记；
       // 而 Ctrl+←/→ 常被系统「Mission Control → 左右切换空间」截走，应用根本收不到。
       if (char === "b" && key.meta) {
-        setCursor(wordLeft(input, cursor));
+        moveCursorByWord(-1);
         return;
       }
       if (char === "f" && key.meta) {
-        setCursor(wordRight(input, cursor));
+        moveCursorByWord(1);
         return;
       }
       if (key.home) {
