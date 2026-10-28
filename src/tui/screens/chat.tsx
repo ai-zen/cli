@@ -8,7 +8,7 @@ import { phaseLabel } from "../phase.js";
 import { AgentNS } from "@ai-zen/agents-core";
 import { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
-import { Spinner, StatusBar, statusBarRows, SlashMenu, SelectItem, type StatusBarProps } from "../components.js";
+import { Spinner, StatusBar, statusBarRows, SlashMenu, type StatusBarProps } from "../components.js";
 import { graphemes, layoutInput, usableFrameRows, isTerminalReply } from "../text.js";
 import { ChatSession, type ChatSessionNotifier } from "../chat-session.js";
 import { CommandHint, matchCommandHints } from "../../conversation-commands/registry.js";
@@ -39,6 +39,7 @@ import { t } from "../../i18n/index.js";
 import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
 import { NoticeBar } from "./notice-bar.js";
 import { useChatViewport } from "./use-chat-viewport.js";
+import { useChatOverlays } from "./use-overlays.js";
 
 // ==================== 对话屏幕 ====================
 
@@ -89,12 +90,9 @@ export function Chat(props: ChatScreenProps) {
     setMenuIndex(0);
   }, [input]);
 
-  const [confirmState, setConfirmState] = useState<{ question: string; resolve: (v: boolean) => void } | null>(null);
-  const [pickerState, setPickerState] = useState<{
-    title: string;
-    items: SelectItem<string>[];
-    resolve: (value: string | null) => void;
-  } | null>(null);
+  /** 覆盖层（确认框 / 选择器）：弹窗与 resolve 生命周期见 use-overlays.ts */
+  const { confirmState, pickerState, setConfirmState, setPickerState, resolveConfirm, resolvePicker } =
+    useChatOverlays();
   /** 配置向导：非 null 时整屏接管（凭据设置 / 配置中心） */
   const [wizardStep, setWizardStep] = useState<WizardStep | null>(null);
   const [wizardConfig, setWizardConfig] = useState<AppConfig | null>(null);
@@ -287,20 +285,6 @@ export function Chat(props: ChatScreenProps) {
     const timer = setInterval(read, 250);
     return () => clearInterval(timer);
   }, [busy]);
-
-  const resolveConfirm = (value: boolean) => {
-    setConfirmState((cs) => {
-      cs?.resolve(value);
-      return null;
-    });
-  };
-
-  const resolvePicker = (value: string | null) => {
-    setPickerState((ps) => {
-      ps?.resolve(value);
-      return null;
-    });
-  };
 
   // ---- 配置向导（凭据 / 配置中心）----
 
