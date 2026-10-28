@@ -1,5 +1,5 @@
 // 行渲染原语 —— 折行 / 语法高亮 / 裁剪（与「渲染来源」解耦，纯函数）
-import { wrapText, displayWidth } from "../text.js";
+import { wrapText, displayWidth, clusterWidth, graphemes } from "../text.js";
 import { theme, syntaxStyle } from "../theme.js";
 import { highlightCode, highlightJson, splitFences, type HlToken } from "../highlight.js";
 
@@ -65,7 +65,14 @@ function splitTokenLines(tokens: HlToken[]): HlToken[][] {
   return rows;
 }
 
-/** 折行单元：单字符 + 其样式（仅颜色/属性，不含文本） */
+/**
+ * 折行单元：**单字素簇** + 其样式（仅颜色/属性，不含文本）。
+ *
+ * 必须是字素簇而不是 code point：`✌️` 是两个 code point 但占 2 列、`👨‍👩‍👧`
+ * 是五个 code point 但只占 2 列。按 code point 建单元会让宽度算错（VS16 序列少算
+ * → 行超宽 → Ink 渲染期二次折行 → 整帧高出一行，把输入框顶出屏幕；ZWJ 序列多算
+ * → 提前折行）。宽度一律取 `clusterWidth()`，与 Ink 排版用的是同一把尺子。
+ */
 interface SpanCell {
   ch: string;
   color?: string;
@@ -77,7 +84,7 @@ interface SpanCell {
 function toCells(spans: Span[]): SpanCell[] {
   const cells: SpanCell[] = [];
   for (const s of spans) {
-    for (const ch of s.text) {
+    for (const ch of graphemes(s.text)) {
       cells.push({ ch, color: s.color, dim: s.dim, bold: s.bold, italic: s.italic });
     }
   }
@@ -124,7 +131,7 @@ function wrapSpans(spans: Span[], limit: number, preferSpace = false): Span[][] 
     lastSpace = -1;
   };
   for (const cell of cells) {
-    const w = displayWidth(cell.ch);
+    const w = clusterWidth(cell.ch);
     if (row.length && width + w > max) {
       if (preferSpace && lastSpace > 0) {
         // 在最近的空格处断开：空格及其右侧内容折到下一行
@@ -132,7 +139,7 @@ function wrapSpans(spans: Span[], limit: number, preferSpace = false): Span[][] 
         const tail = row.slice(lastSpace + 1);
         reset();
         row = tail;
-        width = tail.reduce((sum, c) => sum + displayWidth(c.ch), 0);
+        width = tail.reduce((sum, c) => sum + clusterWidth(c.ch), 0);
         for (let i = tail.length - 1; i >= 0; i -= 1) {
           if (tail[i]!.ch === " ") {
             lastSpace = i;
@@ -161,8 +168,8 @@ export function clipSpans(spans: Span[], max: number): Span[] {
   let width = 0;
   for (const span of spans) {
     let text = "";
-    for (const ch of span.text) {
-      const w = displayWidth(ch);
+    for (const ch of graphemes(span.text)) {
+      const w = clusterWidth(ch);
       if (width + w > limit - 1) {
         if (text) out.push({ ...span, text });
         out.push({ text: "…" });

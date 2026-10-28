@@ -11,7 +11,7 @@
  * 两侧各切一半（左边「思考 高」被吃掉、右边提示只剩半截）。
  */
 
-import { displayWidth } from "./text.js";
+import { clusterWidth, graphemes } from "./text.js";
 
 /** 一段带样式的文本（颜色由调用方给，这里只管切分） */
 export interface StatusSegment {
@@ -30,8 +30,10 @@ interface StyledChar {
 function toChars(segments: StatusSegment[]): StyledChar[] {
   const chars: StyledChar[] = [];
   for (const segment of segments) {
-    for (const ch of segment.text) {
-      chars.push({ ch, color: segment.color, bold: segment.bold, width: displayWidth(ch) });
+    // 按**字素簇**切，不按 code point：`✌️`（VS16）是两个 code point 但占 2 列，
+    // 逐 code point 累加会算成 1 列 → 状态栏行超宽 → Ink 二次折行 → 帧高多一行。
+    for (const ch of graphemes(segment.text)) {
+      chars.push({ ch, color: segment.color, bold: segment.bold, width: clusterWidth(ch) });
     }
   }
   return chars;
@@ -126,7 +128,7 @@ export function wrapSegments(segments: StatusSegment[], width: number): StatusSe
 export function segmentsWidth(segments: StatusSegment[]): number {
   let width = 0;
   for (const segment of segments) {
-    for (const ch of segment.text) width += displayWidth(ch);
+    for (const ch of graphemes(segment.text)) width += clusterWidth(ch);
   }
   return width;
 }

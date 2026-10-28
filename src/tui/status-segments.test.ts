@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { packSegments, segmentsWidth, wrapSegments, type StatusSegment } from "./status-segments.js";
+import { displayWidth } from "./text.js";
 
 /** 把折行结果还原成纯文本，便于断言 */
 const plain = (rows: StatusSegment[][]): string[] =>
@@ -135,5 +136,29 @@ describe("packSegments（按块装行）", () => {
         { text: "B", color: "blue" },
       ],
     ]);
+  });
+});
+
+describe("折行宽度按字素簇计（与 Ink 排版同一把尺子）", () => {
+  const plainRows = (rows: StatusSegment[][]): string[] =>
+    rows.map((row) => row.map((segment) => segment.text).join(""));
+
+  it("VS16 序列占 2 列，行不超宽", () => {
+    // 按 code point 会算成 1 列，20 个本该折成 2 行却挤成 1 行（宽 20 却占 40 列）
+    const rows = plainRows(wrapSegments([{ text: "❤️".repeat(20) }], 20));
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) expect(displayWidth(row)).toBeLessThanOrEqual(20);
+  });
+
+  it("ZWJ 家族占 2 列，不被算成 6 列", () => {
+    // 10 簇 × 2 列 = 20，恰好一行；按 code point 会算成 60 列而折成多行
+    const rows = plainRows(wrapSegments([{ text: "👨‍👩‍👧".repeat(10) }], 20));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("segmentsWidth 与逐行折行的宽度口径一致", () => {
+    const segments: StatusSegment[] = [{ text: "❤️".repeat(5) }];
+    expect(segmentsWidth(segments)).toBe(10);
+    expect(displayWidth(segments.map((segment) => segment.text).join(""))).toBe(10);
   });
 });
