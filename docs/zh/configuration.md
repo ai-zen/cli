@@ -66,7 +66,10 @@ outline: deep
   ],
   "defaultImageModel": "cogview-4",
   "defaultAgent": "default",
-  "defaultMigrationModel": "deepseek-flash"
+  "defaultMigrationModel": "deepseek-flash",
+  "maxToolOutput": 32768,
+  "abortedMessageStrategy": "keep",
+  "abortedToolRoundStrategy": "fill"
 }
 ```
 
@@ -78,6 +81,7 @@ outline: deep
 - `models` / `imageModels` 中未标 `custom: true` 的条目属于**出厂托管**：每次启动会与 SDK 出厂清单对齐并被替换为最新定义；自建条目请加 `"custom": true`（悬空的 `defaultMigrationModel` 会回退到出厂默认）。`endpoints` 始终保留用户配置。
 - 旧字段 `maxContextTokens` / `maxContextChars` / `reasoning` 会在启动时自动迁移（前两者折成 `tokenThresholds`，`reasoning` 换成 `reasoningPreset`），无需手改；迁移只在检测到差异时写盘一次。
 - `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`：其余默认项。
+- `abortedMessageStrategy`（`keep` / `drop`）与 `abortedToolRoundStrategy`（`fill` / `drop`）：**中断策略**。前者决定被中断时模型已输出的思考 / 正文是否留在上下文（出厂 `keep`：下一轮接着半截往下说；`drop` 则不发给模型）；后者决定被中断 / 结果不完整的工具轮次怎么归一（出厂 `fill`：整轮保留并给未完成结果补原因，`tool_calls` 与结果必须配对；`drop` 则整轮出列）。缺字段或写了非法值时，启动会补成出厂默认。配置中心「默认项」里可直接切换；它只在**建 Agent** 时读取，改完关掉配置中心会自动重建会话生效（也可手动 `/reload`）。
 - **模型不在 `config.json` 里指定**：它写在 Agent 定义的 `modelId` 上（见下节）。旧版的 `config.defaultModel` 已在升级时自动搬迁到默认 Agent 并从配置中删除。
 
 ## Agent 定义（`agents/<id>.json`）
@@ -160,7 +164,7 @@ outline: deep
 TUI 内可用 `/config` 打开**配置中心**交互式编辑常用项，无需手改 JSON：
 
 - 配置文件路径：`~/.ai-zen/config.json`（或 `$AI_ZEN_DIR/config.json`）。
-- 可设置：**端点**（名称 / Base URL / API Key / 描述，增删改）、**模型**（名称 / 端点 / 模型名 / 思考策略 / 交接阈值 / 阻断阈值 / 视觉 / 描述 / 自定义，增删改）、**图片模型**（名称 / 端点 / 模型名 / 尺寸 / 质量 / 自定义，增删改）、**MCP 服务器**（作用域可屏内切换：全局 `~/.ai-zen/mcp.json` / 项目 `<cwd>/.ai-zen/mcp.json`；名称 / 传输 stdio·http·sse / 启用·禁用 / 描述 / 命令 / 参数 / 环境变量 / URL / 请求头，增删改）、**Agent 定义**（顶层 `agents/*.json` 与子 `sub-agents/*.json`；名称 / 标识 / 描述 / 模型 / 提示词【系统编辑器】/ 四维权限 `tools`·`skills`·`mcps`·`subagents` / 自定义，Sub-agent 另含 `function`，均支持增删改）、**默认项**（默认模型 / 默认图片模型 / 默认 Agent / 默认迁移模型）、**工具输出上限**。
+- 可设置：**端点**（名称 / Base URL / API Key / 描述，增删改）、**模型**（名称 / 端点 / 模型名 / 思考策略 / 交接阈值 / 阻断阈值 / 视觉 / 描述 / 自定义，增删改）、**图片模型**（名称 / 端点 / 模型名 / 尺寸 / 质量 / 自定义，增删改）、**MCP 服务器**（作用域可屏内切换：全局 `~/.ai-zen/mcp.json` / 项目 `<cwd>/.ai-zen/mcp.json`；名称 / 传输 stdio·http·sse / 启用·禁用 / 描述 / 命令 / 参数 / 环境变量 / URL / 请求头，增删改）、**Agent 定义**（顶层 `agents/*.json` 与子 `sub-agents/*.json`；名称 / 标识 / 描述 / 模型 / 提示词【系统编辑器】/ 四维权限 `tools`·`skills`·`mcps`·`subagents` / 自定义，Sub-agent 另含 `function`，均支持增删改）、**默认项**（默认模型 / 默认图片模型 / 默认 Agent / 默认迁移模型 / 中断策略两项）、**工具输出上限**。
 - 列表 = [＋ 新建…] + 各条目；选中条目进入**详情屏**就地编辑（`↑ ↓` 移动、`Enter` 编辑/切换/选择、危险动作二次确认）。编辑「出厂托管」的模型时会自动标记 `custom: true`；删除端点会先校验是否仍被模型引用。
 - **MCP 服务器**：传输方式为枚举选择（stdio / http / sse）、启用·禁用为即时切换；参数按 shell 风格（引号 / 转义）切分为 argv；环境变量与请求头进入**键值编辑子屏**（`KEY=VALUE`，可增 / 改 / 删）。改动即时写入对应作用域的 `mcp.json`；关闭配置中心后会话会重建，使新服务器 / 工具生效。
 - **Agent 定义**：列表区分顶层 Agent 与 Sub-agent（各带「＋ 新建」）；详情屏编辑名称 / 标识（改标识即重命名文件）/ 描述 / 模型（枚举自 `config.models`）/ 四维权限（紧凑语法 `allow: a, b` 或 `deny: x`，留空清除该维）/ 自定义开关；Sub-agent 另有 `function`（函数名 / 说明 / 参数 schema JSON）。**多行内容**（提示词 / 函数说明 / 参数 schema）按 `Enter` 调起**系统编辑器**（`$EDITOR`，Windows 默认 `notepad`）：提示词回写首条 system 消息；参数 schema 以 `.json` 打开、保存后即时校验（非法 JSON 被拒且**保留改动**便于重试），内容未改动则不写盘。编辑「出厂托管」的 `default` Agent 会自动标记 `custom: true`，避免改动被 SDK 同步覆盖。

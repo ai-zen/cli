@@ -108,6 +108,7 @@ cat README.md | ai "用三句话总结"
 | `/model` | 切换模型（写入配置） |
 | `/agent` | 切换主 Agent（重建会话） |
 | `/reload` | 刷新运行环境（重新发现工具 / MCP） |
+| `/update` | 升级 CLI（全局安装 alpha 通道，重启生效） |
 | `/mcp` | 管理 MCP 服务器（增删改 / 启停） |
 | `/lang` | 切换界面语言 |
 | `/think` `/effort` | 切换思考强度 |
@@ -147,7 +148,7 @@ ai hook uninstall
 | 端点 Key / Base URL、默认模型、新建端点 | 对话内 `/config` →「端点管理」 |
 | 当前会话所用模型 | 对话内 `/model`（写入该 Agent 的 `modelId`） |
 | 思考强度（reasoning effort） | 对话内 `/think`（写入当前 Agent 定义的 `reasoningEffort`；可选档位来自 `~/.ai-zen/reasoning-presets.json` 里该模型引用的策略，可自行增删策略） |
-| 模型 / 图片模型 / MCP 服务器 / Agent 定义 / 默认项 / 工具上限 | 对话内 `/config` → 配置中心 |
+| 模型 / 图片模型 / MCP 服务器 / Agent 定义 / 默认项（含中断策略）/ 工具上限 | 对话内 `/config` → 配置中心 |
 
 > 说明：CLI 入口只实现 `hook` 子命令（`ai hook install|uninstall`），**没有 `config` 子命令**；配置编辑在 TUI 内完成（端点、模型、图片模型、MCP 服务器、Agent 定义、默认项与工具上限均已可在 `/config` 内增删改）。详见 [配置](./configuration.md)。
 

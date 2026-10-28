@@ -113,7 +113,7 @@ Key map (aligned with [Claude Code](https://docs.claude.com/en/docs/claude-code/
 | `Shift+↑ ↓`, `Alt+↑ ↓`, `⌘;` / `⌘'`* | Scroll by line |
 | `\` + `Enter` | Newline (works in any terminal) |
 
-> After an interrupt (`Ctrl+C` / `Esc`), **the reasoning and content the model already produced stay in the context** — on the next turn it picks up that half-finished sentence instead of pretending it never said it. Use `/new` if you want a clean slate. Tool rounds are still reconciled all-in or all-out: unfinished tools get a reason backfilled, so no illegal "call without result" history is left behind.
+> After an interrupt (`Ctrl+C` / `Esc`), **the reasoning and content the model already produced stay in the context** (factory default `abortedMessageStrategy: "keep"`) — on the next turn it picks up that half-finished sentence instead of pretending it never said it. Use `/new` for a clean slate, or switch to `drop` under *Configuration center → Defaults → Keep output on interrupt*. Tool rounds are reconciled all-in or all-out (`abortedToolRoundStrategy`, factory `fill`): unfinished tools get a reason backfilled, so no illegal "call without result" history is left behind; `drop` takes the whole round out of the request instead. Both are read when an Agent is **built**, so closing the configuration center rebuilds the session automatically.
 
 Not implemented (no counterpart here): `Ctrl+O` transcript viewer, `Ctrl+R` reverse search, `Ctrl+B` background tasks, `Ctrl+T` task list, `Shift+Tab` permission modes.
 
@@ -196,10 +196,11 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 | `/back` | Retract a message (roll back to a point and resend) |
 | `/editor` | Compose a long message in your editor (vim/nano) |
 | `/clear` | Clear the screen |
-| `/config` | Open the configuration center (endpoints / models / image models / MCP / agent definitions / defaults / tool-output cap) |
+| `/config` | Open the configuration center (endpoints / models / image models / MCP / agent definitions / defaults incl. interrupt strategies / tool-output cap) |
 | `/model` | Switch model (writes the Agent's `modelId`; thinking level resets to the model default) |
 | `/agent` | Switch the main Agent (writes `defaultAgent` and rebuilds the session; unusable Agents are marked with the reason) |
 | `/reload` | Refresh the runtime (rediscovers tools / MCP; messages and context are kept) |
+| `/update` | Upgrade the CLI (`npm install -g @ai-zen/cli@alpha`; restart `ai` to apply) |
 | `/mcp` | Manage MCP servers (add / remove / edit / toggle; `/mcp global` and `/mcp project` pick a scope) |
 | `/lang` | Switch the interface language (`/lang zh`, `/lang en` set it explicitly; no argument toggles) |
 | `/think` `/effort` | Switch reasoning effort (`/think default` follows the model default) |
@@ -252,7 +253,7 @@ Configuration is stored in `~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json`
 |----------|-----|
 | First launch, endpoint has no key | The **credential screen** appears automatically |
 | Change the current model's endpoint key | `/key` in the chat (session rebuilt on save) |
-| Endpoints / models / image models, MCP servers, agent definitions (incl. sub-agents), defaults, tool-output cap | `/config` (the configuration center — full management) |
+| Endpoints / models / image models, MCP servers, agent definitions (incl. sub-agents), defaults (incl. interrupt strategies), tool-output cap | `/config` (the configuration center — full management) |
 | Other advanced fields (skills / user tools, …) | Edit the files under `~/.ai-zen/` manually |
 
 The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft — a handoff is triggered above it) and `guard` (hard — the round is aborted above it, before the request). Both are absolute values; `guard ≈ handoff × 1.5` is recommended (typically ~25% of the model's actual context window for `handoff`, e.g. 250,000 for a 1M-token model).
