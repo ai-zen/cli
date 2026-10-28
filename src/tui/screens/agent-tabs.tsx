@@ -28,13 +28,12 @@ export interface AgentTab {
 export type AgentTabStatus = "running" | "done" | "failed";
 
 /**
- * 状态圆点：三种状态**同形不同色**（蓝 / 绿 / 红）。
+ * 状态符号：三种状态**同形不同色**（蓝 / 绿 / 红）。
  *
- * 用 `•`（BULLET，窄终端下宽度为 1）而不是 `●`（GEOMETRIC SHAPE，视觉上偏大）：
- * 栏目是一行密集文本，大圆点会把行撑得松散。圆点位于标签**之前**（作状态指示符），
- * 这样每个标签的文字起始位置对齐，不因有无圆点而错位。
+ * 用 `◈`（U+25C8）：比 `•` 更像个「状态指示符」，又不像 `●` 那样把一行密集文本撑得松散。
+ * 符号位于标签**之前**，使各标签的文字起始位置对齐。
  */
-export const AGENT_STATUS_DOT = "•";
+export const AGENT_STATUS_DOT = "◈";
 
 /**
  * 状态圆点的颜色 —— 状态的**唯一视觉真相**。
@@ -100,17 +99,21 @@ export function AgentTabs({ tabs, activeId }: AgentTabsProps) {
   const blinkOn = useBlink(tabs.some((tab) => tab.status === "running"));
 
   return (
-    <Box paddingX={1}>
+    <Box>
       <Text wrap="truncate">
-        {tabs.map((tab, index) => {
+        {tabs.map((tab) => {
           const active = tab.id === activeId;
+          // 左右各一个空格作为选项**自身**的 padding（落在高亮块内部），而不是把分隔空格
+          // 拼在下一个选项里——后者会让高亮底色贴住上一个选项的文案。
+          // 也不靠外层 Box 的 paddingX：那样首个选项的文字会整体右移一格，与 ❯ / 分隔线不齐。
           return (
             <Text key={tab.id} {...agentTabStyle(active)}>
-              {index === 0 ? "" : "  "}
+              {" "}
               {tab.status ? (
                 <Text color={agentStatusColor(tab.status, blinkOn)}>{AGENT_STATUS_DOT}</Text>
               ) : null}
               {tab.label}
+              {" "}
             </Text>
           );
         })}

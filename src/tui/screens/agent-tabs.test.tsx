@@ -44,12 +44,21 @@ describe("AgentTabs（主 / 子 Agent 切换条）", () => {
       ],
       "main",
     );
-    // 圆点紧贴标签**之前**（作状态指示符），不额外占一列空白；中等大小的 • 而非偏大的 ●
+    // 符号在标签**之前**（作状态指示符），且选项自带左右各 1 空格 padding
     expect(frame).toContain(`${AGENT_STATUS_DOT}子AGENT1`);
     expect(frame).toContain(`${AGENT_STATUS_DOT}子AGENT2`);
     expect(frame).toContain(`${AGENT_STATUS_DOT}子AGENT3`);
-    expect(AGENT_STATUS_DOT).toBe("•");
-    expect(AGENT_STATUS_DOT).toBe("•");
+    expect(AGENT_STATUS_DOT).toBe("◈");
+  });
+
+  it("每个选项自带左右各 1 空格 padding（分隔空白属于前一项，不贴上一项文案）", () => {
+    const frame = draw(tabs, "main");
+    // 每一项周围都恰好一个空格：「 主AGENT   ◈子AGENT1 」形状
+    // （末项的尾空格会被 Ink trim，所以只断言非末项）
+    expect(frame).toContain(" 主AGENT ");
+    expect(frame).toContain(` ${AGENT_STATUS_DOT}子AGENT1 `);
+    // 首项前恰好 1 空格：与输入行的 ❯、分隔线同列对齐（外层不再叠 paddingX）
+    expect(frame.startsWith(" 主AGENT")).toBe(true);
   });
 
   it("状态三色：运行中蓝、完成绿、失败红", () => {
