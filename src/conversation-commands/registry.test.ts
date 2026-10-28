@@ -12,6 +12,7 @@ import {
   parseCommandInput,
 } from "./registry.js";
 import { setLocale } from "../i18n/index.js";
+import { displayWidth } from "../tui/text.js";
 
 // 命令说明已 i18n 化：这些用例断言中文文案，显式锁定语言（不依赖宿主 LANG）
 beforeEach(() => setLocale("zh"));
@@ -23,7 +24,7 @@ describe("对话命令元数据", () => {
     expect(hints[hints.length - 1]).toEqual({
       names: ["exit", "quit"],
       label: "/exit /quit",
-      description: "退出对话（会提示是否保存）",
+      description: "退出对话（提示保存）",
     });
   });
 
@@ -33,12 +34,29 @@ describe("对话命令元数据", () => {
     }
   });
 
+  it("说明保持简洁：中文 ≤ 36、英文 ≤ 52 显示宽度", () => {
+    // 斜杠菜单与 /help 都是一行一条，说明过长会把行塞满（宽度只算到「不折行」
+    // 就太宽松了 —— 菜单要的是一眼能扫完）。上限紧贴当前最长条目：
+    // 中文 /reload=34、英文 /config 与 /mcp=49，没余量，改啰嗦了就会红。
+    const LIMIT = { zh: 36, en: 52 } as const;
+    for (const locale of ["zh", "en"] as const) {
+      setLocale(locale);
+      for (const hint of getCommandHints()) {
+        const width = displayWidth(hint.description);
+        expect(width, `${locale} ${hint.label}：${hint.description}`).toBeLessThanOrEqual(
+          LIMIT[locale],
+        );
+      }
+    }
+    setLocale("zh");
+  });
+
   it("命令说明跟随界面语言（key 存表、渲染时取词）", () => {
     setLocale("en");
     const exitHint = getCommandHints().at(-1)!;
-    expect(exitHint.description).toBe("Exit the conversation (offers to save first)");
+    expect(exitHint.description).toBe("Exit the conversation (offers to save)");
     setLocale("zh");
-    expect(getCommandHints().at(-1)!.description).toBe("退出对话（会提示是否保存）");
+    expect(getCommandHints().at(-1)!.description).toBe("退出对话（提示保存）");
   });
 
   it("展示宽度按最长命令串对齐", () => {
@@ -69,7 +87,7 @@ describe("命令前缀匹配", () => {
 
   it("按前缀过滤并保留说明", () => {
     expect(matchCommandHints("sav")).toEqual([
-      { names: ["save"], label: "/save", description: "保存当前对话" },
+      { names: ["save"], label: "/save", description: "保存对话" },
     ]);
   });
 
@@ -84,7 +102,7 @@ describe("命令前缀匹配", () => {
 
   it("/agent 已注册：能在菜单里前缀匹配到，且说明不是空的", () => {
     expect(matchCommandHints("age")).toEqual([
-      { names: ["agent"], label: "/agent", description: "切换主 Agent（写入默认 Agent，重建会话）" },
+      { names: ["agent"], label: "/agent", description: "切换主 Agent（重建会话）" },
     ]);
     expect(getCommandNames()).toContain("agent");
   });

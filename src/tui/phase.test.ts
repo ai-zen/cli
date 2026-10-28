@@ -107,7 +107,7 @@ describe("phaseLabel", () => {
   it("六个阶段各自有独立文案（中）", () => {
     setLocale("zh");
     expect(phaseLabel({ kind: "connecting" })).toBe("连接中…");
-    expect(phaseLabel({ kind: "queued" })).toBe("排队中…（等待首 token）");
+    expect(phaseLabel({ kind: "queued" })).toBe("排队中…");
     expect(phaseLabel({ kind: "thinking" })).toBe("思考中…");
     expect(phaseLabel({ kind: "tool-calling" })).toBe("调用工具…");
     expect(phaseLabel({ kind: "tool-waiting" })).toBe("等待工具返回…");
@@ -132,7 +132,7 @@ describe("phaseLabel", () => {
   it("英文界面下同样是六个独立文案", () => {
     setLocale("en");
     expect(phaseLabel({ kind: "connecting" })).toBe("Connecting…");
-    expect(phaseLabel({ kind: "queued" })).toBe("Queued… (waiting for the first token)");
+    expect(phaseLabel({ kind: "queued" })).toBe("Queued…");
     expect(phaseLabel({ kind: "tool-waiting", tool: "grep" })).toBe("Waiting for grep…");
   });
 });

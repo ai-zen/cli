@@ -216,7 +216,7 @@ describe("SlashMenu", () => {
     const { lastFrame, unmount } = render(<SlashMenu hints={hints} selected={0} />);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("/help");
-    expect(frame).toContain("显示此帮助");
+    expect(frame).toContain("显示帮助");
     unmount();
   });
 });
