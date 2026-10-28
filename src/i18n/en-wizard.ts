@@ -247,6 +247,16 @@ export const en: Record<string, string> = {
   "wiz.defaults.missingKey": "API key missing",
   "wiz.defaults.itemHint": "{endpoint} · {state}",
   "wiz.defaults.updated": "{label} → {value}",
+  "wiz.defaults.strategyMessage": "Keep output on interrupt",
+  "wiz.defaults.strategyToolRound": "Interrupted tool rounds",
+  "wiz.defaults.strategySubtitle": "Written to disk as soon as you pick; the session is rebuilt when you close the config center",
+  "wiz.strategy.keep": "Keep (keep)",
+  "wiz.strategy.drop": "Drop (drop)",
+  "wiz.strategy.fill": "Keep the whole round (fill)",
+  "wiz.strategy.keepHint": "After an interrupt the partial reasoning and answer stay in context, so the model can continue",
+  "wiz.strategy.dropHint": "The partial turn never enters the context (core library default)",
+  "wiz.strategy.fillHint": "Restore the whole round and backfill a reason for unfinished results — tool_calls must pair with results",
+  "wiz.strategy.toolDropHint": "Drop the whole round: neither the assistant message nor its tool results are sent",
 
   // ---------- Endpoints list / new endpoint ----------
   "ui.next": "Next",

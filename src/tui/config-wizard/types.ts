@@ -8,8 +8,18 @@ import { AgentKind, AgentStore } from "../../agents-store.js";
 /** 可编辑的端点字段（首启引导 / `/key` 的直达编辑步骤用） */
 export type EndpointField = "apiKey" | "baseUrl";
 
-/** 「默认项」的可选目标（模型不再有配置级默认：它写在 Agent 定义上） */
-export type DefaultTarget = "defaultImageModel" | "defaultAgent" | "defaultMigrationModel";
+/**
+ * 「默认项」的可选目标。
+ *
+ * 前三个是 id 型默认值（从列表里挑一个）；后两个是**中断策略**（固定两档），
+ * 改完需要重建会话才生效（宿主按 `sessionOptionsChanged` 判）。
+ */
+export type DefaultTarget =
+  | "defaultImageModel"
+  | "defaultAgent"
+  | "defaultMigrationModel"
+  | "abortedMessageStrategy"
+  | "abortedToolRoundStrategy";
 
 /** 向导步骤（判别联合，逐步收敛） */
 export type WizardStep =
@@ -67,6 +77,11 @@ export interface WizardCloseResult {
   mcpChanged?: boolean;
   /** 是否有 Agent 定义改动（宿主据此重建会话，让新定义生效） */
   agentsChanged?: boolean;
+  /**
+   * 是否有「建 Agent 时才读的配置」改动（目前是中断策略）——宿主据此重建会话，
+   * 否则用户改完策略得自己再敲一次 `/reload` 才生效。
+   */
+  sessionOptionsChanged?: boolean;
 }
 
 /** MCP 配置快照：全局 + 项目两个作用域 */

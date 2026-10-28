@@ -20,8 +20,8 @@ export interface WizardEngine extends ReturnType<typeof createFieldBuilders> {
   activeStep: WizardStep;
   snapshot: () => WizardCloseResult;
   go: (next: WizardStep) => void;
-  commit: (next: AppConfig, message: string, changedEndpointIds?: string[], after?: WizardStep | "stay") => Promise<void>;
-  persist: (next: AppConfig, message: string, changedEndpointIds?: string[]) => Promise<string | null>;
+  commit: (next: AppConfig, message: string, changedEndpointIds?: string[], after?: WizardStep | "stay", sessionOptions?: boolean) => Promise<void>;
+  persist: (next: AppConfig, message: string, changedEndpointIds?: string[], sessionOptions?: boolean) => Promise<string | null>;
   persistMcp: (scope: McpScope, next: McpConfig, message: string) => Promise<string | null>;
   saveAgent: (kind: AgentKind, def: AgentDefinition, message: string) => Promise<string | null>;
   deleteAgent: (kind: AgentKind, id: string) => Promise<string | null>;
@@ -58,6 +58,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     };
     if (acc.current.mcpChanged) result.mcpChanged = true;
     if (acc.current.agentsChanged) result.agentsChanged = true;
+    if (acc.current.sessionOptionsChanged) result.sessionOptionsChanged = true;
     return result;
   };
 
@@ -75,12 +76,13 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
    */
   const markDirty = (
     message: string,
-    flags: { changedEndpointIds?: string[]; mcp?: boolean; agents?: boolean } = {},
+    flags: { changedEndpointIds?: string[]; mcp?: boolean; agents?: boolean; sessionOptions?: boolean } = {},
   ) => {
     acc.current.dirty = true;
     acc.current.summary.push(message);
     if (flags.mcp) acc.current.mcpChanged = true;
     if (flags.agents) acc.current.agentsChanged = true;
+    if (flags.sessionOptions) acc.current.sessionOptionsChanged = true;
     for (const id of flags.changedEndpointIds ?? []) {
       if (!acc.current.changedEndpointIds.includes(id)) acc.current.changedEndpointIds.push(id);
     }
@@ -88,19 +90,29 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   /** 记录一次成功写盘：更新配置快照、累加变更、刷新提示 */
-  const record = (next: AppConfig, message: string, changedEndpointIds: string[] = []) => {
+  const record = (
+    next: AppConfig,
+    message: string,
+    changedEndpointIds: string[] = [],
+    sessionOptions = false,
+  ) => {
     setConfig(next);
-    markDirty(message, { changedEndpointIds });
+    markDirty(message, { changedEndpointIds, sessionOptions });
   };
 
   /** 写盘 + 记录变更，**原地停留**；返回错误信息或 `null`（供详情屏字段提交使用） */
-  const persist = async (next: AppConfig, message: string, changedEndpointIds: string[] = []): Promise<string | null> => {
+  const persist = async (
+    next: AppConfig,
+    message: string,
+    changedEndpointIds: string[] = [],
+    sessionOptions = false,
+  ): Promise<string | null> => {
     try {
       await props.onSave(next);
     } catch (cause: any) {
       return t("wiz.writeConfigFailed", { error: cause?.message ?? cause });
     }
-    record(next, message, changedEndpointIds);
+    record(next, message, changedEndpointIds, sessionOptions);
     return null;
   };
 
@@ -164,9 +176,10 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     message: string,
     changedEndpointIds: string[] = [],
     after: WizardStep | "stay" = { kind: "menu" },
+    sessionOptions = false,
   ) => {
     setError(null);
-    const failure = await persist(next, message, changedEndpointIds);
+    const failure = await persist(next, message, changedEndpointIds, sessionOptions);
     if (failure) {
       setError(failure);
       return;

@@ -250,6 +250,16 @@ export const zh: Record<string, string> = {
   "wiz.defaults.missingKey": "缺 API Key",
   "wiz.defaults.itemHint": "{endpoint} · {state}",
   "wiz.defaults.updated": "{label} → {value}",
+  "wiz.defaults.strategyMessage": "中断时保留已输出内容",
+  "wiz.defaults.strategyToolRound": "中断的工具轮次",
+  "wiz.defaults.strategySubtitle": "选中后即时写盘，关闭配置中心时重建会话生效",
+  "wiz.strategy.keep": "保留（keep）",
+  "wiz.strategy.drop": "丢弃（drop）",
+  "wiz.strategy.fill": "整轮保留（fill）",
+  "wiz.strategy.keepHint": "中断后半截思考与回答留在上下文里，模型能接着往下说",
+  "wiz.strategy.dropHint": "中断后那半截不进上下文（core 库级默认）",
+  "wiz.strategy.fillHint": "恢复整轮并给未完成的结果补原因，tool_calls 与结果必须配对",
+  "wiz.strategy.toolDropHint": "整轮出列：assistant 与其工具结果都不发给模型",
 
   // ---------- 端点列表 / 新建端点 ----------
   "ui.next": "下一步",

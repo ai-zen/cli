@@ -35,6 +35,8 @@ import {
   resolveCredential,
   setAgentPermission,
   setAgentPrompt,
+  setAbortedMessageStrategy,
+  setAbortedToolRoundStrategy,
   setDefaultAgent,
   setDefaultImageModel,
   setDefaultMigrationModel,
@@ -235,6 +237,20 @@ describe("config-editor / 通用改写（配置中心）", () => {
     expect(setDefaultImageModel(config, undefined).defaultImageModel).toBeUndefined();
     expect(setDefaultMigrationModel(config, "glm-5.1").defaultMigrationModel).toBe("glm-5.1");
     expect(setMaxToolOutput(config, 4096).maxToolOutput).toBe(4096);
+  });
+
+  it("中断策略：两个 setter 各自不可变改写，不碰别的字段", () => {
+    const config = makeConfig();
+    const kept = setAbortedMessageStrategy(config, "drop");
+    expect(kept.abortedMessageStrategy).toBe("drop");
+    expect(kept.abortedToolRoundStrategy).toBeUndefined();
+    // 原对象不变（配置快照可能被 Scope 持有）
+    expect(config.abortedMessageStrategy).toBeUndefined();
+
+    const rounds = setAbortedToolRoundStrategy(config, "drop");
+    expect(rounds.abortedToolRoundStrategy).toBe("drop");
+    expect(rounds.abortedMessageStrategy).toBeUndefined();
+    expect(rounds.models).toBe(config.models);
   });
 });
 

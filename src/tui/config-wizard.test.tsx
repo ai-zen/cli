@@ -777,8 +777,68 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     unmount();
   });
 
-  it("工具输出上限：写入正整数", async () => {
+  it("默认项：中断策略可切（keep → drop），并标记「建 Agent 时读的配置」已改", async () => {
     const onSave = makeOnSave();
+    const onClose = vi.fn();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard config={makeConfig()} onSave={onSave} onClose={onClose} />,
+    );
+    await tick();
+    // 菜单第 6 项即「默认项」
+    for (let i = 0; i < 5; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    // 默认项列表里能看到两项策略及其当前值（配置没写时按出厂 keep / fill 展示）
+    expect(lastFrame()).toContain("中断时保留已输出内容");
+    expect(lastFrame()).toContain("保留（keep）");
+    expect(lastFrame()).toContain("整轮保留（fill）");
+
+    for (let i = 0; i < 3; i += 1) {
+      stdin.write(DOWN); // → 中断时保留已输出内容（前三项是图片模型 / Agent / 迁移模型）
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    stdin.write(DOWN); // keep → drop
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0]![0].abortedMessageStrategy).toBe("drop");
+
+    stdin.write(ESC); // 回默认项
+    await tick();
+    stdin.write(ESC); // 回菜单
+    await tick();
+    stdin.write(ESC); // 关闭
+    await tick();
+    // 策略在建 Agent 时才读：必须让宿主知道「该重建会话」，否则用户得自己 /reload
+    expect(onClose.mock.calls[0]![0].sessionOptionsChanged).toBe(true);
+    unmount();
+  });
+
+  it("默认项：中断的工具轮次可切（fill → drop），两档都不提供「不设置」", async () => {
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard config={makeConfig()} initialStep={{ kind: "pick-default", target: "abortedToolRoundStrategy" }} onSave={onSave} onClose={noop} />,
+    );
+    await tick();
+    expect(lastFrame()).not.toContain("未设置");
+    stdin.write(DOWN); // fill → drop
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(onSave.mock.calls[0]![0].abortedToolRoundStrategy).toBe("drop");
+    unmount();
+  });
+
+  it("工具输出上限：写入正整数", async () => {    const onSave = makeOnSave();
     const { stdin, unmount } = render(
       <ConfigWizard config={makeConfig()} initialStep={{ kind: "max-tool-output" }} onSave={onSave} onClose={noop} />,
     );

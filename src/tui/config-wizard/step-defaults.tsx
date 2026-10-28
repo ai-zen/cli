@@ -1,11 +1,30 @@
 // 由 src/tui/config-wizard.tsx 拆分而来 —— 默认项子菜单 / 选择默认值
 import { ReactNode } from "react";
 import { SelectItem } from "../components.js";
-import { findEndpoint, findModel, isApiKeySet, setDefaultAgent, setDefaultImageModel, setDefaultMigrationModel } from "../../config-editor.js";
+import {
+  findEndpoint,
+  findModel,
+  isApiKeySet,
+  setAbortedMessageStrategy,
+  setAbortedToolRoundStrategy,
+  setDefaultAgent,
+  setDefaultImageModel,
+  setDefaultMigrationModel,
+  type AbortedMessageStrategyValue,
+  type AbortedToolRoundStrategyValue,
+} from "../../config-editor.js";
 import { DefaultTarget } from "./types.js";
 import { WizardContext } from "./engine.js";
 import { ListStep } from "./list.js";
 import { t } from "../../i18n/index.js";
+
+/** 策略值的展示名（固定两档，直接按值取词条） */
+function strategyLabel(value: string): string {
+  if (value === "keep") return t("wiz.strategy.keep");
+  if (value === "drop") return t("wiz.strategy.drop");
+  if (value === "fill") return t("wiz.strategy.fill");
+  return value;
+}
 
 export function renderDefaultsStep(ctx: WizardContext): ReactNode {
   const { config, store, activeStep, go, commit, cols, rows, props } = ctx;
@@ -23,6 +42,17 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
         label: t("wiz.defaults.migrationModel"),
         value: "defaultMigrationModel",
         hint: findModel(config, config.defaultMigrationModel)?.name ?? config.defaultMigrationModel ?? t("common.unsetPlain"),
+      },
+      // 中断策略：改的是「建 Agent 时才读的配置」，关向导时宿主会重建会话让它生效
+      {
+        label: t("wiz.defaults.strategyMessage"),
+        value: "abortedMessageStrategy",
+        hint: strategyLabel(config.abortedMessageStrategy ?? "keep"),
+      },
+      {
+        label: t("wiz.defaults.strategyToolRound"),
+        value: "abortedToolRoundStrategy",
+        hint: strategyLabel(config.abortedToolRoundStrategy ?? "fill"),
       },
     ];
     return (
@@ -44,7 +74,25 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
     const target = activeStep.target;
     let title = t("wiz.defaults.title");
     let items: SelectItem<string>[] = [];
-    if (target === "defaultMigrationModel") {
+    // 策略是**固定两档**，没有「不设置」这一项（它们总是有值：配置里写着的就是运行时用的）
+    const strategyTarget = target === "abortedMessageStrategy" || target === "abortedToolRoundStrategy";
+    if (target === "abortedMessageStrategy") {
+      title = t("wiz.defaults.strategyMessage");
+      const current = config.abortedMessageStrategy ?? "keep";
+      items = (["keep", "drop"] as AbortedMessageStrategyValue[]).map((value) => ({
+        label: `${strategyLabel(value)}${value === current ? t("common.current") : ""}`,
+        value,
+        hint: value === "keep" ? t("wiz.strategy.keepHint") : t("wiz.strategy.dropHint"),
+      }));
+    } else if (target === "abortedToolRoundStrategy") {
+      title = t("wiz.defaults.strategyToolRound");
+      const current = config.abortedToolRoundStrategy ?? "fill";
+      items = (["fill", "drop"] as AbortedToolRoundStrategyValue[]).map((value) => ({
+        label: `${strategyLabel(value)}${value === current ? t("common.current") : ""}`,
+        value,
+        hint: value === "fill" ? t("wiz.strategy.fillHint") : t("wiz.strategy.toolDropHint"),
+      }));
+    } else if (target === "defaultMigrationModel") {
       title = t("wiz.defaults.migrationModel");
       items = config.models.map((model) => {
         const endpoint = findEndpoint(config, model.endpointId);
@@ -71,15 +119,37 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
         : (props.agents ?? []);
       items = source.map((agent) => ({ label: agent.name, value: agent.id, hint: agent.id }));
     }
-    items = [...items, { label: t("common.unset"), value: "" }];
+    // 策略目标不提供「不设置」：两档必选其一
+    if (!strategyTarget) items = [...items, { label: t("common.unset"), value: "" }];
     return (
       <ListStep
         columns={cols}
         rows={rows}
         title={title}
-        subtitle={t("wiz.defaults.pickSubtitle")}
+        subtitle={strategyTarget ? t("wiz.defaults.strategySubtitle") : t("wiz.defaults.pickSubtitle")}
         items={items}
         onPick={(value) => {
+          if (target === "abortedMessageStrategy") {
+            void commit(
+              setAbortedMessageStrategy(config, value as AbortedMessageStrategyValue),
+              t("wiz.defaults.updated", { label: t("wiz.defaults.strategyMessage"), value: strategyLabel(value) }),
+              [],
+              { kind: "defaults" },
+              // 策略在建 Agent 时才读 → 标记会话选项已改，关向导时宿主重建会话
+              true,
+            );
+            return;
+          }
+          if (target === "abortedToolRoundStrategy") {
+            void commit(
+              setAbortedToolRoundStrategy(config, value as AbortedToolRoundStrategyValue),
+              t("wiz.defaults.updated", { label: t("wiz.defaults.strategyToolRound"), value: strategyLabel(value) }),
+              [],
+              { kind: "defaults" },
+              true,
+            );
+            return;
+          }
           const id = value || undefined;
           const label = value || t("common.unsetPlain");
           if (target === "defaultMigrationModel")

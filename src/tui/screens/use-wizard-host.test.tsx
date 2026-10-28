@@ -71,6 +71,10 @@ function Probe({ hasSession }: { hasSession: boolean }) {
     if (char === "d") {
       w.closeWizard({ dirty: true, summary: [], changedEndpointIds: ["e9"], mcpChanged: false });
     }
+    if (char === "s") {
+      // 只改了中断策略：端点没动，但建 Agent 时才读的配置变了 → 也要重建会话
+      w.closeWizard({ dirty: true, summary: [], changedEndpointIds: [], sessionOptionsChanged: true });
+    }
     if (char === "n") {
       w.closeWizard({ dirty: false, summary: [], changedEndpointIds: [] });
     }
@@ -171,6 +175,15 @@ describe("useWizardHost", () => {
     const p = await probe();
     await p.press("o");
     await p.press("c");
+    expect(calls.reloaded).toBe(1);
+    expect(calls.restarted).toBe(0);
+    p.unmount();
+  });
+
+  it("只改了中断策略（建 Agent 时读的配置）→ 也重建会话", async () => {
+    const p = await probe();
+    await p.press("o");
+    await p.press("s");
     expect(calls.reloaded).toBe(1);
     expect(calls.restarted).toBe(0);
     p.unmount();

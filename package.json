@@ -33,7 +33,7 @@
   "license": "MIT",
   "dependencies": {
     "@ai-zen/agents-core": "^4.5.3",
-    "@ai-zen/agents-sdk": "1.0.0-alpha.21",
+    "@ai-zen/agents-sdk": "1.0.0-alpha.22",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dayjs": "^1.11.21",
     "highlight.js": "^11.12.0",

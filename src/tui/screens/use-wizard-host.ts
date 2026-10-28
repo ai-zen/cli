@@ -25,7 +25,7 @@ export interface WizardHostDeps {
   hasSession: () => boolean;
   /** 会话还没建好就改了配置 → 只能重启进程让新配置生效 */
   restart: () => void;
-  /** 改了当前端点 / MCP / Agent 定义 → 重载会话（消息保留） */
+  /** 改了当前端点 / MCP / Agent 定义 / 中断策略 → 重载会话（消息保留） */
   reloadSession: () => void;
 }
 
@@ -122,11 +122,13 @@ export function useWizardHost({
       restart();
       return;
     }
-    // 只有「当前端点 / MCP / Agent 定义」变了才需要重建会话；改的是别的模型、
-    // 别的端点的参数，当前会话不受影响，不该白重连一次。
+    // 只有「当前端点 / MCP / Agent 定义 / 建 Agent 时才读的配置（中断策略）」变了
+    // 才需要重建会话；改的是别的模型、别的端点的参数，当前会话不受影响，不该白重连一次。
     const endpointChanged =
       !!currentEndpointRef.current && result.changedEndpointIds.includes(currentEndpointRef.current);
-    if (endpointChanged || result.mcpChanged || result.agentsChanged) reloadSession();
+    if (endpointChanged || result.mcpChanged || result.agentsChanged || result.sessionOptionsChanged) {
+      reloadSession();
+    }
   };
 
   return {

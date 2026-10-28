@@ -319,6 +319,31 @@ export function setDefaultMigrationModel(config: AppConfig, modelId: string | un
   return { ...config, defaultMigrationModel: modelId };
 }
 
+/** 中断策略的取值（从 SDK 的 `AppConfig` 派生，不另外维护一份字面量联合） */
+export type AbortedMessageStrategyValue = NonNullable<AppConfig["abortedMessageStrategy"]>;
+export type AbortedToolRoundStrategyValue = NonNullable<AppConfig["abortedToolRoundStrategy"]>;
+
+/**
+ * 被中断的 assistant 消息（已输出的思考 / 正文）如何处置：`keep` 保留 / `drop` 丢弃。
+ *
+ * 只是config 层改写：真正生效点在 `createAgent()`（SDK 读 `scope.config`），
+ * 所以改完要重建会话（向导关闭时宿主会自动 `/reload` 一次）。
+ */
+export function setAbortedMessageStrategy(
+  config: AppConfig,
+  strategy: AbortedMessageStrategyValue,
+): AppConfig {
+  return { ...config, abortedMessageStrategy: strategy };
+}
+
+/** 被中断 / 结果不完整的工具轮次如何归一：`fill` 整轮保留 / `drop` 整轮出列 */
+export function setAbortedToolRoundStrategy(
+  config: AppConfig,
+  strategy: AbortedToolRoundStrategyValue,
+): AppConfig {
+  return { ...config, abortedToolRoundStrategy: strategy };
+}
+
 /** 设置工具输出上限（字符数） */
 export function setMaxToolOutput(config: AppConfig, value: number): AppConfig {
   return { ...config, maxToolOutput: value };
