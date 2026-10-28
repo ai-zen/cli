@@ -180,12 +180,14 @@ describe("Chat 集成（拆分前的护栏）", () => {
 
   // ==================== Agent 栏目（主 / 子 Agent 切换）====================
 
-  /** 造一个子 Agent 视图（只需 messages，组件只读它） */
-  const addSubAgent = (name: string, content: string) => {
+  /** 造一个子 Agent 视图（只需 messages 与状态，组件只读这些） */
+  const addSubAgent = (content: string) => {
+    const index = created.session.subAgents.length + 1;
     created.session.subAgents.push({
-      id: `sub-${created.session.subAgents.length + 1}`,
-      name,
-      agent: { messages: [{ id: `sub-${name}`, role: "assistant", content }] },
+      id: `sub-${index}`,
+      index,
+      status: "done",
+      agent: { messages: [{ id: `sub-${index}`, role: "assistant", content }] },
     });
   };
   /** 触发一帧重绘（不走输入框：敲字符会让「输入为空」的前提失效） */
@@ -194,19 +196,19 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await flush();
   };
 
-  it("有子 Agent 时出现栏目（主 AGENT + 各子 Agent）", async () => {
+  it("有子 Agent 时出现栏目（主AGENT + 子AGENT1/2）", async () => {
     const { lastFrame, unmount } = mount();
     await flush();
     // 没有子 Agent 时整条栏目不存在
-    expect(lastFrame() ?? "").not.toContain("主 AGENT");
+    expect(lastFrame() ?? "").not.toContain("主AGENT");
 
-    addSubAgent("总结子任务", "子结论");
-    addSubAgent("code-review", "审查结论");
+    addSubAgent("子结论");
+    addSubAgent("审查结论");
     await repaint();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("主 AGENT");
-    expect(frame).toContain("总结子任务");
-    expect(frame).toContain("code-review");
+    expect(frame).toContain("主AGENT");
+    expect(frame).toContain("子AGENT1");
+    expect(frame).toContain("子AGENT2");
     unmount();
   });
 
@@ -214,7 +216,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
     created.session.messages.push({ id: "m1", role: "user", content: "主 Agent 的提问" });
-    addSubAgent("总结子任务", "子 Agent 的结论");
+    addSubAgent("子 Agent 的结论");
     await repaint();
     expect(lastFrame() ?? "").toContain("主 Agent 的提问");
 
@@ -243,7 +245,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
     created.session.messages.push({ id: "m1", role: "user", content: "主 Agent 的提问" });
-    addSubAgent("总结子任务", "子 Agent 的结论");
+    addSubAgent("子 Agent 的结论");
     await repaint();
 
     stdin.write("abc");
@@ -260,7 +262,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
   it("发送消息时自动切回主 Agent 视图（否则看不到自己的提问）", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
-    addSubAgent("总结子任务", "子 Agent 的结论");
+    addSubAgent("子 Agent 的结论");
     await repaint();
     stdin.write("\u001b[C");
     await flush();

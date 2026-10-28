@@ -285,34 +285,28 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
     };
   };
 
-  it("按出现顺序收集，展示名取工具名或 skill id", async () => {
+  it("按出现顺序编号（标签就叫「子AGENT1/2」，不看工具名）", async () => {
     const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
     const agent = harness.agents.at(-1)!;
     expect(session.subAgents).toEqual([]);
 
-    // 1) SubAgent 委派：工具名就是它的 function.name
+    // 同一个委派工具连开两次（现实中就是这么撞名的）——靠序号区分
     agent.events.emit("sub-agent-start", {
       subAgent: makeSubAgent(),
       toolCallContext: { tool_call: { function: { name: "sub_agent_default" } } },
     });
-    // 2) skill 子 Agent：`call_skill_sub_agent` 本身无信息量，取参数里的 skill_id
     agent.events.emit("sub-agent-start", {
       subAgent: makeSubAgent(),
-      toolCallContext: {
-        tool_call: { function: { name: "call_skill_sub_agent" } },
-        parsedArgs: { skill_id: "code-review" },
-      },
+      toolCallContext: { tool_call: { function: { name: "sub_agent_default" } } },
     });
 
-    expect(session.subAgents.map((view) => view.name)).toEqual([
-      "sub_agent_default",
-      "code-review",
-    ]);
-    // 展示名可能重复（同名 skill 调两次），id 必须唯一
+    expect(session.subAgents.map((view) => view.index)).toEqual([1, 2]);
     expect(new Set(session.subAgents.map((view) => view.id)).size).toBe(2);
+    // 刚开跑：都在运行中
+    expect(session.subAgents.map((view) => view.status)).toEqual(["running", "running"]);
   });
 
-  it("委派结束后仍保留实例（栏目可回看子 Agent 自己的 messages）", async () => {
+  it("委派结束后仍保留实例且状态转 done（栏目可回看子 Agent 自己的 messages）", async () => {
     const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
     const agent = harness.agents.at(-1)!;
     const subAgent = makeSubAgent();
@@ -325,5 +319,38 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
     expect(session.subAgents).toHaveLength(1);
     expect(session.subAgents[0]!.agent).toBe(subAgent);
     expect(session.subAgents[0]!.agent.messages[0]!.content).toBe("子 Agent 的结论");
+    expect(session.subAgents[0]!.status).toBe("done");
+  });
+
+  it("子 Agent 出错 → failed，且不会被随后的 end 覆盖成 done", async () => {
+    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const agent = harness.agents.at(-1)!;
+    const subAgent = makeSubAgent();
+    const toolCallContext = { tool_call: { function: { name: "sub_agent_default" } } };
+
+    agent.events.emit("sub-agent-start", { subAgent, toolCallContext });
+    // core 的 onSubAgentEnd 在 finally 里分发：出错后 end 照样会来
+    subAgent.events.emit("error", new Error("boom"));
+    agent.events.emit("sub-agent-end", { subAgent, toolCallContext });
+
+    expect(session.subAgents[0]!.status).toBe("failed");
+  });
+
+  it("子 Agent 的进度不进通知栏（只更新状态，避免整帧高度跳动）", async () => {
+    const notices: string[] = [];
+    const session = await ChatSession.create(
+      {},
+      { onChange: () => {}, onNotice: (text) => notices.push(text) },
+    );
+    const agent = harness.agents.at(-1)!;
+    const subAgent = makeSubAgent();
+    const toolCallContext = { tool_call: { function: { name: "sub_agent_default" } } };
+
+    agent.events.emit("sub-agent-start", { subAgent, toolCallContext });
+    subAgent.events.emit("chunk-parsed", {}, { choices: [{ delta: { content: "干活中" } }] });
+    agent.events.emit("sub-agent-end", { subAgent, toolCallContext });
+
+    expect(notices).toEqual([]);
+    expect(session.subAgents[0]!.status).toBe("done");
   });
 });

@@ -49,21 +49,6 @@ class PhasePlugin implements AgentPlugin {
   }
 }
 
-/**
- * 子 Agent 的展示名。
- *
- * `call_skill_sub_agent` 本身没有信息量（它只是委派工具的固定名字），能拿到参数里的
- * `skill_id` 就用 skill 名；其余展示工具名（SubAgent 的工具名就是它的 function.name）。
- */
-function subAgentLabel(toolCallContext: SubAgentContext["toolCallContext"]): string {
-  const parsed = toolCallContext as { parsedArgs?: { skill_id?: unknown } };
-  const skillId = parsed.parsedArgs?.skill_id;
-  if (typeof skillId === "string" && skillId) return skillId;
-  const toolName = toolCallContext?.tool_call?.function?.name;
-  if (toolName && toolName !== "call_skill_sub_agent") return toolName;
-  return t("chat.subagentLabel");
-}
-
 /** 会话 → UI 的对外信号 */
 export interface ChatSessionNotifier {
   /** 转录可能已变化（内容以 `agent.messages` 为准）；`immediate=true` 表示应立即上屏 */
@@ -71,6 +56,14 @@ export interface ChatSessionNotifier {
   /** 系统级提示（notice / error），走独立栏位，绝不进 messages */
   onNotice(text: string, tone: "info" | "error"): void;
 }
+
+/**
+ * 子 Agent 的执行状态。
+ *
+ * 内联在 Agent 栏目的标签上（`●` / `✓` / `✖`），**不往通知栏推**：通知栏为进度多出
+ * 一行，整帧高度就会跟着跳（多行通知踩过同一坑）。
+ */
+export type SubAgentStatus = "running" | "done" | "failed";
 
 /**
  * 子 Agent 视图：委派期间收集，供对话屏的 Agent 栏目切换查看。
@@ -83,12 +76,14 @@ export interface ChatSessionNotifier {
  * 不再被引用，栏目自然清空——这是预期行为，不另做清理。
  */
 export interface SubAgentView {
-  /** 稳定 id（React key / 选中态标识；展示名可能重复，不能当 key） */
+  /** 稳定 id（React key / 选中态标识） */
   id: string;
-  /** 展示名：skill id 优先，否则 SubAgent 工具名 */
-  name: string;
+  /** 出现序号（从 1 起）：栏目标签直接叫「子AGENT1」，序号就是展示的一部分 */
+  index: number;
   /** 子 Agent 实例：`.messages` 即它自己的完整对话 */
   agent: CoreAgent;
+  /** 执行状态（渲染期读，故设为可变字段） */
+  status: SubAgentStatus;
 }
 
 export interface ChatSessionOptions {
@@ -487,9 +482,17 @@ export class ChatSession {
       notify(true);
     };
 
-    const onSubStart = ({ subAgent, toolCallContext }: SubAgentContext) => {
-      const name = subAgentLabel(toolCallContext);
-      this.notifier.onNotice(t("chat.subagentRunning", { name }), "info");
+    const onSubStart = ({ subAgent }: SubAgentContext) => {
+      // 执行状态内联到栏目标签（`●` / `✓` / `✖`），**不再推「子任务运行中」通知**：
+      // 那种通知让通知栏凭空多出一行，整帧高度跟着跳。
+      const index = ++this.subAgentSeq;
+      const view: SubAgentView = {
+        id: `sub-${index}`,
+        index,
+        agent: subAgent,
+        status: "running",
+      };
+      this.subAgentViews.push(view);
       // 记进 Agent 栏目：实例在委派结束后仍保留 messages，所以这里存引用即可随时回看。
       // 不看 `sub_agent_*` 与 `call_skill_sub_agent` 的差别——两条路径现在都走 core 的
       // AgentToolLazy，全部会在 onSubAgentStart 出现。
@@ -502,15 +505,18 @@ export class ChatSession {
       // `buildAgent(...)`），随本次 run 结束回收，监听器跟着走。别为此再加 off。
       subAgent.events.on("open", onSubOpen);
       subAgent.events.on("chunk-parsed", onSubChunk);
-      subAgent.events.on("error", onError);
-      this.subAgentViews.push({ id: `sub-${++this.subAgentSeq}`, name, agent: subAgent });
+      // 出错要落到标签上（✖）；错误信息仍送通知栏——那是错误，不是进度
+      subAgent.events.on("error", (error: any) => {
+        view.status = "failed";
+        this.notifier.onNotice(error?.message ?? String(error), "error");
+        notify(true);
+      });
       notify(true);
     };
-    const onSubEnd = ({ toolCallContext }: SubAgentContext) => {
-      const name = subAgentLabel(toolCallContext);
-      // 子 Agent 的用量由 core 在委派边界钉到父侧 tool 消息的 subAgentUsage 上，
-      // 故此处只需提示，累计经 sumUsage(agent.messages) 自然包含
-      this.notifier.onNotice(t("chat.subagentDone", { name }), "info");
+    const onSubEnd = ({ subAgent }: SubAgentContext) => {
+      // 只把「还在跑」的置为完成：失败已由 error 监听标成 failed，不能被这里覆盖
+      const view = this.subAgentViews.find((item) => item.agent === subAgent);
+      if (view && view.status === "running") view.status = "done";
       notify(true);
     };
 

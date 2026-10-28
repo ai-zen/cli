@@ -12,11 +12,27 @@ import { theme } from "../theme.js";
 
 /** 一个可切换的 Agent 条目 */
 export interface AgentTab {
-  /** 稳定 id：`"main"` 或子 Agent 视图 id（展示名可能重复，不能当 key） */
+  /** 稳定 id：`"main"` 或子 Agent 视图 id */
   id: string;
-  /** 展示名（主 Agent 用 `agentTabs.main` 词条，子 Agent 用 skill id / 工具名） */
+  /** 展示名（主 Agent 用 `agentTabs.main`，子 Agent 用 `agentTabs.sub` 带序号） */
   label: string;
+  /** 执行状态；undefined = 不画标记（主 Agent 的忙碌由输入行的 Spinner 表示） */
+  status?: AgentTabStatus;
 }
+
+/** 子 Agent 的执行状态 */
+export type AgentTabStatus = "running" | "done" | "failed";
+
+/**
+ * 状态字符 —— 内联在标签尾部。
+ *
+ * 不用通知栏报「子任务运行中 / 已完成」：通知栏多一行，整帧高度就跳一下。
+ */
+export const AGENT_STATUS_MARK: Record<AgentTabStatus, string> = {
+  running: "●",
+  done: "✓",
+  failed: "✖",
+};
 
 export interface AgentTabsProps {
   tabs: readonly AgentTab[];
@@ -49,10 +65,13 @@ export function AgentTabs({ tabs, activeId }: AgentTabsProps) {
       <Text wrap="truncate">
         {tabs.map((tab, index) => {
           const active = tab.id === activeId;
+          // 状态字符紧贴在标签尾部（不加空格）：标签本身已经够紧凑，
+          // 而执行状态属于这个 Agent 的一部分，不该另占地方
+          const mark = tab.status ? AGENT_STATUS_MARK[tab.status] : "";
           return (
             <Text key={tab.id} {...agentTabStyle(active)}>
-              {index === 0 ? " " : "  "}
-              {` ${tab.label} `}
+              {index === 0 ? "" : "  "}
+              {`${tab.label}${mark}`}
             </Text>
           );
         })}

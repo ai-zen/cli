@@ -722,7 +722,11 @@ export function Chat(props: ChatScreenProps) {
     subAgents.length > 0
       ? [
           { id: "main", label: t("agentTabs.main") },
-          ...subAgents.map((item) => ({ id: item.id, label: item.name })),
+          ...subAgents.map((item) => ({
+            id: item.id,
+            label: t("agentTabs.sub", { n: item.index }),
+            status: item.status,
+          })),
         ]
       : [];
   const activeTabId = activeSub ? activeSub.id : "main";
