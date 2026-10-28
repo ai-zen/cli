@@ -148,6 +148,7 @@ export const en: Record<string, string> = {
   "chat.configReadFailed": "Failed to read the config: {error}",
   "chat.modelNoEndpoint": "Model {id} has no usable endpoint bound — check the config with /config",
   "chat.configUpdated": "Config updated: {line}",
+  "chat.configUpdatedMulti": "Config updated:\n{lines}",
   "chat.sessionReloadFailed": "Failed to rebuild the session: {error}",
   "chat.bootFailed": "✖ Cannot start the conversation: {error}",
   "chat.bootHint": "Press k to open the configuration center (set the API key / endpoint URL) · Enter to go back",

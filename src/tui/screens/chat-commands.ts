@@ -486,6 +486,10 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
       }
       try {
         const path = await session.migrate(chosen);
+        // 迁移用 `prune` 策略把 messages 剔除到「系统提示 + 交接断点」（仅 1~2 条），
+        // 转录显示起点必须跟着归零，否则 `messages.slice(transcriptFrom)` 恒为空——
+        // 迁移成功、上下文有内容，但屏幕上什么都没有（同 `/new` 分支的做法）。
+        clearTranscript();
         push(t("cmd.migrate.done", { path }));
       } catch (error: any) {
         push(t("cmd.migrate.failed", { error: error?.message ?? error }), "error");

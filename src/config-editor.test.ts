@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type { AppConfig } from "@ai-zen/agents-sdk";
+import type { AppConfig, TokenThresholds } from "@ai-zen/agents-sdk";
 import type { McpConfig } from "./config.js";
 import {
   addEndpoint,
@@ -21,6 +21,7 @@ import {
   kvSummary,
   maskApiKey,
   mcpServerIdTaken,
+  mergeTokenThresholds,
   modelsUsingEndpoint,
   parseArgs,
   parseKvInput,
@@ -391,5 +392,34 @@ describe("Agent 定义改写", () => {
     expect(uniqueAgentId([], "Coder")).toBe("coder");
     expect(uniqueAgentId(["coder"], "Coder")).toBe("coder-2");
     expect(uniqueAgentId([], "My Agent")).toBe("my-agent");
+  });
+});
+
+describe("mergeTokenThresholds（阈值不做整对象替换）", () => {
+  it("只改 handoff 时保留 guard", () => {
+    expect(mergeTokenThresholds({ handoff: 100, guard: 200 }, { handoff: 150 })).toEqual({
+      handoff: 150,
+      guard: 200,
+    });
+  });
+
+  it("只改 guard 时保留 handoff", () => {
+    expect(mergeTokenThresholds({ handoff: 100, guard: 200 }, { guard: 300 })).toEqual({
+      handoff: 100,
+      guard: 300,
+    });
+  });
+
+  it("tokenThresholds 缺失时补默认值（不让 undefined 混进配置）", () => {
+    expect(mergeTokenThresholds(undefined, { guard: 300 })).toEqual({ handoff: 0, guard: 300 });
+  });
+
+  it("保留 SDK 未来新增的未知字段（改一次阈值不能把它清空）", () => {
+    const current = { handoff: 100, guard: 200, compactAt: 90_000 } as unknown as TokenThresholds;
+    expect(mergeTokenThresholds(current, { handoff: 120 })).toEqual({
+      handoff: 120,
+      guard: 200,
+      compactAt: 90_000,
+    });
   });
 });

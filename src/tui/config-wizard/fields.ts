@@ -1,7 +1,7 @@
 import { AgentDefinition, AppConfig, Endpoint, ImageModel, Model, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { McpConfig, McpScope, McpServerEntry } from "../../config.js";
 import { agentKindLabel, agentList, AgentKind, AgentStore } from "../../agents-store.js";
-import { findEndpoint, findModel, formatAgentPermission, formatArgs, getAgentPrompt, kvSummary, maskApiKey, mcpServerIdTaken, parseArgs, parsePermission, PERMISSION_DIMENSIONS, renameMcpServer, setAgentPermission, summarizePermissions, updateAgentDefinition, updateAgentFunction, updateEndpoint, updateImageModel, updateMcpServer, updateModel } from "../../config-editor.js";
+import { findEndpoint, findModel, formatAgentPermission, formatArgs, getAgentPrompt, kvSummary, maskApiKey, mcpServerIdTaken, mergeTokenThresholds, parseArgs, parsePermission, PERMISSION_DIMENSIONS, renameMcpServer, setAgentPermission, summarizePermissions, updateAgentDefinition, updateAgentFunction, updateEndpoint, updateImageModel, updateMcpServer, updateModel } from "../../config-editor.js";
 import { WizardStep, McpSnapshot } from "./types.js";
 import { t } from "../../i18n/index.js";
 import { DetailField } from "./detail.js";
@@ -158,7 +158,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
           // 软线不得越过硬线，否则一启动就被阻断
           if (guard > 0 && Math.floor(n) >= guard) return Promise.resolve(t("err.handoffLessThanGuard"));
           return save(
-            { tokenThresholds: { handoff: Math.floor(n), guard } },
+            { tokenThresholds: mergeTokenThresholds(model.tokenThresholds, { handoff: Math.floor(n) }) },
             t("field.handoffThreshold"),
           );
         },
@@ -175,7 +175,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
           const handoff = model.tokenThresholds?.handoff ?? 0;
           if (Math.floor(n) <= handoff) return Promise.resolve(t("err.guardGreaterThanHandoff"));
           return save(
-            { tokenThresholds: { handoff, guard: Math.floor(n) } },
+            { tokenThresholds: mergeTokenThresholds(model.tokenThresholds, { guard: Math.floor(n) }) },
             t("field.guardThreshold"),
           );
         },

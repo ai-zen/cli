@@ -37,6 +37,7 @@ import { runCommand } from "./chat-commands.js";
 import { describeEffortView } from "../../reasoning-effort.js";
 import { t } from "../../i18n/index.js";
 import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
+import { NoticeBar } from "./notice-bar.js";
 
 // ==================== 对话屏幕 ====================
 
@@ -166,8 +167,12 @@ export function Chat(props: ChatScreenProps) {
   const noticeChannelRef = useRef<NoticeChannel | null>(null);
   if (noticeChannelRef.current == null) noticeChannelRef.current = new NoticeChannel();
   const noticeChannel = noticeChannelRef.current;
-  const [notice, setNotice] = useState<Notice | null>(null);
-  useEffect(() => noticeChannel.subscribe(setNotice), [noticeChannel]);
+  /**
+   * 通知队列（最近的在最后）。通道内部保留最近 `MAX_NOTICE_HISTORY` 条，
+   * 这里只做镜像：单槽 state 会让「同一批摘要 / 分阶段进度」只剩最后一条。
+   */
+  const [notices, setNotices] = useState<readonly Notice[]>(noticeChannel.notices);
+  useEffect(() => noticeChannel.subscribe(setNotices), [noticeChannel]);
 
   /**
    * 重挂载附带的系统提示（如 `/model` 的切换结果）。
@@ -339,7 +344,16 @@ export function Chat(props: ChatScreenProps) {
     setWizardConfig(null);
     setWizardMcp(null);
     setWizardAgentStore(null);
-    for (const line of result.summary) noticeChannel.push(t("chat.configUpdated", { line }));
+    // 同一批摘要合成**一条**（多行）：既能全部显示，又只占通知队列的一个槽位。
+    // 逐条 push 在单槽时代只剩最后一条，在队列时代则会挤掉更早的进度提示。
+    const { summary } = result;
+    if (summary.length === 1) {
+      noticeChannel.push(t("chat.configUpdated", { line: summary[0]! }));
+    } else if (summary.length > 1) {
+      noticeChannel.push(
+        t("chat.configUpdatedMulti", { lines: summary.map((line) => `  · ${line}`).join("\n") }),
+      );
+    }
     if (!result.dirty) return;
 
     if (!sessionRef.current) {
@@ -383,7 +397,7 @@ export function Chat(props: ChatScreenProps) {
   /** 清屏但保留上下文：把显示起点推到当前消息末尾 */
   const clearTranscript = () => {
     setTranscriptFrom(sessionRef.current?.messages.length ?? 0);
-    setNotice(null);
+    noticeChannel.clear();
   };
 
   // ---- 输入编辑（光标感知）----
@@ -496,7 +510,7 @@ export function Chat(props: ChatScreenProps) {
     setInputText("");
     historyIndex.current = -1;
     scrollToBottom();
-    setNotice(null);
+    noticeChannel.clear();
 
     if (!options.asMessage && trimmed.startsWith("/")) {
       // 命令名取首个 token：支持 `/migrate summary`、`/handoff self` 这类带参数的写法
@@ -909,7 +923,7 @@ export function Chat(props: ChatScreenProps) {
     );
   }
 
-  const noticeTextLines = notice ? noticeLines(notice, cols) : [];
+  const noticeTextLines = noticeLines(notices, cols);
 
   // 状态栏：先按当前状态算出「折行后实际几行」，交给布局预留高度（否则窄屏下一旦提示折行，
   // 整帧就会高出一行，把输入框顶出屏幕）。这里用 `viewTop` 状态判断滚动，而不是
@@ -1006,15 +1020,7 @@ export function Chat(props: ChatScreenProps) {
         <PickerOverlay title={pickerState.title} items={pickerState.items} columns={cols} onPick={resolvePicker} />
       ) : (
         <Box flexDirection="column">
-          {noticeTextLines.length > 0 ? (
-            <Box flexDirection="column" paddingX={1}>
-              {noticeTextLines.map((line, i) => (
-                <Text key={i} color={notice?.tone === "error" ? theme.error : theme.dim} wrap="truncate">
-                  {line}
-                </Text>
-              ))}
-            </Box>
-          ) : null}
+          <NoticeBar lines={noticeTextLines} />
           {hints.length > 0 ? <SlashMenu hints={hints} selected={menuIndex} /> : null}
           <Box paddingX={1}>
             <Text color={theme.border} wrap="truncate">

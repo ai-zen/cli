@@ -17,6 +17,7 @@ import type {
   ImageModel,
   Model,
   PermissionPolicy,
+  TokenThresholds,
 } from "@ai-zen/agents-sdk";
 import type { AgentNS } from "@ai-zen/agents-core";
 import { Message } from "@ai-zen/agents-core";
@@ -209,6 +210,20 @@ export function updateModel(config: AppConfig, modelId: string, patch: Partial<M
     ...config,
     models: config.models.map((model) => (model.id === modelId ? { ...model, ...patch } : model)),
   };
+}
+
+/**
+ * 合并写入模型的上下文阈值 —— **不做整对象替换**。
+ *
+ * `updateModel` 是浅合并，所以调用方若直接构造 `{ handoff, guard }`，会把
+ * `tokenThresholds` 里其它字段（SDK 后续新增的压缩阈值 / 额外档位等）一并清空：
+ * 用户在配置中心改一次阈值，那些字段就被静默丢掉。所有阈值写入都必须走这里。
+ */
+export function mergeTokenThresholds(
+  current: TokenThresholds | undefined,
+  patch: Partial<TokenThresholds>,
+): TokenThresholds {
+  return { ...(current ?? { handoff: 0, guard: 0 }), ...patch };
 }
 
 /**

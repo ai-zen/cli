@@ -151,6 +151,8 @@ export const zh: Record<string, string> = {
   "chat.configReadFailed": "读取配置失败：{error}",
   "chat.modelNoEndpoint": "模型 {id} 未绑定可用端点，请用 /config 检查配置",
   "chat.configUpdated": "配置已更新：{line}",
+  // 一次改了多项时合成一条多行通知（逐条 push 会互相覆盖 / 占满通知栏）
+  "chat.configUpdatedMulti": "配置已更新：\n{lines}",
   "chat.sessionReloadFailed": "重建会话失败：{error}",
   "chat.bootFailed": "✖ 无法启动对话：{error}",
   "chat.bootHint": "按 k 打开配置中心（可设置 API Key / 端点地址）· Enter 返回",
