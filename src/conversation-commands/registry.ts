@@ -100,6 +100,28 @@ export function commandBlocksInput(name: string): boolean {
 }
 
 /**
+ * 把原始斜杠输入切成「命令名 + 参数」。
+ *
+ * 两种返回形状共用同一个切分规则（`/migrate  self ` → `migrate` + `["self"]`）：
+ * 命令名由 {@link parseCommandInput} 取，参数由 {@link parseCommandArgs} 取。
+ * 以前命令层自己又 `raw.trim().split(/\s+/).slice(1)` 了一遍 —— 命令名收敛了，
+ * 参数没有，于是「参数怎么切」仍然有两份实现。
+ */
+function splitCommandInput(text: string): string[] {
+  return text.trim().replace(/^\//, "").split(/\s+/);
+}
+
+/**
+ * 从原始输入里取命令参数（首个 token 之后的全部 token）。
+ *
+ * 与 {@link parseCommandInput} 共用 {@link splitCommandInput}，保证「命令名边界」与
+ * 「参数边界」用的是同一把尺子。
+ */
+export function parseCommandArgs(text: string): string[] {
+  return splitCommandInput(text).slice(1);
+}
+
+/**
  * 解析斜杠输入：`/migrate summary` → `{ name: "migrate", args: ["summary"] }`。
  *
  * 命令名的解析**只有这一处**：此前宿主自己也 `slice(1).split(/\s+/)[0]` 了一遍，
@@ -111,9 +133,8 @@ export function commandBlocksInput(name: string): boolean {
  * @returns 非斜杠输入返回 `null`
  */
 export function parseCommandInput(text: string): { name: string; args: string[] } | null {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("/")) return null;
-  const [name, ...args] = trimmed.slice(1).split(/\s+/);
+  if (!text.trim().startsWith("/")) return null;
+  const [name, ...args] = splitCommandInput(text);
   return { name: name.toLowerCase(), args };
 }
 

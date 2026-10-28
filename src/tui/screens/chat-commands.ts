@@ -19,6 +19,7 @@ import { ChatSession, stripCwdNote } from "../chat-session.js";
 import {
   canonicalCommandName,
   matchCommandHints,
+  parseCommandArgs,
   type CommandName,
 } from "../../conversation-commands/registry.js";
 import { conversationRepository, listConversations } from "../../conversation-repository.js";
@@ -573,13 +574,12 @@ const HANDLERS: Record<CommandName, CommandHandler> = {
 
 /** 组装执行上下文：参数解析、通知与选择器的统一入口 */
 function buildContext(name: CommandName, raw: string, host: ChatCommandHost): CommandContext {
-  // 命令参数：首个 token 为命令名，其余为参数（如 `/migrate summary`）
-  const args = raw.trim().split(/\s+/).slice(1);
   return {
     ...host,
     name,
     raw,
-    args,
+    // 参数切分与命令名解析同源（registry 的 splitCommandInput），命令层不再自己切一遍
+    args: parseCommandArgs(raw),
     push: (text, tone = "info") => host.notice(text, tone),
     pick: (title, items) =>
       new Promise<string | null>((resolve) => host.setPickerState({ title, items, resolve })),

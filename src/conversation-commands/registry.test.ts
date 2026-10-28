@@ -8,6 +8,7 @@ import {
   getCommandHints,
   getCommandNames,
   matchCommandHints,
+  parseCommandArgs,
   parseCommandInput,
 } from "./registry.js";
 import { setLocale } from "../i18n/index.js";
@@ -104,6 +105,13 @@ describe("命令名解析与元数据", () => {
     // 非斜杠输入不是命令（宿主会把它当普通消息发出去）
     expect(parseCommandInput("hello")).toBeNull();
     expect(parseCommandInput("")).toBeNull();
+  });
+
+  it("parseCommandArgs 与 parseCommandInput 的 args 同源（同一把尺子）", () => {
+    for (const raw of ["/migrate", "/migrate self", "  /MIGRATE  self ", "/handoff", "/"]) {
+      expect(parseCommandArgs(raw)).toEqual(parseCommandInput(raw)?.args ?? []);
+    }
+    expect(parseCommandArgs("/migrate summary extra")).toEqual(["summary", "extra"]);
   });
 
   it("blocksInput 只有「会调用模型」的命令为真（别名同样生效）", () => {
