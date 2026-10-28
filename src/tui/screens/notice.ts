@@ -50,9 +50,13 @@ export class NoticeChannel {
   private queue: Notice[] = [];
   private readonly listeners = new Set<NoticeListener>();
 
-  /** 当前通知（最近的在最后）；组件可用它做 `useState` 的初值 */
+  /** 当前通知（最近的在最后）；组件用它做 `useState` 的初值。
+   *
+   * 返回**副本**：`readonly` 只在编译期生效，直接交给外部等于把内部队列的引用
+   * 泄出去（对方一次 `push` 就能绕开 `MAX_NOTICE_HISTORY`）。
+   */
   get notices(): readonly Notice[] {
-    return this.queue;
+    return [...this.queue];
   }
 
   /** 推入一条通知；空文本直接忽略（调用方常把错误消息直接透传进来） */
@@ -116,7 +120,7 @@ export function noticeLines(notices: readonly Notice[], columns: number): Notice
     total -= blocks[start]!.length;
     start += 1;
   }
-  const kept = blocks.slice(start).flat();
-  // 兜底：只剩一条也放不下时（单条已被 noticeBlockLines 封顶，正常走不到），保尾部
-  return kept.length > MAX_NOTICE_LINES ? kept.slice(kept.length - MAX_NOTICE_LINES) : kept;
+  // 单条已被 `noticeBlockLines` 封顶到 MAX_NOTICE_LINES，而上面的循环保证至少留下最后一条，
+  // 所以合计行数必然 ≤ 上限——不需要再截一次
+  return blocks.slice(start).flat();
 }

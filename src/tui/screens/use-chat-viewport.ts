@@ -21,8 +21,6 @@ export interface ChatViewport {
    * —— 用 ref 传递可避免两个方向互相等待。
    */
   layoutRef: RefObject<ChatLayout | null>;
-  /** 滚到指定顶部（会被钳制；贴底时自动回到 `null`） */
-  scrollTo: (nextTop: number) => void;
   /** 翻页：一页 = 视口高度 - 1 行（留一行上下文，不至于跳得没头没尾） */
   scrollByPage: (dir: -1 | 1) => void;
   /** 按行滚动 */
@@ -39,6 +37,8 @@ export function useChatViewport(): ChatViewport {
 
   // 下面的回调只读 `layoutRef`（布局每帧更新）与 `setViewTop`，没有闭包捕获的旧状态，
   // 所以依赖数组为空即可保持引用稳定（可安全传给 memo 化的子组件）。
+  // `scrollTo` 是下面三个动作的公共实现，**不对外暴露**：调用方只需要「翻页 / 按行 / 滚轮」，
+  // 直接设任意顶部值既没必要，也绕过了「以布局实际生效的顶部为基准」这条约束。
   const scrollTo = useCallback((nextTop: number) => {
     const L = layoutRef.current;
     if (!L) return;
@@ -76,5 +76,5 @@ export function useChatViewport(): ChatViewport {
 
   const scrollToBottom = useCallback(() => setViewTop(null), []);
 
-  return { viewTop, layoutRef, scrollTo, scrollByPage, scrollByLine, scrollByWheel, scrollToBottom };
+  return { viewTop, layoutRef, scrollByPage, scrollByLine, scrollByWheel, scrollToBottom };
 }
