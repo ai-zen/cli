@@ -10,7 +10,8 @@ import { t } from "../../i18n/index.js";
 
 // ==================== 通用详情屏（就地编辑）====================
 
-export type DetailFieldKind = "text" | "secret" | "number" | "enum" | "bool" | "map";
+/** 字段形态；`open` = 按 Enter 进子屏（此前叫 `map`，但实际语义与 key-value 无关） */
+export type DetailFieldKind = "text" | "secret" | "number" | "enum" | "bool" | "open";
 
 /** 详情屏的一个可编辑字段 */
 export interface DetailField {
@@ -23,11 +24,16 @@ export interface DetailField {
   initial?: string;
   /** enum 选项 */
   options?: { label: string; value: string }[];
-  /** 提交文本 / 枚举值：返回错误信息或 `null`（成功） */
-  commit?: (raw: string) => Promise<string | null>;
-  /** bool 切换 */
-  toggle?: () => Promise<string | null>;
-  /** map 类型：按 Enter 进入子屏（键值编辑） */
+  /**
+   * 提交文本 / 枚举值：返回错误信息或 `null`（成功）。
+   *
+   * **同步校验直接返回字符串即可**：字段构造器里大量「格式不对就报错」的判断本就没有
+   * 异步动作，此前被签名逼着写成 `Promise.resolve(t(...))`，纯噪音。
+   */
+  commit?: (raw: string) => string | null | Promise<string | null>;
+  /** bool 切换（同上：同步可用） */
+  toggle?: () => string | null | Promise<string | null>;
+  /** `open` 类型：按 Enter 进入子屏（键值编辑 / 权限 / 函数参数） */
   open?: () => void;
 }
 
@@ -110,7 +116,7 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
     update(chars.slice(0, caret).join("") + chars.slice(caret + 1).join(""), caret);
   };
 
-  const apply = async (run: () => Promise<string | null>) => {
+  const apply = async (run: () => string | null | Promise<string | null>) => {
     setError(null);
     const failure = await run();
     if (failure) setError(failure);
@@ -208,7 +214,7 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
           setChoosing(true);
           return;
         }
-        if (field.kind === "map") {
+        if (field.kind === "open") {
           field.open?.();
           return;
         }
@@ -308,7 +314,7 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
               ["↑ ↓", t("ui.move")],
               ["Esc", t("ui.back")],
             ]
-          : field?.kind === "map"
+          : field?.kind === "open"
             ? [
                 ["Enter", t("ui.open")],
                 ["↑ ↓", t("ui.move")],

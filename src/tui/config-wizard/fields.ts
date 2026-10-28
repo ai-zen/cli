@@ -35,7 +35,50 @@ export interface FieldBuilderContext {
 export function createFieldBuilders(context: FieldBuilderContext) {
   const { config, mcp, store, reasoningPresets, persist, persistMcp, saveAgent, removeAgentQuiet, go } = context;
 
-  // ---------- 字段构造器 ----------
+  // ---------- 共享字段 ----------
+
+  /**
+   * 「名称」字段：端点 / 模型 / 图片模型三处的形状逐字相同，只有写回目标不同。
+   * 空名称一律拦下 —— 名称会进提示语与列表，写空等于把这一条「弄丢」。
+   */
+  const nameField = (
+    current: { id: string; name?: string },
+    save: (patch: { name: string }, label: string) => string | null | Promise<string | null>,
+  ): DetailField => ({
+    key: "name",
+    label: t("field.name"),
+    kind: "text",
+    value: current.name || current.id,
+    initial: current.name,
+    commit: (raw) => (raw.trim() ? save({ name: raw.trim() }, t("field.name")) : t("err.nameRequired")),
+  });
+
+  /** 「绑定端点」字段：模型 / 图片模型共用，选项是全局端点表 */
+  const endpointIdField = (
+    currentEndpointId: string,
+    save: (patch: { endpointId: string }, label: string) => string | null | Promise<string | null>,
+  ): DetailField => ({
+    key: "endpointId",
+    label: t("field.endpoint"),
+    kind: "enum",
+    value: findEndpoint(config, currentEndpointId)?.name ?? currentEndpointId,
+    options: config.endpoints.map((endpoint) => ({ label: endpoint.name || endpoint.id, value: endpoint.id })),
+    // 选回原端点不算改动：否则会白白写盘一次
+    commit: (raw) => (raw === currentEndpointId ? null : save({ endpointId: raw }, t("field.endpoint"))),
+  });
+
+  /**
+   * 出厂托管条目的改动标记。
+   *
+   * 托管条目由 SDK 同步维护，**任何本地改动都必须打成 `custom: true`**，否则下次
+   * 同步会把改动覆盖掉。提示语后缀同步告知用户这一后果。
+   */
+  const customPatch = <T extends { custom?: boolean }>(entity: T, patch: Partial<T>): Partial<T> =>
+    entity.custom ? patch : { ...patch, custom: true };
+  /** 同上，用于「整份定义」写回（如 Agent 定义）：返回完整对象 */
+  const markCustom = <T extends { custom?: boolean }>(entity: T): T =>
+    entity.custom ? entity : { ...entity, custom: true };
+  const customNote = (managed: boolean) => (managed ? t("common.customOnlyNote") : "");
 
   /** 端点详情字段（editable：名称 / Base URL / API Key / 描述） */
   const endpointFields = (endpoint: Endpoint): DetailField[] => {
@@ -43,14 +86,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
     const save = (patch: Partial<Endpoint>, label: string) =>
       persist(updateEndpoint(config, endpoint.id, patch), t("wiz.endpointUpdated", { name, label }), [endpoint.id]);
     return [
-      {
-        key: "name",
-        label: t("field.name"),
-        kind: "text",
-        value: name,
-        initial: endpoint.name,
-        commit: (raw) => (raw.trim() ? save({ name: raw.trim() }, t("field.name")) : Promise.resolve(t("err.nameRequired"))),
-      },
+      nameField(endpoint, save),
       {
         key: "baseUrl",
         label: "Base URL",
@@ -58,7 +94,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         value: endpoint.baseUrl,
         initial: endpoint.baseUrl,
         commit: (raw) =>
-          /^https?:\/\//i.test(raw) ? save({ baseUrl: raw }, "Base URL") : Promise.resolve(t("err.baseUrlScheme")),
+          /^https?:\/\//i.test(raw) ? save({ baseUrl: raw }, "Base URL") : t("err.baseUrlScheme"),
       },
       {
         key: "apiKey",
@@ -66,7 +102,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         kind: "secret",
         value: maskApiKey(endpoint.apiKey),
         initial: endpoint.apiKey ?? "",
-        commit: (raw) => (raw ? save({ apiKey: raw }, "API Key") : Promise.resolve(t("err.apiKeyRequired"))),
+        commit: (raw) => (raw ? save({ apiKey: raw }, "API Key") : t("err.apiKeyRequired")),
       },
       {
         key: "description",
@@ -94,28 +130,15 @@ export function createFieldBuilders(context: FieldBuilderContext) {
   /** 模型详情字段；编辑「出厂托管」模型时自动标记 `custom: true`（否则改动会被 SDK 同步覆盖） */
   const modelFields = (model: Model): DetailField[] => {
     const managed = !model.custom;
-    const save = (patch: Partial<Model>, label: string) => {
-      const next = updateModel(config, model.id, managed ? { ...patch, custom: true } : patch);
-      const suffix = managed ? t("common.customOnlyNote") : "";
-      return persist(next, t("wiz.modelUpdated", { name: model.name || model.id, label, suffix }), [model.endpointId]);
-    };
+    const save = (patch: Partial<Model>, label: string) =>
+      persist(
+        updateModel(config, model.id, customPatch(model, patch)),
+        t("wiz.modelUpdated", { name: model.name || model.id, label, suffix: customNote(managed) }),
+        [model.endpointId],
+      );
     return [
-      {
-        key: "name",
-        label: t("field.name"),
-        kind: "text",
-        value: model.name || model.id,
-        initial: model.name,
-        commit: (raw) => (raw.trim() ? save({ name: raw.trim() }, t("field.name")) : Promise.resolve(t("err.nameRequired"))),
-      },
-      {
-        key: "endpointId",
-        label: t("field.endpoint"),
-        kind: "enum",
-        value: findEndpoint(config, model.endpointId)?.name ?? model.endpointId,
-        options: config.endpoints.map((endpoint) => ({ label: endpoint.name || endpoint.id, value: endpoint.id })),
-        commit: (raw) => (raw === model.endpointId ? Promise.resolve(null) : save({ endpointId: raw }, t("field.endpoint"))),
-      },
+      nameField(model, save),
+      endpointIdField(model.endpointId, save),
       {
         key: "modelName",
         label: t("field.modelName"),
@@ -136,11 +159,9 @@ export function createFieldBuilders(context: FieldBuilderContext) {
           // 名字写错等于静默失去调档能力，当场拦住
           if (!Object.prototype.hasOwnProperty.call(reasoningPresets, name)) {
             const available = Object.keys(reasoningPresets);
-            return Promise.resolve(
-              available.length
-                ? t("err.presetNotFound", { name, options: available.join(" / ") })
-                : t("err.presetTableEmpty", { name }),
-            );
+            return available.length
+              ? t("err.presetNotFound", { name, options: available.join(" / ") })
+              : t("err.presetTableEmpty", { name });
           }
           return save({ reasoningPreset: name }, t("field.reasoningPreset"));
         },
@@ -153,10 +174,10 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         initial: String(model.tokenThresholds?.handoff ?? 0),
         commit: (raw) => {
           const n = Number(raw.trim());
-          if (!Number.isFinite(n) || n <= 0) return Promise.resolve(t("err.handoffPositive"));
+          if (!Number.isFinite(n) || n <= 0) return t("err.handoffPositive");
           const guard = model.tokenThresholds?.guard ?? 0;
           // 软线不得越过硬线，否则一启动就被阻断
-          if (guard > 0 && Math.floor(n) >= guard) return Promise.resolve(t("err.handoffLessThanGuard"));
+          if (guard > 0 && Math.floor(n) >= guard) return t("err.handoffLessThanGuard");
           return save(
             { tokenThresholds: mergeTokenThresholds(model.tokenThresholds, { handoff: Math.floor(n) }) },
             t("field.handoffThreshold"),
@@ -171,9 +192,9 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         initial: String(model.tokenThresholds?.guard ?? 0),
         commit: (raw) => {
           const n = Number(raw.trim());
-          if (!Number.isFinite(n) || n <= 0) return Promise.resolve(t("err.guardPositive"));
+          if (!Number.isFinite(n) || n <= 0) return t("err.guardPositive");
           const handoff = model.tokenThresholds?.handoff ?? 0;
-          if (Math.floor(n) <= handoff) return Promise.resolve(t("err.guardGreaterThanHandoff"));
+          if (Math.floor(n) <= handoff) return t("err.guardGreaterThanHandoff");
           return save(
             { tokenThresholds: mergeTokenThresholds(model.tokenThresholds, { guard: Math.floor(n) }) },
             t("field.guardThreshold"),
@@ -216,35 +237,22 @@ export function createFieldBuilders(context: FieldBuilderContext) {
   /** 图片模型详情字段（同样对托管条目自动标记 `custom: true`） */
   const imageModelFields = (model: ImageModel): DetailField[] => {
     const managed = !model.custom;
-    const save = (patch: Partial<ImageModel>, label: string) => {
-      const next = updateImageModel(config, model.id, managed ? { ...patch, custom: true } : patch);
-      const suffix = managed ? t("common.customOnlyNote") : "";
-      return persist(next, t("wiz.imageModelUpdated", { name: model.name || model.id, label, suffix }), [model.endpointId]);
-    };
+    const save = (patch: Partial<ImageModel>, label: string) =>
+      persist(
+        updateImageModel(config, model.id, customPatch(model, patch)),
+        t("wiz.imageModelUpdated", { name: model.name || model.id, label, suffix: customNote(managed) }),
+        [model.endpointId],
+      );
     return [
-      {
-        key: "name",
-        label: t("field.name"),
-        kind: "text",
-        value: model.name || model.id,
-        initial: model.name,
-        commit: (raw) => (raw.trim() ? save({ name: raw.trim() }, t("field.name")) : Promise.resolve(t("err.nameRequired"))),
-      },
-      {
-        key: "endpointId",
-        label: t("field.endpoint"),
-        kind: "enum",
-        value: findEndpoint(config, model.endpointId)?.name ?? model.endpointId,
-        options: config.endpoints.map((endpoint) => ({ label: endpoint.name || endpoint.id, value: endpoint.id })),
-        commit: (raw) => (raw === model.endpointId ? Promise.resolve(null) : save({ endpointId: raw }, t("field.endpoint"))),
-      },
+      nameField(model, save),
+      endpointIdField(model.endpointId, save),
       {
         key: "modelName",
         label: t("field.modelName"),
         kind: "text",
         value: model.modelName,
         initial: model.modelName,
-        commit: (raw) => (raw.trim() ? save({ modelName: raw.trim() }, t("field.modelName")) : Promise.resolve(t("err.modelNameRequired"))),
+        commit: (raw) => (raw.trim() ? save({ modelName: raw.trim() }, t("field.modelName")) : t("err.modelNameRequired")),
       },
       {
         key: "defaultSize",
@@ -299,9 +307,9 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         initial: id,
         commit: (raw) => {
           const name = raw.trim();
-          if (!name) return Promise.resolve(t("err.nameRequired"));
-          if (name === id) return Promise.resolve(null);
-          if (mcpServerIdTaken(mcp[scope], name, id)) return Promise.resolve(t("err.mcpNameTaken", { name }));
+          if (!name) return t("err.nameRequired");
+          if (name === id) return null;
+          if (mcpServerIdTaken(mcp[scope], name, id)) return t("err.mcpNameTaken", { name });
           return persistMcp(
             scope,
             renameMcpServer(mcp[scope], id, name),
@@ -323,7 +331,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
           { label: t("common.transportSse"), value: "sse" },
         ],
         commit: (raw) =>
-          raw === type ? Promise.resolve(null) : save({ type: raw as McpServerEntry["type"] }, t("common.transportMode")),
+          raw === type ? null : save({ type: raw as McpServerEntry["type"] }, t("common.transportMode")),
       },
       {
         key: "enabled",
@@ -365,7 +373,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         {
           key: "env",
           label: t("field.env"),
-          kind: "map",
+          kind: "open",
           value: kvSummary(entry.env),
           open: () => go({ kind: "mcp-kv", scope, serverId: id, field: "env" }),
         },
@@ -383,7 +391,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         {
           key: "headers",
           label: t("field.headers"),
-          kind: "map",
+          kind: "open",
           value: kvSummary(entry.headers),
           open: () => go({ kind: "mcp-kv", scope, serverId: id, field: "headers" }),
         },
@@ -397,8 +405,8 @@ export function createFieldBuilders(context: FieldBuilderContext) {
     const kindName = agentKindLabel(kind);
     const managed = kind === "agent" && !def.custom;
     const save = (nextDef: AgentDefinition, label: string) => {
-      const marked = managed ? { ...nextDef, custom: true } : nextDef;
-      const suffix = managed ? t("common.customOnlyNote") : "";
+      const marked = markCustom(nextDef);
+      const suffix = customNote(managed);
       return saveAgent(kind, marked, t("wiz.agentFieldUpdated", { kind: kindName, id: def.id, label, suffix }));
     };
     const fields: DetailField[] = [
@@ -411,7 +419,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         commit: (raw) =>
           raw.trim()
             ? save(updateAgentDefinition(def, { name: raw.trim() }), t("field.name"))
-            : Promise.resolve(t("err.nameRequired")),
+            : t("err.nameRequired"),
       },
       {
         key: "id",
@@ -421,9 +429,9 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         initial: def.id,
         commit: (raw) => {
           const name = raw.trim();
-          if (!name) return Promise.resolve(t("err.idRequired"));
-          if (name === def.id) return Promise.resolve(null);
-          if (agentList(store, kind).some((item) => item.id === name)) return Promise.resolve(t("err.agentIdTaken", { name }));
+          if (!name) return t("err.idRequired");
+          if (name === def.id) return null;
+          if (agentList(store, kind).some((item) => item.id === name)) return t("err.agentIdTaken", { name });
           return (async () => {
             const failure = await saveAgent(kind, { ...def, id: name }, t("wiz.agentRenamed", { kind: kindName, id: def.id, name }));
             if (failure) return failure;
@@ -455,14 +463,14 @@ export function createFieldBuilders(context: FieldBuilderContext) {
       {
         key: "prompt",
         label: t("field.prompt"),
-        kind: "map",
+        kind: "open",
         value: summarizeMultiline(getAgentPrompt(def)),
         open: () => go({ kind: "agent-text", agentKind: kind, agentId: def.id, field: "prompt" }),
       },
       {
         key: "permissions",
         label: t("field.permissions"),
-        kind: "map",
+        kind: "open",
         value: summarizePermissions(def.permissions),
         open: () => go({ kind: "agent-perms", agentKind: kind, agentId: def.id }),
       },
@@ -486,19 +494,19 @@ export function createFieldBuilders(context: FieldBuilderContext) {
           commit: (raw) =>
             raw.trim()
               ? save(updateAgentFunction(def, { name: raw.trim() }), t("field.functionName"))
-              : Promise.resolve(t("err.functionNameRequired")),
+              : t("err.functionNameRequired"),
         },
         {
           key: "fnDesc",
           label: t("field.functionDescription"),
-          kind: "map",
+          kind: "open",
           value: summarizeMultiline(def.function?.description ?? ""),
           open: () => go({ kind: "agent-text", agentKind: kind, agentId: def.id, field: "fnDesc" }),
         },
         {
           key: "fnParams",
           label: t("field.paramsSchema"),
-          kind: "map",
+          kind: "open",
           value: summarizeMultiline(JSON.stringify(def.function?.parameters ?? {}, null, 2)),
           open: () => go({ kind: "agent-text", agentKind: kind, agentId: def.id, field: "fnParams" }),
         },
@@ -517,7 +525,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
       initial: formatAgentPermission(def.permissions, dim),
       commit: (raw: string) => {
         const parsed = parsePermission(raw);
-        if (typeof parsed === "string") return Promise.resolve(parsed);
+        if (typeof parsed === "string") return parsed;
         const managed = kind === "agent" && !def.custom;
         const next = setAgentPermission(managed ? { ...def, custom: true } : def, dim, parsed);
         return saveAgent(kind, next, t("wiz.agentPermissionUpdated", { kind: agentKindLabel(kind), id: def.id, dim }));
