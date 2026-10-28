@@ -10,6 +10,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { AgentNS } from "@ai-zen/agents-core";
 import type { HandoffMode } from "@ai-zen/agents-sdk";
+import { HandoffAbortedError } from "@ai-zen/agents-sdk";
 import { spawnSync } from "node:child_process";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -503,6 +504,11 @@ const cmdHandoff: CommandHandler = async ({ session, push, args, setPickerState 
     const path = await session.handoff(chosen);
     push(t("cmd.handoff.done", { path }));
   } catch (error: any) {
+    // 用户按 Ctrl+C 取消：不是失败，也不该报错堆栈
+    if (error instanceof HandoffAbortedError) {
+      push(t("cmd.handoff.cancelled"));
+      return;
+    }
     push(t("cmd.handoff.failed", { error: error?.message ?? error }), "error");
   }
 };
@@ -531,6 +537,11 @@ const cmdMigrate: CommandHandler = async ({ session, push, args, setPickerState,
     clearTranscript();
     push(t("cmd.migrate.done", { path }));
   } catch (error: any) {
+    // 用户按 Ctrl+C 取消：交接已停下且未改动会话，不是失败
+    if (error instanceof HandoffAbortedError) {
+      push(t("cmd.migrate.cancelled"));
+      return;
+    }
     push(t("cmd.migrate.failed", { error: error?.message ?? error }), "error");
   }
 };

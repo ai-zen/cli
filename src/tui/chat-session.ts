@@ -120,6 +120,16 @@ export class ChatSession {
   private readonly rate = new TokenRateMeter();
   /** 当前生成阶段（消息栏 spinner 文案，见 `phase.ts`） */
   private readonly phaseTracker = new PhaseTracker();
+  /**
+   * 进行中的交接/迁移的取消句柄（`null` = 当前没有交接）。
+   *
+   * 为什么不能只靠 `agent.abort()`：交接的 `summary` 模式走的是独立的
+   * `chat.completions.create` 请求，`agent.abort()` 根本够不到它；而 `self` 模式
+   * 虽然能中断，但 core 层把中止收敛成「消息标记 Aborted、send 正常返回」，SDK 那边
+   * 会误判成「模型没写出文档」而重试 + 降级 summary 再跑一轮。
+   * 所以交接必须自己带一条 `AbortSignal`。
+   */
+  private handoffAbort: AbortController | null = null;
 
   private constructor(
     handoffService: HandoffService,
@@ -219,7 +229,25 @@ export class ChatSession {
 
   /** 中止当前请求（Ctrl+C 语义：仅取消本轮，不退出） */
   abort(): void {
+    // 交接/迁移进行中：先按交接的取消通道（否则 summary 那步压根拦不住）
+    this.handoffAbort?.abort();
     this.agent.abort();
+  }
+
+  /**
+   * 按「可取消」方式跑一段交接：创建 `AbortController` 并在结束时收尾。
+   *
+   * 收尾放 `finally`：成功后也要清掉，否则下一次 Ctrl+C 会往一个已完成的
+   * controller 上发出无意义的 abort。
+   */
+  private async runCancellable<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController();
+    this.handoffAbort = controller;
+    try {
+      return await run(controller.signal);
+    } finally {
+      if (this.handoffAbort === controller) this.handoffAbort = null;
+    }
   }
 
   /**
@@ -273,11 +301,14 @@ export class ChatSession {
     if (!this.messages.some((m) => m.role === AgentNS.Role.User)) {
       throw new Error(t("chat.noMigratable"));
     }
-    const ctx = await this.handoffService.migrate({
-      agent: this.agent,
-      mode,
-      conversationId: this.currentId,
-    });
+    const ctx = await this.runCancellable((signal) =>
+      this.handoffService.migrate({
+        agent: this.agent,
+        mode,
+        conversationId: this.currentId,
+        signal,
+      }),
+    );
     // 迁移后服务会开启新会话：新 id 已写进 ctx（唯一真相源），这里只需同步名称并刷新界面
     this.currentName = this.currentId;
     this.notifier.onChange(true);
@@ -294,11 +325,14 @@ export class ChatSession {
     if (!this.messages.some((m) => m.role === AgentNS.Role.User)) {
       throw new Error(t("chat.noHandoffable"));
     }
-    const ctx = await this.handoffService.handoff({
-      agent: this.agent,
-      mode,
-      conversationId: this.currentId,
-    });
+    const ctx = await this.runCancellable((signal) =>
+      this.handoffService.handoff({
+        agent: this.agent,
+        mode,
+        conversationId: this.currentId,
+        signal,
+      }),
+    );
     this.notifier.onChange(true);
     return ctx.handoffPath;
   }
