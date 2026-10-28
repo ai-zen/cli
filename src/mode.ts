@@ -35,7 +35,12 @@ export interface TtyState {
  * 不进入 stdio/TUI 任一路径。
  */
 export type Invocation =
-  | { kind: "hook"; action: "install" | "uninstall" | "usage" }
+  /**
+   * `invalidAction`：给了子动作但不认识（如 `ai hook boom`）。与「只想看用法」
+   * （`ai hook` / `ai hook --help`，此时无该字段）区分开 —— 前者该报错退出，
+   * 后者是正常的信息请求，退出码必须是 0。
+   */
+  | { kind: "hook"; action: "install" | "uninstall" | "usage"; invalidAction?: string }
   | { kind: "help" }
   | { kind: "version" }
   | { kind: "stdio"; instruction: string; save: boolean }
@@ -115,13 +120,17 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
   // 子命令短路（与运行模式无关的管理动作）
   if (positional[0] === "hook") {
     const action = positional[1];
-    return {
-      kind: "hook",
-      action: action && HOOK_ACTIONS.has(action) ? (action as "install" | "uninstall") : "usage",
-    };
+    if (action && HOOK_ACTIONS.has(action)) return { kind: "hook", action: action as "install" | "uninstall" };
+    // 没给子动作（含 `ai hook --help`，`--help` 已被当选项吃掉）：只是要看用法
+    if (action === undefined) return { kind: "hook", action: "usage" };
+    return { kind: "hook", action: "usage", invalidAction: action };
   }
   if (wantHelp) return { kind: "help" };
   if (wantVersion) return { kind: "version" };
+  // `ai help` / `ai version`：单词形式与 `--help` / `--version` 等价。
+  // 只在它是**唯一**参数时判定 —— `ai help me refactor this` 仍然是在提问。
+  if (positional.length === 1 && positional[0] === "help") return { kind: "help" };
+  if (positional.length === 1 && positional[0] === "version") return { kind: "version" };
 
   const instruction = positional.join(" ").trim();
 

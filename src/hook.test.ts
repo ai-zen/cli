@@ -118,6 +118,26 @@ describe("installHook", () => {
     expect(countBlocks(content)).toBe(1);
   });
 
+  it("rc 里残留两个块、且第一块已是最新版时，仍会收敛成一个块", async () => {
+    // 复现场景：正常装过一次（第一块 = 当前版本），其后又被老版本追加了一块。
+    // 旧实现只看第一块 → 判定「已安装」→ 第二块永远清不掉。
+    await installHook();
+    const installed = await read();
+    await fs.writeFile(
+      rcFile,
+      // 第二个块用**当前**标记但函数体是老版本（老版本与新版本共用同一对标记）
+      [installed.replace(/\n+$/, ""), MARKER_START, "command_not_found_handle() {", '  aiz "$@"', "}", MARKER_END, ""].join("\n"),
+      "utf-8",
+    );
+    expect(countBlocks(await read())).toBe(2);
+
+    await installHook();
+    const content = await read();
+    expect(countBlocks(content)).toBe(1);
+    expect(content).not.toContain('aiz "$@"');
+    expect(content).toContain('ai --tui --new "$@"');
+  });
+
   it("zsh 用 command_not_found_handler 并写入 .zshrc", async () => {
     process.env.SHELL = "/usr/bin/zsh";
     rcFile = join(home, ".zshrc");

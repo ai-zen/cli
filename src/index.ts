@@ -71,9 +71,14 @@ async function main(): Promise<void> {
       await initLocale();
       if (invocation.action === "install") await installHook();
       else if (invocation.action === "uninstall") await uninstallHook();
-      else {
+      else if (invocation.invalidAction) {
+        // 认不出的子动作：报错 + 非零退出码（脚本可据此判断），同时给出正确用法
+        process.stderr.write(`${t("cli.hookUnknownAction", { action: invocation.invalidAction })}\n`);
         process.stderr.write(`${t("cli.hookUsage")}\n`);
         process.exitCode = 1;
+      } else {
+        // 只想看用法（`ai hook` / `ai hook --help`）：正常输出、退出码 0
+        process.stdout.write(`${t("cli.hookUsage")}\n`);
       }
       return;
 

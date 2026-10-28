@@ -54,14 +54,29 @@ function normalizeBlock(block: string): string {
     .join("\n");
 }
 
-/** 取出文件中已安装的钩子块（含首尾标记）；未安装时返回 null */
-function readHookBlock(content: string): string | null {
+/**
+ * 取出文件中**全部**已安装的钩子块（含首尾标记），按出现顺序。
+ *
+ * 这里刻意返回数组而不是第一块：rc 里可能残留多个块（老版本 + 新版本各写了一次），
+ * 只看第一块会出现「第一块恰好是最新版 → 判定为已安装 → 后面的旧块永远留着」。
+ */
+function readHookBlocks(content: string): string[] {
   const lines = content.split("\n");
-  const start = lines.findIndex((line) => line.trim() === MARKER_START);
-  if (start < 0) return null;
-  const end = lines.findIndex((line, index) => index > start && line.trim() === MARKER_END);
-  if (end < 0) return null;
-  return lines.slice(start, end + 1).join("\n");
+  const blocks: string[] = [];
+  let start = -1;
+  for (const [index, line] of lines.entries()) {
+    const trimmed = line.trim();
+    if (start < 0) {
+      if (trimmed === MARKER_START) start = index;
+      continue;
+    }
+    if (trimmed === MARKER_END) {
+      blocks.push(lines.slice(start, index + 1).join("\n"));
+      start = -1;
+    }
+  }
+  // 只有开头标记、没有结尾标记的残缺块不算「已安装」——交给安装路径整段清理
+  return blocks;
 }
 
 /**
@@ -110,28 +125,22 @@ export async function installHook(): Promise<void> {
 
   const desired = hookCode(shell.hookFn);
 
-  // 已安装：只在函数体与当前版本一致时才算「无需操作」。
-  // 若不一致（例如升级后给钩子加了 `--new`），原地覆盖——否则用户永远升不上去。
-  const installedBlock = readHookBlock(current);
-  if (installedBlock !== null) {
-    if (normalizeBlock(installedBlock) === normalizeBlock(desired)) {
-      console.log(t("hook.alreadyInstalled"));
-      return;
-    }
-    const { content: cleaned } = stripHookBlocks(current);
-    const base = cleaned.replace(/\n+$/, "");
-    await fs.writeFile(shell.rcFile, base + "\n" + desired, "utf-8");
-    console.log(t("hook.updated", { file: shell.rcFile }));
-    console.log(t("hook.restartHint", { file: shell.rcFile }));
+  // 已安装的判定条件是「**恰好一块**且内容与当前版本一致」。
+  // 内容不一致（如升级后给钩子加了 `--new`）或残留多块（老版本 + 新版本各写过一次）
+  // 都要走重写路径，否则用户升不上去、或者旧块永远留在 rc 里。
+  const installedBlocks = readHookBlocks(current);
+  if (installedBlocks.length === 1 && normalizeBlock(installedBlocks[0]!) === normalizeBlock(desired)) {
+    console.log(t("hook.alreadyInstalled"));
     return;
   }
+  const refreshed = installedBlocks.length > 0;
 
-  // 首次安装：先移除历史 aiz 块，再写入新块
+  // 统一走「先清掉所有已装块（含历史 aiz 块），再写入当前版本」
   const { content: cleaned, removed } = stripHookBlocks(current);
   const base = cleaned.replace(/\n+$/, "");
   await fs.writeFile(shell.rcFile, base + "\n" + desired, "utf-8");
 
-  console.log(t("hook.installed", { file: shell.rcFile }));
+  console.log(refreshed ? t("hook.updated", { file: shell.rcFile }) : t("hook.installed", { file: shell.rcFile }));
   if (removed) console.log(t("hook.upgraded"));
   console.log(t("hook.restartHint", { file: shell.rcFile }));
   console.log(t("hook.forwardHint"));

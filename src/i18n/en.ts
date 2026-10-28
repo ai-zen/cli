@@ -1,8 +1,7 @@
 /**
  * English entries — the fallback language.
  *
- * 约定与 `zh.ts` 一致；英文额外使用 `_one` / `_other` 复数变体
- * （由 `t()` 依 `Intl.PluralRules` 选择，见 `index.ts`）。
+ * 约定与 `zh.ts` 一致（不做复数变体：数量词直接写 `(s)`）。
  */
 export const en: Record<string, string> = {
   // ---------- Input row ----------
@@ -217,6 +216,7 @@ export const en: Record<string, string> = {
 
   // ---------- `ai hook install / uninstall` (outside the TUI, locale initialised in that branch) ----------
   "cli.hookUsage": "Usage: ai hook install|uninstall",
+  "cli.hookUnknownAction": "Unknown subcommand: {action}",
   "hook.unsupportedShell": "❌ Unsupported shell (bash / zsh only)",
   "hook.alreadyInstalled": "ℹ️  ai hook is already installed — nothing to do",
   "hook.installed": "✅ ai hook installed into {file}",

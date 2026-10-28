@@ -63,11 +63,30 @@ describe("resolveInvocation", () => {
     });
   });
 
-  it("hook 缺参数/非法参数 → usage", () => {
+  it("hook 缺参数 → usage（只是要看用法，不是错误）", () => {
     expect(resolveInvocation(["hook"], TTY)).toEqual({ kind: "hook", action: "usage" });
+    // `ai hook --help` 与 `ai hook` 等价：--help 被当选项吃掉，不该以非零码退出
+    expect(resolveInvocation(["hook", "--help"], TTY)).toEqual({ kind: "hook", action: "usage" });
+  });
+
+  it("hook 非法子动作 → usage 并带上那个动作（调用方据此报错 + 非零退出码）", () => {
     expect(resolveInvocation(["hook", "boom"], TTY)).toEqual({
       kind: "hook",
       action: "usage",
+      invalidAction: "boom",
+    });
+  });
+
+  it("`ai help` / `ai version` 单词形式等价于 `--help` / `--version`", () => {
+    expect(resolveInvocation(["help"], TTY)).toEqual({ kind: "help" });
+    expect(resolveInvocation(["version"], PIPE_IN)).toEqual({ kind: "version" });
+  });
+
+  it("但 `help` 只是句首词时仍是在提问（不当子命令）", () => {
+    expect(resolveInvocation(["help", "me", "refactor", "this"], TTY)).toEqual({
+      kind: "stdio",
+      instruction: "help me refactor this",
+      save: false,
     });
   });
 

@@ -5,7 +5,6 @@
  * - 扁平 key，`域.语义` 分组；
  * - `{name}` 为插值占位；
  * - `\u00a0`（不换行空格）用于把「数字 + 单位」绑成一格，窄屏折行时不会被拆开；
- * - 复数只给英文写 `_one` / `_other` 变体，中文写基础 key 即可。
  */
 export const zh: Record<string, string> = {
   // ---------- 输入行 ----------
@@ -221,6 +220,7 @@ export const zh: Record<string, string> = {
 
   // ---------- `ai hook install / uninstall`（非 TUI 输出，同 help 一样在分支内先初始化语言） ----------
   "cli.hookUsage": "用法: ai hook install|uninstall",
+  "cli.hookUnknownAction": "用法中不认识的子动作：{action}",
   "hook.unsupportedShell": "❌ 不支持的 shell（仅支持 bash / zsh）",
   "hook.alreadyInstalled": "ℹ️  ai hook 已安装，无需重复操作",
   "hook.installed": "✅ ai hook 已安装到 {file}",
