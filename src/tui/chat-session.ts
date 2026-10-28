@@ -29,8 +29,7 @@ import { SubAgentGuardInstallerPlugin } from "../sub-agent-guard-plugin.js";
 import type { TokenThresholds } from "@ai-zen/agents-sdk";
 import { createAutoMigratePlugin } from "../auto-migrate-confirm.js";
 import { createHandoffService } from "../handoff-service.js";
-import { conversationRepository, generateConversationId } from "../conversation-repository.js";
-import { writeLastSession } from "../session-pointer.js";
+import { generateConversationId, persistConversation } from "../conversation-repository.js";
 import type { ConversationContext } from "../types.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, deltaText, type RateSample } from "./token-rate.js";
@@ -317,19 +316,12 @@ export class ChatSession {
 
   /** 保存当前对话到存档 */
   async save(): Promise<string> {
-    const id = this.currentId;
-    const existing = await conversationRepository.read(id);
-    const now = new Date().toISOString();
-    await conversationRepository.write({
-      id,
+    return persistConversation({
+      id: this.currentId,
       agentId: this.agentId,
       messages: this.agent.messages,
       cwd: process.cwd(),
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
     });
-    await writeLastSession(process.cwd(), id);
-    return id;
   }
 
   /** 释放事件监听（重建 Agent 时调用，避免监听器泄漏） */

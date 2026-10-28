@@ -10,8 +10,7 @@
 
 import type { AgentPlugin, SendContext } from "@ai-zen/agents-sdk";
 import { AgentNS } from "@ai-zen/agents-core";
-import { conversationRepository } from "./conversation-repository.js";
-import { writeLastSession } from "./session-pointer.js";
+import { persistConversation } from "./conversation-repository.js";
 import { t } from "./i18n/index.js";
 
 export interface ConversationPersistPluginOptions {
@@ -35,17 +34,8 @@ export class ConversationPersistPlugin implements AgentPlugin {
 
     const id = getId();
     try {
-      const existing = await conversationRepository.read(id);
-      const now = new Date().toISOString();
-      await conversationRepository.write({
-        id,
-        agentId,
-        messages,
-        cwd,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-      });
-      await writeLastSession(cwd ?? process.cwd(), id);
+      // 每轮自动落盘也算「本目录的上一轮会话」—— 下次在该目录启动时续接它
+      await persistConversation({ id, agentId, messages, cwd: cwd ?? process.cwd() });
     } catch (err: any) {
       onError?.(t("chat.persistFailed", { error: err?.message ?? err }));
     }

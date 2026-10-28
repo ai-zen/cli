@@ -20,8 +20,8 @@ export interface Conversation {
   id: string;
   agentId: string;
   /**
-   * @deprecated 已不再读写。模型真相源是 `AgentDefinition.modelId`。
-   * 保留字段仅为了不破坏旧存档的反序列化，读取时一律忽略。
+   * @deprecated 已不再读**也不写**（收敛前 stdio 的 `--save` 曾写入它）。
+   * 模型真相源是 `AgentDefinition.modelId`；保留字段仅为兼容旧存档的反序列化。
    */
   modelId?: string;
   messages: AgentNS.Message[];
@@ -42,23 +42,55 @@ export function generateConversationId(date: Date = new Date()): string {
   return `chat_${formatFileStamp(date.toISOString())}`;
 }
 
+/** 落盘一份会话所需的全部输入 */
+export interface PersistConversationInput {
+  id: string;
+  agentId?: string;
+  messages: AgentNS.Message[];
+  /** 会话所属工作目录；缺省为 `process.cwd()` */
+  cwd?: string;
+  /**
+   * 是否同时把「本目录上一轮会话」指针指向它（默认 true）。
+   *
+   * stdio 的 `--save` 传 false：那是一次性管道调用的归档，不该让下次 `ai` 续接到它
+   * （否则连着跑几条 `cat … | ai --save` 之后，`ai` 会续接到最后一条管道结果上）。
+   */
+  setAsLastSession?: boolean;
+}
+
 /**
- * 保存当前对话到 conversations 目录，并更新「上一轮会话 id」指针。
- * 迁移前落盘旧会话（onBeforeMigrate）、手动 /save 等场景共同调用，保证 id 计算一致。
+ * 落盘一份会话 —— **唯一的写入入口**。
+ *
+ * 此前「读旧记录拿 createdAt → 写 → 更新指针」这段在 5 个地方各写了一遍，并且已经
+ * 漂移：`saveConversation()` 漏写 `cwd`、stdio 的 `--save` 不更新指针、还写了一个已
+ * 废弃的 `modelId`。收敛到这里后，各处差异只剩「是否更新指针」一个显式开关。
  */
-export async function saveConversation(ctx: ConversationContext): Promise<string> {
-  const id = ctx.currentId || generateConversationId();
-  const existing = await conversationRepository.read(id);
+export async function persistConversation(input: PersistConversationInput): Promise<string> {
+  const cwd = input.cwd ?? process.cwd();
+  const existing = await conversationRepository.read(input.id);
   const now = new Date().toISOString();
   await conversationRepository.write({
-    id,
-    agentId: ctx.agentId || "default",
-    messages: ctx.agent.messages,
+    id: input.id,
+    agentId: input.agentId || "default",
+    messages: input.messages,
+    cwd,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   });
-  await writeLastSession(process.cwd(), id);
-  return id;
+  if (input.setAsLastSession !== false) await writeLastSession(cwd, input.id);
+  return input.id;
+}
+
+/**
+ * 保存当前对话（交接前落盘旧会话时用）：以 `ctx` 为真相源，走统一的写入入口。
+ */
+export async function saveConversation(ctx: ConversationContext): Promise<string> {
+  return persistConversation({
+    id: ctx.currentId || generateConversationId(),
+    agentId: ctx.agentId,
+    messages: ctx.agent.messages,
+    cwd: process.cwd(),
+  });
 }
 
 /**

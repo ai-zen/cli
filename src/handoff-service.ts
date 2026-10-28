@@ -5,10 +5,9 @@ import {
 } from "@ai-zen/agents-sdk";
 import {
   saveConversation,
-  conversationRepository,
+  persistConversation,
   generateConversationId,
 } from "./conversation-repository.js";
-import { writeLastSession } from "./session-pointer.js";
 import { PROJECT_HANDOFFS_DIR } from "./config.js";
 import { listSkillDirs } from "./agent-creator.js";
 import type { ConversationContext } from "./types.js";
@@ -100,17 +99,12 @@ export function createHandoffService(
       // 避免迁移发生在 onAfterSend（ConversationPersistPlugin 的 onInnerLoopEnd
       // 已不再触发）导致迁移后的新对话未被及时落盘、用户中途退出时丢失。
       try {
-        const existing = await conversationRepository.read(id);
-        const now = new Date().toISOString();
-        await conversationRepository.write({
+        await persistConversation({
           id,
-          agentId: ctx.agentId || "default",
+          agentId: ctx.agentId,
           messages: hctx.agent.messages,
           cwd: process.cwd(),
-          createdAt: existing?.createdAt ?? now,
-          updatedAt: now,
         });
-        await writeLastSession(process.cwd(), id);
       } catch (err: any) {
         log(t("handoff.persistFailed", { error: err?.message ?? err }));
       }
