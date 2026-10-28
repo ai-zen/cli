@@ -79,9 +79,9 @@ describe("NoticeChannel（通知旁路通道）", () => {
 });
 
 describe("noticeLines（通知栏文本行）", () => {
-  it("info 前缀 `· `，error 前缀 `✖ `", () => {
-    expect(texts(noticeLines([notice("就绪")], 80))).toEqual(["  · 就绪"]);
-    expect(texts(noticeLines([notice("失败", "error")], 80))).toEqual(["  ✖ 失败"]);
+  it("文本从行首开始，不加 `· ` / `✖ ` 前缀（语气靠 tone 着色）", () => {
+    expect(texts(noticeLines([notice("就绪")], 80))).toEqual(["就绪"]);
+    expect(texts(noticeLines([notice("失败", "error")], 80))).toEqual(["失败"]);
   });
 
   it("空文本跳过；空队列返回空数组", () => {
@@ -96,13 +96,20 @@ describe("noticeLines（通知栏文本行）", () => {
   });
 
   it("短文本单行、不折", () => {
-    expect(texts(noticeLines([notice("ok")], 80))).toEqual(["  · ok"]);
+    expect(texts(noticeLines([notice("ok")], 80))).toEqual(["ok"]);
   });
 
   it("多条各自保留自己的 tone（渲染时逐行着色）", () => {
     const lines = noticeLines([notice("a"), notice("b", "error")], 80);
     expect(lines.map((line) => line.tone)).toEqual(["info", "error"]);
-    expect(texts(lines)).toEqual(["  · a", "  ✖ b"]);
+    expect(texts(lines)).toEqual(["a", "b"]);
+  });
+
+  it("多行通知每行都从行首开始，不加续行缩进", () => {
+    // 横向定位全归容器（`NoticeBar` 的 paddingX）管；这里再多一层缩进/前缀，
+    // 文案就会比输入行右漂，一屏里几条通知并排时整块向右挤。
+    const lines = texts(noticeLines([notice("甲\n乙\n丙")], 80));
+    expect(lines).toEqual(["甲", "乙", "丙"]);
   });
 
   it("合计超出上限时从最早的一条开始整条让位（不劈半条）", () => {

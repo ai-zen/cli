@@ -86,18 +86,20 @@ export class NoticeChannel {
   }
 }
 
-/** 单条通知 → 若干行（首行带前缀，续行对齐缩进；条内超出上限以 … 收尾） */
+/** 单条通知 → 若干行（按列宽折行；条内超出上限以 … 收尾）
+ *
+ * **不加任何行首装饰**：既不带缩进，也不带 `· ` / `✖ ` 前缀。横向定位全部交给
+ * `NoticeBar` 的 `paddingX`，于是通知文本与分隔线、输入行左对齐；语气差异由
+ * {@link NoticeLine.tone} 的着色表达（info 暗、error 红），不需要符号占位。
+ * 多行通知（如迁移完成 + 文档路径）每行都从行首开始，不另加续行缩进。
+ */
 function noticeBlockLines(notice: Notice, width: number): NoticeLine[] {
-  const prefix = notice.tone === "error" ? "✖ " : "· ";
   const wrapped = wrapText(notice.text, width);
   const capped = wrapped.slice(0, MAX_NOTICE_LINES);
   if (capped.length > 0 && wrapped.length > capped.length) {
     capped[capped.length - 1] = `${capped[capped.length - 1]}…`;
   }
-  return capped.map((line, index) => ({
-    text: `  ${index === 0 ? prefix : "  "}${line}`,
-    tone: notice.tone,
-  }));
+  return capped.map((text) => ({ text, tone: notice.tone }));
 }
 
 /**
@@ -107,7 +109,8 @@ function noticeBlockLines(notice: Notice, width: number): NoticeLine[] {
  * 通知的自洽（不会看到半条「已迁移」），也保证栏位高度有确定上限（布局按行数预留空间）。
  */
 export function noticeLines(notices: readonly Notice[], columns: number): NoticeLine[] {
-  const width = Math.max(4, columns - 4);
+  // 行宽留给容器 paddingX（左右各 1）+ 1 列余量，避免贴边被 Ink 再折一行
+  const width = Math.max(4, columns - 3);
   const blocks: NoticeLine[][] = [];
   for (const notice of notices) {
     if (!notice.text) continue;

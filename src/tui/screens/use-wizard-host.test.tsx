@@ -156,6 +156,14 @@ describe("useWizardHost", () => {
     expect(text).toContain("配置已更新");
     expect(text).toContain("模型名 → NewName");
     expect(text).toContain("思考档位 → high");
+    // 子项缩进恰好「一个汉字宽度」（2 个半角空格），且不带 · 之类的项目符号
+    const itemLines = text.split("\n").slice(1);
+    expect(itemLines).toHaveLength(2);
+    for (const line of itemLines) {
+      expect(line.startsWith("  ")).toBe(true);
+      expect(line.startsWith("   ")).toBe(false);
+      expect(line).not.toContain("·");
+    }
     p.unmount();
   });
 

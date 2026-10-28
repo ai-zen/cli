@@ -32,16 +32,19 @@ describe("NoticeBar（通知栏渲染）", () => {
   });
 
   it("同一批摘要合成的一条多行也整体上屏", () => {
-    const multi = notice("配置已更新：\n  · 模型名\n  · 默认 Agent", "info", 1);
+    const multi = notice("配置已更新：\n  模型名\n  默认 Agent", "info", 1);
     const frame = draw([multi]);
     expect(frame).toContain("模型名");
     expect(frame).toContain("默认 Agent");
   });
 
-  it("info / error 两种语气各自保留前缀", () => {
+  it("info / error 两种语气都从行首开始，靠颜色区分", () => {
     const frame = draw([notice("已保存", "info", 1), notice("读取出错", "error", 2)]);
-    expect(frame).toContain("· 已保存");
-    expect(frame).toContain("✖ 读取出错");
+    expect(frame).toContain("已保存");
+    expect(frame).toContain("读取出错");
+    // 不加 `· ` / `✖ ` 前缀：文本与分隔线、输入行左对齐（语气差异由着色的 tone 表达）
+    expect(frame).not.toContain("·");
+    expect(frame).not.toContain("✖");
   });
 
   it("空队列不渲染任何内容", () => {

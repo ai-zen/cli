@@ -109,7 +109,11 @@ export function useWizardHost({
     if (summary.length === 1) {
       notify(t("chat.configUpdated", { line: summary[0]! }));
     } else if (summary.length > 1) {
-      notify(t("chat.configUpdatedMulti", { lines: summary.map((line) => `  · ${line}`).join("\n") }));
+      // 子项缩进 = 一个汉字宽度（两个半角空格），不加 `·` 之类的项目符号：
+      // 通知正文本身就左对齐于行首，子项只需要一点层级差，符号是多余装饰。
+      notify(
+        t("chat.configUpdatedMulti", { lines: summary.map((line) => `  ${line}`).join("\n") }),
+      );
     }
     if (!result.dirty) return;
 
