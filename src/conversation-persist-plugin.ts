@@ -34,7 +34,8 @@ export class ConversationPersistPlugin implements AgentPlugin {
 
     const id = getId();
     try {
-      // 每轮自动落盘也算「本目录的上一轮会话」—— 下次在该目录启动时续接它
+      // 每轮自动落盘也算「本目录的上一轮会话」—— 下次在该目录启动时续接它。
+      // `SendContext.cwd` 是 SDK 的可选字段，这里（调用点）是**唯一**需要兜底的地方。
       await persistConversation({ id, agentId, messages, cwd: cwd ?? process.cwd() });
     } catch (err: any) {
       onError?.(t("chat.persistFailed", { error: err?.message ?? err }));

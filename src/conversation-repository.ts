@@ -66,8 +66,11 @@ export interface PersistConversationInput {
   id: string;
   agentId?: string;
   messages: AgentNS.Message[];
-  /** 会话所属工作目录；缺省为 `process.cwd()` */
-  cwd?: string;
+  /**
+   * 会话所属工作目录。**必填**：调用点都知道自己属于哪个目录，
+   * 留成可选只会在入口处多一层 `?? process.cwd()`，与调用点自己的兜底重复。
+   */
+  cwd: string;
   /**
    * 是否同时把「本目录上一轮会话」指针指向它（默认 true）。
    *
@@ -85,18 +88,17 @@ export interface PersistConversationInput {
  * 废弃的 `modelId`。收敛到这里后，各处差异只剩「是否更新指针」一个显式开关。
  */
 export async function persistConversation(input: PersistConversationInput): Promise<string> {
-  const cwd = input.cwd ?? process.cwd();
   const existing = await conversationRepository.read(input.id);
   const now = new Date().toISOString();
   await conversationRepository.write({
     id: input.id,
     agentId: input.agentId || "default",
     messages: input.messages,
-    cwd,
+    cwd: input.cwd,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   });
-  if (input.setAsLastSession !== false) await writeLastSession(cwd, input.id);
+  if (input.setAsLastSession !== false) await writeLastSession(input.cwd, input.id);
   return input.id;
 }
 
@@ -145,9 +147,7 @@ export function conversationPreview(conversation: Conversation | null): string {
  * 先只 stat（快），排序后**只为将要显示的那几条**解析内容取摘要 —— 会话攒到上百条时，
  * 逐个 `JSON.parse` 会明显拖慢 `/load`。
  */
-export async function listConversations(
-  options: { previewLimit?: number } = {},
-): Promise<ConversationSummary[]> {
+export async function listConversations(options: { previewLimit: number }): Promise<ConversationSummary[]> {
   try {
     await fs.access(CONVERSATIONS_DIR);
   } catch {
@@ -167,10 +167,11 @@ export async function listConversations(
   }
   stats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
-  const previewLimit = Math.max(0, options.previewLimit ?? 0);
+  // `previewLimit` 必填：默认 0（=全部无摘要）是个静默陷阱 —— 漏传不会报错，
+  // 只会让列表变成一堆谁也分不清的时间戳 id。
   const withPreview = await Promise.all(
     stats.map(async (item, index): Promise<ConversationSummary> => {
-      if (index >= previewLimit) return { ...item, preview: "" };
+      if (index >= options.previewLimit) return { ...item, preview: "" };
       return { ...item, preview: conversationPreview(await conversationRepository.read(item.id)) };
     }),
   );

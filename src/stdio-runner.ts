@@ -168,6 +168,7 @@ export async function runStdio(options: StdioRunOptions): Promise<number> {
         id: generateConversationId(),
         agentId,
         messages: agent.messages,
+        cwd: process.cwd(),
         // 一次性管道调用只归档，不改「本目录上一轮会话」指针：
         // 否则连跑几条 `cat … | ai --save` 后，下次 `ai` 会续接到最后一条管道结果上
         setAsLastSession: false,

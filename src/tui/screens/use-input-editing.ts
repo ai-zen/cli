@@ -94,7 +94,14 @@ export function useInputEditing({ initialText, notify }: InputEditingDeps): Inpu
     setCursor(graphemes(text).length);
   };
 
-  /** 光标位置钳到合法区间：所有编辑动作的统一起点 */
+  /**
+   * 取「当前文本 + 钳制后的光标」，所有编辑动作的统一起点。
+   *
+   * 钳制防的**不是**「cursor 越界」——`cursor` 的每个写入点都已保证落在 `[0, len]`；
+   * 防的是**文本与光标不同步**：`input` 与 `cursor` 是两个 state，任何一处只改其一
+   * （或将来新增编辑动作忘了同步）都会让 `cp > chars.length` 成立，那时 `slice`
+   * 会静默切少、`cp - 1` 会变负。钳一下把后果限制在「本次编辑落点不对」。
+   */
   const clampCursor = () => {
     const chars = graphemes(input);
     return { chars, cp: Math.max(0, Math.min(cursor, chars.length)) };
@@ -139,9 +146,11 @@ export function useInputEditing({ initialText, notify }: InputEditingDeps): Inpu
     const ring = killRingRef.current;
     if (ring.length === 0) return;
     const next = advance ? yankIndexRef.current + 1 : 0;
-    if (next >= ring.length) return;
+    // 只用 `killAt` 的 undefined 做越界守卫（环已到头），不再先判一遍 `next >= ring.length`
+    const text = killAt(ring, next);
+    if (text === undefined) return;
     yankIndexRef.current = next;
-    insertAtCursor(killAt(ring, next) ?? "");
+    insertAtCursor(text);
   };
 
   const undoEdit = () => {

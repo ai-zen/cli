@@ -71,17 +71,17 @@ describe("persistConversation（会话落盘的唯一入口）", () => {
   });
 
   it("agentId 缺省补 default（不让会话文件里出现 undefined）", async () => {
-    await persistConversation({ id: "chat_agent_default", messages: [userMsg("x")] });
+    await persistConversation({ id: "chat_agent_default", messages: [userMsg("x")], cwd: "/work" });
     expect(readBack("chat_agent_default").agentId).toBe("default");
   });
 
-  it("cwd 缺省为 process.cwd()，且总会被写进文件（收敛前 saveConversation 漏写）", async () => {
-    await persistConversation({ id: "chat_cwd_default", messages: [userMsg("x")] });
-    expect(readBack("chat_cwd_default").cwd).toBe(process.cwd());
+  it("cwd 一定被写进文件（收敛前 saveConversation 漏写）", async () => {
+    await persistConversation({ id: "chat_cwd", messages: [userMsg("x")], cwd: "/tmp/somewhere" });
+    expect(readBack("chat_cwd").cwd).toBe("/tmp/somewhere");
   });
 
   it("不再写入已废弃的 modelId 字段", async () => {
-    await persistConversation({ id: "chat_no_model", agentId: "default", messages: [userMsg("x")] });
+    await persistConversation({ id: "chat_no_model", agentId: "default", messages: [userMsg("x")], cwd: "/work" });
     expect(readBack("chat_no_model").modelId).toBeUndefined();
   });
 
@@ -101,11 +101,11 @@ describe("persistConversation（会话落盘的唯一入口）", () => {
   });
 
   it("返回会话 id（调用方要用它展示「已保存」）", async () => {
-    await expect(persistConversation({ id: "chat_ret", messages: [] })).resolves.toBe("chat_ret");
+    await expect(persistConversation({ id: "chat_ret", messages: [], cwd: "/work" })).resolves.toBe("chat_ret");
   });
 
   it("写盘是原子的：成功写之后不留临时文件，且内容可读回", async () => {
-    await persistConversation({ id: "chat_atomic", messages: [userMsg("第一轮")] });
+    await persistConversation({ id: "chat_atomic", messages: [userMsg("第一轮")], cwd: "/work" });
     const files = readdirSync(CONV_DIR);
     expect(files.filter((f) => f.endsWith(".tmp"))).toEqual([]);
     expect(readBack("chat_atomic").messages).toHaveLength(1);
@@ -124,7 +124,7 @@ describe("persistConversation（会话落盘的唯一入口）", () => {
     });
 
     try {
-      await persistConversation({ id: "chat_atomic_mech", messages: [userMsg("x")] });
+      await persistConversation({ id: "chat_atomic_mech", messages: [userMsg("x")], cwd: "/work" });
     } finally {
       spy.mockRestore();
     }
