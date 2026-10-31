@@ -5,10 +5,11 @@
  */
 export const en: Record<string, string> = {
   // ---------- Input row ----------
-  "input.placeholder": "Type a message, / for commands…",
+  "input.placeholder": "Type a message, / commands, @ files…",
   "input.hint.ready": "Enter send · Ctrl+J newline · / commands · PgUp history",
   "input.hint.scrolling": "↕ scrolling · PgUp/PgDn pages · send to jump to bottom",
   "input.hint.initializing": "Initializing…",
+  "mention.scanning": "Scanning project files…",
 
   // ---------- Status bar ----------
   "status.agent": " · agent ",

@@ -56,9 +56,9 @@ describe("detectLocale", () => {
 describe("t", () => {
   it("按当前语言取词条", () => {
     setLocale("zh");
-    expect(t("input.placeholder")).toBe("输入消息，/ 查看命令…");
+    expect(t("input.placeholder")).toBe("输入消息，/ 命令，@ 文件…");
     setLocale("en");
-    expect(t("input.placeholder")).toBe("Type a message, / for commands…");
+    expect(t("input.placeholder")).toBe("Type a message, / commands, @ files…");
   });
 
   it("插值替换占位符", () => {

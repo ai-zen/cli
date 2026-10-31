@@ -8,10 +8,11 @@
  */
 export const zh: Record<string, string> = {
   // ---------- 输入行 ----------
-  "input.placeholder": "输入消息，/ 查看命令…",
+  "input.placeholder": "输入消息，/ 命令，@ 文件…",
   "input.hint.ready": "Enter 发送 · Ctrl+J 换行 · / 命令 · PgUp 看历史",
   "input.hint.scrolling": "↕ 滚动中 · PgUp/PgDn 翻页 · 发送回到底部",
   "input.hint.initializing": "初始化中…",
+  "mention.scanning": "正在扫描项目文件…",
 
   // ---------- 状态栏 ----------
   "status.agent": " · agent ",

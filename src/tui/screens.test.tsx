@@ -499,7 +499,7 @@ describe("文本测量与折行", () => {
   });
 
   it("inputLines：空输入显示占位提示", () => {
-    expect(inputLines("", 80)).toEqual(["输入消息，/ 查看命令…"]);
+    expect(inputLines("", 80)).toEqual(["输入消息，/ 命令，@ 文件…"]);
     expect(inputLines("hi", 80)).toEqual(["hi"]);
   });
 });

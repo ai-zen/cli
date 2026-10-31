@@ -47,6 +47,14 @@ export interface InputEditing {
   /** 整体替换草稿（光标移到末尾） */
   setInputText: (text: string) => void;
   insertAtCursor: (text: string) => void;
+  /**
+   * 用一段文本替换 `[start, end)` 区间（光标落到插入文本末尾），并记一条撤销。
+   *
+   * `@` 文件补全专用：它替换的是**整个 token**（可能是 `@src/tu` 这种半截路径，
+   * 也可能是光标停在中间、右半边还没删的部分），而不是在光标处插入。
+   * 走 `applyEdit` 才有撤销快照 —— 补错一次 `Ctrl+_` 就能退回原样。
+   */
+  replaceRange: (start: number, end: number, text: string) => void;
   deleteBeforeCursor: () => void;
   deleteAfterCursor: () => void;
   deleteWordBeforeCursor: () => void;
@@ -132,6 +140,22 @@ export function useInputEditing({ initialText, notify }: InputEditingDeps): Inpu
     undoStackRef.current = pushUndo(undoStackRef.current, { text: input, cursor });
     setInput(r.text);
     setCursor(r.cursor);
+  };
+
+  /**
+   * 用一段文本替换 `[start, end)`，光标落到插入文本末尾。
+   *
+   * 走 `applyEdit`（而不是 `setInput`）是必须的：`@` 补全会把半截路径整段替换掉，
+   * 补错了要能 `Ctrl+_` 退回原样。
+   */
+  const replaceRange = (start: number, end: number, text: string) => {
+    const { chars } = clampCursor();
+    const from = Math.max(0, Math.min(start, chars.length));
+    const to = Math.max(from, Math.min(end, chars.length));
+    applyEdit({
+      text: chars.slice(0, from).join("") + text + chars.slice(to).join(""),
+      cursor: from + graphemes(text).length,
+    });
   };
 
   /** 删除类编辑：额外把删掉的文本放进 kill ring（Ctrl+Y 可取回） */
@@ -236,6 +260,7 @@ export function useInputEditing({ initialText, notify }: InputEditingDeps): Inpu
     cursor,
     setInputText,
     insertAtCursor,
+    replaceRange,
     deleteBeforeCursor,
     deleteAfterCursor,
     deleteWordBeforeCursor: () => applyKill(deleteWordLeft(input, cursor)),

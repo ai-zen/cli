@@ -9,7 +9,7 @@ import type { RateSample } from "../token-rate.js";
 import { phaseLabel, type PhaseInfo } from "../phase.js";
 import { AgentNS } from "@ai-zen/agents-core";
 import { theme } from "../theme.js";
-import { Spinner, StatusBar, statusBarRows, SlashMenu, type StatusBarProps } from "../components.js";
+import { Spinner, StatusBar, statusBarRows, SlashMenu, MentionMenu, type StatusBarProps } from "../components.js";
 import { graphemes, layoutInput, usableFrameRows } from "../text.js";
 import { ChatSession, type ChatSessionNotifier } from "../chat-session.js";
 import {
@@ -40,6 +40,8 @@ import { useChatViewport } from "./use-chat-viewport.js";
 import { useChatOverlays } from "./use-overlays.js";
 import { useWizardHost } from "./use-wizard-host.js";
 import { useInputEditing } from "./use-input-editing.js";
+import { extractMention, mentionInsertText, mentionMenuRows, rankPaths, type PathEntry } from "../mention.js";
+import { listProjectPaths } from "../file-index.js";
 import { handleCtrlDExit, handleScrollKey } from "./common-keys.js";
 
 // ==================== 对话屏幕 ====================
@@ -342,6 +344,7 @@ export function Chat(props: ChatScreenProps) {
     cursor,
     setInputText,
     insertAtCursor,
+    replaceRange,
     deleteBeforeCursor,
     deleteAfterCursor,
     deleteWordBeforeCursor,
@@ -369,10 +372,62 @@ export function Chat(props: ChatScreenProps) {
   useEffect(() => {
     setMenuIndex(0);
   }, [input]);
+  /** 项目文件索引（`@` 补全的候选源）；null = 还没扫过 */
+  const [fileIndex, setFileIndex] = useState<PathEntry[] | null>(null);
+  /** 用户按 Esc 主动关掉了 `@` 菜单：输入 / 光标一变就重新允许弹出 */
+  const [mentionOff, setMentionOff] = useState(false);
+  useEffect(() => {
+    setMentionOff(false);
+  }, [input, cursor]);
 
   // 命令候选人
   const slash = input.startsWith("/") && !input.includes("\n") && !input.includes(" ");
   const hints: CommandHint[] = slash ? matchCommandHints(input.slice(1)) : [];
+  /**
+   * `@` 文件补全的上下文：光标是否停在一个 `@token` 里（判据见 `mention.ts`）。
+   *
+   * 与斜杠命令**互斥**：`/` 开头就是在写命令，此时不弹文件菜单。
+   */
+  const mention = slash || mentionOff ? null : extractMention(input, cursor);
+  const fileMatches = mention && fileIndex ? rankPaths(mention.query, fileIndex) : [];
+  /** 索引还没就绪：菜单先占一行「扫描中…」，否则敲下 `@` 后一片空白像没反应 */
+  const scanningFiles = mention != null && fileIndex == null;
+  /** 当前菜单条数（两种菜单互斥，非零的那个说了算） */
+  const menuCount = slash ? hints.length : fileMatches.length;
+  /** 菜单渲染行数：`@` 候选可能几十条，必须开视窗（与 `MentionMenu` 严格一致，否则输入框位移） */
+  const menuRows = slash ? hints.length : mentionMenuRows(fileMatches.length, scanningFiles);
+
+  /** 每次「重新唤起 `@`」都问一次索引：`listProjectPaths` 内部有 15s 缓存，未过期时几乎零成本，
+   *  过期则顺手重扫 —— 于是会话里新建的文件不会因为「只扫过一次」而永远看不到。 */
+  useEffect(() => {
+    if (mention == null) return;
+    let alive = true;
+    void listProjectPaths(process.cwd())
+      .then((paths) => {
+        if (alive) setFileIndex(paths);
+      })
+      .catch(() => {
+        if (alive) setFileIndex([]);
+      });
+    return () => {
+      alive = false;
+    };
+    // 只在「从无菜单到有菜单」时触发：同一 token 内每敲一个键都重扫毫无意义
+  }, [mention == null]);
+
+  /**
+   * 把 `@` 菜单里高亮的那条补进草稿。
+   *
+   * 落字走 `replaceRange`：替换的是**整个 token**（`@src/tu` 这种半截路径、或光标停在
+   * 中间时右半边残留），并且会记一条撤销快照 —— 补错了 `Ctrl+_` 能退回。
+   * 目录带尾斜杠，补完菜单会重新过滤出该目录下的内容，于是可以一路钻下去。
+   */
+  const completeMentionSelection = () => {
+    if (!mention || fileMatches.length === 0) return;
+    const entry = fileMatches[Math.max(0, Math.min(menuIndex, fileMatches.length - 1))];
+    if (!entry) return;
+    replaceRange(mention.start, mention.end, mentionInsertText(entry.path, entry.dir));
+  };
 
   const runSubmit = async (text: string, options: { asMessage?: boolean } = {}) => {
     const trimmed = text.trim();
@@ -591,8 +646,8 @@ export function Chat(props: ChatScreenProps) {
       // Ctrl+P / Ctrl+N：历史上下（Claude Code 语义；换行改用 Ctrl+J / Alt+Enter）
       if ((char === "p" && key.ctrl) || (char === "n" && key.ctrl)) {
         const up = char === "p";
-        if (hints.length > 0) {
-          setMenuIndex((i) => (up ? (i - 1 + hints.length) % hints.length : (i + 1) % hints.length));
+        if (menuCount > 0) {
+          setMenuIndex((i) => (up ? (i - 1 + menuCount) % menuCount : (i + 1) % menuCount));
           return;
         }
         if (up) historyPrev();
@@ -614,10 +669,20 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if (key.return) {
+        // `@` 菜单开着时回车 = 补全（不发送）：让「选完继续接着写」成为默认动作，
+        // 否则选完就得再敲一个空格才能换行/继续，很容易误发半截消息。
+        if (mention && fileMatches.length > 0) {
+          completeMentionSelection();
+          return;
+        }
         void runSubmit(resolveSubmitText(input, hints, menuIndex));
         return;
       }
-      if (key.tab && hints.length > 0) {
+      if (key.tab && menuCount > 0) {
+        if (mention) {
+          completeMentionSelection();
+          return;
+        }
         setInputText(`/${hints[menuIndex]?.names[0] ?? ""} `);
         return;
       }
@@ -626,9 +691,9 @@ export function Chat(props: ChatScreenProps) {
           scrollByLine(key.upArrow ? -1 : 1);
           return;
         }
-        if (hints.length > 0) {
+        if (menuCount > 0) {
           setMenuIndex((i) =>
-            key.upArrow ? (i - 1 + hints.length) % hints.length : (i + 1) % hints.length,
+            key.upArrow ? (i - 1 + menuCount) % menuCount : (i + 1) % menuCount,
           );
           return;
         }
@@ -671,6 +736,11 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if (key.escape) {
+        // `@` 菜单开着时，Esc 只关菜单：清草稿太粗暴（`@` 打一半按 Esc 会连正文一起没）
+        if (mention && menuRows > 0) {
+          setMentionOff(true);
+          return;
+        }
         // Claude Code：生成中 Esc = 中断本轮；否则清空草稿并回到底部
         if (busy) sessionRef.current?.abort();
         else {
@@ -836,7 +906,7 @@ export function Chat(props: ChatScreenProps) {
     transcript,
     input,
     busy,
-    hintCount: hints.length,
+    hintCount: menuRows,
     noticeCount: noticeTextLines.length,
     agentTabLines,
     overlay: confirmState ? "confirm" : pickerState ? "picker" : "none",
@@ -883,7 +953,7 @@ export function Chat(props: ChatScreenProps) {
           // Agent 栏目与通知栏都夹在对话区与输入行之间：漏算会让硬件光标整体偏上
           agentTabCount: agentTabLines,
           noticeCount: noticeTextLines.length,
-          hintCount: hints.length,
+          hintCount: menuRows,
           cursorRow: inputLayout.cursorRow,
           cursorCol: inputLayout.cursorCol,
           lineText: bodyLines[inputLayout.cursorRow] ?? "",
@@ -908,7 +978,11 @@ export function Chat(props: ChatScreenProps) {
         <Box flexDirection="column">
           {agentTabs.length > 0 ? <AgentTabs tabs={agentTabs} activeId={activeTabId} /> : null}
           <NoticeBar lines={noticeTextLines} />
-          {hints.length > 0 ? <SlashMenu hints={hints} selected={menuIndex} /> : null}
+          {slash && hints.length > 0 ? <SlashMenu hints={hints} selected={menuIndex} /> : null}
+          {/* `@` 文件菜单：扫描中先占一行，拿到索引后按 `MENTION_ROWS` 开视窗（行数已算进 menuRows） */}
+          {mention ? (
+            <MentionMenu items={fileMatches} selected={menuIndex} scanning={scanningFiles} />
+          ) : null}
           <Box paddingX={1}>
             <Text color={theme.border} wrap="truncate">
               {"─".repeat(Math.max(1, cols - 2))}

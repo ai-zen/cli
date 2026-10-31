@@ -1,5 +1,5 @@
 /**
- * Ink 通用组件 —— Spinner / 选择列表 / 状态栏 / 斜杠命令菜单 / 键位提示
+ * Ink 通用组件 —— Spinner / 选择列表 / 状态栏 / 斜杠命令菜单 / `@` 文件菜单 / 键位提示
  */
 
 import { useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { useInput } from "ink";
 import { theme } from "./theme.js";
 import { clipWidth } from "./text.js";
 import type { CommandHint } from "../conversation-commands/registry.js";
+import { menuWindow, type PathEntry } from "./mention.js";
 import type { RateSample } from "./token-rate.js";
 import { packSegments, type StatusSegment } from "./status-segments.js";
 import { t } from "../i18n/index.js";
@@ -262,6 +263,52 @@ export function SlashMenu({ hints, selected }: SlashMenuProps) {
               {hint.label}
             </Text>
             <Text color={theme.dim}>  {hint.description}</Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+/**
+ * `@` 文件路径菜单。
+ *
+ * 与斜杠菜单同构（同一套 `❯` 高亮 + 两格缩进），差别只有三点：
+ *   · **开视窗**：候选可达几十条，只渲染 `MENTION_ROWS` 行并跟随高亮滚动 ——
+ *     行数必须与 `computeChatLayout` 收到的 `hintCount` 一致，否则输入框会位移；
+ *   · 目录带尾斜杠（`src/tui/`），一眼能看出「选中它会继续往下钻」；
+ *   · 索引还没扫好时先占一行「扫描中…」，避免首帧空窗像没反应。
+ */
+export interface MentionMenuProps {
+  items: PathEntry[];
+  selected: number;
+  /** 索引尚未就绪（首次 `@` 时后台正在扫） */
+  scanning: boolean;
+}
+
+export function MentionMenu({ items, selected, scanning }: MentionMenuProps) {
+  const { from, to } = menuWindow(items.length, selected);
+  const visible = items.slice(from, to);
+  const active = Math.max(0, Math.min(selected, items.length - 1));
+  return (
+    <Box flexDirection="column" paddingLeft={2}>
+      {scanning ? (
+        <Text color={theme.faint} wrap="truncate">
+          {t("mention.scanning")}
+        </Text>
+      ) : null}
+      {visible.map((item, i) => {
+        const isActive = from + i === active;
+        return (
+          <Box key={item.path}>
+            <Text color={isActive ? theme.brand[0] : theme.faint}>{isActive ? "❯ " : "  "}</Text>
+            <Text
+              bold={isActive}
+              color={isActive ? theme.highlight : theme.assistant}
+              wrap="truncate"
+            >
+              {item.dir ? `${item.path}/` : item.path}
+            </Text>
           </Box>
         );
       })}

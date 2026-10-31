@@ -1,3 +1,50 @@
+## [1.0.0-alpha.28] - 2026-10-31
+
+> 输入框里敲 `@` 唤起**文件路径补全** —— 补进去的是相对路径文本，模型用 `read` 工具自己去读。
+
+### ✨ 新功能
+
+- **`@` 文件路径补全** —— 敲 `@` 弹出项目内候选，`↑`/`↓` 选择、`Tab` 或 `Enter` 补进草稿、
+  `Esc` 只关菜单（不动草稿）。三层拆分，与仓库既有风格一致：
+  - `tui/mention.ts`（纯逻辑）：`extractMention()` 判「光标在不在一个 `@token` 里」、
+    `rankPaths()` 子序列模糊排序、`menuWindow()` 视窗、`mentionMenuRows()` 行数；
+  - `tui/file-index.ts`（IO）：`git ls-files -co --exclude-standard` 优先（尊重 `.gitignore`、
+    含未跟踪文件），非 git 目录回落 `fs.glob` 并排除 `node_modules` / `.git` / `dist`；
+    15s 缓存、20000 条封顶、5s 超时；
+  - `screens/chat.tsx`：按键 → 候选 → `replaceRange()` 落字的接线。
+- **判据落在字符事实上**：从光标往回扫到空白 / 行首，途中遇到 `@` 且其前一个是行首、空白或
+  分隔符才算 mention。于是 `a@b.com` 不会弹菜单；`@src/tui`、`(@src/x)`、`"@src/x"` 都会；
+  光标停在 token 中间（`@src|/foo.ts`）时 query 截止于光标、`end` 向后吃掉整个 token ——
+  补全替换的是整段，不会留下半截残字。
+- **排序**：贪婪子序列 + 跳跃惩罚 + 连续命中奖励；**整体前缀 > 文件名前缀**，同分时浅的 / 短的
+  优先。实测本仓：`@` → 182 条索引里取 50 条（1.1ms）、`@chat` 命中 19 条（0.2ms）、
+  `@file-index` 精确命中 2 条（0.1ms）。
+- **目录可逐层往下钻**：选中目录补尾斜杠（`@src/tui/`），补完菜单重新过滤出该目录下内容，
+  于是能一路 `@src/` → `@src/tui/` → 目标文件。
+
+### 🎨 交互
+
+- `Tab` / `Enter` = **补全不发送**（选完继续接着写，避免误发半截消息）；`Esc` 只关菜单，
+  不清草稿（原 `Esc` 语义是清空草稿，`@` 打一半按 Esc 会连正文一起没）。
+- 候选可能几十条，菜单**最多占 8 行**并随高亮滚动；索引未就绪时先占一行「正在扫描项目文件…」。
+- 行数有**唯一真源** `mentionMenuRows()`：`computeChatLayout` 的 `hintCount`、IME 光标的 y 坐标、
+  `MentionMenu` 实际渲染三处同源，并有用例断言 `mentionMenuRows(n) === menuWindow(n)` 的行数。
+- 占位提示改为「输入消息，/ 命令，@ 文件…」，让这个入口能被看见。
+
+### 🔧 重构
+
+- `useInputEditing` 新增 `replaceRange(start, end, text)`：整段替换**并记撤销快照**，
+  补错了 `Ctrl+_` 能退回（用 `setInputText` 会绕过撤销栈）。
+
+### ✅ 测试
+
+- 新增 39 例：`mention.test.ts` 22（提取 / 插入 / 排序 / 视窗 / 行数一致）、
+  `file-index.test.ts` 9（git 清单归一 / 缓存 TTL / cwd 切换 / 兜底 / 异常收敛 / 真磁盘）、
+  `components-mention.test.tsx` 5（8 行封顶 / 滚动跟随 / 目录尾斜杠 / 扫描占位 / 无匹配不占行）、
+  `chat.test.tsx` +6（弹菜单 / Tab 补全不发送 / Enter 补全 / ↓ 换高亮 / Esc 只关菜单 / 无匹配照常发）、
+  `use-input-editing.test.tsx` +3（区间替换 / 可撤销 / 越界钳制）。
+- 全量 **53 文件 / 708 例通过**，`tsc --noEmit` 0 错误。
+
 ## [1.0.0-alpha.27] - 2026-10-29
 
 > SDK 的警告与错误现在会进通知栏——**通用通道**，不为某个功能单独接线。

@@ -40,6 +40,9 @@ function Probe({ initialText, log }: { initialText?: string; log: string[] }) {
       case "p": return e.historyPrev();
       case "n": return e.historyNext();
       case "r": return e.setInputText("reset");
+      // `@` 补全的落字方式：整段区间替换
+      case "R": return e.replaceRange(0, 5, "@xy");
+      case "Z": return e.replaceRange(0, 999, "z"); // 右端越界要能钳制
       case "a": return e.setInputText("aaa");
       case "z": return e.setInputText("zzz");
       // 提交：记历史 + 清草稿（与 Chat 的 runSubmit 一致）
@@ -202,6 +205,32 @@ describe("useInputEditing", () => {
     expect(p.frame()).toBe("[]@0");
     await p.press("p"); // 应重新从最新一条（zzz）开始，而不是继续往回退
     expect(p.frame()).toBe("[zzz]@3");
+    p.unmount();
+  });
+});
+
+describe("replaceRange（`@` 补全的落字方式）", () => {
+  it("替换 [start, end) 区间，光标落到插入文本末尾", async () => {
+    setLocale("zh");
+    const p = await probe("hello world");
+    await p.press("R"); // replaceRange(0, 5, "@xy")
+    expect(p.frame()).toBe("[@xy world]@3");
+    p.unmount();
+  });
+
+  it("替换进撤销栈：Ctrl+_ 能退回补全前（含光标位置）", async () => {
+    const p = await probe("hello world");
+    await p.press("R");
+    expect(p.frame()).toBe("[@xy world]@3");
+    await p.press("u");
+    expect(p.frame()).toBe("[hello world]@11");
+    p.unmount();
+  });
+
+  it("右端越界被钳制（不产生空洞或异常）", async () => {
+    const p = await probe("hello");
+    await p.press("Z"); // replaceRange(0, 999, "z")
+    expect(p.frame()).toBe("[z]@1");
     p.unmount();
   });
 });

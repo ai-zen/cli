@@ -79,6 +79,15 @@ vi.mock("../../agents-store.js", async (importOriginal) => {
   return { ...actual, readAgentStore: vi.fn(async () => actual.createAgentStore([], [])) };
 });
 
+// `@` 补全的候选源：不打桩就会真去 spawn `git ls-files`
+vi.mock("../file-index.js", () => ({
+  listProjectPaths: vi.fn(async () => [
+    { path: "src/tui", dir: true },
+    { path: "src/tui/screens/chat.tsx", dir: false },
+    { path: "README.md", dir: false },
+  ]),
+}));
+
 import { Chat } from "./chat.js";
 
 /** 等 effect / Promise / FrameBuffer 合帧跑完（合帧间隔 60ms） */
@@ -279,6 +288,89 @@ describe("Chat 集成（拆分前的护栏）", () => {
     expect(created.session.send).toHaveBeenCalledWith("继续干");
     expect(frame).toContain("继续干");
     expect(frame).not.toContain("子 Agent 的结论");
+    unmount();
+  });
+});
+
+describe("`@` 文件路径补全", () => {
+  beforeEach(() => {
+    setLocale("zh");
+    created.notifier = null;
+    created.session = null;
+  });
+
+  it("敲下 @ 后弹出候选菜单（先显示扫描中，再出结果）", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    stdin.write("@");
+    await flush();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("README.md");
+    // 目录带尾斜杠：一眼能看出「选中它会继续往下钻」
+    expect(frame).toContain("src/tui/");
+    unmount();
+  });
+
+  it("Tab 把选中项补进草稿，且不发送", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    stdin.write("@chat");
+    await flush();
+    stdin.write("\t");
+    await flush();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("@src/tui/screens/chat.tsx");
+    expect(created.session.send).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it("菜单开着时回车 = 补全（不发送半截消息）", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    stdin.write("@chat");
+    await flush();
+    stdin.write("\r");
+    await flush();
+    expect(created.session.send).not.toHaveBeenCalled();
+    expect(lastFrame() ?? "").toContain("@src/tui/screens/chat.tsx");
+    unmount();
+  });
+
+  it("↓ 换高亮项：第二条被补进去", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    stdin.write("@");
+    await flush();
+    // 空查询下顺序：README.md → src/tui → src/tui/screens/chat.tsx
+    stdin.write("\u001b[B");
+    await flush();
+    stdin.write("\t");
+    await flush();
+    expect(lastFrame() ?? "").toContain("@src/tui/");
+    unmount();
+  });
+
+  it("Esc 只关菜单，草稿仍在", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    stdin.write("@chat");
+    await flush();
+    stdin.write("\u001b");
+    await flush();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("@chat");
+    expect(frame).not.toContain("screens/chat.tsx");
+    unmount();
+  });
+
+  it("没有匹配时不弹菜单，回车照常发送", async () => {
+    const { stdin, unmount } = mount();
+    await flush();
+    stdin.write("@zzz");
+    await flush();
+    stdin.write("\r");
+    await flush();
+    expect(created.session.send).toHaveBeenCalledWith("@zzz");
     unmount();
   });
 });
