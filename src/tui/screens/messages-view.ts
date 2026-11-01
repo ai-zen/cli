@@ -16,7 +16,12 @@ export function messageText(content: AgentNS.MessageContent | undefined): string
   return content
     .map((part) => {
       if (part.type === "text") return part.text;
-      if (part.type === "image_url") return t("msg.image", { url: part.image_url.url });
+      // 内联 base64（`Ctrl+V` 粘贴的图片）动辄几十万字符：铺到转录里会撑爆一行，
+      // 还会拖慢整帧渲染。这类只显示占位，有 URL 的（远程图片）才带上地址。
+      if (part.type === "image_url") {
+        const url = part.image_url.url;
+        return url.startsWith("data:") ? t("msg.imageInline") : t("msg.image", { url });
+      }
       if (part.type === "file") {
         const file = part as { file_id?: string; filename?: string };
         return t("msg.file", { name: file.file_id ?? file.filename ?? t("msg.inlineFile") });

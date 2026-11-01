@@ -45,18 +45,26 @@ export class CwdTrackerPlugin implements AgentPlugin {
     const isFirstTime = this.lastCwd === null;
     this.lastCwd = currentCwd;
 
-    // 找到最后一条 user 消息，将 cwd 信息追加到其末尾
-    const lastUserMsg = [...ctx.agent.messages]
-      .reverse()
-      .find((m) => m.role === AgentNS.Role.User && typeof m.content === "string");
-
-    if (!lastUserMsg || typeof lastUserMsg.content !== "string") return;
+    // 找到最后一条 user 消息，将 cwd 信息追加到其末尾。
+    const lastUserMsg = [...ctx.agent.messages].reverse().find((m) => m.role === AgentNS.Role.User);
+    if (!lastUserMsg) return;
 
     // 注入给模型的提示词：用英文，并显式标注「系统注入」—— 翻存档 / 交接文档时
     // 一眼能分辨哪些内容不是用户敲的。（协议内容，不走 i18n）
     const tag = isFirstTime
       ? "[system-injected: current working directory — not written by the user]"
       : "[system-injected: working directory changed — not written by the user]";
-    lastUserMsg.content += `\n\n${tag}\nCurrent working directory: ${currentCwd}`;
+    const note = `${tag}\nCurrent working directory: ${currentCwd}`;
+
+    // 粘贴过图片的消息，`content` 是内容块数组（图片 / 文本混排）：cwd 要追加到
+    // **最后一个 text 段**上，而不是另起一段——另起会多出一条「只有 cwd」的文本块。
+    if (Array.isArray(lastUserMsg.content)) {
+      const textSection = [...lastUserMsg.content].reverse().find((section) => section.type === "text");
+      if (textSection && textSection.type === "text") textSection.text += `\n\n${note}`;
+      else lastUserMsg.content.push({ type: "text", text: note });
+      return;
+    }
+    if (typeof lastUserMsg.content !== "string") return;
+    lastUserMsg.content += `\n\n${note}`;
   }
 }

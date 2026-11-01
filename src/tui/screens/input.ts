@@ -17,7 +17,8 @@ export function inputLines(text: string, columns: number): string[] {
  *
  * y 必须把输入行**上方渲染的全部行**算进去，顺序与 `chat.tsx` 的渲染顺序严格一致：
  *
- *   对话区（`layout.lines`）→ 通知栏（`noticeLines`）→ 斜杠菜单（`hints`）→ 分隔线 → 输入行
+ *   对话区（`layout.lines`）→ Agent 栏目 → 通知栏（`noticeLines`）→ 附件提示行
+ *   → 斜杠 / `@` 菜单（`hints`）→ 分隔线 → 输入行
  *
  * 漏算任何一段，硬件光标就会整体偏移那么多行（Ink 的 `moveUp = 总行数 − y`，
  * 所以 y 少几行，光标就高几行）。历史上「通知栏」就被漏过：`/help` 这类多行通知
@@ -30,6 +31,8 @@ export function computeInputCursorPosition(input: {
   agentTabCount?: number;
   /** 通知栏行数（位于对话区与斜杠菜单之间；不传视为 0） */
   noticeCount?: number;
+  /** 待发送附件提示行数（位于通知栏与菜单之间；不传视为 0） */
+  attachmentCount?: number;
   /** 斜杠命令菜单行数 */
   hintCount: number;
   /** 光标在输入框内的行 / 列（列以 code point 计） */
@@ -45,11 +48,12 @@ export function computeInputCursorPosition(input: {
     : graphemes(input.lineText).slice(0, input.cursorCol).join("");
   return {
     x: INPUT_PREFIX_WIDTH + displayWidth(before),
-    // 对话区 + Agent 栏目 + 通知栏 + 斜杠菜单 + 分隔线 + 输入行内偏移
+    // 对话区 + Agent 栏目 + 通知栏 + 附件提示行 + 斜杠菜单 + 分隔线 + 输入行内偏移
     y:
       input.transcriptLines +
       (input.agentTabCount ?? 0) +
       (input.noticeCount ?? 0) +
+      (input.attachmentCount ?? 0) +
       input.hintCount +
       1 +
       input.cursorRow,

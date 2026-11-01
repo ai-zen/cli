@@ -316,6 +316,24 @@ export function MentionMenu({ items, selected, scanning }: MentionMenuProps) {
   );
 }
 
+// ==================== 待发送附件 ====================
+
+/**
+ * 待发送附件提示行（`Ctrl+V` 粘贴的图片）。
+ *
+ * **恒为一行**：`computeChatLayout` 按 `attachmentLines: 1` 算高度，内容超宽一律
+ * `truncate` 兜底 —— 折成两行会把输入框顶出屏幕（同一类教训：状态栏 / 通知栏）。
+ */
+export function PastedImagesBar({ count }: { count: number }) {
+  return (
+    <Box paddingLeft={2}>
+      <Text color={theme.tool} wrap="truncate">
+        {`📎 ${t("input.pastedImages", { n: count })}`}
+      </Text>
+    </Box>
+  );
+}
+
 // ==================== 键位提示 ====================
 
 export function KeyHints({ hints }: { hints: [string, string][] }) {

@@ -1,3 +1,57 @@
+## [1.0.0-alpha.29] - 2026-10-31
+
+> `Ctrl+V` 从「弹一句未支持」变成**真的粘贴**：剪贴板里有图片就附在消息上，
+> 没有就退回粘贴文本。
+
+### ✨ 新功能
+
+- **粘贴图片** —— `Ctrl+V`（kitty 协议下 `⌘V`）先问系统剪贴板要图片，有图就附到待发送
+  消息上，输入框上方出现 `📎 已附加 N 张图片 · Ctrl+V 再加 · Esc 清空`；没有图片则
+  当作普通粘贴，把剪贴板文本插到光标处。按平台探测：
+
+  | 平台 | 图片 | 文本 |
+  |---|---|---|
+  | macOS | `osascript -e "get the clipboard as «class PNGf»"`（stdout 是 `«data PNGf<HEX>»`） | `pbpaste` |
+  | Linux | `wl-paste --type image/png`（Wayland）→ `xclip -t image/png -o`（X11） | `wl-paste --no-newline` → `xclip -o` |
+  | Windows | PowerShell `Get-Clipboard -Format Image` → PNG → base64 | `Get-Clipboard -Raw` |
+
+- **全程不落盘** —— 图片以 base64 直接交给 SDK 的 `fileToContentSection()`（它的
+  `FileSource` 本来就有 `{ base64, mime }` 变体）：上传 Files API 还是内联 base64、
+  模型不支持视觉时怎么退化，全部由 SDK 按当前端点决定，CLI 不重复实现、也不硬编码端点。
+- **一条消息最多 4 张**（`MAX_PASTED_IMAGES`）：一张截图内联后常 1~3MB，再多一次请求
+  就是几十 MB。超限、图片过大（>20MB）、剪贴板为空、没有剪贴板工具，各有独立提示。
+
+### 🎨 交互
+
+- **图片优先、文本兑底**，顺序不能反：文本先粘进去就来不及了（草稿里已经多了一坨东西）。
+- `Esc` 有附件时**先清附件、草稿保留** —— 误粘一张总有退路，又不必让 `ESC` 变成
+  「清空一切」的随机键。
+- 附件提示行恒为一行，行数同时计入 `computeChatLayout`（占高）与
+  `computeInputCursorPosition`（IME 光标 y）—— 差一行输入框就整体位移，这条有前科。
+- 乐观回显按「文本段 + 图片占位块」构造，与实际发送的结构一致（否则图片那几条会在
+  真实消息落地前闪一下不见）；转录里内联图片只显示 `[图片]`，不把几十万字符的
+  data URL 铺到屏幕上（远程 URL 才带地址）。
+
+### 🐛 修复
+
+- **带图片的消息会丢掉 cwd 注入** —— `CwdTrackerPlugin` 原来只找 `content` 是字符串的
+  用户消息，换成内容块数组后会被直接跳过，那一轮模型看到的还是上一轮的工作目录。
+  现在追加到**最后一个 text 段**上；数组里没有 text 段时补一段。
+- README / getting-started 里「`PgUp`/`PgDn`（或 `Alt+V`/`Ctrl+V`）翻页」是错的：
+  `Ctrl+V` 从未兼任翻页（`common-keys.ts` 只认 `Alt+V`），已修正。
+
+### ✅ 测试
+
+- 新增 33 例：`clipboard.test.ts` 15（三平台命令选择 / osascript 十六进制解析 / 缺工具 /
+  空输出 / 超限 / CRLF 归一）、`user-content.test.ts` 6（文本段在首位 / 部分失败 /
+  全失败退回纯文本 / warning 透传）、`cwd-tracker-plugin.test.ts` 4（字符串 / 内容块 /
+  只有图片 / 不重复注入）、`pasted-images.test.tsx` 3（恒一行 / 布局多占一行 / 光标 y 同步）、
+  `chat.test.tsx` +5（无图粘文本 / 有图出附件行 / Esc 清附件保草稿 / 发送带图 / 空剪贴板提示）。
+- 全量 **57 文件 / 741 例通过**，`tsc --noEmit` 0 错误。
+- 真产物验证（本机 Linux、无剪贴板工具）：`readClipboardImage() → { kind: "none" }`、
+  `readClipboardText() → null`，11ms 不抛错；不打桩地跑真实 SDK 转换，`vision: true` 得到
+  `image_url` 内联块，`vision` 缺省得到文本提示 + warning。
+
 ## [1.0.0-alpha.28] - 2026-10-31
 
 > 输入框里敲 `@` 唤起**文件路径补全** —— 补进去的是相对路径文本，模型用 `read` 工具自己去读。

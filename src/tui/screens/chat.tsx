@@ -9,7 +9,7 @@ import type { RateSample } from "../token-rate.js";
 import { phaseLabel, type PhaseInfo } from "../phase.js";
 import { AgentNS } from "@ai-zen/agents-core";
 import { theme } from "../theme.js";
-import { Spinner, StatusBar, statusBarRows, SlashMenu, MentionMenu, type StatusBarProps } from "../components.js";
+import { Spinner, StatusBar, statusBarRows, SlashMenu, MentionMenu, PastedImagesBar, type StatusBarProps } from "../components.js";
 import { graphemes, layoutInput, usableFrameRows } from "../text.js";
 import { ChatSession, type ChatSessionNotifier } from "../chat-session.js";
 import {
@@ -42,6 +42,7 @@ import { useWizardHost } from "./use-wizard-host.js";
 import { useInputEditing } from "./use-input-editing.js";
 import { extractMention, mentionInsertText, mentionMenuRows, rankPaths, type PathEntry } from "../mention.js";
 import { listProjectPaths } from "../file-index.js";
+import { readClipboardImage, readClipboardText, type ClipboardImage } from "../../clipboard.js";
 import { handleCtrlDExit, handleScrollKey } from "./common-keys.js";
 
 // ==================== 对话屏幕 ====================
@@ -63,6 +64,19 @@ export interface ChatScreenProps {
   initialPrompt?: string;
   /** 重挂载后展示一次的系统提示（如 /model 的写入结果，旧实例已卸载） */
   initialNotice?: string;
+}
+
+/**
+ * 单条消息最多附几张粘贴图片。
+ *
+ * 顶在 4 张：一张手机截图内联后 base64 常在 1~3MB，再多一次请求就是几十 MB，
+ * 既扫 token 也容易撞端点的请求体上限。
+ */
+export const MAX_PASTED_IMAGES = 4;
+
+/** 字节数 → 一位小数的 MB（提示文案用） */
+export function formatMegabytes(bytes: number): string {
+  return (bytes / 1024 / 1024).toFixed(1);
 }
 
 /**
@@ -143,7 +157,19 @@ export function Chat(props: ChatScreenProps) {
     position: CursorPosition;
   } | null>(null);
   /** 乐观回显：提交后、真实 user 消息落进 messages 之前，先显示用户提问 */
-  const [pendingUser, setPendingUser] = useState<{ text: string; base: number } | null>(null);
+  const [pendingUser, setPendingUser] = useState<{
+    text: string;
+    base: number;
+    /** 本条附带的粘贴图片（只用于转录里显示 `[图片]` 占位，不在UI里展开 base64） */
+    images?: readonly ClipboardImage[];
+  } | null>(null);
+  /**
+   * 待发送的粘贴图片（`Ctrl+V` 累积）。
+   *
+   * 存 base64 而不是落盘：SDK 的 `fileToContentSection()` 正好接受 `{ base64, mime }`，
+   * 于是粘贴全程不碰磁盘 —— 也就不会在 `$TMPDIR` 里留下一堆无人清理的 png。
+   */
+  const [pastedImages, setPastedImages] = useState<readonly ClipboardImage[]>([]);
   /** 转录显示起点（/clear 清屏用：隐藏此索引之前的消息，但不改上下文） */
   const [transcriptFrom, setTranscriptFrom] = useState(0);
   /**
@@ -429,6 +455,45 @@ export function Chat(props: ChatScreenProps) {
     replaceRange(mention.start, mention.end, mentionInsertText(entry.path, entry.dir));
   };
 
+  /**
+   * `Ctrl+V`：**先问剪贴板要图片，没有图片就退回粘贴文本**。
+   *
+   * 顺序不能反 —— 文本一旦先粘进去，再发现「其实剪贴板里是图片」就晚了（草稿里已经
+   * 多了一坨东西）。所以永远是「图片优先、文本兑底」，这也就是用户按 Ctrl+V 的默认期待。
+   *
+   * 异步不阻塞输入：`readClipboardImage()` 要 spawn 一个子进程（几十 ms），期间用户
+   * 还能继续打字；回到结果时只做一次 setState / 插字。
+   */
+  const pasteClipboard = async () => {
+    const result = await readClipboardImage();
+    if (result.kind === "image") {
+      if (pastedImages.length >= MAX_PASTED_IMAGES) {
+        noticeChannel.push(t("notice.imageLimit", { n: MAX_PASTED_IMAGES }), "error");
+        return;
+      }
+      setPastedImages((list) => [...list, result.image]);
+      noticeChannel.push(t("notice.imagePasted", { n: pastedImages.length + 1 }));
+      return;
+    }
+    if (result.kind === "too-large") {
+      noticeChannel.push(t("notice.imageTooLarge", { size: formatMegabytes(result.bytes) }), "error");
+      return;
+    }
+
+    // 没有图片 → 当成普通粘贴：把剪贴板文本插到光标处
+    const text = await readClipboardText();
+    if (text == null) {
+      noticeChannel.push(t("notice.clipboardUnavailable"), "error");
+      return;
+    }
+    if (text.length === 0) {
+      noticeChannel.push(t("notice.clipboardEmpty"));
+      return;
+    }
+    // 去掉末尾单个换行：剪贴板文本几乎总带一个尾换行，粘完光标原地跳行很莫妙
+    insertAtCursor(text.replace(/\n$/, ""));
+  };
+
   const runSubmit = async (text: string, options: { asMessage?: boolean } = {}) => {
     const trimmed = text.trim();
     if (!trimmed || !sessionRef.current || busy) return;
@@ -476,10 +541,13 @@ export function Chat(props: ChatScreenProps) {
 
     rememberSubmitted(trimmed);
     const base = sessionRef.current!.messages.filter((m) => m.role === AgentNS.Role.User).length;
-    setPendingUser({ text: trimmed, base });
+    // 先取快照再清空：`send` 要用同一个数组，而输入区要立刻回到「没有附件」的状态
+    const images = pastedImages;
+    setPastedImages([]);
+    setPendingUser({ text: trimmed, base, images });
     setBusy(true);
     try {
-      await sessionRef.current!.send(trimmed);
+      await sessionRef.current!.send(trimmed, images);
     } finally {
       setBusy(false);
       setPendingUser(null);
@@ -626,8 +694,8 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if ((char === "v" && key.ctrl) || (key.super && (char === "v" || char === "V"))) {
-        // 图片粘贴暂未支持：需要先做「文件 → 内容块」的能力探测（见后续迭代）
-        noticeChannel.push(t("notice.pasteImageUnsupported"), "error");
+        // 剪贴板里有图片就附在消息上（发送时转成内容块），没有就退回粘贴文本
+        void pasteClipboard();
         return;
       }
       // readline 的行首 / 行尾（macOS 上部分终端把 ⌘← / ⌘→ 发成 ^A / ^E）
@@ -739,6 +807,13 @@ export function Chat(props: ChatScreenProps) {
         // `@` 菜单开着时，Esc 只关菜单：清草稿太粗暴（`@` 打一半按 Esc 会连正文一起没）
         if (mention && menuRows > 0) {
           setMentionOff(true);
+          return;
+        }
+        // 有附件时先清附件（草稿保留）——误粘一张图后总得有个退路，
+        // 而又不能为了这个把 ESC 变成「清空一切」的随机键
+        if (!busy && pastedImages.length > 0) {
+          setPastedImages([]);
+          noticeChannel.push(t("notice.imagesCleared"));
           return;
         }
         // Claude Code：生成中 Esc = 中断本轮；否则清空草稿并回到底部
@@ -854,9 +929,22 @@ export function Chat(props: ChatScreenProps) {
     cols,
   );
   if (showPending) {
+    // 带粘贴图片的消息：乐观回显要与实际发送的结构一致（文本段 + 图片占位块），
+    // 否则图片那几条会在真实消息落地前「消失」一下。
+    const images = pendingUser!.images ?? [];
     transcript.push(
       ...messageToLines(
-        { id: "__pending_user", role: AgentNS.Role.User, content: pendingUser!.text },
+        {
+          id: "__pending_user",
+          role: AgentNS.Role.User,
+          content:
+            images.length > 0
+              ? [
+                  { type: "text" as const, text: pendingUser!.text },
+                  ...images.map(() => ({ type: "image_url" as const, image_url: { url: "" } })),
+                ]
+              : pendingUser!.text,
+        },
         cols,
       ),
     );
@@ -900,6 +988,9 @@ export function Chat(props: ChatScreenProps) {
   };
   const statusRows = statusBarRows(statusProps, cols);
 
+  /** 附件提示行：有粘贴图片时占 1 行（与 `computeChatLayout` 的 `attachmentLines` 同一个判据） */
+  const attachmentLines = pastedImages.length > 0 ? 1 : 0;
+
   const layout = computeChatLayout({
     columns: cols,
     rows: usableFrameRows(rows ?? 24),
@@ -908,6 +999,7 @@ export function Chat(props: ChatScreenProps) {
     busy,
     hintCount: menuRows,
     noticeCount: noticeTextLines.length,
+    attachmentLines,
     agentTabLines,
     overlay: confirmState ? "confirm" : pickerState ? "picker" : "none",
     pickerItems: pickerState?.items.length ?? 0,
@@ -953,6 +1045,7 @@ export function Chat(props: ChatScreenProps) {
           // Agent 栏目与通知栏都夹在对话区与输入行之间：漏算会让硬件光标整体偏上
           agentTabCount: agentTabLines,
           noticeCount: noticeTextLines.length,
+          attachmentCount: attachmentLines,
           hintCount: menuRows,
           cursorRow: inputLayout.cursorRow,
           cursorCol: inputLayout.cursorCol,
@@ -978,6 +1071,8 @@ export function Chat(props: ChatScreenProps) {
         <Box flexDirection="column">
           {agentTabs.length > 0 ? <AgentTabs tabs={agentTabs} activeId={activeTabId} /> : null}
           <NoticeBar lines={noticeTextLines} />
+          {/* 附件提示行：必须在 NoticeBar 之后、菜单之前（与 computeInputCursorPosition 的顺序一致） */}
+          {attachmentLines > 0 ? <PastedImagesBar count={pastedImages.length} /> : null}
           {slash && hints.length > 0 ? <SlashMenu hints={hints} selected={menuIndex} /> : null}
           {/* `@` 文件菜单：扫描中先占一行，拿到索引后按 `MENTION_ROWS` 开视窗（行数已算进 menuRows） */}
           {mention ? (

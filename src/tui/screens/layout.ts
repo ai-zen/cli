@@ -26,6 +26,12 @@ export interface ChatLayoutInput {
   /** 通知栏行数（notice / error 独立栏位），缺省 0 */
   noticeCount?: number;
   /**
+   * 待发送附件行数（粘贴图片的提示行，位于通知栏与菜单之间）。
+   * 与 `noticeCount` / `agentTabLines` 同类：多算或少算一行，输入框就会整体位移，
+   * 硬件光标（IME）也跟着偏。缺省 0。
+   */
+  attachmentLines?: number;
+  /**
    * Agent 栏目行数（主 / 子 Agent 切换条，位于对话区与底栏之间）。
    * 无子 Agent 时为 0（不占位）；缺省 0。
    */
@@ -88,12 +94,14 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
         ? pickerLines(input.pickerItems)
         : 0;
   const noticeCount = input.noticeCount ?? 0;
+  const attachmentLines = input.attachmentLines ?? 0;
   const agentTabLines = input.agentTabLines ?? 0;
   const statusBarLines = Math.max(1, input.statusBarLines ?? STATUS_BAR_LINES);
   const bottomLines =
     input.overlay === "none"
       ? agentTabLines /* Agent 栏目 */ +
         noticeCount /* 通知栏 */ +
+        attachmentLines /* 附件提示行 */ +
         1 /* 分隔线 */ +
         input.hintCount +
         inputHeight +

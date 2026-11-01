@@ -66,7 +66,7 @@ When run with no arguments on an interactive terminal, the CLI opens a full-scre
 ╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
 
               AI workbench in your terminal
-              v1.0.0-alpha.28 · sdk x · core y
+              v1.0.0-alpha.29 · sdk x · core y
 ```
 
 After the splash, you land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and a **status bar** (three priority-ordered blocks: model · agent · reasoning effort | this-round / cumulative tokens · generation rate | key hints; a block that does not fit moves to the next line whole, so nothing is truncated and no block gets split) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line and its label shows **which phase** the round is in: connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming; the two tool phases include the tool name. The generation rate shows a live value while streaming (2-second sliding window, estimated from output deltas) and switches to this round's average once it finishes (preferring the real `completion_tokens` from the API).
@@ -77,7 +77,7 @@ While sub-agents are running, a **main / sub-agent bar** appears below the trans
 
 **`@` triggers file-path completion**: type `@` in the input and a project-wide candidate list pops up (`@chat` narrows straight to `src/tui/screens/chat.tsx`; `@src/tui/` keeps descending directory by directory). `↑`/`↓` to choose, `Tab` or `Enter` to insert, `Esc` to dismiss the menu only (your draft is kept). What gets inserted is the **relative path as plain text** (`@src/tui/screens/chat.tsx`); the message stays ordinary text and the model reads the file itself with the `read` tool — so a wrong completion is one `Ctrl+_` away, and large files never get stuffed into the context. Candidates come from `git ls-files -co --exclude-standard` (honours `.gitignore`, includes untracked files), falling back to `fs.glob` with `node_modules` / `.git` / `dist` excluded outside a git repo; the index is cached for 15 seconds, and the menu is capped at 8 rows and scrolls with the highlight.
 
-The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word; `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word; `Ctrl+K` kills to end of line; `Ctrl+U` kills to line start; `PgUp`/`PgDn` (or `Alt+V`/`Ctrl+V`) scroll the transcript, the mouse wheel scrolls by line; on macOS `⌘← →` moves by word, `⌘⌫`/`⌘⌦` deletes by word, `⌘[`/`⌘]` pages and `⌘;`/`⌘'` scrolls by line (depending on whether the terminal reports Cmd — see below)., and an inline `/` command menu (↑↓ to choose, `Tab` to complete). Tool calls render as `⚙ name(args)` with **JSON syntax highlighting**; the answer / reasoning is **Markdown-source-colored** (headings, bold, italic, inline code, lists, quotes, links), and fenced code blocks are **syntax-highlighted by language with the fence markers kept** (highlight data from `highlight.js` via `lowlight`). `Ctrl+C` cancels the current request while generating, and exits when idle.
+The chat screen provides a streaming output area (reasoning / answer / tool calls on separate lines), a multiline input (`Enter` sends; `Ctrl+N` inserts a newline; `← →` move the cursor, `Ctrl+← →` by word; `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word; `Ctrl+K` kills to end of line; `Ctrl+U` kills to line start; `PgUp`/`PgDn` (or `Alt+V`) scroll the transcript, the mouse wheel scrolls by line; on macOS `⌘← →` moves by word, `⌘⌫`/`⌘⌦` deletes by word, `⌘[`/`⌘]` pages and `⌘;`/`⌘'` scrolls by line (depending on whether the terminal reports Cmd — see below)., and an inline `/` command menu (↑↓ to choose, `Tab` to complete). Tool calls render as `⚙ name(args)` with **JSON syntax highlighting**; the answer / reasoning is **Markdown-source-colored** (headings, bold, italic, inline code, lists, quotes, links), and fenced code blocks are **syntax-highlighted by language with the fence markers kept** (highlight data from `highlight.js` via `lowlight`). `Ctrl+C` cancels the current request while generating, and exits when idle.
 
 ### Keyboard & terminal compatibility (macOS, etc.)
 
@@ -110,7 +110,7 @@ Key map (aligned with [Claude Code](https://docs.claude.com/en/docs/claude-code/
 | `Ctrl+Y` / `Alt+Y` | Yank the last killed text / cycle older entries |
 | `Ctrl+_` | Undo the last input edit |
 | `Ctrl+S` | Stash the draft / press again to restore |
-| `Ctrl+V` | Reserved for image paste (**not implemented yet**; shows a notice) |
+| `Ctrl+V` | Paste: attaches the clipboard image if there is one, otherwise pastes text |
 | `Ctrl+L` | Clear the screen (context kept) |
 | `PgUp` / `PgDn` | Page through the transcript |
 | Mouse wheel | Scroll by line (3 lines per notch). With mouse reporting on, text selection needs `Shift` (native terminal selection); `tmux` users need `set -g mouse off`, otherwise the wheel is swallowed by copy-mode |
@@ -121,7 +121,7 @@ Key map (aligned with [Claude Code](https://docs.claude.com/en/docs/claude-code/
 
 Not implemented (no counterpart here): `Ctrl+O` transcript viewer, `Ctrl+R` reverse search, `Ctrl+B` background tasks, `Ctrl+T` task list, `Shift+Tab` permission modes.
 
-`Ctrl+V` (Claude Code's "paste image") is **not implemented yet** — pressing it shows a notice. It first needs a proper "file → content block" capability probe (Files API upload vs base64 inline) instead of hard-coding a single endpoint. Note that macOS maps `⌘⌫` to `Ctrl+U`, which is why `Ctrl+U` kills to line start here; use `Esc` to clear the draft.
+`Ctrl+V` is **image first, text as fallback**: it asks the system clipboard for an image (via `osascript` on macOS, `wl-paste` / `xclip` on Linux, PowerShell on Windows) and, if there is one, attaches it to the message (an `📎 N attached` line appears above the input, up to 4 images, `Esc` clears them). With no image on the clipboard it behaves like a normal paste and inserts the text at the cursor. Nothing is written to disk — the image becomes a content block straight from base64, and whether it goes through the Files API or inline is decided by the SDK based on the current endpoint; when the model does not declare `vision: true`, the SDK degrades it to a path hint and says so in the notice bar. Note that macOS maps `⌘⌫` to `Ctrl+U`, which is why `Ctrl+U` kills to line start here; use `Esc` to clear the draft.
 
 \* `⌘` combos only carry the `super` bit when the terminal **enables the kitty keyboard protocol** (and for iTerm2, when Cmd is mapped to Super). Terminals without it (e.g. Apple Terminal) can only map `⌘` to `ESC` sequences (e.g. `⌘←` → `ESC[1;9D`, equivalent to `Alt+←`), or you can use the Alt combos above.
 

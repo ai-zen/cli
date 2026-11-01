@@ -23,6 +23,8 @@ import {
 } from "@ai-zen/agents-sdk";
 import { createAgent, resetScope } from "../agent-creator.js";
 import { readConfig } from "../config.js";
+import { buildUserContent } from "../user-content.js";
+import type { ClipboardImage } from "../clipboard.js";
 import { CwdTrackerPlugin } from "../cwd-tracker-plugin.js";
 import { ConversationPersistPlugin } from "../conversation-persist-plugin.js";
 import { SubAgentGuardInstallerPlugin } from "../sub-agent-guard-plugin.js";
@@ -266,12 +268,30 @@ export class ChatSession {
     this.subAgentSeq = 0;
   }
 
-  /** 发送一条消息；内容变化经 `notifier.onChange` 通知，`resolve` 表示本轮结束 */
-  async send(input: string): Promise<void> {
+  /**
+   * 发送一条消息；内容变化经 `notifier.onChange` 通知，`resolve` 表示本轮结束。
+   *
+   * `images` 非空时，消息内容由「文本段 + 图片内容块」组成（转换规则与降级全在
+   * `user-content.ts`）：这是粘贴图片唯一的入口，不另开一条发送路径。
+   */
+  async send(input: string, images: readonly ClipboardImage[] = []): Promise<void> {
     this.rate.begin();
     this.phaseTracker.connecting();
     try {
-      await this.agent.send(input);
+      if (images.length === 0) {
+        await this.agent.send(input);
+      } else {
+        const config = await readConfig();
+        const { content, warnings } = await buildUserContent({
+          text: input,
+          images,
+          config,
+          // 端点 / 视觉能力按**实发模型名**反查：`file_id` 是端点维度资源，传错端点会 not found
+          apiModelName: this.agent.model,
+        });
+        for (const warning of warnings) this.notifier.onNotice(warning, "info");
+        await this.agent.send(content);
+      }
     } catch (error: any) {
       this.notifier.onNotice(error?.message ?? String(error), "error");
     } finally {

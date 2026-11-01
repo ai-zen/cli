@@ -88,6 +88,16 @@ vi.mock("../file-index.js", () => ({
   ]),
 }));
 
+// 剪贴板：不打桩就会真去 spawn `pbpaste` / `wl-paste`
+const clipboardMock = vi.hoisted(() => ({
+  image: { kind: "none" } as { kind: string; image?: { base64: string; mime: string } },
+  text: null as string | null,
+}));
+vi.mock("../../clipboard.js", () => ({
+  readClipboardImage: vi.fn(async () => clipboardMock.image),
+  readClipboardText: vi.fn(async () => clipboardMock.text),
+}));
+
 import { Chat } from "./chat.js";
 
 /** 等 effect / Promise / FrameBuffer 合帧跑完（合帧间隔 60ms） */
@@ -120,7 +130,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await flush();
     stdin.write("\r");
     await flush();
-    expect(created.session.send).toHaveBeenCalledWith("你好");
+    expect(created.session.send).toHaveBeenCalledWith("你好", []);
     unmount();
   });
 
@@ -135,7 +145,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await flush();
     const frame = lastFrame() ?? "";
     expect(frame).toContain("处理中");
-    expect(created.session.send).toHaveBeenCalledWith("hi");
+    expect(created.session.send).toHaveBeenCalledWith("hi", []);
     unmount();
   });
 
@@ -285,7 +295,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     stdin.write("\r");
     await flush();
     const frame = lastFrame() ?? "";
-    expect(created.session.send).toHaveBeenCalledWith("继续干");
+    expect(created.session.send).toHaveBeenCalledWith("继续干", []);
     expect(frame).toContain("继续干");
     expect(frame).not.toContain("子 Agent 的结论");
     unmount();
@@ -370,7 +380,84 @@ describe("`@` 文件路径补全", () => {
     await flush();
     stdin.write("\r");
     await flush();
-    expect(created.session.send).toHaveBeenCalledWith("@zzz");
+    expect(created.session.send).toHaveBeenCalledWith("@zzz", []);
+    unmount();
+  });
+});
+
+describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
+  beforeEach(() => {
+    setLocale("zh");
+    created.notifier = null;
+    created.session = null;
+    clipboardMock.image = { kind: "none" };
+    clipboardMock.text = null;
+  });
+
+  /** Ctrl+V（`\x16` → char "v" + ctrl） */
+  const paste = async (stdin: any) => {
+    stdin.write("\u0016");
+    await flush();
+  };
+  const oneImage = { kind: "image", image: { base64: "QUJD", mime: "image/png" } };
+
+  it("剪贴板没有图片时，粘贴的是文本", async () => {
+    clipboardMock.text = "粘贴进来的文字";
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    await paste(stdin);
+    expect(lastFrame() ?? "").toContain("粘贴进来的文字");
+    unmount();
+  });
+
+  it("剪贴板有图片时附到消息上，并显示附件行", async () => {
+    clipboardMock.image = oneImage;
+    clipboardMock.text = "不该被粘贴的文字";
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    await paste(stdin);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("已附加 1 张图片");
+    expect(frame).not.toContain("不该被粘贴的文字");
+    unmount();
+  });
+
+  it("Esc 先清附件、草稿保留（误粘的退路）", async () => {
+    clipboardMock.image = oneImage;
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    stdin.write("看这张");
+    await flush();
+    await paste(stdin);
+    expect(lastFrame() ?? "").toContain("已附加 1 张图片");
+
+    stdin.write("\u001b");
+    await flush();
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toContain("已附加 1 张图片");
+    expect(frame).toContain("看这张");
+    unmount();
+  });
+
+  it("发送时把图片一并交给会话（文案仍是纯文本）", async () => {
+    clipboardMock.image = oneImage;
+    const { stdin, unmount } = mount();
+    await flush();
+    stdin.write("看图");
+    await flush();
+    await paste(stdin);
+    stdin.write("\r");
+    await flush();
+    expect(created.session.send).toHaveBeenCalledWith("看图", [oneImage.image]);
+    unmount();
+  });
+
+  it("剪贴板既没图片也没文字时给提示，不插任何东西", async () => {
+    clipboardMock.text = "";
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    await paste(stdin);
+    expect(lastFrame() ?? "").toContain("剪贴板里没有内容");
     unmount();
   });
 });
