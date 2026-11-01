@@ -50,7 +50,7 @@
     "dotenv": "^17.4.2",
     "ink-testing-library": "^4.0.0",
     "rimraf": "^6.0.0",
-    "typescript": "^5.3.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.9"
   },
   "files": [
