@@ -11,6 +11,29 @@ export function inputLines(text: string, columns: number): string[] {
   return layoutInput(body, 0, width).lines;
 }
 
+/** 输入区最多占用几行（超出的折行开窗滚动，不把对话区挤没） */
+export const INPUT_MAX_ROWS = 8;
+
+/**
+ * 输入区可见窗口：总行数 + 光标所在行 → `[from, to)`。
+ *
+ * 窗口**跟随光标**（而不是固定显示末尾 N 行）：`←` 在行首会退到上一行，光标能一路
+ * 退到第一行 —— 钉住末尾的窗口会让光标“消失”在框外。光标所在行恒为窗口**末行**
+ * （除非已贴底），于是往上走时窗口连续上滚。
+ *
+ * 三处必须同源：`computeChatLayout` 的 `inputHeight`、渲染的 `slice(from, to)`、
+ * 硬件光标 y 里的行内偏移（`cursorRow − from`）。
+ */
+export function inputWindow(
+  total: number,
+  cursorRow: number,
+  max = INPUT_MAX_ROWS,
+): { from: number; to: number } {
+  const size = Math.min(total, Math.max(1, max));
+  const from = Math.min(Math.max(0, cursorRow - size + 1), Math.max(0, total - size));
+  return { from, to: from + size };
+}
+
 /**
  * 计算终端硬件光标坐标（相对 Ink 输出原点），用于让 IME（输入法）候选框
  * 跟随编辑光标。x 为列、y 为行（0 起始，从整帧第一行算起）。

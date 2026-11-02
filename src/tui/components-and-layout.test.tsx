@@ -17,6 +17,8 @@ import {
   cachedMessageToLines,
   transcriptLines,
   inputLines,
+  inputWindow,
+  INPUT_MAX_ROWS,
   computeInputCursorPosition,
   usableFrameRows,
   wordLeft,
@@ -624,6 +626,26 @@ describe("inputLines", () => {
   });
 });
 
+describe("inputWindow（输入区限高 8 行、窗口跟随光标）", () => {
+  it("不超过上限时窗口就是全部（不预留空白）", () => {
+    expect(inputWindow(3, 0)).toEqual({ from: 0, to: 3 });
+    expect(inputWindow(INPUT_MAX_ROWS, INPUT_MAX_ROWS - 1)).toEqual({ from: 0, to: INPUT_MAX_ROWS });
+  });
+
+  it("光标在第一行时窗口贴顶（不是固定显示末尾几行）", () => {
+    expect(inputWindow(20, 0)).toEqual({ from: 0, to: INPUT_MAX_ROWS });
+  });
+
+  it("光标在末行时窗口贴底", () => {
+    expect(inputWindow(20, 19)).toEqual({ from: 12, to: 20 });
+  });
+
+  it("光标在中间时落在窗口最后一行，向上连续滚动", () => {
+    expect(inputWindow(20, 10)).toEqual({ from: 3, to: 11 });
+    expect(inputWindow(20, 8)).toEqual({ from: 1, to: 9 });
+  });
+});
+
 describe("computeChatLayout（吸底 + 应用内翻页）", () => {
   const line = (i: number): RLine => ({ key: `k${i}`, kind: "content", text: `L${i}` });
   const base = {
@@ -683,11 +705,16 @@ describe("computeChatLayout（吸底 + 应用内翻页）", () => {
     expect(computeChatLayout(base).bottomLines).toBe(two.bottomLines);
   });
 
-  it("多行输入抬高底部区域、压缩对话区", () => {
+  it("多行输入抬高底部区域、压缩对话区（最多抬高到 8 行）", () => {
     const single = computeChatLayout({ ...base, input: "x" });
     const multi = computeChatLayout({ ...base, input: "x\ny\nz" });
     expect(multi.bottomLines).toBe(single.bottomLines + 2);
     expect(multi.lines.length).toBe(single.lines.length - 2);
+    // 上限 8 行：第 9 行起输入区不再变高（否则长草稿会把对话区挤没）
+    const nine = Array.from({ length: 9 }, () => "x").join("\n");
+    const twenty = Array.from({ length: 20 }, () => "x").join("\n");
+    expect(computeChatLayout({ ...base, input: nine }).bottomLines).toBe(single.bottomLines + 7);
+    expect(computeChatLayout({ ...base, input: twenty }).bottomLines).toBe(single.bottomLines + 7);
   });
 
   it("菜单想吃的行数由布局按剩余空间放行，不设固定行数上限（L14/L16）", () => {

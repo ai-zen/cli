@@ -19,6 +19,8 @@ export {
 
 export {
   inputLines,
+  inputWindow,
+  INPUT_MAX_ROWS,
   computeInputCursorPosition,
   moveCursorRow,
   isWordChar,

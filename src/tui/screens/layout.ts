@@ -1,6 +1,6 @@
 // 对话屏布局 —— 吸底 + 应用内翻页（只做截取 / 补白，不自建转录内容）
 import { RLine } from "./lines.js";
-import { inputLines } from "./input.js";
+import { inputLines, INPUT_MAX_ROWS } from "./input.js";
 
 /** 确认框固定高度（外 marginTop 1 + 上下边框 2 + 问题 1 + marginTop 1 + 选项 1） */
 export const CONFIRM_LINES = 6;
@@ -94,7 +94,8 @@ export function clampViewTop(totalLines: number, budget: number, nextTop: number
 export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
   const transcript = input.transcript;
 
-  const inputHeight = input.busy ? 1 : inputLines(input.input, input.columns).length;
+  // 输入区限高：多出来的折行由窗口滚动，而不是把对话区挤空（窗口跟随光标）
+  const inputHeight = input.busy ? 1 : Math.min(inputLines(input.input, input.columns).length, INPUT_MAX_ROWS);
   const overlayHeight =
     input.overlay === "confirm"
       ? CONFIRM_LINES

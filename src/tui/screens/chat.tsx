@@ -22,7 +22,7 @@ import { readConfig, readMcpConfig, readReasoningPresets, saveConfig, writeMcpCo
 import { readAgentStore } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
 import { ConfigWizard } from "../config-wizard/index.js";
-import { computeInputCursorPosition } from "./input.js";
+import { computeInputCursorPosition, inputWindow } from "./input.js";
 import { AGENT_TABS_LINES, computeChatLayout } from "./layout.js";
 import { FrameBuffer } from "./frame-buffer.js";
 import { LineView } from "./render.js";
@@ -1075,10 +1075,17 @@ export function Chat(props: ChatScreenProps) {
     Math.max(4, cols - 4),
   );
   const bodyLines = inputLayout.lines;
+  /**
+   * 输入区可见窗口：最多 `INPUT_MAX_ROWS` 行，且**跟随光标**（与 `computeChatLayout`
+   * 的 `inputHeight` 同源）。`cursorRowIndex` 是**窗口内**的行号 —— 渲染用哪一行、
+   * 硬件光标 y 都基于它；用全文本的行号会让 IME 候选框跑到屏外。
+   */
+  const inputWin = inputWindow(bodyLines.length, inputLayout.cursorRow);
+  const shownLines = bodyLines.slice(inputWin.from, inputWin.to);
 
   // 光标所在行的三段拆分（与 `CursorInputRow` 的渲染一一对应）
-  const cursorRowIndex = inputLayout.cursorRow;
-  const cursorRowChars = graphemes(bodyLines[cursorRowIndex] ?? "");
+  const cursorRowIndex = inputLayout.cursorRow - inputWin.from;
+  const cursorRowChars = graphemes(shownLines[cursorRowIndex] ?? "");
   const cursorColInRow = Math.min(inputLayout.cursorCol, cursorRowChars.length);
   const cursorBefore = cursorRowChars.slice(0, cursorColInRow).join("");
   const cursorAt = cursorRowChars[cursorColInRow] ?? " ";
@@ -1108,7 +1115,7 @@ export function Chat(props: ChatScreenProps) {
           noticeCount: noticeTextLines.length,
           attachmentCount: attachmentLines,
           hintCount: layout.hintRows,
-          cursorRow: inputLayout.cursorRow,
+          cursorRow: cursorRowIndex,
           cursorCol: inputLayout.cursorCol,
           lineText: bodyLines[inputLayout.cursorRow] ?? "",
           placeholder: isPlaceholder,
@@ -1157,9 +1164,9 @@ export function Chat(props: ChatScreenProps) {
               // 阻塞型命令（`/update` 等）没有生成轮次，故回落到命令名，见 `busySpinnerLabel`。
               <Spinner label={busySpinnerLabel(sessionRef.current?.phase ?? null, busyCommand)} />
             ) : (
-              bodyLines.map((line, i) => {
+              shownLines.map((line, i) => {
                 const prompt =
-                  i === 0 ? (
+                  i === 0 && inputWin.from === 0 ? (
                     <Text color={theme.brand[0]} bold>
                       {"❯ "}
                     </Text>

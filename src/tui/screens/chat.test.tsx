@@ -245,6 +245,36 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
+  // ==================== 输入区限高 8 行（PLAN L17）====================
+
+  /** 20 行草稿：L0 … L19；挂载时光标在末尾（第 19 行） */
+  const twentyLines = Array.from({ length: 20 }, (_, i) => `L${i}`).join("\n");
+
+  it("草稿超过 8 行时只渲染 8 行，且光标在末行时窗口贴底", async () => {
+    const { lastFrame, unmount } = mount({ initialInput: twentyLines });
+    await flush();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("L19"); // 光标所在行一定可见
+    expect(frame).toContain("L12");
+    expect(frame).not.toContain("L11"); // 窗口上方折叠
+    // 只渲染 8 行输入（1 提示符行 + 7 缩进行）
+    expect(frame.split("\n").filter((row) => /^\s*(❯ )?L\d+$/.test(row.trimEnd()))).toHaveLength(8);
+    unmount();
+  });
+
+  it("窗口跟随光标：在末行按 ↑ 后整窗上移一行（不是钉在末尾）", async () => {
+    const { stdin, lastFrame, unmount } = mount({ initialInput: twentyLines });
+    await flush();
+    stdin.write("\u001b[A"); // 光标到第 19 行 → 窗口 from = 11
+    await flush(20);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("L18");
+    expect(frame).toContain("L11");
+    expect(frame).not.toContain("L19"); // 已滚到窗口下方之外
+    expect(frame).not.toContain("L10");
+    unmount();
+  });
+
   // ==================== 底部锚定菜单（PLAN L14 + L16）====================
 
   /** 找出包含某片段的行号（-1 = 没渲染） */
