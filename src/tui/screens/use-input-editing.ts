@@ -16,6 +16,7 @@ import {
   deleteToLineStart,
   deleteWordLeft,
   deleteWordRight,
+  moveCursorRow,
   wordLeft,
   wordRight,
 } from "./input.js";
@@ -72,6 +73,14 @@ export interface InputEditing {
   moveCursor: (delta: number) => void;
   moveCursorToLineStart: () => void;
   moveCursorToLineEnd: () => void;
+  /**
+   * ↑ / ↓：光标上 / 下移一行（按折行后的视觉行，需要当前折行宽度）。
+   *
+   * 返回 `false` 表示已经在首行（↑）/ 末行（↓）——呼叫方据此改成翻历史：
+   * 「能在行间走就在行间走，走不动了才动历史」是这两个键的唯一语义。
+   */
+  moveCursorUpRow: (width: number) => boolean;
+  moveCursorDownRow: (width: number) => boolean;
   /** 按词左右移动：`dir` 为 -1 往前、1 往后 */
   moveCursorByWord: (dir: -1 | 1) => void;
   /** 历史：上一条 / 下一条（没有可翻的时候自动空转） */
@@ -223,6 +232,14 @@ export function useInputEditing({ initialText, notify }: InputEditingDeps): Inpu
     setCursor(i);
   };
 
+  /** 上下移一行：移得动就移并返回 true，已在边界则返回 false（交给历史） */
+  const moveCursorRowBy = (dir: -1 | 1, width: number): boolean => {
+    const next = moveCursorRow(input, cursor, width, dir);
+    if (next == null) return false;
+    setCursor(next);
+    return true;
+  };
+
   // 历史浏览：「上一条」从最新开始往回走，「下一条」走到底就回到空草稿。
   // 上下两处按键（Ctrl+P/N 与 ↑/↓）共用这一对，不再各写一遍。
   const historyPrev = () => {
@@ -274,6 +291,8 @@ export function useInputEditing({ initialText, notify }: InputEditingDeps): Inpu
     moveCursor,
     moveCursorToLineStart,
     moveCursorToLineEnd,
+    moveCursorUpRow: (width: number) => moveCursorRowBy(-1, width),
+    moveCursorDownRow: (width: number) => moveCursorRowBy(1, width),
     moveCursorByWord,
     historyPrev,
     historyNext,

@@ -134,6 +134,13 @@ export function wrapText(text: string, limit: number): string[] {
 export interface InputLayout {
   /** 折行后的各行文本（不含提示符） */
   lines: string[];
+  /**
+   * 每行首字符的**字素簇下标**（与 `lines` 同长）。
+   *
+   * 上下移动光标要靠它把「第几行 + 行内第几列」换算回文本下标；不能把 `lines` 长度
+   * 相加得出 —— 软折行不占字符，硬换行（`\n`）才占一个。
+   */
+  rowStarts: number[];
   /** 光标所在行（0 起始） */
   cursorRow: number;
   /** 光标在该行内的字符偏移（**字素簇**计，不是 code point） */
@@ -149,6 +156,7 @@ export function layoutInput(text: string, cursor: number, width: number): InputL
   const chars = graphemes(text);
   const pos = Math.max(0, Math.min(cursor, chars.length));
   const lines: string[] = [];
+  const rowStarts: number[] = [];
   let line = "";
   let lineWidth = 0;
   let row = 0;
@@ -156,6 +164,7 @@ export function layoutInput(text: string, cursor: number, width: number): InputL
   let cursorRow = 0;
   let cursorCol = 0;
   let processed = 0;
+  rowStarts.push(0);
   // 记录「处理完 processed 个簇后」的光标位置；processed === pos 即为光标处
   const mark = () => {
     if (processed === pos) {
@@ -172,6 +181,7 @@ export function layoutInput(text: string, cursor: number, width: number): InputL
       row += 1;
       col = 0;
       processed += 1;
+      rowStarts.push(processed);
       mark();
       continue;
     }
@@ -182,6 +192,7 @@ export function layoutInput(text: string, cursor: number, width: number): InputL
       lineWidth = 0;
       row += 1;
       col = 0;
+      rowStarts.push(processed); // 软折行不消耗字符
     }
     line += ch;
     lineWidth += w;
@@ -191,7 +202,7 @@ export function layoutInput(text: string, cursor: number, width: number): InputL
   }
   lines.push(line);
   mark();
-  return { lines, cursorRow, cursorCol };
+  return { lines, rowStarts, cursorRow, cursorCol };
 }
 
 /** 单行输入左侧留白：Box paddingX(1) + 提示符 `❯ `（宽 2） */

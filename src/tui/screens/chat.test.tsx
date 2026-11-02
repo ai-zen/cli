@@ -84,10 +84,11 @@ const flush = async (ms = 4) => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-const mount = () =>
+const mount = (options: { initialInput?: string } = {}) =>
   render(
     <Chat
       agentId="default"
+      initialInput={options.initialInput}
       deps={{
         readConfig: async () => fakeConfig(),
         readReasoningPresets: async () => ({}),
@@ -199,6 +200,48 @@ describe("Chat 集成（拆分前的护栏）", () => {
     const frame = lastFrame() ?? "";
     // `/save` 的说明来自词典，出现即说明候选菜单已渲染
     expect(frame).toContain("/save");
+    unmount();
+  });
+
+  // ==================== ↑/↓：多行先移光标，到边界才翻历史 ====================
+
+  it("光标已在首行时 ↑ 才翻历史（单行输入保持原行为）", async () => {
+    const { stdin, unmount } = mount();
+    await flush();
+    stdin.write("hello");
+    await flush();
+    stdin.write("\r");
+    await flush(20);
+    expect(created.session.send).toHaveBeenCalledTimes(1);
+
+    // 输入框已空、单行 → ↑ 拿回历史，再回车又发一遍同样的内容
+    // （箭头键要等一次重渲染才能把新草稿交给按键处理器，实测 20ms 够）
+    stdin.write("\u001b[A");
+    await flush(20);
+    stdin.write("\r");
+    await flush();
+    expect(created.session.send).toHaveBeenCalledTimes(2);
+    expect(created.session.send.mock.calls[1]![0]).toBe("hello");
+    unmount();
+  });
+
+  // ==================== 多行光标移动（PLAN：↑/↓ 优先在行间移动）====================
+
+  it("输入 ≥ 2 行时 ↑/↓ 先移动光标，不到首/末行不翻历史", async () => {
+    const { stdin, lastFrame, unmount } = mount({ initialInput: "aa\nbb" });
+    await flush();
+
+    stdin.write("\u001b[A"); // ↑：光标从第二行行尾移到第一行行尾
+    await flush(20);
+    stdin.write("X"); // 插在第一行 → 证明光标确实上去了
+    await flush();
+    expect(lastFrame() ?? "").toContain("aaX");
+
+    stdin.write("\u001b[B"); // ↓：回到第二行行尾
+    await flush(20);
+    stdin.write("Y");
+    await flush();
+    expect(lastFrame() ?? "").toContain("bbY");
     unmount();
   });
 

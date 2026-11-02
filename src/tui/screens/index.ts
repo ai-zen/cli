@@ -20,6 +20,7 @@ export {
 export {
   inputLines,
   computeInputCursorPosition,
+  moveCursorRow,
   isWordChar,
   wordLeft,
   wordRight,

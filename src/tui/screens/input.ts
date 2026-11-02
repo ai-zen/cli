@@ -60,6 +60,30 @@ export function computeInputCursorPosition(input: {
   };
 }
 
+// ==================== 上下移动光标（↑ / ↓）====================
+
+/**
+ * 光标上 / 下一行后的字素簇下标；已在首行按 ↑、或在末行按 ↓ 时返回 `null`。
+ *
+ * 「行」是**折行后的行**（含软折行），不是按 `\n` 切的物理行 —— 长段落在窄窗口里会被
+ * 拆成多行，用户看到的就是多行，光标必须跟着视觉行移动。宽度必须与实际渲染一致
+ * （`layoutInput` 的 `width`），否则会跨行/落错列。
+ *
+ * 列位置：目标行更短时落到行尾（与主流编辑器一致）；光标不会因此跳到相邻行。
+ */
+export function moveCursorRow(
+  text: string,
+  cursor: number,
+  width: number,
+  dir: -1 | 1,
+): number | null {
+  const layout = layoutInput(text, cursor, width);
+  const target = layout.cursorRow + dir;
+  if (target < 0 || target >= layout.lines.length) return null;
+  const col = Math.min(layout.cursorCol, graphemes(layout.lines[target]!).length);
+  return layout.rowStarts[target]! + col;
+}
+
 // ==================== 跨词移动（Ctrl/Alt + ← →）====================
 
 /** 是否为「单词字符」：ASCII 下为字母/数字/下划线，非 ASCII（CJK 等）一律算单词字符 */

@@ -427,6 +427,8 @@ export function Chat(props: ChatScreenProps) {
     moveCursor,
     moveCursorToLineStart,
     moveCursorToLineEnd,
+    moveCursorUpRow,
+    moveCursorDownRow,
     moveCursorByWord,
     historyPrev,
     historyNext,
@@ -821,6 +823,9 @@ export function Chat(props: ChatScreenProps) {
           );
           return;
         }
+        // 多行输入：先按**视觉行**走光标（含软折行，宽度与渲染一致），走到首/末行才翻历史
+        const wrapWidth = Math.max(4, (columns ?? 80) - 4);
+        if (key.upArrow ? moveCursorUpRow(wrapWidth) : moveCursorDownRow(wrapWidth)) return;
         if (key.upArrow) historyPrev();
         else historyNext();
         return;

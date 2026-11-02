@@ -26,6 +26,7 @@ import {
   deleteToLineEnd,
   deleteToLineStart,
   computeChatLayout,
+  moveCursorRow,
   AGENT_TABS_LINES,
   clampViewTop,
   resolveSubmitText,
@@ -830,6 +831,38 @@ describe("跨词移动（Ctrl/Alt + ← →）", () => {
   it("越界钳制", () => {
     expect(wordLeft("hi", 0)).toBe(0);
     expect(wordRight("hi", 2)).toBe(2);
+  });
+});
+
+describe("多行光标上下移动（↑ / ↓ 在行间移动）", () => {
+  it("按折行后的同列上下移动", () => {
+    // "aa\nbb" 光标 5 = 第 2 行行尾（row1 col2）→ 上一行同列 = 下标 2
+    expect(moveCursorRow("aa\nbb", 5, 80, -1)).toBe(2);
+    expect(moveCursorRow("aa\nbb", 2, 80, 1)).toBe(5);
+  });
+
+  it("目标行更短时落到行尾（不越到下一行）", () => {
+    expect(moveCursorRow("ab\ncdef", 6, 80, -1)).toBe(2);
+  });
+
+  it("首行按 ↑ / 末行按 ↓ 返回 null（交给历史）", () => {
+    expect(moveCursorRow("aa\nbb", 1, 80, -1)).toBeNull();
+    expect(moveCursorRow("aa\nbb", 5, 80, 1)).toBeNull();
+    // 单行输入上下都不动
+    expect(moveCursorRow("hello", 3, 80, -1)).toBeNull();
+    expect(moveCursorRow("hello", 3, 80, 1)).toBeNull();
+  });
+
+  it("软折行也算一行（宽度决定，不是只有 \\n 才算行）", () => {
+    // 宽度 4："abcdefgh" 折成 "abcd" / "efgh"
+    expect(moveCursorRow("abcdefgh", 6, 4, -1)).toBe(2);
+    expect(moveCursorRow("abcdefgh", 2, 4, 1)).toBe(6);
+  });
+
+  it("宽字符按显示宽度折行", () => {
+    // 宽度 4："中文字符" 折成 "中文" / "字符"
+    expect(moveCursorRow("中文字符", 2, 4, 1)).toBe(4);
+    expect(moveCursorRow("中文字符", 4, 4, -1)).toBe(2);
   });
 });
 
