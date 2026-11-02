@@ -44,6 +44,14 @@ export type ClipboardImageResult =
 
 /** 单张粘贴图片上限：与 SDK 默认内联上限（8MB）同量级，留出 base64 膨胀余量 */
 export const MAX_CLIPBOARD_IMAGE_BYTES = 20 * 1024 * 1024;
+
+/**
+ * 单次粘贴文本上限 256KB。
+ *
+ * 超了**报错而不是截断**：半截代码 / 半截 JSON 粘进对话比不粘更坑（用户会以
+ * 为粘全了，基于残缺内容提问）。需要大段内容时让他存成文件用 `@` 引用。
+ */
+export const MAX_CLIPBOARD_TEXT_BYTES = 256 * 1024;
 /** 单次命令超时：剪贴板是本机操作，超过这个时间基本就是命令卡住了 */
 const CMD_TIMEOUT_MS = 3000;
 /** stdout 上限：20MB 图片在 macOS 上是 40MB 十六进制文本 */
@@ -190,12 +198,23 @@ export async function readClipboardImage(deps: ClipboardDeps = {}): Promise<Clip
 }
 
 /**
+ * 读剪贴板文本的结果。
+ *
+ * 三态分开是因为提示文案各不相同：`unavailable` = 环境缺剪贴板工具，
+ * `too-large` = 真问题（用户以为粘上了其实没有），空文本 = 剪贴板确实空着。
+ */
+export type ClipboardTextResult =
+  | { kind: "text"; text: string }
+  | { kind: "too-large"; bytes: number }
+  | { kind: "unavailable" };
+
+/**
  * 读剪贴板里的文本。
  *
- * 返回 `null` = 压根没有可用的剪贴板工具（区别于「剪贴板是空的」= `""`），
+ * 返回 `unavailable` = 压根没有可用的剪贴板工具（区别于「剪贴板是空的」= 空文本），
  * 两者在提示上要分开：一个是环境缺依赖，一个是用户剪贴板确实空着。
  */
-export async function readClipboardText(deps: ClipboardDeps = {}): Promise<string | null> {
+export async function readClipboardText(deps: ClipboardDeps = {}): Promise<ClipboardTextResult> {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
   const run = deps.run ?? defaultRun;
@@ -204,7 +223,10 @@ export async function readClipboardText(deps: ClipboardDeps = {}): Promise<strin
     const stdout = await run(candidate.cmd, candidate.args);
     if (stdout == null) continue;
     // 统一换行：Windows 剪贴板给 CRLF，插进输入框会变成「多了个不可见字符」
-    return stdout.toString("utf8").replace(/\r\n?/g, "\n");
+    const text = stdout.toString("utf8").replace(/\r\n?/g, "\n");
+    const bytes = Buffer.byteLength(text, "utf8");
+    if (bytes > MAX_CLIPBOARD_TEXT_BYTES) return { kind: "too-large", bytes };
+    return { kind: "text", text };
   }
-  return null;
+  return { kind: "unavailable" };
 }

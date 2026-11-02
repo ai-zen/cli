@@ -4,6 +4,7 @@ import {
   readClipboardImage,
   readClipboardText,
   MAX_CLIPBOARD_IMAGE_BYTES,
+  MAX_CLIPBOARD_TEXT_BYTES,
   type ClipboardDeps,
 } from "./clipboard.js";
 
@@ -115,28 +116,44 @@ describe("readClipboardImage：没有图片", () => {
 describe("readClipboardText：无图时回退到文本", () => {
   it("macOS 用 pbpaste", async () => {
     const { run, calls } = fakeRun({ pbpaste: "hello\nworld" });
-    expect(await readClipboardText(darwin(run))).toBe("hello\nworld");
+    expect(await readClipboardText(darwin(run))).toEqual({ kind: "text", text: "hello\nworld" });
     expect(calls[0]?.cmd).toBe("pbpaste");
   });
 
   it("Linux 用 wl-paste --no-newline（避免多粘一行）", async () => {
     const { run, calls } = fakeRun({ "wl-paste --no-newline": "hi" });
-    expect(await readClipboardText(linux(run, { WAYLAND_DISPLAY: "wayland-0" }))).toBe("hi");
+    expect(await readClipboardText(linux(run, { WAYLAND_DISPLAY: "wayland-0" }))).toEqual({
+      kind: "text",
+      text: "hi",
+    });
     expect(calls[0]?.args).toContain("--no-newline");
   });
 
   it("CRLF 归一成 LF（Windows 剪贴板）", async () => {
     const { run } = fakeRun({ "xclip -selection clipboard -o": "a\r\nb\rc" });
-    expect(await readClipboardText(linux(run))).toBe("a\nb\nc");
+    expect(await readClipboardText(linux(run))).toEqual({ kind: "text", text: "a\nb\nc" });
   });
 
-  it("剪贴板是空的返回空串（区别于「没有工具」的 null）", async () => {
+  it("剪贴板是空的返回空文本（区别于「没有工具」）", async () => {
     const { run } = fakeRun({ pbpaste: "" });
-    expect(await readClipboardText(darwin(run))).toBe("");
+    expect(await readClipboardText(darwin(run))).toEqual({ kind: "text", text: "" });
   });
 
-  it("没有任何剪贴板工具 → null", async () => {
+  it("没有任何剪贴板工具 → unavailable", async () => {
     const { run } = fakeRun({});
-    expect(await readClipboardText(darwin(run))).toBeNull();
+    expect(await readClipboardText(darwin(run))).toEqual({ kind: "unavailable" });
+  });
+
+  it("超过 256KB 报 too-large，**不截断**（半截内容比不粘更糟）", async () => {
+    const big = "x".repeat(MAX_CLIPBOARD_TEXT_BYTES + 1);
+    const { run } = fakeRun({ pbpaste: big });
+    const result = await readClipboardText(darwin(run));
+    expect(result).toEqual({ kind: "too-large", bytes: big.length });
+  });
+
+  it("正好等于上限仍然可以粘", async () => {
+    const exact = "x".repeat(MAX_CLIPBOARD_TEXT_BYTES);
+    const { run } = fakeRun({ pbpaste: exact });
+    expect(await readClipboardText(darwin(run))).toEqual({ kind: "text", text: exact });
   });
 });

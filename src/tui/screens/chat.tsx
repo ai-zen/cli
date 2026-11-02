@@ -43,7 +43,7 @@ import { useInputEditing } from "./use-input-editing.js";
 import { extractMention, mentionInsertText, rankPaths, type PathEntry } from "../mention.js";
 import { userDrafts } from "../chat-history.js";
 import { listProjectPaths } from "../file-index.js";
-import { readClipboardImage, readClipboardText, type ClipboardImage } from "../../clipboard.js";
+import { MAX_CLIPBOARD_TEXT_BYTES, readClipboardImage, readClipboardText, type ClipboardImage } from "../../clipboard.js";
 import { handleCtrlDExit, handleScrollKey } from "./common-keys.js";
 
 // ==================== 对话屏幕 ====================
@@ -542,17 +542,27 @@ export function Chat(props: ChatScreenProps) {
     }
 
     // 没有图片 → 当成普通粘贴：把剪贴板文本插到光标处
-    const text = await deps.readClipboardText();
-    if (text == null) {
+    const pasted = await deps.readClipboardText();
+    if (pasted.kind === "unavailable") {
       noticeChannel.push(t("notice.clipboardUnavailable"), "error");
       return;
     }
-    if (text.length === 0) {
+    if (pasted.kind === "too-large") {
+      noticeChannel.push(
+        t("notice.textTooLarge", {
+          size: Math.round(pasted.bytes / 1024),
+          limit: MAX_CLIPBOARD_TEXT_BYTES / 1024,
+        }),
+        "error",
+      );
+      return;
+    }
+    if (pasted.text.length === 0) {
       noticeChannel.push(t("notice.clipboardEmpty"));
       return;
     }
     // 去掉末尾单个换行：剪贴板文本几乎总带一个尾换行，粘完光标原地跳行很莫妙
-    insertAtCursor(text.replace(/\n$/, ""));
+    insertAtCursor(pasted.text.replace(/\n$/, ""));
   };
 
   const runSubmit = async (text: string, options: { asMessage?: boolean } = {}) => {

@@ -51,6 +51,7 @@ export const en: Record<string, string> = {
   "notice.imageLimit": "At most {n} images per message",
   "notice.imageTooLarge": "Image too large ({size}MB), over the 20MB limit",
   "notice.imagesCleared": "Attached images cleared",
+  "notice.textTooLarge": "Clipboard text is {size}KB, over the {limit}KB limit — nothing was pasted; save long content to a file and reference it with @",
   "notice.clipboardEmpty": "The clipboard is empty",
   "notice.clipboardUnavailable": "No clipboard tool available (pbpaste on macOS, wl-paste or xclip on Linux)",
   "notice.inputCleared": "Input cleared · press Ctrl+C again to exit",

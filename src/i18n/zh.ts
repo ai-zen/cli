@@ -54,6 +54,7 @@ export const zh: Record<string, string> = {
   "notice.imageLimit": "单条消息最多 {n} 张图片",
   "notice.imageTooLarge": "图片太大（{size}MB），已超出 20MB 上限",
   "notice.imagesCleared": "已清空附加的图片",
+  "notice.textTooLarge": "剪贴板文本 {size}KB，超过 {limit}KB 上限，没有粘贴 —— 大段内容建议存成文件后用 @ 引用",
   "notice.clipboardEmpty": "剪贴板里没有内容",
   "notice.clipboardUnavailable": "没有可用的剪贴板工具（macOS 需 pbpaste，Linux 需 wl-paste 或 xclip）",
   "notice.inputCleared": "已清空输入 · 再按一次 Ctrl+C 退出",

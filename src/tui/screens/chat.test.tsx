@@ -86,11 +86,12 @@ const fakeIndex = [
 /** 剪贴板桩：不打桩就会真去 spawn `pbpaste` / `wl-paste` */
 const clipboardMock = vi.hoisted(() => ({
   image: { kind: "none" } as { kind: string; image?: { base64: string; mime: string } },
-  text: null as string | null,
+  text: { kind: "unavailable" } as ClipboardTextResult,
 }));
 
 import { Chat } from "./chat.js";
 import { getCommandHints } from "../../conversation-commands/registry.js";
+import type { ClipboardTextResult } from "../../clipboard.js";
 
 /** 等 effect / Promise / FrameBuffer 合帧跑完（合帧间隔 60ms） */
 const flush = async (ms = 4) => {
@@ -573,7 +574,7 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
     created.notifier = null;
     created.session = null;
     clipboardMock.image = { kind: "none" };
-    clipboardMock.text = null;
+    clipboardMock.text = { kind: "unavailable" };
   });
 
   /** Ctrl+V（`\x16` → char "v" + ctrl） */
@@ -584,7 +585,7 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
   const oneImage = { kind: "image", image: { base64: "QUJD", mime: "image/png" } };
 
   it("剪贴板没有图片时，粘贴的是文本", async () => {
-    clipboardMock.text = "粘贴进来的文字";
+    clipboardMock.text = { kind: "text", text: "粘贴进来的文字" };
     const { stdin, lastFrame, unmount } = mount();
     await flush();
     await paste(stdin);
@@ -594,7 +595,7 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
 
   it("剪贴板有图片时附到消息上，并显示附件行", async () => {
     clipboardMock.image = oneImage;
-    clipboardMock.text = "不该被粘贴的文字";
+    clipboardMock.text = { kind: "text", text: "不该被粘贴的文字" };
     const { stdin, lastFrame, unmount } = mount();
     await flush();
     await paste(stdin);
@@ -659,8 +660,19 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
     unmount();
   });
 
+  it("剪贴板文本超过上限：报错且不粘贴（不截断半截内容）", async () => {
+    clipboardMock.text = { kind: "too-large", bytes: 300 * 1024 };
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    await paste(stdin);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("超过");
+    expect(frame).toContain("没有粘贴");
+    unmount();
+  });
+
   it("剪贴板既没图片也没文字时给提示，不插任何东西", async () => {
-    clipboardMock.text = "";
+    clipboardMock.text = { kind: "text", text: "" };
     const { stdin, lastFrame, unmount } = mount();
     await flush();
     await paste(stdin);
