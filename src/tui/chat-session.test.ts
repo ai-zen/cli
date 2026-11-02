@@ -151,6 +151,22 @@ describe("ChatSession.saveAs（`/save <名字>`）", () => {
     expect(session.currentId).toBe("新名字");
   });
 
+  it("id 想逃出会话目录（`../x`）时明确报错，目录外不留文件", async () => {
+    const session = await newSession();
+    session.currentId = "chat_escape";
+    session.messages.push({ role: AgentNS.Role.User, content: "x" } as any);
+    await session.save();
+
+    // 校验来自 SDK 的 `EntityRepository.path()`（alpha.25）：以前这里会静默写到
+    // `<dir>/cli/逃逸.json` —— 删旧文件那一步还会顺手删掉目录外的同名文件
+    await expect(session.saveAs("../逃逸")).rejects.toThrow(/Invalid entity id/);
+
+    expect(existsSync(join(state.dir, "cli", "逃逸.json"))).toBe(false);
+    // 当前会话不受影响：新文件没写成，旧文件也不该被删
+    expect(session.currentId).toBe("chat_escape");
+    expect(existsSync(convFile("chat_escape"))).toBe(true);
+  });
+
   it("目标名与当前 id 相同：只落盘，不删自己", async () => {
     const session = await newSession();
     session.currentId = "chat_same";

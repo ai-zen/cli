@@ -200,6 +200,21 @@ describe("/save：支持指定名字 + 重名二次确认", () => {
     expect(session.saveAs).toHaveBeenCalledWith("旧对话");
   });
 
+  it("名字想逃出会话目录：把 SDK 的拒绝原样报成错误，不说「已保存」", async () => {
+    const { host, notices } = createHost({
+      saveAs: vi.fn(async () => {
+        throw new Error('Invalid entity id: "../逃逸"');
+      }),
+    });
+
+    await runCommand("save", "/save ../逃逸", host);
+
+    expect(notices.at(-1)).toEqual({
+      text: expect.stringContaining("Invalid entity id"),
+      tone: "error",
+    });
+  });
+
   it("目标名就是当前 id：自己盖自己，不弹确认", async () => {
     const { host, session } = createHost({
       currentId: "chat_now",
