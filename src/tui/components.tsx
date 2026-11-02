@@ -68,13 +68,17 @@ function fitItem<T>(item: SelectItem<T>, columns?: number): SelectItem<T> {
 
 export function SelectList<T>({ items, onSelect, isActive = true, initialIndex = 0, columns }: SelectListProps<T>) {
   const [index, setIndex] = useState(Math.min(initialIndex, Math.max(items.length - 1, 0)));
+  // `index` 只在挂载时算一次，而 `items` 可能变短（异步列表回填 / 过滤）—— 越界时
+  // `items[index]` 是 `undefined`，回车就会抛 TypeError。只在渲染与确认处钳制，
+  // 不改 state：否则要写 effect 去跟随 items.length，多一处状态同步就多一处不同步。
+  const safeIndex = Math.min(index, Math.max(items.length - 1, 0));
 
   useInput(
     (_input, key) => {
       if (items.length === 0) return;
       if (key.upArrow) setIndex((i) => (i - 1 + items.length) % items.length);
       else if (key.downArrow) setIndex((i) => (i + 1) % items.length);
-      else if (key.return) onSelect(items[index].value);
+      else if (key.return) onSelect(items[safeIndex]!.value);
     },
     { isActive },
   );
@@ -83,7 +87,7 @@ export function SelectList<T>({ items, onSelect, isActive = true, initialIndex =
     <Box flexDirection="column">
       {items.map((raw, i) => {
         const item = fitItem(raw, columns);
-        const selected = i === index;
+        const selected = i === safeIndex;
         return (
           <Box key={`${i}-${raw.label}`}>
             <Text color={selected ? theme.brand[0] : theme.faint} wrap="truncate">

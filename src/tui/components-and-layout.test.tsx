@@ -275,6 +275,36 @@ describe("SelectList", () => {
     expect(onSelect).toHaveBeenCalledWith("b");
     unmount();
   });
+
+  /**
+   * 回归（PLAN L6）：`index` 只在挂载时算一次（`useState(min(initialIndex, …))`），
+   * 列表变短后不重置，而回车用 `items[index].value` —— 越界就抛 TypeError。
+   * 这里让 items 由 3 项变 1 项（光标原本停在末项）。
+   */
+  it("items 变短后回车不崩，且选中的是钳制后的项", async () => {
+    const onSelect = vi.fn();
+    const { stdin, rerender, unmount } = render(
+      <SelectList
+        items={[
+          { label: "甲", value: "a" },
+          { label: "乙", value: "b" },
+          { label: "丙", value: "c" },
+        ]}
+        onSelect={onSelect}
+      />,
+    );
+    stdin.write("\x1b[B");
+    await tick();
+    stdin.write("\x1b[B"); // 光标到末项（index 2）
+    await tick();
+
+    rerender(<SelectList items={[{ label: "甲", value: "a" }]} onSelect={onSelect} />);
+    await tick();
+    stdin.write("\r");
+    await tick();
+    expect(onSelect).toHaveBeenCalledWith("a");
+    unmount();
+  });
 });
 
 describe("Splash", () => {
