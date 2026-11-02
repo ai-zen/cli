@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { Box, Text } from "ink";
 import { useInput } from "ink";
 import { theme } from "./theme.js";
-import { clipWidth } from "./text.js";
+import { clipWidth, displayWidth } from "./text.js";
 import type { RateSample } from "./token-rate.js";
 import { packSegments, type StatusSegment } from "./status-segments.js";
 import { t } from "../i18n/index.js";
@@ -288,8 +288,40 @@ export interface BottomMenuProps {
    * 差一行输入框就整体位移一行，硬件光标（IME 候选框）跟着偏。
    */
   maxRows: number;
+  /** 终端列数：命令标签优先占满，说明按剩余宽度裁切 */
+  columns: number;
   /** 菜单顶端附加的一行（`@` 索引未就绪时的「扫描中…」），与候选共用这份高度预算 */
   topLine?: string;
+}
+
+/** 菜单行的左缩进：`paddingLeft(2)` + 高亮标记 `❯ `（宽 2） */
+const MENU_INDENT = 4;
+/** 标签与说明之间的间隔 */
+const MENU_GAP = 2;
+/** 剩余宽度少于这个值就整条不显示说明（不留半个省略号） */
+const MENU_HINT_MIN = 4;
+
+/**
+ * 把一项拆成「标签 + 可选的说明」，**按列宽预算**：
+ *
+ *   · 标签优先占满自己的宽度 —— 说明是次要信息，绝不能把命令名挤成一截；
+ *   · 说明只能吃剩下的宽度（不够就裁，裁到连三个字都放不下就不显示）；
+ *   · 只有标签自己就超宽时才裁标签。
+ *
+ * 不能用「标签与说明两个并列 flex 子节点」交给 Ink 分配：它会按内容比例分宽度，
+ * 说明一长就把命令名挤成 `/confi`（真机反馈）。
+ */
+export function menuRow(
+  item: MenuItem,
+  columns: number,
+): { label: string; hint?: string } {
+  const available = Math.max(1, columns - MENU_INDENT);
+  const labelWidth = displayWidth(item.label);
+  if (labelWidth > available) return { label: clipWidth(item.label, available) };
+  if (!item.hint) return { label: item.label };
+  const hintMax = available - labelWidth - MENU_GAP;
+  if (hintMax < MENU_HINT_MIN) return { label: item.label };
+  return { label: item.label, hint: clipWidth(item.hint, hintMax) };
 }
 
 /**
@@ -298,7 +330,7 @@ export interface BottomMenuProps {
  * 布局契约：整块高度 = `min(候选数 + (topLine ? 1 : 0), maxRows)`，与
  * `computeChatLayout` 回传的 `hintRows` 严格一致。
  */
-export function BottomMenu({ items, selected, maxRows, topLine }: BottomMenuProps) {
+export function BottomMenu({ items, selected, maxRows, columns, topLine }: BottomMenuProps) {
   const innerRows = Math.max(0, maxRows - (topLine ? 1 : 0));
   const { from, to } = menuViewport(items.length, selected, innerRows);
   const active = Math.max(0, Math.min(selected, items.length - 1));
@@ -317,18 +349,21 @@ export function BottomMenu({ items, selected, maxRows, topLine }: BottomMenuProp
         .map((item, i) => {
           // 反转后的第 i 行对应数据下标 `to - 1 - i`
           const isActive = to - 1 - i === active;
+          const row = menuRow(item, columns);
           return (
             <Box key={item.key}>
-              <Text color={isActive ? theme.brand[0] : theme.faint}>{isActive ? "❯ " : "  "}</Text>
-              <Text bold={isActive} color={isActive ? theme.highlight : theme.assistant} wrap="truncate">
-                {item.label}
-              </Text>
-              {item.hint ? (
-                <Text color={theme.dim} wrap="truncate">
-                  {"  "}
-                  {item.hint}
+              {/* 整行是**一个** Text 节点：并列的 Text 会被 flex 按内容比例分宽度，
+                  说明一长就把命令名挤成一截；嵌套后宽度由 `menuRow` 预先算好，
+                  外层 `truncate` 保证恒为一行（折行会把输入框顶出屏幕） */}
+              <Text wrap="truncate">
+                <Text color={isActive ? theme.brand[0] : theme.faint}>{isActive ? "❯ " : "  "}</Text>
+                <Text bold color={isActive ? theme.highlight : theme.assistant}>
+                  {row.label}
                 </Text>
-              ) : null}
+                {row.hint ? (
+                  <Text color={theme.dim}>{`${NBSP.repeat(MENU_GAP)}${row.hint}`}</Text>
+                ) : null}
+              </Text>
             </Box>
           );
         })}

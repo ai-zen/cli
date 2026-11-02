@@ -1152,6 +1152,7 @@ export function Chat(props: ChatScreenProps) {
               items={menuItems}
               selected={menuIndex}
               maxRows={layout.hintRows}
+              columns={cols}
               topLine={scanningFiles ? t("mention.scanning") : undefined}
             />
           ) : null}

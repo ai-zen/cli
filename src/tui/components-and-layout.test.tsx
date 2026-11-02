@@ -8,6 +8,7 @@
 // 交互相关（按键 → 状态迁移）在 `screens/*.test.tsx` 各自文件里，不在这里。
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "ink-testing-library";
+import { Box } from "ink";
 import { StatusBar, statusBarRows, BottomMenu, SelectList } from "./components.js";
 import { truncate } from "./screens/render.js";
 import {
@@ -230,7 +231,7 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
   const rowsOf = (frame: string) => frame.split("\n").filter((row) => row.trim().length > 0);
 
   it("第一项紧贴输入框（渲染在最底行），往上依次生长", () => {
-    const { lastFrame, unmount } = render(<BottomMenu items={mk(3)} selected={0} maxRows={3} />);
+    const { lastFrame, unmount } = render(<BottomMenu items={mk(3)} selected={0} maxRows={3} columns={100} />);
     const rows = rowsOf(lastFrame() ?? "");
     expect(rows).toHaveLength(3);
     // 数据顺序 item0 → item2；视觉顺序自下而上，所以末行是 item0、首行是 item2
@@ -241,7 +242,7 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
   });
 
   it("默认高亮最底部那一项（`hints[0]`）", () => {
-    const { lastFrame, unmount } = render(<BottomMenu items={mk(3)} selected={0} maxRows={3} />);
+    const { lastFrame, unmount } = render(<BottomMenu items={mk(3)} selected={0} maxRows={3} columns={100} />);
     const rows = rowsOf(lastFrame() ?? "");
     expect(rows[2]).toContain("❯");
     expect(rows[0]).not.toContain("❯");
@@ -250,7 +251,7 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
   });
 
   it("放不下的从顶部丢弃：只保留前 maxRows 项，最远的候选先消失", () => {
-    const { lastFrame, unmount } = render(<BottomMenu items={mk(10)} selected={0} maxRows={4} />);
+    const { lastFrame, unmount } = render(<BottomMenu items={mk(10)} selected={0} maxRows={4} columns={100} />);
     const frame = lastFrame() ?? "";
     const rows = rowsOf(frame);
     expect(rows).toHaveLength(4);
@@ -262,7 +263,7 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
   });
 
   it("选中项越过窗口后连续滚动，且始终可见", () => {
-    const { lastFrame, unmount } = render(<BottomMenu items={mk(30)} selected={12} maxRows={8} />);
+    const { lastFrame, unmount } = render(<BottomMenu items={mk(30)} selected={12} maxRows={8} columns={100} />);
     const rows = rowsOf(lastFrame() ?? "");
     expect(rows).toHaveLength(8);
     // from = 12 − 8 + 1 = 5 → 可见 5..12，选中项（最高索引）落在窗口最上一行
@@ -275,7 +276,7 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
 
   it("副标题行（`@` 的「扫描中…」）占用同一份高度预算，且位于菜单顶端", () => {
     const { lastFrame, unmount } = render(
-      <BottomMenu items={mk(10)} selected={0} maxRows={4} topLine="扫描中…" />,
+      <BottomMenu items={mk(10)} selected={0} maxRows={4} columns={100} topLine="扫描中…" />,
     );
     const rows = rowsOf(lastFrame() ?? "");
     expect(rows).toHaveLength(4);
@@ -286,8 +287,66 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
   });
 
   it("布局没给高度（maxRows 0）时一行都不渲染", () => {
-    const { lastFrame, unmount } = render(<BottomMenu items={mk(5)} selected={0} maxRows={0} />);
+    const { lastFrame, unmount } = render(<BottomMenu items={mk(5)} selected={0} maxRows={0} columns={100} />);
     expect(rowsOf(lastFrame() ?? "")).toHaveLength(0);
+    unmount();
+  });
+
+  it("命令占满自己的宽度，描述只能吃剩下的（窄屏下先裁描述）", () => {
+    const items = [{ key: "config", label: "/config", hint: "打开配置中心（模型 / 端点 / 思考强度）" }];
+    const { lastFrame, unmount } = render(
+      <Box width={40}>
+        <BottomMenu items={items} selected={0} maxRows={1} columns={40} />
+      </Box>,
+    );
+    const row = (lastFrame() ?? "").split("\n")[0] ?? "";
+    // 此前 label 与描述是两个并列 flex 子节点，描述更长就抢走宽度，命令被裁成 `/confi`
+    expect(row).toContain("/config");
+    expect(row).toContain("❯ /config"); // 标记也不允许被挤掉
+    expect(row).toContain("打开配置"); // 描述仍有开头，只是被截断
+    expect(displayWidth(row)).toBeLessThanOrEqual(40);
+    unmount();
+  });
+
+  it("剩余宽度不够时整条描述不显示（不留半个省略号）", () => {
+    const items = [{ key: "handoff", label: "/handoff", hint: "生成交接文档（不切换会话）" }];
+    const { lastFrame, unmount } = render(
+      <Box width={16}>
+        <BottomMenu items={items} selected={0} maxRows={1} columns={16} />
+      </Box>,
+    );
+    const row = (lastFrame() ?? "").split("\n")[0] ?? "";
+    expect(row).toContain("/handoff");
+    expect(row).not.toContain("生成");
+    expect(displayWidth(row)).toBeLessThanOrEqual(16);
+    unmount();
+  });
+
+  it("命令自身超宽时才裁命令（并补省略号）", () => {
+    const items = [{ key: "long", label: "/verylongcommand", hint: "说明" }];
+    const { lastFrame, unmount } = render(
+      <Box width={14}>
+        <BottomMenu items={items} selected={0} maxRows={1} columns={14} />
+      </Box>,
+    );
+    const row = (lastFrame() ?? "").split("\n")[0] ?? "";
+    expect(row).toContain("…");
+    expect(displayWidth(row)).toBeLessThanOrEqual(14);
+    unmount();
+  });
+
+  it("描述再长也不会折行（每项恒占一行，否则输入框被顶出屏幕）", () => {
+    const items = Array.from({ length: 3 }, (_, i) => ({
+      key: `k${i}`,
+      label: `/cmd${i}`,
+      hint: "这是一段特别长的说明文字，长到在任何窄屏上都放不下，必须被裁掉而不是换行",
+    }));
+    const { lastFrame, unmount } = render(
+      <Box width={30}>
+        <BottomMenu items={items} selected={0} maxRows={3} columns={30} />
+      </Box>,
+    );
+    expect(rowsOf(lastFrame() ?? "")).toHaveLength(3);
     unmount();
   });
 
@@ -304,6 +363,7 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
           items={mk(total)}
           selected={0}
           maxRows={maxRows}
+          columns={100}
           topLine={scanning ? "扫描中…" : undefined}
         />,
       );
