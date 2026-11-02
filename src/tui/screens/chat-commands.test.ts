@@ -4,7 +4,7 @@
 // 若 `transcriptFrom` 仍停在旧值，`messages.slice(transcriptFrom)` 恒为空 —— 迁移成功、
 // 上下文里有内容，但屏幕一片空白。这类「状态与显示起点脱节」的 bug 只有真机才看得见，
 // 所以在这里用最小 host 假件把它钉住。
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
@@ -16,6 +16,7 @@ import { useTempAiZenDir } from "../../test-support/temp-dir.js";
 /** 会话落盘要真写文件（`/back` 的修复点就是「有没有落盘」），故需要独立的临时根 */
 const zen = useTempAiZenDir("aiz-cmd-test-");
 beforeEach(() => zen.pin());
+afterAll(() => zen.cleanup());
 
 /** 只造 runCommand 实际会碰到的字段，其余用 noop 顶住 */
 function createHost(overrides: Record<string, unknown> = {}) {
