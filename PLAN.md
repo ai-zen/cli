@@ -43,7 +43,7 @@
 | — | `↑`/`↓` 多行时移动光标，到首/末行才翻历史 |
 | L17 | 输入区限高 8 行，窗口跟随光标 |
 | L9 | `↑` 翻历史带图片（数据源统一到 `messages`） |
-| L10 | 移除 `custom` 字段，改「恢复出厂设置」按钮 |
+| L10 | 详情屏隐藏 `custom`、交互改成「恢复出厂设置」 |
 | L18 | 粘贴文本 256KB 上限，超了报错 |
 | L19 | `@` token 边界补 15 个全角标点 |
 | L32 | 没有端点时禁止创建模型 |
@@ -307,7 +307,10 @@ return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : single;
 
 ## 5. 第四批：配置
 
-### L10 · 移除 `custom` 字段，改「恢复出厂设置」
+### L10 · 详情屏隐藏 `custom`、交互改成「恢复出厂设置」
+
+> 措辞校正：`custom` **不从 schema 里删** —— 字段一直在 JSON 里，SDK 靠它判断托管。
+> 本次只删详情屏的那一行字段，并把交互换成「恢复出厂设置」。
 
 **现状**：`fields.ts:233-248` 的 `custom` 开关。关掉自建模型的 `custom` → 不在出厂清单 → `syncManagedModels`（SDK `ConfigManager.ts:452-458`）下一轮读取时**静默删除该模型**。
 
@@ -321,7 +324,9 @@ return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : single;
 
 - 自建模型创建时默认 `custom: true`（`config-editor.ts:262,302`）
 - 改出厂模型任一字段会被 `customPatch`（`fields.ts:90-91`）自动标 `custom: true`
-- 「恢复出厂」的实现路径可以是「把 custom 置回 false 并落盘」，也可以复用现有删除后重新同步的路径（`step-models.tsx:63` 有删除入口）
+- 实现路径（已落地）：用 `DEFAULT_APP_CONFIG` 里同 id 的出厂定义**整条替换**当前条目
+  （`restoreFactoryModel` / `restoreFactoryImageModel`），`custom` 随之消失 = 重新归 SDK 托管；
+  默认 Agent 只把 `messages` 换回 `DEFAULT_AGENT_DEFINITION`（与 `ensureDefaultAgent` 语义一致）
 
 **注意**：不动 SDK 的 `syncManagedModels`（原方案 (c) 已否决）。
 
