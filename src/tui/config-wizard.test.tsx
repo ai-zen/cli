@@ -1050,6 +1050,45 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     unmount();
   });
 
+  it("损坏的 mcp.json：屏上写明无法解析，照样保存、提示随之消失", async () => {
+    const onSaveMcp = makeOnSaveMcp();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "mcp", scope: "global" }}
+        mcp={{
+          global: { mcpServers: {} },
+          project: { mcpServers: {} },
+          errors: { global: "Unexpected token 'b'" },
+        }}
+        onSave={makeOnSave()}
+        onSaveMcp={onSaveMcp}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    expect(lastFrame()).toContain("无法解析");
+
+    // 坏文件照样能编辑：新建一个服务器并保存
+    stdin.write(DOWN); // → 新建服务器（首项是切换作用域）
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("My Server");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    expect(onSaveMcp).toHaveBeenCalledTimes(1);
+
+    // 写盘已经产出一份格式正确的新文件（这就是修复），提示不再成立
+    stdin.write(ESC); // → MCP 列表
+    await tickEsc();
+    expect(lastFrame()).toContain("MCP 服务器 · 全局");
+    expect(lastFrame()).not.toContain("无法解析");
+    unmount();
+  });
+
   it("新建服务器：名称 → 进入详情并写盘", async () => {
     const onSaveMcp = makeOnSaveMcp();
     const { stdin, lastFrame, unmount } = render(

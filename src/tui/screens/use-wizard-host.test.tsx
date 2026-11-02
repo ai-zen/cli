@@ -31,6 +31,11 @@ import { createAgentStore } from "../../agents-store.js";
 
 /** 可替换的读配置实现：用例按需改它，代替原来的 `vi.mocked(readConfig)` */
 let readConfigImpl: () => Promise<any> = async () => fakeConfig();
+/** 同上，但可以按作用域返回不同的读取结果（包含「文件坏了」） */
+let readMcpImpl: (scope: "global" | "project") => Promise<any> = async () => ({
+  ok: true,
+  config: { mcpServers: {} },
+});
 
 const flush = async () => {
   await new Promise((resolve) => setTimeout(resolve, 4));
@@ -50,11 +55,16 @@ function Probe({ hasSession }: { hasSession: boolean }) {
     },
     readers: {
       readConfig: () => readConfigImpl(),
-      readMcpConfig: async () => ({ mcpServers: {} }),
+      readMcpConfig: (scope) => readMcpImpl(scope),
       readReasoningPresets: async () => ({}),
       readAgentStore: async () => createAgentStore(fakeAgents().agents as any, []),
     },
   });
+  const damaged = w.wizardMcp
+    ? Object.entries(w.wizardMcp.errors ?? {})
+        .filter(([, error]) => Boolean(error))
+        .map(([scope]) => scope)
+    : [];
   useInput((char) => {
     if (char === "o") void w.openWizard({ kind: "menu" });
     if (char === "k") void w.openKeyEditor();
@@ -85,6 +95,8 @@ function Probe({ hasSession }: { hasSession: boolean }) {
         `mcp=${w.wizardMcp ? "loaded" : "null"}`,
         `store=${w.wizardAgentStore ? "loaded" : "null"}`,
       ].join(" ")}
+      {/* 损坏的作用域只有存在时才出现在帧里，避免改所有既有断言 */}
+      {damaged.length ? ` damaged=${damaged.join(",")}` : ""}
     </Text>
   );
 }
@@ -124,6 +136,16 @@ describe("useWizardHost", () => {
     await p.press("o");
     expect(p.frame()).toBe("step=null config=null agents=0 mcp=null store=null");
     expect(calls.notify).toEqual([["读取配置失败：EACCES", "error"]]);
+    p.unmount();
+  });
+
+  it("坏 mcp.json：进向导时记下损坏的作用域", async () => {
+    readMcpImpl = async (scope) =>
+      scope === "global" ? { ok: false, error: "Unexpected token" } : { ok: true, config: { mcpServers: {} } };
+    const p = await probe();
+    await p.press("o");
+    // 照样进向导（屏上会写明），但要记住是哪个作用域坏了
+    expect(p.frame()).toContain("damaged=global");
     p.unmount();
   });
 

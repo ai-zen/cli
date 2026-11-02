@@ -278,21 +278,37 @@ export function mcpConfigPath(scope: McpScope): string {
 }
 
 /**
- * 读取指定路径的 mcp.json，不存在 / 解析失败时返回空结构。
+ * 读取 mcp.json 的结果。
+ *
+ * 「文件不存在」与「读取 / 解析失败」必须分开：前者是正常的空配置，后者是文件已损坏。
+ * 以前两者都返回 `{ mcpServers: {} }`，于是损坏的文件在配置中心里看起来「没有服务器」，
+ * 用户一保存就把原内容整个覆盖掉 —— 静默丢数据。
+ */
+export type McpReadResult = { ok: true; config: McpConfig } | { ok: false; error: string };
+
+/** 读失败时按空配置继续（仅用于「读来只为做判断」的场景；界面上要显示损坏由编辑屏负责） */
+export function mcpConfigOrEmpty(result: McpReadResult): McpConfig {
+  return result.ok ? result.config : { mcpServers: {} };
+}
+
+/**
+ * 读取指定路径的 mcp.json。
  * 采用业界标准 `mcpServers` 顶层字段（与 SDK discoverMcpServers 一致）。
  */
-export async function readMcpConfigAt(path: string): Promise<McpConfig> {
+export async function readMcpConfigAt(path: string): Promise<McpReadResult> {
+  let raw: string;
   try {
-    await fs.access(path);
-  } catch {
-    return { mcpServers: {} };
+    raw = await fs.readFile(path, "utf-8");
+  } catch (cause: any) {
+    // 只有「文件不存在」算正常空配置；权限 / 是目录这类真错误照样报上去
+    if (cause?.code === "ENOENT") return { ok: true, config: { mcpServers: {} } };
+    return { ok: false, error: cause?.message ?? String(cause) };
   }
   try {
-    const raw = JSON.parse(await fs.readFile(path, "utf-8")) as Partial<McpConfig>;
-    // 兼容并归一：以 mcpServers 为准，缺失时回退到空的 mcpServers
-    return { mcpServers: raw.mcpServers ?? {} };
-  } catch {
-    return { mcpServers: {} };
+    const parsed = JSON.parse(raw) as Partial<McpConfig>;
+    return { ok: true, config: { mcpServers: parsed.mcpServers ?? {} } };
+  } catch (cause: any) {
+    return { ok: false, error: cause?.message ?? String(cause) };
   }
 }
 
@@ -309,7 +325,7 @@ export async function writeMcpConfigAt(path: string, mcpConfig: McpConfig): Prom
 /**
  * 读取某个作用域的 mcp.json（默认全局 ~/.ai-zen/mcp.json）。
  */
-export async function readMcpConfig(scope: McpScope = "global"): Promise<McpConfig> {
+export async function readMcpConfig(scope: McpScope = "global"): Promise<McpReadResult> {
   return readMcpConfigAt(mcpConfigPath(scope));
 }
 
@@ -321,6 +337,6 @@ export async function writeMcpConfig(mcpConfig: McpConfig, scope: McpScope = "gl
 }
 
 /** 读取项目级 <cwd>/.ai-zen/mcp.json（等价于 readMcpConfig("project")） */
-export async function readProjectMcpConfig(): Promise<McpConfig> {
+export async function readProjectMcpConfig(): Promise<McpReadResult> {
   return readMcpConfigAt(PROJECT_MCP_CONFIG_FILE);
 }

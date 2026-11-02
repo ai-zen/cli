@@ -14,12 +14,14 @@ export interface ListStepProps<T> {
   rows: number;
   title: string;
   subtitle?: string;
+  /** 警示行（如「该文件已损坏」）：以错误色印在副标题之下，不影响列表与按键 */
+  warning?: string;
   items: SelectItem<T>[];
   onPick: (value: T) => void;
   onCancel: () => void;
 }
 
-export function ListStep<T>({ columns, rows, title, subtitle, items, onPick, onCancel }: ListStepProps<T>) {
+export function ListStep<T>({ columns, rows, title, subtitle, warning, items, onPick, onCancel }: ListStepProps<T>) {
   const { setCursorPosition } = useCursor();
   // 列表屏无文本编辑：显式隐藏硬件光标，避免沿用上一屏（对话屏）的位置
   setCursorPosition(undefined);
@@ -30,6 +32,7 @@ export function ListStep<T>({ columns, rows, title, subtitle, items, onPick, onC
   const headerRows: Row[] = [
     ...textRows(title, columns, theme.highlight, true),
     ...(subtitle ? textRows(subtitle, columns, theme.dim) : []),
+    ...(warning ? textRows(`✖ ${warning}`, columns, theme.error) : []),
   ];
   // 列表项多到装不下时就截断（每项严格占一行，吸底布局才能精确留白）
   const maxItems = Math.max(1, usableFrameRows(rows) - (headerRows.length + 3));

@@ -31,12 +31,15 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
         hint: mcpServerHint(entry),
       })),
     ];
+    const damaged = mcp.errors?.[scope];
     return (
       <ListStep
         columns={cols}
         rows={rows}
         title={t("wiz.mcp.listTitle", { scope: scopeLabel(scope) })}
         subtitle={t("wiz.mcp.listSubtitle", { n: mcpCount(mcp, scope), path: mcpConfigPath(scope) })}
+        // 文件坏了照常进屏编辑：保存产出的是一份格式正确的新文件，那就是修复
+        warning={damaged ? t("wiz.mcp.damaged", { error: damaged }) : undefined}
         items={items}
         onPick={(value) => {
           if (value === SWITCH_SCOPE) go({ kind: "mcp", scope: other });

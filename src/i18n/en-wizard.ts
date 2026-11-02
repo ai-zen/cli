@@ -227,6 +227,7 @@ export const en: Record<string, string> = {
   "wiz.mcp.serverCount": "{n} server(s)",
   "wiz.mcp.newItem": "+ New server",
   "wiz.mcp.listTitle": "◆ MCP servers · {scope}",
+  "wiz.mcp.damaged": "mcp.json cannot be parsed ({error}); this screen shows an empty config",
   "wiz.mcp.listSubtitle": "{n} · {path}",
   "wiz.mcp.detailTitle": "◆ MCP · {id}",
   "wiz.scopePath": "{scope} · {path}",

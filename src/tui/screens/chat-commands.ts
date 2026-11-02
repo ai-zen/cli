@@ -24,7 +24,7 @@ import {
   type CommandName,
 } from "../../conversation-commands/registry.js";
 import { conversationExists, conversationRepository, listConversations } from "../../conversation-repository.js";
-import { readConfig, readMcpConfig, readReasoningPresets, saveConfig } from "../../config.js";
+import { mcpConfigOrEmpty, readConfig, readMcpConfig, readReasoningPresets, saveConfig } from "../../config.js";
 import { resetScope } from "../../agent-creator.js";
 import { switchModel } from "../../model-switch.js";
 import { listAgentChoices, switchAgent } from "../../agent-switch.js";
@@ -627,8 +627,10 @@ const cmdMcp: CommandHandler = async ({ push, args, openWizard }) => {
   const scope =
     explicit ??
     pickStartScope({
-      global: await readMcpConfig("global"),
-      project: await readMcpConfig("project"),
+      // 这里读只是为了「默认进哪个作用域」：坏文件按空配置算即可，
+      // 「已损坏」的提示由编辑屏负责（宿主那一轮会重新读并带上原因）
+      global: mcpConfigOrEmpty(await readMcpConfig("global")),
+      project: mcpConfigOrEmpty(await readMcpConfig("project")),
     });
   await openWizard({ kind: "mcp", scope });
 };

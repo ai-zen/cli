@@ -9,7 +9,7 @@
 // `WizardHostDeps` 传进来，于是 hook 可以在测试里用假依赖跑完整生命周期。
 import { useRef, useState } from "react";
 import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { readConfig, readMcpConfig, readReasoningPresets, type McpConfig, type McpScope } from "../../config.js";
+import { mcpConfigOrEmpty, readConfig, readMcpConfig, readReasoningPresets, type McpReadResult, type McpScope } from "../../config.js";
 import { readAgentStore, type AgentStore } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
 import type { McpSnapshot, WizardCloseResult, WizardStep } from "../config-wizard/index.js";
@@ -33,7 +33,7 @@ export interface WizardHostDeps {
    */
   readers?: {
     readConfig: () => Promise<AppConfig>;
-    readMcpConfig: (scope: McpScope) => Promise<McpConfig>;
+    readMcpConfig: (scope: McpScope) => Promise<McpReadResult>;
     readReasoningPresets: () => Promise<ReasoningPresets>;
     readAgentStore: () => Promise<AgentStore>;
   };
@@ -92,9 +92,16 @@ export function useWizardHost({
       setWizardPresets(await readers.readReasoningPresets());
       setWizardAgents(agentStore.agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id })));
       setWizardAgentStore(agentStore);
+      // 坏文件照样进屏（屏上写明），只把失败原因随之带过去
+      const globalMcp = await readers.readMcpConfig("global");
+      const projectMcp = await readers.readMcpConfig("project");
+      const errors: Partial<Record<McpScope, string>> = {};
+      if (!globalMcp.ok) errors.global = globalMcp.error;
+      if (!projectMcp.ok) errors.project = projectMcp.error;
       setWizardMcp({
-        global: await readers.readMcpConfig("global"),
-        project: await readers.readMcpConfig("project"),
+        global: mcpConfigOrEmpty(globalMcp),
+        project: mcpConfigOrEmpty(projectMcp),
+        ...(Object.keys(errors).length ? { errors } : {}),
       });
       setWizardStep(step);
     } catch (error: any) {

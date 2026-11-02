@@ -88,6 +88,13 @@ export interface WizardCloseResult {
 export interface McpSnapshot {
   global: McpConfig;
   project: McpConfig;
+  /**
+   * 各作用域 mcp.json 读 / 解析失败的原因。
+   *
+   * 有值 = 该文件已损坏：屏上要写明「无法解析」，但仍让用户继续编辑 ——
+   * 保存产出的是一份格式正确的新文件，那就是修复。
+   */
+  errors?: Partial<Record<McpScope, string>>;
 }
 
 export interface ConfigWizardProps {

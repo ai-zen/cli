@@ -30,7 +30,7 @@ describe("readMcpConfig / writeMcpConfig", () => {
       // 文件可能不存在，忽略
     }
     const result = await config.readMcpConfig();
-    expect(result).toEqual({ mcpServers: {} });
+    expect(result).toEqual({ ok: true, config: { mcpServers: {} } });
   });
 
   it("写入后再读取内容一致", async () => {
@@ -42,7 +42,7 @@ describe("readMcpConfig / writeMcpConfig", () => {
     };
     await config.writeMcpConfig(mcpConfig);
     const read = await config.readMcpConfig();
-    expect(read).toEqual(mcpConfig);
+    expect(read).toEqual({ ok: true, config: mcpConfig });
   });
 
   it("原子写入不损坏文件", async () => {
@@ -53,20 +53,22 @@ describe("readMcpConfig / writeMcpConfig", () => {
     };
     await config.writeMcpConfig(mcpConfig);
     const read = await config.readMcpConfig();
-    expect(read.mcpServers.test.command).toBe("echo");
+    expect(read.ok && read.config.mcpServers.test!.command).toBe("echo");
   });
 
-  it("损坏的 JSON 返回空结构", async () => {
+  it("损坏的 JSON 报告解析失败，不冒充「空配置」", async () => {
     await fs.writeFile(config.MCP_CONFIG_FILE, "{ bad json", "utf-8");
     const result = await config.readMcpConfig();
-    expect(result).toEqual({ mcpServers: {} });
+    expect(result.ok).toBe(false);
+    // 错误原文要带上：编辑屏把它显示给用户，才知道这个文件坏在哪
+    if (!result.ok) expect(result.error).toMatch(/JSON/i);
   });
 });
 
 describe("readProjectMcpConfig", () => {
   it("项目文件不存在时返回空结构", async () => {
     const result = await config.readProjectMcpConfig();
-    expect(result).toEqual({ mcpServers: {} });
+    expect(result).toEqual({ ok: true, config: { mcpServers: {} } });
   });
 });
 
@@ -80,12 +82,15 @@ describe("MCP 作用域化读写", () => {
     const path = join(testDir, "nested", "mcp.json");
     await config.writeMcpConfigAt(path, { mcpServers: { a: { type: "stdio", command: "x" } } });
     const read = await config.readMcpConfigAt(path);
-    expect(read.mcpServers.a!.command).toBe("x");
+    expect(read.ok && read.config.mcpServers.a!.command).toBe("x");
   });
 
   it("readMcpConfig(\"global\") 等价于默认作用域", async () => {
     await config.writeMcpConfig({ mcpServers: { g: { type: "http", url: "https://g" } } });
-    expect(await config.readMcpConfig("global")).toEqual({ mcpServers: { g: { type: "http", url: "https://g" } } });
+    expect(await config.readMcpConfig("global")).toEqual({
+      ok: true,
+      config: { mcpServers: { g: { type: "http", url: "https://g" } } },
+    });
   });
 
   it("作用域化写入保留 disabled / description 等字段", async () => {
@@ -94,7 +99,7 @@ describe("MCP 作用域化读写", () => {
       "global",
     );
     const read = await config.readMcpConfig("global");
-    expect(read.mcpServers.s).toMatchObject({ disabled: true, description: "d" });
+    expect(read.ok && read.config.mcpServers.s).toMatchObject({ disabled: true, description: "d" });
   });
 });
 

@@ -230,6 +230,7 @@ export const zh: Record<string, string> = {
   "wiz.mcp.serverCount": "{n} 个服务器",
   "wiz.mcp.newItem": "＋ 新建服务器",
   "wiz.mcp.listTitle": "◆ MCP 服务器 · {scope}",
+  "wiz.mcp.damaged": "mcp.json 无法解析（{error}），本屏按空配置呈现",
   "wiz.mcp.listSubtitle": "{n} 个 · {path}",
   "wiz.mcp.detailTitle": "◆ MCP · {id}",
   "wiz.scopePath": "{scope} · {path}",

@@ -126,7 +126,12 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     } catch (cause: any) {
       return t("wiz.writeMcpFailed", { error: cause?.message ?? cause });
     }
-    setMcp((prev) => ({ ...prev, [scope]: next }));
+    // 写盘成功 = 那个坏文件已被替换成合法 JSON，屏上的「无法解析」不再成立
+    setMcp((prev) => ({
+      ...prev,
+      [scope]: next,
+      ...(prev.errors ? { errors: { ...prev.errors, [scope]: undefined } } : {}),
+    }));
     markDirty(message, { mcp: true });
     return null;
   };
