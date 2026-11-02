@@ -46,6 +46,19 @@ describe("extractMention：光标在不在 @token 里", () => {
     expect(extractMention('"@src/x"', 7)).toEqual({ query: "src/x", start: 1, end: 7 });
   });
 
+  it("中文行文里的全角标点收住 token（不吞掉后续文字）", () => {
+    // 「@src/tui/chat.tsx。这里有问题」：补全只该替换到 。 之前
+    const chat = "@src/tui/chat.tsx。这里有问题";
+    // 路径 16 个字素，`@` 占了第 0 位 → 光标停在 17 时 token 恰好到 。 之前
+    expect(extractMention(chat, 17)).toEqual({ query: "src/tui/chat.tsx", start: 0, end: 17 });
+    // 继续往后写句子时菜单要收起来，不能在中文行文里一直弹
+    expect(extractMention(chat, chat.length)).toBeNull();
+    // 全角括号 / 书名号 / 引号同理
+    expect(extractMention("（@src/x）", 7)).toEqual({ query: "src/x", start: 1, end: 7 });
+    expect(extractMention("《@src/x》", 7)).toEqual({ query: "src/x", start: 1, end: 7 });
+    expect(extractMention("「@src/x」", 7)).toEqual({ query: "src/x", start: 1, end: 7 });
+  });
+
   it("光标在 0 位 / 文本为空时安全返回 null", () => {
     expect(extractMention("", 0)).toBeNull();
     expect(extractMention("@foo", 0)).toBeNull();
