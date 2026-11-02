@@ -21,7 +21,10 @@ function runCli(
   extraEnv?: Record<string, string>,
 ): Promise<CliResult> {
   return new Promise((resolve) => {
-    const env = { ...process.env, ...extraEnv };
+    // 断言的是用户可见的中文文案（hook 用法 / 错误提示），而界面语言跟随偏好或
+    // 系统 LANG；给临时 `AI_ZEN_DIR` 时没有 preferences.json，会落到英文 —— 显式锁语言，
+    // 否则同一份断言在开发者机器上红、CI 上绿（或反之）。
+    const env = { ...process.env, LANG: "zh_CN.UTF-8", LC_ALL: "zh_CN.UTF-8", ...extraEnv };
 
     const proc = spawn("node", [CLI, ...args], { env, stdio: ["pipe", "pipe", "pipe"] });
 
@@ -171,21 +174,27 @@ describe("E2E: shell 兜底钩子", () => {
     expect(result.stdout).toContain("✅ ai hook 已从");
   });
 
-  it("ai hook 不带参数时输出用法（stderr，退出码 1）", async () => {
+  // 只有「认不出的子动作」才报错到 stderr、退出码 1；只想看用法是正常路径。
+  // 断言**不锁语言**：这条输出跟随界面语言（偏好 / 系统 LANG），临时 AI_ZEN_DIR 里
+  // 没有 preferences.json 时落到英文；锁「两种语言都会出现的那段」才不 flaky。
+  it("ai hook 不带参数时输出用法（stdout，退出码 0）", async () => {
     const aizDir = makeTestDir();
     const result = await runCli(["hook"], undefined, { AI_ZEN_DIR: aizDir });
-    expect(result.stderr).toContain("用法");
-    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toMatch(/ai hook install\|uninstall/);
+    expect(result.stderr).toBe("");
+    expect(result.exitCode).toBe(0);
   });
 });
 
 describe("E2E: 纯 stdio 模式", () => {
+  // stdio 模式刻意不做 i18n（见 index.ts：结果写 stdout、日志走 stderr，不给管道加语言依赖），
+  // 所以这里的断言锁英文原文
   it("无输入时退出码非 0，且提示只出现在 stderr", async () => {
     const aizDir = makeTestDir();
     setupConfigDir(aizDir);
     const result = await runCli([], "", { AI_ZEN_DIR: aizDir });
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("没有输入内容");
+    expect(result.stderr).toContain("no input");
     expect(result.stdout).toBe("");
   });
 
@@ -194,7 +203,7 @@ describe("E2E: 纯 stdio 模式", () => {
     setupConfigDir(aizDir, { apiKey: "" });
     const result = await runCli(["你好"], undefined, { AI_ZEN_DIR: aizDir });
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("API Key");
+    expect(result.stderr).toContain("has no API key");
     expect(result.stdout).toBe("");
   });
 
