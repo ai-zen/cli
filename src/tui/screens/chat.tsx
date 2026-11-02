@@ -773,7 +773,8 @@ export function Chat(props: ChatScreenProps) {
       if ((char === "p" && key.ctrl) || (char === "n" && key.ctrl)) {
         const up = char === "p";
         if (menuCount > 0) {
-          setMenuIndex((i) => (up ? (i - 1 + menuCount) % menuCount : (i + 1) % menuCount));
+          // 同上：视觉「上」（Ctrl+P）是 +1
+          setMenuIndex((i) => (up ? (i + 1) % menuCount : (i - 1 + menuCount) % menuCount));
           return;
         }
         if (up) historyPrev();
@@ -818,8 +819,11 @@ export function Chat(props: ChatScreenProps) {
           return;
         }
         if (menuCount > 0) {
+          // 底部锚定菜单里**下标大 = 视觉靠上**（`items[0]` 贴着输入框，越往后越往上），
+          // 所以视觉「上」是 +1、视觉「下」是 −1；取模环绕：到顶溢出回到底部、到底溢出回到顶部。
+          // 写反了方向就与视觉相反 —— 只有 ≥ 3 条候选时才能从测试里看出来。
           setMenuIndex((i) =>
-            key.upArrow ? (i - 1 + menuCount) % menuCount : (i + 1) % menuCount,
+            key.upArrow ? (i + 1) % menuCount : (i - 1 + menuCount) % menuCount,
           );
           return;
         }

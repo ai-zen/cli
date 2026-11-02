@@ -78,6 +78,7 @@ const clipboardMock = vi.hoisted(() => ({
 }));
 
 import { Chat } from "./chat.js";
+import { getCommandHints } from "../../conversation-commands/registry.js";
 
 /** 等 effect / Promise / FrameBuffer 合帧跑完（合帧间隔 60ms） */
 const flush = async (ms = 4) => {
@@ -300,24 +301,51 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
-  it("菜单打开时 ↑ = 选下一条（高亮上移）、↓ = 选上一条", async () => {
+  /**
+   * 高亮项（菜单行的 `❯` 在**两格**缩进之后；输入行的 `❯` 只有一格缩进，不能用它）。
+   *
+   * 方向断言**必须用 ≥ 3 条候选**：只有 2 条时 `(i−1+n)%n` 与 `(i+1)%n` 结果恒等，
+   * 映射写反了也照样“绿”—— 真机上 19 条候选才暴露出 `↑` 实际冲向最顶端。
+   */
+  const highlightedCommand = (frame: string): string | null => {
+    for (const row of frame.split("\n")) {
+      const match = /^ {2}❯ (\S+)/.exec(row);
+      if (match) return match[1]!;
+    }
+    return null;
+  };
+
+  it("菜单打开时 ↑ 选上一条（相邻项，视觉上移）、↓ 选下一条，到顶/底才环绕", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
-    stdin.write("/c");
+    stdin.write("/"); // 全部 19 条候选
     await flush();
+    const hints = getCommandHints();
+    const name = (i: number) => `/${hints[i]!.names[0]}`;
+    expect(hints.length).toBeGreaterThan(2);
 
-    stdin.write("\u001b[A"); // ↑
-    await flush();
-    let rows = (lastFrame() ?? "").split("\n");
-    const configRow = rowOf(lastFrame() ?? "", "/config");
-    const clearRow = rowOf(lastFrame() ?? "", "/clear");
-    expect(rows[configRow]).toContain("❯");
-    expect(rows[clearRow]).not.toContain("❯");
+    // 初始：高亮最底那条（`hints[0]`）
+    expect(highlightedCommand(lastFrame() ?? "")).toBe(name(0));
 
-    stdin.write("\u001b[B"); // ↓
-    await flush();
-    rows = (lastFrame() ?? "").split("\n");
-    expect(rows[rowOf(lastFrame() ?? "", "/clear")]).toContain("❯");
+    // ↑：上移**一格**到相邻项，而不是回卷到最顶（候选够多时才区分得出来）
+    stdin.write("\u001b[A");
+    await flush(20);
+    expect(highlightedCommand(lastFrame() ?? "")).toBe(name(1));
+
+    // ↓：回到最底
+    stdin.write("\u001b[B");
+    await flush(20);
+    expect(highlightedCommand(lastFrame() ?? "")).toBe(name(0));
+
+    // ↓ 在最底 → 环绕到最顶（视觉上从底部穿出、从顶部冒出来）
+    stdin.write("\u001b[B");
+    await flush(20);
+    expect(highlightedCommand(lastFrame() ?? "")).toBe(name(hints.length - 1));
+
+    // ↑ 在最顶 → 环绕回最底
+    stdin.write("\u001b[A");
+    await flush(20);
+    expect(highlightedCommand(lastFrame() ?? "")).toBe(name(0));
     unmount();
   });
 
