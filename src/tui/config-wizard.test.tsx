@@ -1079,6 +1079,48 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     unmount();
   });
 
+  /**
+   * 回归（PLAN L3）：`remove()` 只提交不动光标，而 Enter 分支用 `entries[index - 1]`。
+   * 删掉末项后 `index` 超出新边界，`entries[index - 1]` 是 `undefined`，`entry.key` 抛
+   * `TypeError`。渲染处早就有 `safeIndex` 兑着，所以界面看着正常 —— 只有回车会炸。
+   */
+  it("环境变量子屏：删掉末项后回车不崩（光标钳到新的末项）", async () => {
+    const onSaveMcp = makeOnSaveMcp();
+    const mcp = {
+      global: {
+        mcpServers: {
+          "socket-pty": { type: "stdio" as const, command: "npx", env: { A: "1", B: "2", C: "3" } },
+        },
+      },
+      project: { mcpServers: {} },
+    };
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "mcp-kv", scope: "global", serverId: "socket-pty", field: "env" }}
+        mcp={mcp}
+        onSave={makeOnSave()}
+        onSaveMcp={onSaveMcp}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    // ↓ 三次：新增行 → A → B → C（index 3，末项）
+    for (let i = 0; i < 3; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write("\u0004"); // Ctrl+D 删掉 C
+    await tick();
+    await tick();
+    expect(onSaveMcp.mock.calls[0]![1].mcpServers["socket-pty"]!.env).toEqual({ A: "1", B: "2" });
+
+    stdin.write(ENTER); // 光标应已钳到新的末项 B → 打开编辑屏
+    await tick();
+    expect(lastFrame()).toContain("B=2");
+    unmount();
+  });
+
   it("关闭时上报 mcpChanged（供宿主重建会话）", async () => {
     const onSaveMcp = makeOnSaveMcp();
     const onClose = vi.fn();

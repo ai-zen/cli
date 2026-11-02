@@ -47,6 +47,10 @@ export function KvEditorScreen({ columns, rows, title, subtitle, map, notice, on
     const next: Record<string, string> = {};
     for (const [k, v] of Object.entries(map)) if (k !== key) next[k] = v;
     await commit(next);
+    // 光标钳到新的末项：`index` 指的是 `entries[index - 1]`，删掉末项后就越界了，
+    // Enter 分支会读到 `undefined`。`entries` 是删除前的快照，`length - 1` 正好是
+    // 删除后的最大合法 index（删空时落到 0，即「新增」行）。
+    setIndex((i) => Math.min(i, entries.length - 1));
   };
 
   const submit = async (raw: string) => {
