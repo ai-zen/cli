@@ -24,7 +24,6 @@ import {
   type CommandName,
 } from "../../conversation-commands/registry.js";
 import { conversationRepository, listConversations } from "../../conversation-repository.js";
-import { formatShortTime } from "../../format-time.js";
 import { readConfig, readMcpConfig, readReasoningPresets, saveConfig } from "../../config.js";
 import { resetScope } from "../../agent-creator.js";
 import { switchModel } from "../../model-switch.js";
@@ -158,21 +157,17 @@ const cmdSave: CommandHandler = async ({ session, push }) => {
 };
 
 const cmdLoad: CommandHandler = async ({ push, rows, exit, pick }) => {
-  // 先算可见条数：摘要只为将要显示的那几条解析（会话多时不拖慢 /load）
-  // 用布局自己的公式算，不留魔数：命令层拿到的是**原始终端行数**，而覆盖层能用的
-  // 是 `usableFrameRows(rows) = rows - 1`；picker 自身占 `pickerLines(n) + STATUS_BAR_LINES`。
+  // 条数上限：用布局自己的公式算，不留魔数 —— 命令层拿到的是**原始终端行数**，而
+  // 覆盖层能用的是 `usableFrameRows(rows) = rows - 1`；picker 自身占
+  // `pickerLines(n) + STATUS_BAR_LINES`。
   const maxItems = Math.max(1, usableFrameRows(rows ?? 24) - (pickerLines(0) + STATUS_BAR_LINES));
-  const list = await listConversations({ previewLimit: maxItems });
+  const list = await listConversations();
   if (list.length === 0) {
     push(t("cmd.load.none"), "error");
     return;
   }
-  const allItems: SelectItem<string>[] = list.map((c) => ({
-    // 有首条消息就用它当标签：纯时间戳 id 根本分不清哪条是哪条
-    label: c.preview || c.name,
-    value: c.id,
-    hint: formatShortTime(c.updatedAt),
-  }));
+  // 列表只显示会话文件名（id）：不再解析首条消息当摘要（读盘开销已从 /load 消失）
+  const allItems: SelectItem<string>[] = list.map((c) => ({ label: c.id, value: c.id }));
   // 覆盖层不能高于终端：仅展示最近的有限条
   const items = allItems.slice(0, maxItems);
   const title =

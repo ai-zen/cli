@@ -2,7 +2,7 @@
 //
 // 收敛前「读旧记录拿 createdAt → 写 → 更新指针」在 5 个地方各写一遍，并且已经漂移：
 // `saveConversation()` 漏写 cwd、stdio 的 `--save` 不更新指针、还写了一个已废弃的
-// `modelId`。这里把收敛后的契约钉住：保留 createdAt、总是写 cwd、指针可开关。
+// `modelId`。这里把收敛后的契约钉住：只写真相字段、总是写 cwd、指针可开关。
 //
 // 目录走临时 `AI_ZEN_DIR`（见 `useTempAiZenDir`）：绝不能写进真实的
 // `~/.ai-zen/cli/conversations/` 与 `last-session.json`。
@@ -36,24 +36,24 @@ afterAll(() => {
 });
 
 describe("persistConversation（会话落盘的唯一入口）", () => {
-  it("新建：写入 id / agentId / messages / cwd，createdAt 与 updatedAt 一致", async () => {
+  it("新建：写入 id / agentId / messages / cwd，不再写时间戳字段", async () => {
     await persistConversation({ id: "chat_new_1", agentId: "default", messages: [userMsg("hi")], cwd: "/work" });
     const saved = readBack("chat_new_1");
     expect(saved.id).toBe("chat_new_1");
     expect(saved.agentId).toBe("default");
     expect(saved.cwd).toBe("/work");
     expect(saved.messages).toHaveLength(1);
-    expect(saved.createdAt).toBe(saved.updatedAt);
+    // 时间戳字段已删：不再为保留 createdAt 而先全量读旧文件（排序看文件 mtime）
+    expect(saved).not.toHaveProperty("createdAt");
+    expect(saved).not.toHaveProperty("updatedAt");
   });
 
-  it("更新：保留原 createdAt，不把历史时间重置", async () => {
+  it("更新：整体覆盖，不需要先读旧文件", async () => {
     await persistConversation({ id: "chat_update_1", messages: [userMsg("one")], cwd: "/work" });
-    const first = readBack("chat_update_1");
     await persistConversation({ id: "chat_update_1", messages: [userMsg("one"), userMsg("two")], cwd: "/work" });
     const second = readBack("chat_update_1");
-    expect(second.createdAt).toBe(first.createdAt);
-    expect(second.updatedAt >= first.updatedAt).toBe(true);
     expect(second.messages).toHaveLength(2);
+    expect(second).not.toHaveProperty("createdAt");
   });
 
   it("agentId 缺省补 default（不让会话文件里出现 undefined）", async () => {

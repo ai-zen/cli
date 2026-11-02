@@ -27,8 +27,14 @@ export interface Conversation {
   messages: AgentNS.Message[];
   lastPromptTokens?: number;
   cwd?: string;
-  createdAt: string;
-  updatedAt: string;
+  /**
+   * 时间戳字段（`createdAt` / `updatedAt`）**已删除**。
+   *
+   * 留着 `createdAt` 就得在每次落盘前先把整个会话文件读一遍（几 MB 的 JSON.parse），
+   * 只为了把一个不会变的值抄回去；`updatedAt` 则完全等于文件 mtime。
+   * 排序改用 `stat().mtime`（见 `listConversations`），于是落盘不再需要先读。
+   * 旧存档里的这两个字段会被反序列化时忽略。
+   */
 }
 
 /**
@@ -97,18 +103,13 @@ export interface PersistConversationInput {
  * 废弃的 `modelId`。收敛到这里后，各处差异只剩「是否更新指针」一个显式开关。
  */
 export async function persistConversation(input: PersistConversationInput): Promise<string> {
-  // 仓储**只取一次**：`read` 与 `write` 之间隔着 await，取两次就可能落到两个目录
-  // （`CONVERSATIONS_DIR` 是活绑定）。同一份落盘必须读写同一个目录。
+  // 仓储**只取一次**：`CONVERSATIONS_DIR` 是活绑定，同一份落盘必须只读一个目录。
   const repository = conversationRepository();
-  const existing = await repository.read(input.id);
-  const now = new Date().toISOString();
   await repository.write({
     id: input.id,
     agentId: input.agentId || "default",
     messages: input.messages,
     cwd: input.cwd,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
   });
   if (input.setAsLastSession !== false) await writeLastSession(input.cwd, input.id);
   return input.id;
@@ -126,67 +127,36 @@ export async function saveConversation(ctx: ConversationContext): Promise<string
   });
 }
 
-/** `/load` 选择器的一行 */
+/** `/load` 选择器的一行：只有会话文件名（id） */
 export interface ConversationSummary {
   id: string;
-  /** 文件名（= id），无摘要时的回退显示 */
-  name: string;
-  /** 首条用户消息的第一行（截断）；读不到时为空串 */
-  preview: string;
-  updatedAt: string;
-  size: number;
-}
-
-/** 摘要最大字符数（渲染侧还会按终端宽度再裁一次） */
-const PREVIEW_MAX = 80;
-
-/**
- * 会话摘要：首条用户消息的第一行。
- *
- * 会话 id 是时间戳（`chat_2026_10_28_00_56_34`），直接当标签列出来完全分不清哪条是哪条。
- * 取首行而不是整段：`CwdTrackerPlugin` 会在消息末尾追加工作目录注记，末尾对辨认无意义。
- */
-export function conversationPreview(conversation: Conversation | null): string {
-  const first = conversation?.messages?.find((m) => m.role === AgentNS.Role.User);
-  const content = typeof first?.content === "string" ? first.content : "";
-  const line = content.split("\n").find((part) => part.trim()) ?? "";
-  return line.trim().slice(0, PREVIEW_MAX);
 }
 
 /**
- * 列出已保存的会话，按更新时间倒序。供对话内 `/load` 选择器使用。
+ * 列出已保存的会话，按文件 mtime 倒序。供对话内 `/load` 选择器使用。
  *
- * 先只 stat（快），排序后**只为将要显示的那几条**解析内容取摘要 —— 会话攒到上百条时，
- * 逐个 `JSON.parse` 会明显拖慢 `/load`。
+ * 只 `readdir` + `stat`，**不 read 任何会话文件**：列表只显示文件名，摘要（首条消息）
+ * 已取消 —— 会话攒到上百条时，逐个 `JSON.parse` 会明显拖慢 `/load`。
  */
-export async function listConversations(options: { previewLimit: number }): Promise<ConversationSummary[]> {
+export async function listConversations(): Promise<ConversationSummary[]> {
   const dir = CONVERSATIONS_DIR;
+  let files: string[];
   try {
-    await fs.access(dir);
+    files = await fs.readdir(dir);
   } catch {
-    return [];
+    return []; // 首次启动：会话目录还没建
   }
-  const files = await fs.readdir(dir);
-  const stats: Array<{ id: string; name: string; updatedAt: string; size: number }> = [];
+  const entries: Array<{ id: string; mtime: number }> = [];
   for (const file of files) {
     if (!file.endsWith(".json")) continue;
     const id = file.replace(/\.json$/, "");
     try {
       const st = await fs.stat(join(dir, file));
-      stats.push({ id, name: id, updatedAt: st.mtime.toISOString(), size: st.size });
+      entries.push({ id, mtime: st.mtimeMs });
     } catch {
-      /* 跳过读取失败的条目 */
+      /* 读目录与 stat 之间被别的进程删掉：跳过（不是错误，也不该让 /load 崩） */
     }
   }
-  stats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-
-  // `previewLimit` 必填：默认 0（=全部无摘要）是个静默陷阱 —— 漏传不会报错，
-  // 只会让列表变成一堆谁也分不清的时间戳 id。
-  const withPreview = await Promise.all(
-    stats.map(async (item, index): Promise<ConversationSummary> => {
-      if (index >= options.previewLimit) return { ...item, preview: "" };
-      return { ...item, preview: conversationPreview(await conversationRepository().read(item.id)) };
-    }),
-  );
-  return withPreview;
+  entries.sort((a, b) => b.mtime - a.mtime);
+  return entries.map((entry) => ({ id: entry.id }));
 }

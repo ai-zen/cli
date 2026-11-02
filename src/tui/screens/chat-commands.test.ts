@@ -153,13 +153,14 @@ describe("picker 条数上限（不超出一帧）", () => {
       pickerItems,
     }).bottomLines <= usableFrameRows(ROWS);
 
-  /** 接管选择器：只记条数并立即作答（不真弹覆盖层），返回记录值 */
+  /** 接管选择器：只记条数 / 标签并立即作答（不真弹覆盖层），返回记录值 */
   const capturePick = (host: ChatCommandHost, answer: string | null) => {
-    const seen = { count: 0 };
+    const seen = { count: 0, labels: [] as string[] };
     (host as any).setPickerState = (next: any) => {
       const state = typeof next === "function" ? next(null) : next;
       if (!state) return;
       seen.count = state.items.length;
+      seen.labels = state.items.map((item: any) => item.label);
       state.resolve(answer);
     };
     return seen;
@@ -183,6 +184,9 @@ describe("picker 条数上限（不超出一帧）", () => {
     expect(fits(seen.count)).toBe(true);
     // 对照：多一条就装不下（证明上界算对了，不是碰巧）
     expect(fits(seen.count + 1)).toBe(false);
+    // 列表只显示会话文件名（id），不再解析首条消息当摘要
+    expect(seen.labels.every((label) => /^chat_\d{2}$/.test(label))).toBe(true);
+    expect(seen.labels.some((label) => label.includes("条"))).toBe(false);
   });
 
   it("/back：条数上限同/load", async () => {
