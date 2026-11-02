@@ -37,10 +37,12 @@ export interface DetailField {
   open?: () => void;
 }
 
-/** 详情屏底部的整体动作（如「删除」），危险动作以红色呈现并可二次确认 */
+/** 详情屏底部的整体动作（如「删除」「恢复出厂设置」），危险动作以红色呈现并可二次确认 */
 export interface DetailAction {
   label: string;
   run: () => Promise<string | null>;
+  /** 危险动作（删除）：红色呈现。恢复出厂这类「重置」用它为 `false` */
+  danger?: boolean;
 }
 
 export interface DetailStepProps {
@@ -51,8 +53,8 @@ export interface DetailStepProps {
   details?: string[];
   fields: DetailField[];
   notice?: string | null;
-  /** 底部危险动作（如删除） */
-  action?: DetailAction;
+  /** 底部动作（如「恢复出厂设置」「删除」），按数组顺序排在字段之后 */
+  actions?: DetailAction[];
   onBack: () => void;
 }
 
@@ -66,9 +68,9 @@ export interface DetailStepProps {
  * 文本编辑时光标「就地」落在所选字段的值上（硬件光标同步，IME 候选框跟随）；
  * 帧高恒为「终端行数 − 1」，与其它屏一致。
  */
-export function DetailStep({ columns, rows, title, details, fields, notice, action, onBack }: DetailStepProps) {
+export function DetailStep({ columns, rows, title, details, fields, actions, notice, onBack }: DetailStepProps) {
   const { setCursorPosition } = useCursor();
-  const rowCount = Math.max(1, fields.length + (action ? 1 : 0));
+  const rowCount = Math.max(1, fields.length + (actions?.length ?? 0));
   const [index, setIndex] = useState(0);
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
@@ -76,7 +78,8 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
   const [revealed, setRevealed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [choosing, setChoosing] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  /** 待确认的动作在 `actions` 里的下标；`null` 表示没在确认 */
+  const [confirming, setConfirming] = useState<number | null>(null);
 
   // 行数变化（如 Agent 详情 ↔ 权限子屏共用本组件）时收敛高亮索引，避免越界导致无高亮
   useEffect(() => {
@@ -86,7 +89,8 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
   const labelWidth = Math.max(6, ...fields.map((f) => displayWidth(f.label)));
   const valueX = 2 + labelWidth + 2;
   const field = index < fields.length ? fields[index] : undefined;
-  const onActionRow = Boolean(action) && index === fields.length;
+  const currentAction = actions?.[index - fields.length];
+  const onActionRow = Boolean(currentAction);
 
   const chars = graphemes(value);
   const caret = Math.max(0, Math.min(cursor, chars.length));
@@ -201,8 +205,9 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
         return;
       }
       if (key.return) {
-        if (onActionRow && action) {
-          setConfirming(true);
+        if (currentAction) {
+          // 存的是 `actions` 里的相对下标：`index` 是「字段 + 动作」的整行下标
+          setConfirming(index - fields.length);
           return;
         }
         if (!field) return;
@@ -221,7 +226,7 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
         beginEdit();
       }
     },
-    { isActive: !choosing && !confirming },
+    { isActive: !choosing && confirming === null },
   );
 
   // ---- 子屏：枚举选择 ----
@@ -244,8 +249,8 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
   }
 
   // ---- 子屏：动作二次确认 ----
-  if (confirming && action) {
-    const target = action;
+  const target = confirming === null ? undefined : actions?.[confirming];
+  if (target) {
     return (
       <ListStep
         columns={columns}
@@ -257,10 +262,10 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
           { label: t("ui.cancel"), value: "no" },
         ]}
         onPick={(picked) => {
-          setConfirming(false);
+          setConfirming(null);
           if (picked === "yes") void apply(target.run);
         }}
-        onCancel={() => setConfirming(false)}
+        onCancel={() => setConfirming(null)}
       />
     );
   }
@@ -272,7 +277,7 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
     ...(notice ? textRows(`✔ ${notice}`, columns, theme.ok) : []),
     ...(error ? textRows(`✖ ${error}`, columns, theme.error) : []),
   ];
-  const contentLines = headerRows.length + 1 + fields.length + (action ? 1 : 0) + 1;
+  const contentLines = headerRows.length + 1 + fields.length + (actions?.length ?? 0) + 1;
 
   if (editing && field) {
     const shown = masked ? "•".repeat(chars.length) : value;
@@ -365,16 +370,17 @@ export function DetailStep({ columns, rows, title, details, fields, notice, acti
             </Text>
           );
         })}
-        {action ? (
-          <Text wrap="truncate">
-            <Text color={index === fields.length ? theme.brand[0] : theme.faint}>
-              {index === fields.length ? "❯ " : "  "}
+        {actions?.map((item, i) => {
+          const selected = index === fields.length + i;
+          return (
+            <Text key={item.label} wrap="truncate">
+              <Text color={selected ? theme.brand[0] : theme.faint}>{selected ? "❯ " : "  "}</Text>
+              <Text bold={selected} color={item.danger ? theme.error : theme.assistant}>
+                {padDisplay(item.label, labelWidth)}
+              </Text>
             </Text>
-            <Text bold={index === fields.length} color={theme.error}>
-              {padDisplay(action.label, labelWidth)}
-            </Text>
-          </Text>
-        ) : null}
+          );
+        })}
       </Box>
       <KeyHints hints={hints} />
     </WizardFrame>

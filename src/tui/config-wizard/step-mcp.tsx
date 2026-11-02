@@ -64,18 +64,21 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
         ]}
         fields={mcpServerFields(scope, serverId, entry)}
         notice={notice}
-        action={{
-          label: t("wiz.mcp.delete"),
-          run: async () => {
-            const failure = await persistMcp(
-              scope,
-              removeMcpServer(mcp[scope], serverId),
-              t("wiz.mcp.deleted", { id: serverId, scope: scopeLabel(scope) }),
-            );
-            if (!failure) go({ kind: "mcp", scope });
-            return failure;
+        actions={[
+          {
+            label: t("wiz.mcp.delete"),
+            danger: true,
+            run: async () => {
+              const failure = await persistMcp(
+                scope,
+                removeMcpServer(mcp[scope], serverId),
+                t("wiz.mcp.deleted", { id: serverId, scope: scopeLabel(scope) }),
+              );
+              if (!failure) go({ kind: "mcp", scope });
+              return failure;
+            },
           },
-        }}
+        ]}
         onBack={() => go({ kind: "mcp", scope })}
       />
     );

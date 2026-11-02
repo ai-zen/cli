@@ -1,12 +1,13 @@
 // 由 src/tui/config-wizard.tsx 拆分而来 —— Agent 列表 / 详情 / 权限 / 提示词 / 新建
 import { ReactNode } from "react";
+import { DEFAULT_AGENT_DEFINITION, DEFAULT_AGENT_ID } from "@ai-zen/agents-sdk";
 import { SelectItem } from "../components.js";
 import { agentKindLabel, agentList, AgentKind, findAgentDefinition } from "../../agents-store.js";
-import { createAgentDefinition, createSubAgentDefinition, getAgentPrompt, parseFunctionParameters, setAgentPrompt, uniqueAgentId, updateAgentFunction } from "../../config-editor.js";
+import { createAgentDefinition, createSubAgentDefinition, getAgentPrompt, parseFunctionParameters, restoreFactoryAgent, setAgentPrompt, uniqueAgentId, updateAgentFunction } from "../../config-editor.js";
 import { NEW_AGENT, NEW_SUBAGENT } from "./types.js";
 import { WizardContext } from "./engine.js";
 import { ListStep } from "./list.js";
-import { DetailStep } from "./detail.js";
+import { DetailAction, DetailStep } from "./detail.js";
 import { PromptEditorScreen } from "./prompt-editor.js";
 import { PromptScreen } from "./prompt.js";
 import { t } from "../../i18n/index.js";
@@ -58,6 +59,29 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
   if (activeStep.kind === "agent") {
     const { agentKind, agentId } = activeStep;
     const def = findAgentDefinition(store, agentKind, agentId)!;
+    const actions: DetailAction[] = [];
+    // 只有出厂默认 Agent 才有「出厂」可回：其它 Agent 的 `custom` 在 SDK 里是死字段
+    // （`ensureDefaultAgent` 只碰 `default.json`），给它一个恢复不了任何东西的按钮没意义
+    if (agentKind === "agent" && def.id === DEFAULT_AGENT_ID) {
+      actions.push({
+        label: t("wiz.agent.restore"),
+        run: async () =>
+          saveAgent(
+            agentKind,
+            restoreFactoryAgent(def, DEFAULT_AGENT_DEFINITION),
+            t("wiz.agentRestored", { kind: agentKindLabel(agentKind), id: def.id }),
+          ),
+      });
+    }
+    actions.push({
+      label: t("wiz.agent.deleteAction", { kind: agentKindLabel(agentKind) }),
+      danger: true,
+      run: async () => {
+        const failure = await deleteAgent(agentKind, def.id);
+        if (!failure) go({ kind: "agents" });
+        return failure;
+      },
+    });
     return (
       <DetailStep
         columns={cols}
@@ -73,14 +97,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
         ]}
         fields={agentFields(agentKind, def)}
         notice={notice}
-        action={{
-          label: t("wiz.agent.deleteAction", { kind: agentKindLabel(agentKind) }),
-          run: async () => {
-            const failure = await deleteAgent(agentKind, def.id);
-            if (!failure) go({ kind: "agents" });
-            return failure;
-          },
-        }}
+        actions={actions}
         onBack={() => go({ kind: "agents" })}
       />
     );

@@ -57,21 +57,24 @@ export function renderEndpointsStep(ctx: WizardContext): ReactNode {
         ]}
         fields={endpointFields(endpoint)}
         notice={notice}
-        action={{
-          label: t("wiz.endpoints.delete"),
-          run: async () => {
-            const refs = modelsUsingEndpoint(config, endpoint.id);
-            if (refs.length > 0) {
-              return t("wiz.endpoints.deleteBlocked", {
-                n: refs.length,
-                models: refs.map((m) => m.name || m.id).join(t("common.listSep")),
-              });
-            }
-            const failure = await persist(removeEndpoint(config, endpoint.id), t("wiz.endpoints.deleted", { name }));
-            if (!failure) go({ kind: "endpoints" });
-            return failure;
+        actions={[
+          {
+            label: t("wiz.endpoints.delete"),
+            danger: true,
+            run: async () => {
+              const refs = modelsUsingEndpoint(config, endpoint.id);
+              if (refs.length > 0) {
+                return t("wiz.endpoints.deleteBlocked", {
+                  n: refs.length,
+                  models: refs.map((m) => m.name || m.id).join(t("common.listSep")),
+                });
+              }
+              const failure = await persist(removeEndpoint(config, endpoint.id), t("wiz.endpoints.deleted", { name }));
+              if (!failure) go({ kind: "endpoints" });
+              return failure;
+            },
           },
-        }}
+        ]}
         onBack={() => go({ kind: "endpoints" })}
       />
     );

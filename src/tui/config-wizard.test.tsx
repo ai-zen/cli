@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "ink-testing-library";
-import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
+import type { AgentDefinition, AppConfig, ImageModel, Model } from "@ai-zen/agents-sdk";
+import { DEFAULT_AGENT_DEFINITION, DEFAULT_APP_CONFIG } from "@ai-zen/agents-sdk";
 import { Message } from "@ai-zen/agents-core";
 import type { McpConfig, McpScope } from "../config.js";
 import type { AgentKind, AgentStore } from "../agents-store.js";
@@ -43,6 +44,21 @@ function makeConfig(): AppConfig {
     defaultImageModel: "cogview-4",
   };
 }
+
+/**
+ * 出厂模型单条（真实出厂清单里的第一条）。
+ *
+ * 「恢复出厂设置」的期望结果就是它：整条替换、且不带 `custom`（= 重新归 SDK 托管）。
+ */
+const FACTORY_MODEL = DEFAULT_APP_CONFIG.models[0]!;
+/** 模型详情屏里动作行之前的字段个数（名称 / 端点 / 模型名 / 思考策略 / 交接阈值 / 阻断阈值 / 视觉 / 描述） */
+const MODEL_FIELD_ROWS = 8;
+
+/** 只含一条出厂模型的配置（`over` 可把它改成「被用户改过」的样子） */
+const makeFactoryModelConfig = (over: Partial<Model> = {}): AppConfig => ({
+  ...makeConfig(),
+  models: [{ ...FACTORY_MODEL, ...over }],
+});
 
 const noop = () => {
   /* 占位 */
@@ -707,6 +723,108 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     unmount();
   });
 
+  it("模型详情：不再有「自定义」开关行，出厂模型改为「恢复出厂设置」", async () => {
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeFactoryModelConfig()}
+        initialStep={{ kind: "model", modelId: FACTORY_MODEL.id }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    // 托管状态的详情行写「出厂托管（编辑会自动转自定义）」；字段列里的「自定义」开关行已删掉，
+    // 所以最后一个字段是「描述」，紧接着就是动作行。
+    expect(lastFrame()).toContain("出厂托管");
+    expect(lastFrame()).toMatch(/描述[^\n]*\n\s*恢复出厂设置/u);
+    expect(lastFrame()).toContain("恢复出厂设置");
+
+    for (let i = 0; i < MODEL_FIELD_ROWS; i += 1) {
+      stdin.write(DOWN); // → 恢复出厂设置（字段之后第一个动作）
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame()).toContain("恢复出厂设置？");
+    stdin.write(ENTER); // 确认
+    await tick();
+    await tick();
+    expect(onSave.mock.calls[0]![0].models[0]).toEqual(FACTORY_MODEL);
+    unmount();
+  });
+
+  it("模型详情：恢复出厂后条目回到出厂定义，且重新归 SDK 托管（custom 消失）", async () => {
+    const onSave = makeOnSave();
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={makeFactoryModelConfig({ name: "改过的名字", vision: false, custom: true })}
+        initialStep={{ kind: "model", modelId: FACTORY_MODEL.id }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    for (let i = 0; i < MODEL_FIELD_ROWS; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    const restored = onSave.mock.calls[0]![0].models[0]!;
+    expect(restored).toEqual(FACTORY_MODEL);
+    expect(restored.custom).toBeUndefined();
+    unmount();
+  });
+
+  it("模型详情：自建模型（出厂清单里没有同 id）不显示「恢复出厂设置」", async () => {
+    const { lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    expect(lastFrame()).toContain("删除模型");
+    expect(lastFrame()).not.toContain("恢复出厂设置");
+    unmount();
+  });
+
+  it("图片模型详情：恢复出厂设置整条替换为出厂定义", async () => {
+    const factory = DEFAULT_APP_CONFIG.imageModels![0]!;
+    const drifted: ImageModel = { ...factory, name: "改过的名字", custom: true };
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={{ ...makeConfig(), imageModels: [drifted] }}
+        initialStep={{ kind: "image-model", modelId: factory.id }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    expect(lastFrame()).toContain("恢复出厂设置");
+    // 字段 5 个：名称 / 端点 / 模型名 / 尺寸 / 质量
+    for (let i = 0; i < 5; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    await tick();
+    const restored = onSave.mock.calls[0]![0].imageModels![0]!;
+    expect(restored).toEqual(factory);
+    expect(restored.custom).toBeUndefined();
+    unmount();
+  });
+
   it("删除端点：仍被模型引用时拒绝，不写盘", async () => {
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
@@ -1324,6 +1442,48 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const def = save.mock.calls[0]![1];
     expect(def.description).toBe("我的助手");
     expect(def.custom).toBe(true);
+    unmount();
+  });
+
+  it("Agent 详情：不再有「自定义」开关行，恢复出厂只把提示词换回出厂", async () => {
+    const { store, save } = makeAgentStore([
+      makeAgentDef({
+        custom: true,
+        name: "改过的名字",
+        modelId: "gpt-5.5",
+        messages: [Message.System("改过的提示词")],
+      }),
+    ]);
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    expect(lastFrame()).toContain("恢复出厂设置");
+    // 字段 6 个：名称 / 标识 / 描述 / 模型 / 提示词 / 权限。第 7 行（index 6）若仍是
+    // 旧的 custom 开关，回车只会切换它、不会弹确认框 —— 下面的断言就全红。
+    for (let i = 0; i < 6; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame()).toContain("恢复出厂设置？");
+    stdin.write(ENTER); // 确认
+    await tick();
+    await tick();
+    const def = save.mock.calls[0]![1];
+    expect(def.messages).toEqual(DEFAULT_AGENT_DEFINITION.messages);
+    // 除提示词外一律保留：整条替换会把用户选的模型和权限一起冲掉
+    expect(def.name).toBe("改过的名字");
+    expect(def.modelId).toBe("gpt-5.5");
+    expect(def.permissions).toEqual(makeAgentDef().permissions);
+    expect(def.custom).toBeUndefined();
     unmount();
   });
 

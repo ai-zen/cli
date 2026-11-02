@@ -21,7 +21,6 @@ export const zh: Record<string, string> = {
   "field.handoffThreshold": "交接阈值",
   "field.guardThreshold": "阻断阈值",
   "field.vision": "视觉",
-  "field.custom": "自定义",
   "field.size": "尺寸",
   "field.quality": "质量",
 
@@ -36,7 +35,6 @@ export const zh: Record<string, string> = {
   "common.sameAsId": "（同 id）",
   "common.notAdjustable": "（不调档）",
   "common.customOnlyNote": "（已标记为自定义，改动才会保留）",
-  "common.factoryManaged": "否（出厂托管）",
 
   // ---------- 校验消息 ----------
   "err.nameRequired": "名称不能为空",
@@ -73,14 +71,11 @@ export const zh: Record<string, string> = {
   "common.transportStdio": "stdio（本地子进程）",
   "common.transportMode": "传输方式",
   "common.enabledState": "启用状态",
-  "common.customQuoted": "「自定义」",
 
   // ---------- 落盘反馈（带实体名的整句，必须参数化而非拼接） ----------
   "wiz.endpointUpdated": "端点 {name} 的 {label} 已更新",
   "wiz.modelUpdated": "模型 {name} 的 {label} 已更新{suffix}",
   "wiz.imageModelUpdated": "图片模型 {name} 的 {label} 已更新{suffix}",
-  "wiz.modelCustomSet": "模型 {name} 的「自定义」已设为 {value}",
-  "wiz.imageModelCustomSet": "图片模型 {name} 的「自定义」已设为 {value}",
   "wiz.mcpFieldUpdated": "MCP {id} 的{label}已更新（{scope}）",
   "wiz.mcpRenamed": "MCP {id} 已重命名为 {name}（{scope}）",
   "wiz.agentFieldUpdated": "{kind} {id} 的 {label} 已更新{suffix}",
@@ -164,6 +159,8 @@ export const zh: Record<string, string> = {
   "wiz.models.detailTitle": "◆ 模型 · {name}",
   "wiz.models.detailLine": "{id} · {kind}",
   "wiz.models.delete": "删除模型",
+  "wiz.models.restore": "恢复出厂设置",
+  "wiz.models.restored": "已把模型 {name} 恢复为出厂定义",
   "wiz.models.deleted": "已删除模型 {name}",
   "wiz.models.createTitle": "新建模型 · 名称",
   "wiz.models.createDesc": "用于在配置与状态栏中标识该模型，例如 {example}",
@@ -175,6 +172,8 @@ export const zh: Record<string, string> = {
   "wiz.imageModels.subtitle": "共 {n} 个 · 选中后可就地编辑 / 删除",
   "wiz.imageModels.detailTitle": "◆ 图片模型 · {name}",
   "wiz.imageModels.delete": "删除图片模型",
+  "wiz.imageModels.restore": "恢复出厂设置",
+  "wiz.imageModels.restored": "已把图片模型 {name} 恢复为出厂定义",
   "wiz.imageModels.deleted": "已删除图片模型 {name}",
   "wiz.imageModels.createTitle": "新建图片模型 · 名称",
   "wiz.imageModels.created": "已新建图片模型 {name}（{id}，已标记为自定义）",
@@ -192,6 +191,8 @@ export const zh: Record<string, string> = {
   "wiz.agent.detailLine": "{id} · {kind}{subSuffix}",
   "wiz.agent.moveHint": "↑ ↓ 移动 · Enter 编辑/切换/进入 · 改动即时写入磁盘",
   "wiz.agent.deleteAction": "删除{kind}",
+  "wiz.agent.restore": "恢复出厂设置",
+  "wiz.agentRestored": "已把 {kind} {id} 的提示词恢复为出厂定义",
   "wiz.agent.subscreenTitle": "◆ {kind} · {id} · {label}",
   "wiz.agent.permHint": "格式：`allow: a, b` 或 `deny: x`（逗号分隔；留空清除该维）",
   "wiz.agent.permMoveHint": "↑ ↓ 移动 · Enter 编辑 · Esc 返回",

@@ -18,7 +18,6 @@ export const en: Record<string, string> = {
   "field.handoffThreshold": "Handoff threshold",
   "field.guardThreshold": "Guard threshold",
   "field.vision": "Vision",
-  "field.custom": "Custom",
   "field.size": "Size",
   "field.quality": "Quality",
 
@@ -33,7 +32,6 @@ export const en: Record<string, string> = {
   "common.sameAsId": "(same as id)",
   "common.notAdjustable": "(not adjustable)",
   "common.customOnlyNote": "(marked as custom — changes are kept)",
-  "common.factoryManaged": "No (factory-managed)",
 
   // ---------- Validation messages ----------
   "err.nameRequired": "Name cannot be empty",
@@ -70,14 +68,11 @@ export const en: Record<string, string> = {
   "common.transportStdio": "stdio (local subprocess)",
   "common.transportMode": "Transport type",
   "common.enabledState": "Enabled state",
-  "common.customQuoted": "\"custom\"",
 
   // ---------- Persist feedback (full sentences — parameterised, never concatenated) ----------
   "wiz.endpointUpdated": "Endpoint {name}: {label} updated",
   "wiz.modelUpdated": "Model {name}: {label} updated{suffix}",
   "wiz.imageModelUpdated": "Image model {name}: {label} updated{suffix}",
-  "wiz.modelCustomSet": "Model {name}: custom set to {value}",
-  "wiz.imageModelCustomSet": "Image model {name}: custom set to {value}",
   "wiz.mcpFieldUpdated": "MCP {id}: {label} updated ({scope})",
   "wiz.mcpRenamed": "MCP {id} renamed to {name} ({scope})",
   "wiz.agentFieldUpdated": "{kind} {id}: {label} updated{suffix}",
@@ -161,6 +156,8 @@ export const en: Record<string, string> = {
   "wiz.models.detailTitle": "◆ Model · {name}",
   "wiz.models.detailLine": "{id} · {kind}",
   "wiz.models.delete": "Delete model",
+  "wiz.models.restore": "Restore factory defaults",
+  "wiz.models.restored": "Restored model {name} to its factory definition",
   "wiz.models.deleted": "Deleted model {name}",
   "wiz.models.createTitle": "New model · name",
   "wiz.models.createDesc": "Identifies the model in the config and the status bar, e.g. {example}",
@@ -172,6 +169,8 @@ export const en: Record<string, string> = {
   "wiz.imageModels.subtitle": "{n} total · select one to edit / delete in place",
   "wiz.imageModels.detailTitle": "◆ Image model · {name}",
   "wiz.imageModels.delete": "Delete image model",
+  "wiz.imageModels.restore": "Restore factory defaults",
+  "wiz.imageModels.restored": "Restored image model {name} to its factory definition",
   "wiz.imageModels.deleted": "Deleted image model {name}",
   "wiz.imageModels.createTitle": "New image model · name",
   "wiz.imageModels.created": "Created image model {name} ({id}, marked as custom)",
@@ -189,6 +188,8 @@ export const en: Record<string, string> = {
   "wiz.agent.detailLine": "{id} · {kind}{subSuffix}",
   "wiz.agent.moveHint": "↑ ↓ move · Enter edit/toggle/open · changes are written to disk immediately",
   "wiz.agent.deleteAction": "Delete {kind}",
+  "wiz.agent.restore": "Restore factory defaults",
+  "wiz.agentRestored": "Restored the {kind} {id} prompt to its factory definition",
   "wiz.agent.subscreenTitle": "◆ {kind} · {id} · {label}",
   "wiz.agent.permHint": "Format: `allow: a, b` or `deny: x` (comma-separated; empty clears this dimension)",
   "wiz.agent.permMoveHint": "↑ ↓ move · Enter edit · Esc back",

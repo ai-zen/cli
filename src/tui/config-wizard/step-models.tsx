@@ -1,11 +1,12 @@
 // 由 src/tui/config-wizard.tsx 拆分而来 —— 模型 / 图片模型 列表与详情 / 新建
 import { ReactNode } from "react";
+import { DEFAULT_APP_CONFIG } from "@ai-zen/agents-sdk";
 import { SelectItem } from "../components.js";
-import { addImageModel, addModel, findEndpoint, findModel, removeImageModel, removeModel } from "../../config-editor.js";
+import { addImageModel, addModel, findEndpoint, findModel, removeImageModel, removeModel, restoreFactoryImageModel, restoreFactoryModel } from "../../config-editor.js";
 import { NEW_MODEL, NEW_IMAGE_MODEL } from "./types.js";
 import { WizardContext } from "./engine.js";
 import { ListStep } from "./list.js";
-import { DetailStep } from "./detail.js";
+import { DetailAction, DetailStep } from "./detail.js";
 import { PromptScreen } from "./prompt.js";
 import { t } from "../../i18n/index.js";
 
@@ -45,10 +46,41 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
   }
 
 
+  /**
+   * 出厂清单里同 id 的定义。
+   *
+   * 有它才能「恢复出厂设置」；没有就是用户自建的，不给这个动作（恢复成什么？）。
+   */
+  const factoryOf = <T extends { id: string }>(list: T[] | undefined, id: string): T | undefined =>
+    list?.find((item) => item.id === id);
+
   // ---------- 模型详情 ----------
   if (activeStep.kind === "model") {
     const model = findModel(config, activeStep.modelId)!;
     const name = model.name || model.id;
+    const factory = factoryOf(DEFAULT_APP_CONFIG.models, model.id);
+    const actions: DetailAction[] = [];
+    if (factory) {
+      actions.push({
+        label: t("wiz.models.restore"),
+        run: async () =>
+          persist(
+            restoreFactoryModel(config, factory),
+            t("wiz.models.restored", { name }),
+            // 出厂定义自带端点：用户可能把它改绑过，两边都算改动了端点
+            [model.endpointId, factory.endpointId],
+          ),
+      });
+    }
+    actions.push({
+      label: t("wiz.models.delete"),
+      danger: true,
+      run: async () => {
+        const failure = await persist(removeModel(config, model.id), t("wiz.models.deleted", { name }));
+        if (!failure) go({ kind: "models" });
+        return failure;
+      },
+    });
     return (
       <DetailStep
         columns={cols}
@@ -57,14 +89,7 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         details={[t("wiz.models.detailLine", { id: model.id, kind: kindLabel(model.custom, true) }), t("wiz.detail.moveHint")]}
         fields={modelFields(model)}
         notice={notice}
-        action={{
-          label: t("wiz.models.delete"),
-          run: async () => {
-            const failure = await persist(removeModel(config, model.id), t("wiz.models.deleted", { name }));
-            if (!failure) go({ kind: "models" });
-            return failure;
-          },
-        }}
+        actions={actions}
         onBack={() => go({ kind: "models" })}
       />
     );
@@ -104,6 +129,28 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
   if (activeStep.kind === "image-model") {
     const model = (config.imageModels ?? []).find((m) => m.id === activeStep.modelId)!;
     const name = model.name || model.id;
+    const factory = factoryOf(DEFAULT_APP_CONFIG.imageModels, model.id);
+    const actions: DetailAction[] = [];
+    if (factory) {
+      actions.push({
+        label: t("wiz.imageModels.restore"),
+        run: async () =>
+          persist(
+            restoreFactoryImageModel(config, factory),
+            t("wiz.imageModels.restored", { name }),
+            [model.endpointId, factory.endpointId],
+          ),
+      });
+    }
+    actions.push({
+      label: t("wiz.imageModels.delete"),
+      danger: true,
+      run: async () => {
+        const failure = await persist(removeImageModel(config, model.id), t("wiz.imageModels.deleted", { name }));
+        if (!failure) go({ kind: "image-models" });
+        return failure;
+      },
+    });
     return (
       <DetailStep
         columns={cols}
@@ -112,14 +159,7 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         details={[t("wiz.models.detailLine", { id: model.id, kind: kindLabel(model.custom, true) }), t("wiz.detail.moveHint")]}
         fields={imageModelFields(model)}
         notice={notice}
-        action={{
-          label: t("wiz.imageModels.delete"),
-          run: async () => {
-            const failure = await persist(removeImageModel(config, model.id), t("wiz.imageModels.deleted", { name }));
-            if (!failure) go({ kind: "image-models" });
-            return failure;
-          },
-        }}
+        actions={actions}
         onBack={() => go({ kind: "image-models" })}
       />
     );

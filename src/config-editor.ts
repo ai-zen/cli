@@ -246,6 +246,45 @@ export function removeModel(config: AppConfig, modelId: string): AppConfig {
   };
 }
 
+/**
+ * 「恢复出厂设置」—— 用出厂定义**整条**替换同 id 的模型。
+ *
+ * 不能写成 `updateModel(config, id, factory)`：那是浅合并，出厂定义里没有的字段
+ * （尤其 `custom: true`）会原样留下 —— 点了恢复出厂，条目仍被当成自建，
+ * 下次 SDK 同步依旧不动它，按钮等于失效。
+ */
+export function restoreFactoryModel(config: AppConfig, factory: Model): AppConfig {
+  return {
+    ...config,
+    models: config.models.map((model) => (model.id === factory.id ? { ...factory } : model)),
+  };
+}
+
+/** 同上，图片模型版 */
+export function restoreFactoryImageModel(config: AppConfig, factory: ImageModel): AppConfig {
+  return {
+    ...config,
+    imageModels: (config.imageModels ?? []).map((model) =>
+      model.id === factory.id ? { ...factory } : model,
+    ),
+  };
+}
+
+/**
+ * 默认 Agent 的「恢复出厂设置」：提示词换回出厂、`custom` 去掉，其余字段一律保留。
+ *
+ * 与 SDK `ensureDefaultAgent` 的同步语义一致（它也只同步 `messages`）：整条替换会把
+ * 用户自己选的 `modelId` 与四维权限一起冲掉。
+ */
+export function restoreFactoryAgent(
+  def: AgentDefinition,
+  factory: Pick<AgentDefinition, "messages">,
+): AgentDefinition {
+  const restored = { ...def };
+  delete restored.custom;
+  return { ...restored, messages: factory.messages };
+}
+
 /** 新增模型（id 由名称派生；默认 `custom: true`，避免被 SDK 出厂清单托管覆盖） */
 export function addModel(
   config: AppConfig,

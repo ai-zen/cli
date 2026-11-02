@@ -230,21 +230,6 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         initial: model.description ?? "",
         commit: (raw) => save({ description: raw || undefined }, t("field.description")),
       },
-      {
-        key: "custom",
-        label: t("field.custom"),
-        kind: "bool",
-        value: model.custom ? t("common.yes") : t("common.factoryManaged"),
-        toggle: () =>
-          persist(
-            updateModel(config, model.id, { custom: !model.custom }),
-            t("wiz.modelCustomSet", {
-              name: model.name || model.id,
-              value: !model.custom ? t("common.yes") : t("common.no"),
-            }),
-            [model.endpointId],
-          ),
-      },
     ];
   };
 
@@ -283,21 +268,6 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         value: model.defaultQuality ?? t("common.defaultInParens"),
         initial: model.defaultQuality ?? "",
         commit: (raw) => save({ defaultQuality: raw || undefined }, t("field.quality")),
-      },
-      {
-        key: "custom",
-        label: t("field.custom"),
-        kind: "bool",
-        value: model.custom ? t("common.yes") : t("common.factoryManaged"),
-        toggle: () =>
-          persist(
-            updateImageModel(config, model.id, { custom: !model.custom }),
-            t("wiz.imageModelCustomSet", {
-              name: model.name || model.id,
-              value: !model.custom ? t("common.yes") : t("common.no"),
-            }),
-            [model.endpointId],
-          ),
       },
     ];
   };
@@ -489,15 +459,7 @@ export function createFieldBuilders(context: FieldBuilderContext) {
         open: () => go({ kind: "agent-perms", agentKind: kind, agentId: def.id }),
       },
     ];
-    if (kind === "agent") {
-      fields.push({
-        key: "custom",
-        label: t("field.custom"),
-        kind: "bool",
-        value: def.custom ? t("common.yes") : t("common.factoryManaged"),
-        toggle: () => save(updateAgentDefinition(def, { custom: !def.custom }), t("common.customQuoted")),
-      });
-    } else {
+    if (kind === "subagent") {
       fields.push(
         {
           key: "fnName",
