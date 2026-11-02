@@ -45,6 +45,8 @@ import { CLI_VERSION } from "../../version.js";
 import { compareVersions, pickNewest } from "../../version-compare.js";
 import { WizardStep } from "../config-wizard/index.js";
 import { truncate } from "./render.js";
+import { STATUS_BAR_LINES, pickerLines } from "./layout.js";
+import { usableFrameRows } from "../text.js";
 import { chooseHandoffMode } from "./handoff-choice.js";
 
 export interface ChatCommandHost {
@@ -157,7 +159,9 @@ const cmdSave: CommandHandler = async ({ session, push }) => {
 
 const cmdLoad: CommandHandler = async ({ push, rows, exit, pick }) => {
   // 先算可见条数：摘要只为将要显示的那几条解析（会话多时不拖慢 /load）
-  const maxItems = Math.max(1, (rows ?? 24) - 8);
+  // 用布局自己的公式算，不留魔数：命令层拿到的是**原始终端行数**，而覆盖层能用的
+  // 是 `usableFrameRows(rows) = rows - 1`；picker 自身占 `pickerLines(n) + STATUS_BAR_LINES`。
+  const maxItems = Math.max(1, usableFrameRows(rows ?? 24) - (pickerLines(0) + STATUS_BAR_LINES));
   const list = await listConversations({ previewLimit: maxItems });
   if (list.length === 0) {
     push(t("cmd.load.none"), "error");
@@ -212,8 +216,8 @@ const cmdBack: CommandHandler = async ({ session, push, rows, exit, pick }) => {
     push(t("cmd.back.empty"), "error");
     return;
   }
-  // 最近的在最前；仅展示最近的有限条，避免覆盖层高于终端
-  const maxItems = Math.max(1, (rows ?? 24) - 8);
+  // 最近的在最前；仅展示最近的有限条，避免覆盖层高于终端（上界同 /load）
+  const maxItems = Math.max(1, usableFrameRows(rows ?? 24) - (pickerLines(0) + STATUS_BAR_LINES));
   const items = allItems.reverse().slice(0, maxItems);
   const title = allItems.length > maxItems ? t("cmd.back.tooMany", { n: maxItems }) : t("cmd.back.title");
   const choice = await pick(title, items);

@@ -12,6 +12,8 @@ import { runCommand, type ChatCommandHost } from "./chat-commands.js";
 import type { ChatSession } from "../chat-session.js";
 import { persistConversation } from "../../conversation-repository.js";
 import { useTempAiZenDir } from "../../test-support/temp-dir.js";
+import { computeChatLayout } from "./layout.js";
+import { usableFrameRows } from "../text.js";
 
 /** 会话落盘要真写文件（`/back` 的修复点就是「有没有落盘」），故需要独立的临时根 */
 const zen = useTempAiZenDir("aiz-cmd-test-");
@@ -77,8 +79,7 @@ describe("/migrate：prune 后必须重置转录显示起点", () => {
   });
 });
 
-describe("/new：归档后重置转录显示起点", () => {
-  it("session.reset 之后调用 clearTranscript", async () => {
+describe("/new：归档后重置转录显示起点", () => {  it("session.reset 之后调用 clearTranscript", async () => {
     const { host } = createHost();
     await runCommand("new", "/new", host);
     expect(host.clearTranscript).toHaveBeenCalledTimes(1);
@@ -128,5 +129,71 @@ describe("/back：撤回后必须落盘", () => {
 
     const saved = JSON.parse(readFileSync(join(zen.dir, "cli", "conversations", "chat_back.json"), "utf-8"));
     expect(saved.messages.map((m: any) => m.content)).toEqual(["第一条", "答一"]);
+  });
+});
+
+/**
+ * 回归（PLAN L15）：picker 的条数上限少扣了 2 行。命令层用的是**原始终端行数**
+ * （`rows`），而布局里 `usableFrameRows(rows) = rows - 1`；覆盖层占
+ * `pickerLines(n) + STATUS_BAR_LINES`。旧的 `rows - 8` 让 n_max 多出 2 条，
+ * 于是选择器会把状态栏顶出屏幕。
+ */
+describe("picker 条数上限（不超出一帧）", () => {
+  const ROWS = 24;
+  /** 用布局自己的公式量一遍：这个条数放不放得下 */
+  const fits = (pickerItems: number): boolean =>
+    computeChatLayout({
+      columns: 80,
+      rows: ROWS,
+      transcript: [],
+      input: "",
+      busy: false,
+      hintCount: 0,
+      overlay: "picker",
+      pickerItems,
+    }).bottomLines <= usableFrameRows(ROWS);
+
+  /** 接管选择器：只记条数并立即作答（不真弹覆盖层），返回记录值 */
+  const capturePick = (host: ChatCommandHost, answer: string | null) => {
+    const seen = { count: 0 };
+    (host as any).setPickerState = (next: any) => {
+      const state = typeof next === "function" ? next(null) : next;
+      if (!state) return;
+      seen.count = state.items.length;
+      state.resolve(answer);
+    };
+    return seen;
+  };
+
+  it("/load：条数上限正好装进一帧（rows − 10）", async () => {
+    for (let i = 0; i < 20; i += 1) {
+      await persistConversation({
+        id: `chat_${String(i).padStart(2, "0")}`,
+        messages: [{ role: AgentNS.Role.User, content: `第 ${i} 条` }] as any,
+        cwd: "/work",
+      });
+    }
+    const { host } = createHost();
+    (host as any).rows = ROWS;
+    const seen = capturePick(host, null);
+
+    await runCommand("load", "/load", host);
+
+    expect(seen.count).toBe(ROWS - 10);
+    expect(fits(seen.count)).toBe(true);
+    // 对照：多一条就装不下（证明上界算对了，不是碰巧）
+    expect(fits(seen.count + 1)).toBe(false);
+  });
+
+  it("/back：条数上限同/load", async () => {
+    const messages = Array.from({ length: 20 }, (_v, i) => ({ role: AgentNS.Role.User, content: `第 ${i} 条` }));
+    const { host } = createHost({ messages, rollbackTo: vi.fn(() => "") });
+    (host as any).rows = ROWS;
+    const seen = capturePick(host, null);
+
+    await runCommand("back", "/back", host);
+
+    expect(seen.count).toBe(ROWS - 10);
+    expect(fits(seen.count)).toBe(true);
   });
 });
