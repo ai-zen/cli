@@ -31,6 +31,8 @@ import {
 } from "../input-editing.js";
 import { graphemes } from "../text.js";
 import { t } from "../../i18n/index.js";
+import type { ClipboardImage } from "../../clipboard.js";
+import type { HistoryEntry } from "../chat-history.js";
 import type { Notice } from "./notice.js";
 
 export interface InputEditingDeps {
@@ -38,6 +40,15 @@ export interface InputEditingDeps {
   initialText?: string;
   /** 通知出口（暂存 / 取回草稿的提示，走通知通道而不是转录） */
   notify: (text: string, tone?: Notice["tone"]) => void;
+  /**
+   * 历史数据源（`↑` / `↓` 翻的就是它）：按发送顺序返回草稿，**最后一条最新**。
+   *
+   * 由外部注入（`userDrafts(session.messages)`）而不是 hook 自己攒：消息才是真相源，
+   * 自带图片；内部再存一份 `string[]` 就只能存文本，`↑` 回到带图消息时图会静默丢失。
+   */
+  historySource: () => readonly HistoryEntry[];
+  /** 把历史里的附件放回输入区（`↑` 回到带图片的消息时） */
+  restoreImages: (images: readonly ClipboardImage[]) => void;
 }
 
 export interface InputEditing {
@@ -83,20 +94,17 @@ export interface InputEditing {
   moveCursorDownRow: (width: number) => boolean;
   /** 按词左右移动：`dir` 为 -1 往前、1 往后 */
   moveCursorByWord: (dir: -1 | 1) => void;
-  /** 历史：上一条 / 下一条（没有可翻的时候自动空转） */
+  /** 历史：上一条 / 下一条（没有可翻的时候自动空转；带图片的消息会把附件一并放回） */
   historyPrev: () => void;
   historyNext: () => void;
   /** 提交时调用：清空草稿并退出历史浏览（历史游标复位到底部） */
   clearDraft: () => void;
-  /** 提交成功时调用：记进历史并把历史游标复位到底部 */
-  rememberSubmitted: (text: string) => void;
 }
 
-export function useInputEditing({ initialText, notify }: InputEditingDeps): InputEditing {
+export function useInputEditing({ initialText, notify, historySource, restoreImages }: InputEditingDeps): InputEditing {
   const [input, setInput] = useState(initialText ?? "");
   const [cursor, setCursor] = useState(graphemes(initialText ?? "").length);
-  const [history, setHistory] = useState<string[]>([]);
-  /** 历史游标：-1 = 不在浏览历史（当前是草稿） */
+  /** 历史游标：-1 = 不在浏览历史（当前是草稿）；具体内容每次现取 `historySource()` */
   const historyIndex = useRef(-1);
   /** kill ring：Ctrl+W/U/K 删掉的文本，Ctrl+Y 取回、Alt+Y 循环 */
   const killRingRef = useRef<string[]>([]);
@@ -242,33 +250,38 @@ export function useInputEditing({ initialText, notify }: InputEditingDeps): Inpu
 
   // 历史浏览：「上一条」从最新开始往回走，「下一条」走到底就回到空草稿。
   // 上下两处按键（Ctrl+P/N 与 ↑/↓）共用这一对，不再各写一遍。
+  /** 把一条历史草稿放回输入区：文本 + 附件（`↑` 回到带图消息时图也跟着回来） */
+  const recall = (entry: HistoryEntry) => {
+    setInputText(entry.text);
+    restoreImages(entry.images);
+  };
+
   const historyPrev = () => {
-    if (history.length === 0) return;
-    const idx = historyIndex.current < 0 ? history.length - 1 : Math.max(0, historyIndex.current - 1);
+    const entries = historySource();
+    if (entries.length === 0) return;
+    const idx =
+      historyIndex.current < 0 ? entries.length - 1 : Math.max(0, historyIndex.current - 1);
     historyIndex.current = idx;
-    setInputText(history[idx]!);
+    recall(entries[idx]!);
   };
 
   const historyNext = () => {
     if (historyIndex.current < 0) return;
+    const entries = historySource();
     const idx = historyIndex.current + 1;
-    if (idx >= history.length) {
+    if (idx >= entries.length) {
       historyIndex.current = -1;
       setInputText("");
+      restoreImages([]);
       return;
     }
     historyIndex.current = idx;
-    setInputText(history[idx]!);
+    recall(entries[idx]!);
   };
 
   const clearDraft = () => {
     setInput("");
     setCursor(0);
-    historyIndex.current = -1;
-  };
-
-  const rememberSubmitted = (text: string) => {
-    setHistory((h) => [...h, text]);
     historyIndex.current = -1;
   };
 
@@ -297,6 +310,5 @@ export function useInputEditing({ initialText, notify }: InputEditingDeps): Inpu
     historyPrev,
     historyNext,
     clearDraft,
-    rememberSubmitted,
   };
 }

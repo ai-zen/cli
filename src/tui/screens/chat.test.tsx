@@ -29,8 +29,20 @@ const { created, createFakeSession } = vi.hoisted(() => {
       totalUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       rateSample: { live: null, average: null, running: false },
       phase: null,
-      send: vi.fn(async (input: string) => {
-        messages.push({ id: `m${messages.length}`, role: "user", content: input });
+      send: vi.fn(async (input: string, images: readonly { base64: string; mime: string }[] = []) => {
+        // 与真实 ChatSession.send 同形：有图时内容是多段（文本 + image_url 的 data URL），
+        // 于是 messages 里真的带着图片 —— `↑` 的图片还原才有东西可解。
+        const content =
+          images.length === 0
+            ? input
+            : [
+                { type: "text", text: input },
+                ...images.map((image) => ({
+                  type: "image_url",
+                  image_url: { url: `data:${image.mime};base64,${image.base64}` },
+                })),
+              ];
+        messages.push({ id: `m${messages.length}`, role: "user", content });
         // 与真实 ChatSession 一致：新一轮输入清空上一轮的子 Agent
         subAgents.length = 0;
         notifier.onChange(true);
@@ -589,6 +601,31 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain("已附加 1 张图片");
     expect(frame).not.toContain("不该被粘贴的文字");
+    unmount();
+  });
+
+  it("↑ 回到带图片的消息：文本与附件一起回来，重发仍带图", async () => {
+    clipboardMock.image = oneImage;
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    stdin.write("看这张");
+    await flush();
+    await paste(stdin);
+    stdin.write("\r");
+    await flush(20);
+    expect(created.session.send).toHaveBeenCalledWith("看这张", [oneImage.image]);
+    // 发送后附件行清空
+    expect(lastFrame() ?? "").not.toContain("已附加");
+
+    stdin.write("\u001b[A"); // ↑ 翻回上一条
+    await flush(20);
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("看这张"); // 文本回来了
+    expect(frame).toContain("已附加 1 张图片"); // 图片也回来了（旧实现只有文本）
+
+    stdin.write("\r");
+    await flush(20);
+    expect(created.session.send).toHaveBeenLastCalledWith("看这张", [oneImage.image]);
     unmount();
   });
 

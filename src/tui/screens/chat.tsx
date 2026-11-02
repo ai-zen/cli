@@ -41,6 +41,7 @@ import { useChatOverlays } from "./use-overlays.js";
 import { useWizardHost, type WizardHostDeps } from "./use-wizard-host.js";
 import { useInputEditing } from "./use-input-editing.js";
 import { extractMention, mentionInsertText, rankPaths, type PathEntry } from "../mention.js";
+import { userDrafts } from "../chat-history.js";
 import { listProjectPaths } from "../file-index.js";
 import { readClipboardImage, readClipboardText, type ClipboardImage } from "../../clipboard.js";
 import { handleCtrlDExit, handleScrollKey } from "./common-keys.js";
@@ -433,10 +434,12 @@ export function Chat(props: ChatScreenProps) {
     historyPrev,
     historyNext,
     clearDraft,
-    rememberSubmitted,
   } = useInputEditing({
     initialText: props.initialInput,
     notify: (text, tone) => noticeChannel.push(text, tone),
+    // 历史来自 messages（唯一真相源）：自带图片，`↑` 回到带图消息时附件也一并回来
+    historySource: () => userDrafts(sessionRef.current?.messages ?? []),
+    restoreImages: (images) => setPastedImages(images),
   });
   /** 斜杠候选菜单的高亮索引；输入一变就回到第一个候选 */
   const [menuIndex, setMenuIndex] = useState(0);
@@ -597,7 +600,6 @@ export function Chat(props: ChatScreenProps) {
       return;
     }
 
-    rememberSubmitted(trimmed);
     const base = sessionRef.current!.messages.filter((m) => m.role === AgentNS.Role.User).length;
     // 先取快照再清空：`send` 要用同一个数组，而输入区要立刻回到「没有附件」的状态
     const images = pastedImages;

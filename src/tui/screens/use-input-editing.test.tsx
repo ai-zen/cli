@@ -7,15 +7,32 @@ import { render } from "ink-testing-library";
 import { Text, useInput } from "ink";
 import { setLocale } from "../../i18n/index.js";
 import { useInputEditing } from "./use-input-editing.js";
+import type { HistoryEntry } from "../chat-history.js";
 
 const flush = async () => {
   await new Promise((resolve) => setTimeout(resolve, 4));
 };
 
-function Probe({ initialText, log }: { initialText?: string; log: string[] }) {
+function Probe({
+  initialText,
+  log,
+  entries,
+  restored,
+}: {
+  initialText?: string;
+  log: string[];
+  /** 历史数据源（模拟 `session.messages` 派生出来的草稿） */
+  entries: HistoryEntry[];
+  /** `↑` 把历史里的附件放回输入区时记在这里 */
+  restored: string[];
+}) {
   const e = useInputEditing({
     initialText,
     notify: (text, tone) => log.push(`${tone ?? "info"}:${text}`),
+    historySource: () => entries,
+    restoreImages: (images) => {
+      for (const image of images) restored.push(image.base64);
+    },
   });
   useInput((char) => {
     switch (char) {
@@ -45,9 +62,9 @@ function Probe({ initialText, log }: { initialText?: string; log: string[] }) {
       case "Z": return e.replaceRange(0, 999, "z"); // 右端越界要能钳制
       case "a": return e.setInputText("aaa");
       case "z": return e.setInputText("zzz");
-      // 提交：记历史 + 清草稿（与 Chat 的 runSubmit 一致）
+      // 提交：消息进入 `messages`（历史数据源）+ 清草稿（与 Chat 的 runSubmit 一致）
       case "m": {
-        e.rememberSubmitted(e.input);
+        entries.push({ text: e.input, images: [] });
         e.clearDraft();
         return;
       }
@@ -59,7 +76,11 @@ function Probe({ initialText, log }: { initialText?: string; log: string[] }) {
 
 async function probe(initialText?: string) {
   const log: string[] = [];
-  const { stdin, lastFrame, unmount } = render(<Probe initialText={initialText} log={log} />);
+  const entries: HistoryEntry[] = [];
+  const restored: string[] = [];
+  const { stdin, lastFrame, unmount } = render(
+    <Probe initialText={initialText} log={log} entries={entries} restored={restored} />,
+  );
   await flush();
   const press = async (char: string) => {
     stdin.write(char);
@@ -68,7 +89,7 @@ async function probe(initialText?: string) {
   const type = async (text: string) => {
     for (const ch of text) await press(ch);
   };
-  return { log, press, type, frame: () => (lastFrame() ?? "").trim(), unmount };
+  return { log, entries, restored, press, type, frame: () => (lastFrame() ?? "").trim(), unmount };
 }
 
 describe("useInputEditing", () => {
@@ -189,6 +210,18 @@ describe("useInputEditing", () => {
     const p = await probe("abc");
     await p.press("p");
     expect(p.frame()).toBe("[abc]@3");
+    p.unmount();
+  });
+
+  it("翻到带图片的历史：文本回来，附件也一并放回输入区", async () => {
+    const p = await probe("");
+    // 模拟「上一条发的是带图消息」：历史数据源里直接放一条带附件的草稿
+    p.entries.push({ text: "看图", images: [{ base64: "QUJD", mime: "image/png" }] });
+
+    await p.press("p");
+
+    expect(p.frame()).toBe("[看图]@2");
+    expect(p.restored).toEqual(["QUJD"]); // 旧实现只恢复文本，图片静默丢失
     p.unmount();
   });
 
