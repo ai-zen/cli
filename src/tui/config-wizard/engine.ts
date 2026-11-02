@@ -21,7 +21,7 @@ export interface WizardEngine extends ReturnType<typeof createFieldBuilders> {
   snapshot: () => WizardCloseResult;
   go: (next: WizardStep) => void;
   commit: (next: AppConfig, message: string, changedEndpointIds?: string[], after?: WizardStep | "stay", sessionOptions?: boolean) => Promise<void>;
-  persist: (next: AppConfig, message: string, changedEndpointIds?: string[], sessionOptions?: boolean) => Promise<string | null>;
+  persist: (next: AppConfig, message: string, changedEndpointIds?: string[], sessionOptions?: boolean, agentsChanged?: boolean) => Promise<string | null>;
   persistMcp: (scope: McpScope, next: McpConfig, message: string) => Promise<string | null>;
   saveAgent: (kind: AgentKind, def: AgentDefinition, message: string) => Promise<string | null>;
   deleteAgent: (kind: AgentKind, id: string) => Promise<string | null>;
@@ -95,9 +95,10 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     message: string,
     changedEndpointIds: string[] = [],
     sessionOptions = false,
+    agentsChanged = false,
   ) => {
     setConfig(next);
-    markDirty(message, { changedEndpointIds, sessionOptions });
+    markDirty(message, { changedEndpointIds, sessionOptions, agents: agentsChanged });
   };
 
   /** 写盘 + 记录变更，**原地停留**；返回错误信息或 `null`（供详情屏字段提交使用） */
@@ -106,13 +107,14 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     message: string,
     changedEndpointIds: string[] = [],
     sessionOptions = false,
+    agentsChanged = false,
   ): Promise<string | null> => {
     try {
       await props.onSave(next);
     } catch (cause: any) {
       return t("wiz.writeConfigFailed", { error: cause?.message ?? cause });
     }
-    record(next, message, changedEndpointIds, sessionOptions);
+    record(next, message, changedEndpointIds, sessionOptions, agentsChanged);
     return null;
   };
 
@@ -166,7 +168,14 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   const deleteAgent = async (kind: AgentKind, id: string): Promise<string | null> => {
     const failure = await removeAgentQuiet(kind, id);
     if (failure) return failure;
-    markDirty(t("wiz.agentDeleted", { kind: agentKindLabel(kind), id }), { agents: true });
+    const message = t("wiz.agentDeleted", { kind: agentKindLabel(kind), id });
+    // 删的正是默认 Agent 时必须一并清掉 `defaultAgent`：下次启动 `resolveTarget()` 会
+    // 拿到一个已不存在的 id（`config.defaultAgent ?? agents[0]?.id` 只在它为空时才回退），
+    // 接着 `modelOf()` 抛「Agent 未绑定模型」→ 启动屏打印后退出；重启也一样，等于死锁。
+    if (kind === "agent" && id === config.defaultAgent) {
+      return persist({ ...config, defaultAgent: undefined }, message, [], false, true);
+    }
+    markDirty(message, { agents: true });
     return null;
   };
 

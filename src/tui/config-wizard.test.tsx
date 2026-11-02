@@ -1204,6 +1204,46 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     unmount();
   });
 
+  /**
+   * 回归（PLAN L11）：删掉 `config.defaultAgent` 指向的那个 Agent 后不改配置，
+   * 下次启动 `resolveTarget()` 会拿到一个已不存在的 id（`?? agents[0]?.id` 在第 1
+   * 个分支上永不生效），`modelOf` 抛「Agent 未绑定模型」→ 启动屏打印后直接退出。
+   * 重启也一样，等于把用户锁在外面。
+   */
+  it("删掉默认 Agent 时一并清掉 config.defaultAgent（否则下次启动必挂）", async () => {
+    const config = { ...makeConfig(), defaultAgent: "default" };
+    const { store, remove } = makeAgentStore([
+      makeAgentDef({ id: "default", name: "默认助手" }),
+      makeAgentDef({ id: "helper", name: "Helper" }),
+    ]);
+    const onSave = makeOnSave();
+    const { stdin, unmount } = render(
+      <ConfigWizard
+        config={config}
+        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
+        agentStore={store}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    // 详情屏：7 个字段 + 末行的「删除」动作 → ↓ 七次到动作行
+    for (let i = 0; i < 7; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER); // 进入确认
+    await tick();
+    stdin.write(ENTER); // 确认删除
+    await tick();
+    await tick();
+
+    expect(remove).toHaveBeenCalledWith("agent", "default");
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0]![0].defaultAgent).toBeUndefined();
+    unmount();
+  });
+
   it("新建 Agent：名称 → 写盘并进入详情（自动 custom: true）", async () => {
     const { store, save } = makeAgentStore([makeAgentDef()]);
     const { stdin, lastFrame, unmount } = render(
