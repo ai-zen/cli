@@ -168,7 +168,8 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
 
   // ---------- 新建模型（名称 → 创建并进入详情）----------
   if (activeStep.kind === "new-model") {
-    const endpointId = config.endpoints[0]?.id ?? "";
+    // 只用于屏上的提示；真正的拦截在 onSubmit（入口不禁用，避免两处校验）
+    const first = config.endpoints[0];
     return (
       <PromptScreen
         key="new:model"
@@ -177,9 +178,9 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         title={t("wiz.models.createTitle")}
         details={[
           t("wiz.models.createDesc", { example: "My GPT" }),
-          config.endpoints.length === 0
-            ? t("wiz.models.noEndpoint")
-            : t("wiz.models.defaultEndpoint", { endpoint: findEndpoint(config, endpointId)?.name ?? endpointId }),
+          first
+            ? t("wiz.models.defaultEndpoint", { endpoint: first.name || first.id })
+            : t("wiz.models.noEndpoint"),
         ]}
         error={error}
         hints={[["Enter", t("wiz.createAndEdit")], ["Esc", t("ui.back")]]}
@@ -187,6 +188,11 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
           const name = value.trim();
           if (!name) {
             setError(t("err.nameRequired"));
+            return;
+          }
+          const endpointId = config.endpoints[0]?.id;
+          if (!endpointId) {
+            setError(t("err.noEndpoint"));
             return;
           }
           const { config: next, model } = addModel(config, { name, endpointId });
@@ -207,7 +213,7 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
 
   // ---------- 新建图片模型（名称 → 创建并进入详情）----------
   if (activeStep.kind === "new-image-model") {
-    const endpointId = config.endpoints[0]?.id ?? "";
+    const first = config.endpoints[0];
     return (
       <PromptScreen
         key="new:image-model"
@@ -216,9 +222,9 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         title={t("wiz.imageModels.createTitle")}
         details={[
           t("wiz.models.createDesc", { example: "My Image" }),
-          config.endpoints.length === 0
-            ? t("wiz.models.noEndpoint")
-            : t("wiz.models.defaultEndpoint", { endpoint: findEndpoint(config, endpointId)?.name ?? endpointId }),
+          first
+            ? t("wiz.models.defaultEndpoint", { endpoint: first.name || first.id })
+            : t("wiz.models.noEndpoint"),
         ]}
         error={error}
         hints={[["Enter", t("wiz.createAndEdit")], ["Esc", t("ui.back")]]}
@@ -226,6 +232,11 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
           const name = value.trim();
           if (!name) {
             setError(t("err.nameRequired"));
+            return;
+          }
+          const endpointId = config.endpoints[0]?.id;
+          if (!endpointId) {
+            setError(t("err.noEndpoint"));
             return;
           }
           const { config: next, model } = addImageModel(config, { name, endpointId });

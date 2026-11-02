@@ -48,6 +48,7 @@ export const en: Record<string, string> = {
   "err.functionNameRequired": "Function name cannot be empty",
   "err.mcpNameTaken": "A server named {name} already exists",
   "err.agentIdTaken": "A definition with id {name} already exists",
+  "err.noEndpoint": "No usable endpoint — add one under Endpoints first",
 
   // ---------- More field labels (MCP / Agent detail) ----------
   "field.transport": "Transport",
@@ -162,7 +163,7 @@ export const en: Record<string, string> = {
   "wiz.models.createTitle": "New model · name",
   "wiz.models.createDesc": "Identifies the model in the config and the status bar, e.g. {example}",
   "wiz.models.created": "Created model {name} ({id}, marked as custom)",
-  "wiz.models.noEndpoint": "⚠ No endpoint configured yet — add one under Endpoints after creating",
+  "wiz.models.noEndpoint": "⚠ No endpoint configured — cannot create; add one under Endpoints first",
   "wiz.models.defaultEndpoint": "Will bind the default endpoint: {endpoint}",
   "wiz.createAndEdit": "Create & edit",
   "wiz.imageModels.newItem": "+ New image model",

@@ -51,6 +51,7 @@ export const zh: Record<string, string> = {
   "err.functionNameRequired": "函数名不能为空",
   "err.mcpNameTaken": "已存在名为 {name} 的服务器",
   "err.agentIdTaken": "已存在标识 {name} 的定义",
+  "err.noEndpoint": "没有可用的端点，请先在「端点管理」里添加一个",
 
   // ---------- 更多字段名（MCP / Agent 详情） ----------
   "field.transport": "传输",
@@ -165,7 +166,7 @@ export const zh: Record<string, string> = {
   "wiz.models.createTitle": "新建模型 · 名称",
   "wiz.models.createDesc": "用于在配置与状态栏中标识该模型，例如 {example}",
   "wiz.models.created": "已新建模型 {name}（{id}，已标记为自定义）",
-  "wiz.models.noEndpoint": "⚠ 尚未配置端点，创建后请先到「端点管理」添加端点",
+  "wiz.models.noEndpoint": "⚠ 尚未配置端点，无法创建；请先到「端点管理」添加端点",
   "wiz.models.defaultEndpoint": "将默认绑定端点：{endpoint}",
   "wiz.createAndEdit": "创建并编辑",
   "wiz.imageModels.newItem": "＋ 新建图片模型",

@@ -825,6 +825,46 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     unmount();
   });
 
+  it("新建模型：没有任何端点时拒绝创建（不写盘，给出下一步）", async () => {
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={{ ...makeConfig(), endpoints: [], models: [] }}
+        initialStep={{ kind: "new-model" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write("My GPT");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame()).toContain("没有可用的端点");
+    expect(onSave).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it("新建图片模型：没有任何端点时拒绝创建（不写盘，给出下一步）", async () => {
+    const onSave = makeOnSave();
+    const { stdin, lastFrame, unmount } = render(
+      <ConfigWizard
+        config={{ ...makeConfig(), endpoints: [], imageModels: [] }}
+        initialStep={{ kind: "new-image-model" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
+    );
+    await tick();
+    stdin.write("My Image");
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame()).toContain("没有可用的端点");
+    expect(onSave).not.toHaveBeenCalled();
+    unmount();
+  });
+
   it("删除端点：仍被模型引用时拒绝，不写盘", async () => {
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
