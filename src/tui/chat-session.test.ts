@@ -3,6 +3,7 @@ import { existsSync, promises as fs } from "node:fs";
 import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
 import { ChatSession } from "./chat-session.js";
+import { ConversationPersistPlugin } from "../conversation-persist-plugin.js";
 import { refreshPaths } from "../config.js";
 
 // 在静态导入之前设置 AI_ZEN_DIR（config.ts 在导入时即固化该路径）
@@ -25,7 +26,7 @@ afterAll(async () => {
 });
 
 // 让假 Agent 真的能分发事件（阶段测试要按 SDK 的事件时序驱动）
-const harness = vi.hoisted(() => ({ agents: [] as any[] }));
+const harness = vi.hoisted(() => ({ agents: [] as any[], plugins: [] as any[] }));
 
 /** 一个最小的事件总线（SDK 的 EventBus 只用到 on / off / emit） */
 function makeEvents() {
@@ -55,7 +56,9 @@ const fakeCreateAgent = async (opts: any) => {
     definition: { id: opts?.agentId ?? "default", modelId: "m1", messages: [] },
     messages: opts?.messages ? [...opts.messages] : [],
     lastUsage: undefined,
-    use: () => {},
+    use: (plugin: any) => {
+      harness.plugins.push(plugin);
+    },
     init: async () => {},
     abort: () => {},
     send: async () => {},
@@ -186,6 +189,27 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
     // 旧会话保住了原历史（含交接回合），没有被 prune 后的空壳覆盖
     expect(archived.messages.length).toBeGreaterThanOrEqual(1);
     expect(String(archived.messages[0].content)).toContain("旧对话内容");
+  });
+});
+
+describe("ChatSession 落盘失败的上报（PLAN L7）", () => {
+  /**
+   * 落盘是「每轮自动保存」，失败属于真错误（用户以为什么都没丢）—— 必须走 `error` 语气。
+   * 修前这里传的是 `"info"`，日志栏一片灰字，与「已保存」类提示长得一样。
+   */
+  it("自动落盘失败时通知语气为 error（不是 info）", async () => {
+    const notices: { text: string; tone?: string }[] = [];
+    await newSession({}, { onChange: () => {}, onNotice: (text: string, tone?: string) => notices.push({ text, tone }) });
+
+    const persist = harness.plugins.filter((p) => p instanceof ConversationPersistPlugin).at(-1) as any;
+    expect(persist).toBeDefined();
+
+    // 把根目录指向「文件下面」—— mkdir 必失败，从而必然走到 onError
+    process.env.AI_ZEN_DIR = "/dev/null/aizen-impossible";
+    refreshPaths();
+    await persist.onInnerLoopEnd({ agent: { messages: [{ role: AgentNS.Role.User, content: "hi" }] } });
+
+    expect(notices.at(-1)?.tone).toBe("error");
   });
 });
 

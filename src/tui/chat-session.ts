@@ -468,7 +468,8 @@ export class ChatSession {
         getId: () => this.currentId,
         agentId: this.agentId,
         cwd: process.cwd(),
-        onError: (text) => this.notifier.onNotice(text, "info"),
+        // 每轮自动落盘失败是真错误（用户会以为什么都没丢）—— 走 error 语气
+        onError: (text) => this.notifier.onNotice(text, "error"),
       }),
     );
 
