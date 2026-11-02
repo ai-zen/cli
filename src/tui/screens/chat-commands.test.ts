@@ -12,12 +12,17 @@ import { runCommand, type ChatCommandHost } from "./chat-commands.js";
 import type { ChatSession } from "../chat-session.js";
 import { persistConversation } from "../../conversation-repository.js";
 import { useTempAiZenDir } from "../../test-support/temp-dir.js";
+import { setLocale } from "../../i18n/index.js";
 import { computeChatLayout } from "./layout.js";
 import { usableFrameRows } from "../text.js";
 
 /** 会话落盘要真写文件（`/back` 的修复点就是「有没有落盘」），故需要独立的临时根 */
 const zen = useTempAiZenDir("aiz-cmd-test-");
-beforeEach(() => zen.pin());
+beforeEach(() => {
+  zen.pin();
+  // 断言的是中文文案（消息词典），锁死语言，不受环境 LANG 影响
+  setLocale("zh");
+});
 afterAll(() => zen.cleanup());
 
 /** 只造 runCommand 实际会碰到的字段，其余用 noop 顶住 */
@@ -30,6 +35,7 @@ function createHost(overrides: Record<string, unknown> = {}) {
     migrate: vi.fn(async () => "/tmp/handoff.md"),
     reset: vi.fn(async () => "chat_archived"),
     save: vi.fn(async () => "chat_saved"),
+    saveAs: vi.fn(async (id: string) => id),
     ...overrides,
   };
   const host = {
@@ -129,6 +135,82 @@ describe("/back：撤回后必须落盘", () => {
 
     const saved = JSON.parse(readFileSync(join(zen.dir, "cli", "conversations", "chat_back.json"), "utf-8"));
     expect(saved.messages.map((m: any) => m.content)).toEqual(["第一条", "答一"]);
+  });
+});
+
+/**
+ * `/save <名字>`（PLAN §4）：不带参数维持时间戳 id；带名字则另存为指定文件名，
+ * 重名要二次确认（静默覆盖会让另一份对话凭空消失），确认后旧文件不留残影。
+ */
+describe("/save：支持指定名字 + 重名二次确认", () => {
+  /** 接管确认框：记下问句并立即作答 */
+  const captureConfirm = (host: ChatCommandHost, answer: boolean) => {
+    const seen = { question: "" };
+    (host as any).setConfirmState = (next: any) => {
+      const state = typeof next === "function" ? next(null) : next;
+      if (!state) return;
+      seen.question = state.question;
+      state.resolve(answer);
+    };
+    return seen;
+  };
+  const texts = (notices: Array<{ text: string }>) => notices.map((n) => n.text).join("\n");
+
+  it("无参数：照旧存成时间戳 id，不弹确认", async () => {
+    const { host, session, notices } = createHost();
+    await runCommand("save", "/save", host);
+    expect(session.save).toHaveBeenCalledTimes(1);
+    expect(host.setConfirmState).not.toHaveBeenCalled();
+    expect(texts(notices)).toContain("chat_saved");
+  });
+
+  it("带名字：存成指定文件名", async () => {
+    const { host, session, notices } = createHost({ saveAs: vi.fn(async (id: string) => id) });
+    await runCommand("save", "/save 我的对话", host);
+    expect(session.saveAs).toHaveBeenCalledWith("我的对话");
+    expect(session.save).not.toHaveBeenCalled();
+    expect(texts(notices)).toContain("我的对话");
+  });
+
+  it("名字已存在且不是当前 id：先问一遍；取消则完全不写", async () => {
+    await persistConversation({ id: "旧对话", messages: [], cwd: "/work", setAsLastSession: false });
+    const { host, session, notices } = createHost({
+      currentId: "chat_now",
+      saveAs: vi.fn(async (id: string) => id),
+    });
+    const asked = captureConfirm(host, false);
+
+    await runCommand("save", "/save 旧对话", host);
+
+    expect(asked.question).toContain("旧对话");
+    expect(session.saveAs).not.toHaveBeenCalled();
+    expect(texts(notices)).toContain("已取消保存");
+  });
+
+  it("确认之后才覆盖", async () => {
+    await persistConversation({ id: "旧对话", messages: [], cwd: "/work", setAsLastSession: false });
+    const { host, session } = createHost({
+      currentId: "chat_now",
+      saveAs: vi.fn(async (id: string) => id),
+    });
+    captureConfirm(host, true);
+
+    await runCommand("save", "/save 旧对话", host);
+
+    expect(session.saveAs).toHaveBeenCalledWith("旧对话");
+  });
+
+  it("目标名就是当前 id：自己盖自己，不弹确认", async () => {
+    const { host, session } = createHost({
+      currentId: "chat_now",
+      saveAs: vi.fn(async (id: string) => id),
+    });
+    await persistConversation({ id: "chat_now", messages: [], cwd: "/work", setAsLastSession: false });
+
+    await runCommand("save", "/save chat_now", host);
+
+    expect(host.setConfirmState).not.toHaveBeenCalled();
+    expect(session.saveAs).toHaveBeenCalledWith("chat_now");
   });
 });
 

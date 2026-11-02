@@ -23,7 +23,7 @@ import {
   parseCommandArgs,
   type CommandName,
 } from "../../conversation-commands/registry.js";
-import { conversationRepository, listConversations } from "../../conversation-repository.js";
+import { conversationExists, conversationRepository, listConversations } from "../../conversation-repository.js";
 import { readConfig, readMcpConfig, readReasoningPresets, saveConfig } from "../../config.js";
 import { resetScope } from "../../agent-creator.js";
 import { switchModel } from "../../model-switch.js";
@@ -147,9 +147,31 @@ export function parseHandoffSelection(args: readonly string[]): HandoffSelection
 
 // ==================== 各命令 ====================
 
-const cmdSave: CommandHandler = async ({ session, push }) => {
+/**
+ * `/save [名字]`
+ *
+ *   无参 → 时间戳 id（维持原行为）
+ *   带名 → 另存为该文件名；重名且不是当前会话时**先二次确认**（静默覆盖会让另一份
+ *          对话凭空消失，而文件名是用户唯一能看到的身份）
+ *
+ * 名字的合法性（路径穿越等）不在这里校验：会话仓储的 `path()` 是唯一落盘口，
+ * L2 修好后 `/save ../x` 会被那一层拦住，此处不另写一套。
+ */
+const cmdSave: CommandHandler = async ({ session, push, args, confirm }) => {
+  const name = args[0]?.trim();
   try {
-    const id = await session.save();
+    if (!name) {
+      const id = await session.save();
+      push(t("cmd.save.done", { id }));
+      return;
+    }
+    if (name !== session.currentId && (await conversationExists(name))) {
+      if (!(await confirm(t("cmd.save.overwrite", { id: name })))) {
+        push(t("cmd.save.cancelled"));
+        return;
+      }
+    }
+    const id = await session.saveAs(name);
     push(t("cmd.save.done", { id }));
   } catch (error: any) {
     push(t("cmd.save.failed", { error: error?.message ?? error }), "error");

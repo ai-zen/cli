@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
 import { ChatSession } from "./chat-session.js";
 import { ConversationPersistPlugin } from "../conversation-persist-plugin.js";
+import { readLastSession } from "../session-pointer.js";
 import { refreshPaths } from "../config.js";
 
 // 在静态导入之前设置 AI_ZEN_DIR（config.ts 在导入时即固化该路径）
@@ -111,6 +112,55 @@ describe("ChatSession.reset（/new 归档旧对话）", () => {
 
     // 关键：不得把旧内容误写到新会话 id 上
     expect(existsSync(convFile(session.currentId))).toBe(false);
+  });
+});
+
+describe("ChatSession.saveAs（`/save <名字>`）", () => {
+  const convFile = (id: string) => join(state.dir, "cli", "conversations", `${id}.json`);
+
+  it("写到新名字、删掉旧文件、更新 currentId 与 last-session 指针", async () => {
+    const session = await newSession();
+    session.currentId = "chat_before_rename";
+    session.currentName = "chat_before_rename";
+    session.messages.push({ role: AgentNS.Role.User, content: "你好" } as any);
+    await session.save(); // 自动落盘先发生了：旧文件已存在
+    expect(existsSync(convFile("chat_before_rename"))).toBe(true);
+
+    expect(await session.saveAs("我的对话")).toBe("我的对话");
+
+    expect(session.currentId).toBe("我的对话");
+    expect(existsSync(convFile("我的对话"))).toBe(true);
+    // 旧文件消失（否则同一份对话会有两条记录）
+    expect(existsSync(convFile("chat_before_rename"))).toBe(false);
+    // 指针跟着走：下次启动要续接到改名后的会话
+    expect((await readLastSession(process.cwd()))?.id).toBe("我的对话");
+    const saved = JSON.parse(await fs.readFile(convFile("我的对话"), "utf-8"));
+    expect(saved.id).toBe("我的对话");
+    expect(saved.messages).toHaveLength(1);
+  });
+
+  it("全新会话（旧文件还没落盘）也能存成新名字", async () => {
+    const session = await newSession();
+    session.currentId = "chat_never_saved";
+    session.messages.push({ role: AgentNS.Role.User, content: "刚开的新会话" } as any);
+    expect(existsSync(convFile("chat_never_saved"))).toBe(false);
+
+    await session.saveAs("新名字");
+
+    expect(existsSync(convFile("新名字"))).toBe(true);
+    expect(session.currentId).toBe("新名字");
+  });
+
+  it("目标名与当前 id 相同：只落盘，不删自己", async () => {
+    const session = await newSession();
+    session.currentId = "chat_same";
+    session.messages.push({ role: AgentNS.Role.User, content: "x" } as any);
+    await session.save();
+
+    expect(await session.saveAs("chat_same")).toBe("chat_same");
+
+    expect(session.currentId).toBe("chat_same");
+    expect(existsSync(convFile("chat_same"))).toBe(true);
   });
 });
 

@@ -140,6 +140,8 @@ export const en: Record<string, string> = {
   "cmd.think.failed": "Reasoning effort change failed: {error}",
   "cmd.save.done": "Conversation saved: {id}",
   "cmd.save.failed": "Save failed: {error}",
+  "cmd.save.overwrite": "A conversation named {id} already exists. Overwrite it?",
+  "cmd.save.cancelled": "Save cancelled",
   "cmd.load.tooMany": "Pick a conversation to load (showing the latest {n})",
   "cmd.load.readFailed": "Conversation not found or unreadable: {id}",
   "cmd.handoff.unknownMode": "Unknown mode: {who} (use self / summary)",

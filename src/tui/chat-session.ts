@@ -31,7 +31,12 @@ import { SubAgentGuardInstallerPlugin } from "../sub-agent-guard-plugin.js";
 import type { TokenThresholds } from "@ai-zen/agents-sdk";
 import { createAutoMigratePlugin } from "../auto-migrate-confirm.js";
 import { createHandoffService } from "../handoff-service.js";
-import { generateConversationId, persistConversation } from "../conversation-repository.js";
+import { promises as fs } from "node:fs";
+import {
+  generateConversationId,
+  conversationRepository,
+  persistConversation,
+} from "../conversation-repository.js";
 import type { ConversationContext } from "../types.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, deltaText, type RateSample } from "./token-rate.js";
@@ -448,6 +453,32 @@ export class ChatSession {
       messages: this.agent.messages,
       cwd: process.cwd(),
     });
+  }
+
+  /**
+   * 把当前会话存成指定文件名（`/save <名字>`），成功后 `currentId` 与 last-session
+   * 指针一并跟过去，于是后续自动落盘直接写新文件。
+   *
+   * 实现是「写新文件 → 删旧文件」，而不是 `fs.rename`：
+   *   · rename 要求旧文件**已存在**，而刚开的新会话还没落过盘（会 ENOENT）；
+   *   · 覆盖已有目标在 Windows 上还得先 unlink，跨平台两边都得写分支；
+   *   · 写新文件时父目录由仓储 `write()` 的 `mkdir(recursive)` 负责（`/save a/b` 可用）。
+   * 中途被杀最多留下两份副本（可读、无损），不会丢内容。
+   */
+  async saveAs(id: string): Promise<string> {
+    const previous = this.currentId;
+    await persistConversation({
+      id,
+      agentId: this.agentId,
+      messages: this.agent.messages,
+      cwd: process.cwd(),
+    });
+    if (id === previous) return id; // 自己盖自己：不删
+    // 旧文件不能留：同一份对话出现两条记录会让 `/load` 里分不清哪条是新的
+    await fs.rm(conversationRepository().filePath(previous), { force: true });
+    this.currentId = id;
+    this.currentName = id;
+    return id;
   }
 
   /** 释放事件监听（重建 Agent 时调用，避免监听器泄漏） */

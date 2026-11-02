@@ -143,6 +143,8 @@ export const zh: Record<string, string> = {
   "cmd.think.failed": "切换思考强度失败：{error}",
   "cmd.save.done": "对话已保存：{id}",
   "cmd.save.failed": "保存失败：{error}",
+  "cmd.save.overwrite": "已存在同名对话 {id}，覆盖吗？",
+  "cmd.save.cancelled": "已取消保存",
   "cmd.load.tooMany": "选择要加载的对话（仅显示最近 {n} 条）",
   "cmd.load.readFailed": "对话不存在或读取失败：{id}",
   "cmd.handoff.unknownMode": "未知的执行者：{who}（可选 self / summary）",

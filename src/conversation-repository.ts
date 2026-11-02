@@ -55,6 +55,16 @@ class AtomicConversationRepository extends EntityRepository<Conversation> {
     await fs.writeFile(tmp, JSON.stringify(entity, null, 2), "utf-8");
     await fs.rename(tmp, target);
   }
+
+  /**
+   * 会话文件的绝对路径（`/save <名字>` 删旧文件名时用）。
+   *
+   * 只是把 SDK 的 `protected path()` 公开出来，**不另写一套拼接** —— 待 L2 在 `path()`
+   * 里加上路径穿越校验后，`/save ../x` 这类名字会自然被拦住。
+   */
+  filePath(id: string): string {
+    return this.path(id);
+  }
 }
 
 /**
@@ -130,6 +140,20 @@ export async function saveConversation(ctx: ConversationContext): Promise<string
 /** `/load` 选择器的一行：只有会话文件名（id） */
 export interface ConversationSummary {
   id: string;
+}
+
+/**
+ * 会话文件是否已存在（`/save <名字>` 的重名判断）。
+ *
+ * 只 `access`：判断重名不需要解析内容，`read()` 会把整个会话 JSON.parse 一遍。
+ */
+export async function conversationExists(id: string): Promise<boolean> {
+  try {
+    await fs.access(conversationRepository().filePath(id));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
