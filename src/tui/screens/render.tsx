@@ -2,6 +2,7 @@
 import { Text } from "ink";
 import { theme } from "../theme.js";
 import { RLine, type LineKind } from "./lines.js";
+import { graphemes } from "../text.js";
 
 /** 行 kind → 基础色（分段渲染时作默认色；`undefined` = 终端默认前景色） */
 function baseColor(kind: LineKind): string | undefined {
@@ -72,8 +73,11 @@ export function LineView({ line }: { line: RLine }) {
   }
 }
 
-/** 单行化文本（表格 / 列表项用）：折叠空白并截断 */
+/** 单行化文本（表格 / 列表项用）：折叠空白并按**字素簇**截断 */
 export function truncate(text: string, max: number): string {
   const single = text.replace(/\s+/g, " ").trim();
-  return single.length > max ? `${single.slice(0, max - 1)}…` : single;
+  // 按簇而不是按 UTF-16 code unit 切：`slice` 会把 emoji / ZWJ 序列劈成两半，
+  // 屏幕上显示为一个孤立代理项（一个方框）。`/back` 的标签与 `/load` 的预览都走这里。
+  const chars = graphemes(single);
+  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : single;
 }

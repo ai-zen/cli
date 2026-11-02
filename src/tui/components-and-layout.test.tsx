@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "ink-testing-library";
 import { StatusBar, statusBarRows, SlashMenu, SelectList } from "./components.js";
+import { truncate } from "./screens/render.js";
 import {
   Splash,
   displayWidth,
@@ -256,8 +257,24 @@ describe("resolveSubmitText（回车执行高亮命令）", () => {
   });
 });
 
-describe("SelectList", () => {
-  it("方向键移动、回车确认", async () => {
+describe("truncate（单行化 + 截断）", () => {
+  /**
+   * 回归（PLAN L20）：用 `.length` / `.slice` 按 UTF-16 code unit 切，截断点落在 emoji
+   * 中间时会留下孤立代理项 —— 屏幕上是一个方框（或直接乱码）。`/back` 的列表项标签、
+   * `/load` 的预览都过这个函数。
+   */
+  it("按字素簇截断：不拆 emoji / ZWJ 序列，补一个省略号", () => {
+    expect(truncate("👍👍👍", 2)).toBe("👍…");
+    expect(truncate("👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦", 2)).toBe("👨‍👩‍👧‍👦…");
+    expect(truncate("✌️✌️✌️", 2)).toBe("✌️…");
+    // 不超长时原样返回，且不补省略号
+    expect(truncate("👍👍", 2)).toBe("👍👍");
+    // 空白折叠/裁剪仍然生效
+    expect(truncate("  a  \n b  ", 10)).toBe("a b");
+  });
+});
+
+describe("SelectList", () => {  it("方向键移动、回车确认", async () => {
     const onSelect = vi.fn();
     const { stdin, unmount } = render(
       <SelectList
