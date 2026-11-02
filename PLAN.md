@@ -166,7 +166,9 @@ return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : single;
 
 **修法**：断言改为 `expect(result.stdout).toContain("用法")` + `expect(result.exitCode).toBe(0)`。
 
-**遗留**：e2e 仍被排除（`npm run test:e2e` 才能跑），是否纳入常规测试是另一个决定，本次不做。
+**结论（已拍板）**：e2e **不**纳入 `npm test` —— 单独命令本来就有（`test:e2e` / `test:all`），
+单测保持秒级。真正缺的只是发布门禁：`prepublishOnly` 以前只跑 `npm test`，e2e 从不参与，
+已改成 `npm run test:all`。
 
 ---
 
