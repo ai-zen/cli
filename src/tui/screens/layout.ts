@@ -54,6 +54,14 @@ export interface ChatLayout {
   bottomLines: number;
   /** 对话框总行数（未截取前） */
   totalLines: number;
+  /**
+   * 菜单**实际**占用的行数（`min(想吃, 剩余空间)`）。
+   *
+   * 渲染（`BottomMenu.maxRows`）与硬件光标（`computeInputCursorPosition` 的
+   * `hintCount`）都必须从这里取，不许自己另算 —— 三处差一行，输入框与 IME 候选框
+   * 就会整体偏移（历史事故：通知栏被漏算）。
+   */
+  hintRows: number;
   /** 对话区可用高度（已扣除底部区域） */
   budget: number;
   /** 本次实际生效的视口顶部索引 */
@@ -97,16 +105,26 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
   const attachmentLines = input.attachmentLines ?? 0;
   const agentTabLines = input.agentTabLines ?? 0;
   const statusBarLines = Math.max(1, input.statusBarLines ?? STATUS_BAR_LINES);
-  const bottomLines =
+  /** 菜单之外、恒占的底部行（含输入框与状态栏） */
+  const fixedBottom =
+    agentTabLines /* Agent 栏目 */ +
+    noticeCount /* 通知栏 */ +
+    attachmentLines /* 附件提示行 */ +
+    1 /* 分隔线 */ +
+    inputHeight +
+    statusBarLines;
+  /**
+   * 菜单能吃多少行：输入框上方到屏幕顶端的**全部**剩余空间，不设固定行数上限 ——
+   * 放不下的候选由 `BottomMenu` 从顶端丢弃（滚动窗口）。
+   *
+   * 覆盖层（确认 / 选择器）整块替换输入区时菜单不参与布局，故归零。
+   */
+  const hintRows =
     input.overlay === "none"
-      ? agentTabLines /* Agent 栏目 */ +
-        noticeCount /* 通知栏 */ +
-        attachmentLines /* 附件提示行 */ +
-        1 /* 分隔线 */ +
-        input.hintCount +
-        inputHeight +
-        statusBarLines
-      : overlayHeight + statusBarLines;
+      ? Math.min(Math.max(0, input.hintCount), Math.max(0, input.rows - fixedBottom))
+      : 0;
+  const bottomLines =
+    input.overlay === "none" ? fixedBottom + hintRows : overlayHeight + statusBarLines;
 
   const budget = Math.max(0, input.rows - bottomLines);
   const totalLines = transcript.length;
@@ -118,5 +136,5 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
     ...Array.from({ length: padTop }, (_, i) => ({ key: `pad-${i}`, kind: "gap" as const, text: " " })),
     ...viewLines,
   ];
-  return { lines, bottomLines, totalLines, budget, viewTop: top, scrolled: top < maxTop };
+  return { lines, bottomLines, totalLines, budget, viewTop: top, scrolled: top < maxTop, hintRows };
 }

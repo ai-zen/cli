@@ -2,12 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   extractMention,
   mentionInsertText,
-  mentionMenuRows,
-  menuWindow,
   rankPaths,
   scorePath,
   MENTION_LIMIT,
-  MENTION_ROWS,
   type PathEntry,
 } from "./mention.js";
 
@@ -117,36 +114,5 @@ describe("scorePath / rankPaths：排序判据", () => {
     expect(rankPaths("f", many)).toHaveLength(MENTION_LIMIT);
     expect(rankPaths("f", many, 3)).toHaveLength(3);
     expect(rankPaths("f", many, 0)).toEqual([]);
-  });
-});
-
-describe("menuWindow：菜单视窗", () => {
-  it("候选不超过一屏时全显示", () => {
-    expect(menuWindow(3, 0)).toEqual({ from: 0, to: 3 });
-  });
-
-  it("高亮项越出窗口时窗口跟随滚动，且不越界", () => {
-    expect(menuWindow(50, 0)).toEqual({ from: 0, to: MENTION_ROWS });
-    expect(menuWindow(50, MENTION_ROWS - 1)).toEqual({ from: 0, to: MENTION_ROWS });
-    expect(menuWindow(50, MENTION_ROWS)).toEqual({ from: 1, to: 1 + MENTION_ROWS });
-    expect(menuWindow(50, 49)).toEqual({ from: 50 - MENTION_ROWS, to: 50 });
-  });
-
-  it("空候选 / 行数为 0 时返回空窗口", () => {
-    expect(menuWindow(0, 0)).toEqual({ from: 0, to: 0 });
-    expect(menuWindow(10, 0, 0)).toEqual({ from: 0, to: 0 });
-  });
-
-  it("越界的高亮索引被钳制（候选变少时不会漏高亮）", () => {
-    expect(menuWindow(3, 99)).toEqual({ from: 0, to: 3 });
-    expect(menuWindow(3, -5)).toEqual({ from: 0, to: 3 });
-  });
-
-  it("mentionMenuRows 与实际渲染行数恒等（布局 / 光标 / 渲染三处同一个数）", () => {
-    for (const total of [0, 1, 3, MENTION_ROWS, MENTION_ROWS + 1, 50]) {
-      const { from, to } = menuWindow(total, 0);
-      expect(mentionMenuRows(total, false)).toBe(to - from);
-      expect(mentionMenuRows(total, true)).toBe(to - from + 1);
-    }
   });
 });

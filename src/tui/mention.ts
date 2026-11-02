@@ -59,14 +59,6 @@ export interface PathEntry {
 /** 候选上限：再多也没人翻；同时给每次按键的内存过滤定个上界（10k 候选实测约 9ms） */
 export const MENTION_LIMIT = 50;
 
-/**
- * 菜单最多占几行（超出则开视窗滚动）。
- *
- * 布局（`computeChatLayout` 的 `hintCount`）与渲染（`MentionMenu`）**必须用同一个数**：
- * 两处只要差一行，输入框就会整体上移/下移一行，IME 候选框跟着偏。
- */
-export const MENTION_ROWS = 8;
-
 function isSpace(ch: string): boolean {
   return ch !== "" && /\s/.test(ch);
 }
@@ -176,34 +168,4 @@ export function rankPaths(
   }
   scored.sort((a, b) => a.score - b.score || (a.entry.path < b.entry.path ? -1 : a.entry.path > b.entry.path ? 1 : 0));
   return scored.slice(0, Math.max(0, limit)).map((item) => item.entry);
-}
-
-/**
- * 菜单实际占用的行数 —— **渲染与布局的唯一真源**。
- *
- * `computeChatLayout` 的 `hintCount`、`computeInputCursorPosition` 的 `hintCount`、
- * `MentionMenu` 实际渲染的行数，三处必须是同一个值：差一行，输入框整体位移一行，
- * 硬件光标（IME 候选框）也跟着偏 —— 历史上有过同类事故（通知栏被漏算）。
- *
- * 扫描中额外占一行（「扫描中…」）。
- */
-export function mentionMenuRows(total: number, scanning: boolean, rows = MENTION_ROWS): number {
-  return Math.min(Math.max(0, total), Math.max(0, rows)) + (scanning ? 1 : 0);
-}
-
-/**
- * 菜单视窗：总条数 + 高亮项 → 实际渲染的 `[from, to)`。
- *
- * 高亮项一旦越过窗口高度就往下滚（不是分页跳），保证 ↑/↓ 连按时视觉是连贯的。
- */
-export function menuWindow(
-  total: number,
-  selected: number,
-  rows = MENTION_ROWS,
-): { from: number; to: number } {
-  const size = Math.min(total, Math.max(0, rows));
-  if (size <= 0) return { from: 0, to: 0 };
-  const sel = Math.max(0, Math.min(selected, total - 1));
-  const from = Math.min(sel >= size ? sel - size + 1 : 0, total - size);
-  return { from, to: from + size };
 }

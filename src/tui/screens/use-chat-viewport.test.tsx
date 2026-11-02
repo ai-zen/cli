@@ -20,6 +20,7 @@ function Probe({ totalLines, budget }: { totalLines: number; budget: number }) {
     budget,
     viewTop: effectiveTop,
     scrolled: vp.viewTop != null,
+    hintRows: 0,
   };
   useInput((char, key) => {
     if (key.pageUp) return vp.scrollByPage(-1);

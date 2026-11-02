@@ -202,6 +202,73 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
+  // ==================== 底部锚定菜单（PLAN L14 + L16）====================
+
+  /** 找出包含某片段的行号（-1 = 没渲染） */
+  const rowOf = (frame: string, needle: string) =>
+    frame.split("\n").findIndex((row) => row.includes(needle));
+
+  it("斜杠菜单自底部锚定：首项紧贴分隔线，其余候选向上生长", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    stdin.write("/c"); // 候选只有 /clear 与 /config 两条，便于定位
+    await flush();
+    const frame = lastFrame() ?? "";
+    const clear = rowOf(frame, "/clear");
+    const config = rowOf(frame, "/config");
+    const separator = rowOf(frame, "───");
+    expect(clear).toBeGreaterThanOrEqual(0);
+    expect(config).toBeGreaterThanOrEqual(0);
+    // 数据顺序 clear → config；视觉上 config 在 clear 上方，clear 紧贴输入框的分隔线
+    expect(config).toBeLessThan(clear);
+    expect(separator).toBe(clear + 1);
+    // 默认高亮第一条（最底下那条）
+    expect(frame.split("\n")[clear]).toContain("❯");
+    unmount();
+  });
+
+  it("菜单打开时 ↑ = 选下一条（高亮上移）、↓ = 选上一条", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    stdin.write("/c");
+    await flush();
+
+    stdin.write("\u001b[A"); // ↑
+    await flush();
+    let rows = (lastFrame() ?? "").split("\n");
+    const configRow = rowOf(lastFrame() ?? "", "/config");
+    const clearRow = rowOf(lastFrame() ?? "", "/clear");
+    expect(rows[configRow]).toContain("❯");
+    expect(rows[clearRow]).not.toContain("❯");
+
+    stdin.write("\u001b[B"); // ↓
+    await flush();
+    rows = (lastFrame() ?? "").split("\n");
+    expect(rows[rowOf(lastFrame() ?? "", "/clear")]).toContain("❯");
+    unmount();
+  });
+
+  it("`@` 菜单与斜杠菜单共用同一套底部锚定菜单（目录带尾斜杠）", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    stdin.write("@");
+    await flush();
+    await flush(); // 等文件索引回填（注入的 listProjectPaths 是 Promise）
+    const frame = lastFrame() ?? "";
+    const readme = rowOf(frame, "README.md");
+    // 「src/tui/」是「src/tui/screens/chat.tsx」的子串，必须锁行尾才能定位到那条目录
+    const dir = frame
+      .split("\n")
+      .findIndex((row) => row.trim().endsWith("src/tui/"));
+    const separator = rowOf(frame, "───");
+    expect(readme).toBeGreaterThanOrEqual(0);
+    expect(dir).toBeGreaterThanOrEqual(0);
+    // 空查询时 rankPaths 按「浅 → 短」排序：README.md < src/tui < src/tui/screens/chat.tsx
+    expect(dir).toBe(readme - 1);
+    expect(readme).toBe(separator - 1);
+    unmount();
+  });
+
   // ==================== Agent 栏目（主 / 子 Agent 切换）====================
 
   /** 造一个子 Agent 视图（只需 messages 与状态，组件只读这些） */

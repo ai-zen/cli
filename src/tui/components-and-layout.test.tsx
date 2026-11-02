@@ -8,7 +8,7 @@
 // 交互相关（按键 → 状态迁移）在 `screens/*.test.tsx` 各自文件里，不在这里。
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "ink-testing-library";
-import { StatusBar, statusBarRows, SlashMenu, SelectList } from "./components.js";
+import { StatusBar, statusBarRows, BottomMenu, SelectList } from "./components.js";
 import { truncate } from "./screens/render.js";
 import {
   Splash,
@@ -220,14 +220,94 @@ describe("StatusBar", () => {
   });
 });
 
-describe("SlashMenu", () => {
-  it("渲染命令清单与说明", () => {
-    const hints = getCommandHints();
-    const { lastFrame, unmount } = render(<SlashMenu hints={hints} selected={0} />);
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("/help");
-    expect(frame).toContain("显示帮助");
+describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
+  const mk = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ key: `k${i}`, label: `item${i}`, hint: `hint${i}` }));
+  /** 只取非空行：ink 会把尾部空行也拼进 lastFrame */
+  const rowsOf = (frame: string) => frame.split("\n").filter((row) => row.trim().length > 0);
+
+  it("第一项紧贴输入框（渲染在最底行），往上依次生长", () => {
+    const { lastFrame, unmount } = render(<BottomMenu items={mk(3)} selected={0} maxRows={3} />);
+    const rows = rowsOf(lastFrame() ?? "");
+    expect(rows).toHaveLength(3);
+    // 数据顺序 item0 → item2；视觉顺序自下而上，所以末行是 item0、首行是 item2
+    expect(rows[2]).toContain("item0");
+    expect(rows[1]).toContain("item1");
+    expect(rows[0]).toContain("item2");
     unmount();
+  });
+
+  it("默认高亮最底部那一项（`hints[0]`）", () => {
+    const { lastFrame, unmount } = render(<BottomMenu items={mk(3)} selected={0} maxRows={3} />);
+    const rows = rowsOf(lastFrame() ?? "");
+    expect(rows[2]).toContain("❯");
+    expect(rows[0]).not.toContain("❯");
+    expect(rows[1]).not.toContain("❯");
+    unmount();
+  });
+
+  it("放不下的从顶部丢弃：只保留前 maxRows 项，最远的候选先消失", () => {
+    const { lastFrame, unmount } = render(<BottomMenu items={mk(10)} selected={0} maxRows={4} />);
+    const frame = lastFrame() ?? "";
+    const rows = rowsOf(frame);
+    expect(rows).toHaveLength(4);
+    expect(rows[3]).toContain("item0"); // 仍然贴着输入框
+    expect(frame).toContain("item3");
+    expect(frame).not.toContain("item4");
+    expect(frame).not.toContain("item9");
+    unmount();
+  });
+
+  it("选中项越过窗口后连续滚动，且始终可见", () => {
+    const { lastFrame, unmount } = render(<BottomMenu items={mk(30)} selected={12} maxRows={8} />);
+    const rows = rowsOf(lastFrame() ?? "");
+    expect(rows).toHaveLength(8);
+    // from = 12 − 8 + 1 = 5 → 可见 5..12，选中项（最高索引）落在窗口最上一行
+    expect(rows[0]).toContain("item12");
+    expect(rows[0]).toContain("❯");
+    expect(rows[7]).toContain("item5");
+    expect(rowsOf(lastFrame() ?? "").join()).not.toContain("item4");
+    unmount();
+  });
+
+  it("副标题行（`@` 的「扫描中…」）占用同一份高度预算，且位于菜单顶端", () => {
+    const { lastFrame, unmount } = render(
+      <BottomMenu items={mk(10)} selected={0} maxRows={4} topLine="扫描中…" />,
+    );
+    const rows = rowsOf(lastFrame() ?? "");
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toContain("扫描中");
+    expect(rows[3]).toContain("item0");
+    expect(rowsOf(lastFrame() ?? "").join()).not.toContain("item3"); // 只剩 3 行给候选
+    unmount();
+  });
+
+  it("布局没给高度（maxRows 0）时一行都不渲染", () => {
+    const { lastFrame, unmount } = render(<BottomMenu items={mk(5)} selected={0} maxRows={0} />);
+    expect(rowsOf(lastFrame() ?? "")).toHaveLength(0);
+    unmount();
+  });
+
+  it("渲染行数恒等于布局放行的行数（min(候选数, maxRows)，扫描行计入）", () => {
+    for (const [total, maxRows, scanning] of [
+      [0, 5, false],
+      [3, 5, false],
+      [30, 8, false],
+      [30, 8, true],
+      [30, 0, true],
+    ] as const) {
+      const { lastFrame, unmount } = render(
+        <BottomMenu
+          items={mk(total)}
+          selected={0}
+          maxRows={maxRows}
+          topLine={scanning ? "扫描中…" : undefined}
+        />,
+      );
+      const expected = Math.min(total + (scanning ? 1 : 0), maxRows);
+      expect(rowsOf(lastFrame() ?? "")).toHaveLength(expected);
+      unmount();
+    }
   });
 });
 
@@ -607,6 +687,24 @@ describe("computeChatLayout（吸底 + 应用内翻页）", () => {
     const multi = computeChatLayout({ ...base, input: "x\ny\nz" });
     expect(multi.bottomLines).toBe(single.bottomLines + 2);
     expect(multi.lines.length).toBe(single.lines.length - 2);
+  });
+
+  it("菜单想吃的行数由布局按剩余空间放行，不设固定行数上限（L14/L16）", () => {
+    // rows 24 的固定底部：分隔线 1 + 输入 1 + 状态栏 2 = 4 → 菜单最多能拿到 20 行
+    const many = computeChatLayout({ ...base, hintCount: 30 });
+    expect(many.hintRows).toBe(20);
+    expect(many.bottomLines).toBe(24);
+    expect(many.lines).toHaveLength(0);
+
+    // 候选不多时按实际条数占位，不预留空白
+    const few = computeChatLayout({ ...base, hintCount: 3 });
+    expect(few.hintRows).toBe(3);
+    expect(few.bottomLines).toBe(7);
+  });
+
+  it("覆盖层打开时菜单不占行（hintRows 归零）", () => {
+    expect(computeChatLayout({ ...base, hintCount: 5, overlay: "confirm" }).hintRows).toBe(0);
+    expect(computeChatLayout({ ...base, hintCount: 5, overlay: "picker", pickerItems: 3 }).hintRows).toBe(0);
   });
 
   it("Agent 栏目占一行底部高度、压缩对话区（无子 Agent 时为 0）", () => {

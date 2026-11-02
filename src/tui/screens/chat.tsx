@@ -9,7 +9,7 @@ import type { RateSample } from "../token-rate.js";
 import { phaseLabel, type PhaseInfo } from "../phase.js";
 import { AgentNS } from "@ai-zen/agents-core";
 import { theme } from "../theme.js";
-import { Spinner, StatusBar, statusBarRows, SlashMenu, MentionMenu, PastedImagesBar, type StatusBarProps } from "../components.js";
+import { Spinner, StatusBar, statusBarRows, BottomMenu, PastedImagesBar, type MenuItem, type StatusBarProps } from "../components.js";
 import { graphemes, layoutInput, usableFrameRows } from "../text.js";
 import { ChatSession, type ChatSessionNotifier } from "../chat-session.js";
 import {
@@ -40,7 +40,7 @@ import { useChatViewport } from "./use-chat-viewport.js";
 import { useChatOverlays } from "./use-overlays.js";
 import { useWizardHost, type WizardHostDeps } from "./use-wizard-host.js";
 import { useInputEditing } from "./use-input-editing.js";
-import { extractMention, mentionInsertText, mentionMenuRows, rankPaths, type PathEntry } from "../mention.js";
+import { extractMention, mentionInsertText, rankPaths, type PathEntry } from "../mention.js";
 import { listProjectPaths } from "../file-index.js";
 import { readClipboardImage, readClipboardText, type ClipboardImage } from "../../clipboard.js";
 import { handleCtrlDExit, handleScrollKey } from "./common-keys.js";
@@ -463,8 +463,21 @@ export function Chat(props: ChatScreenProps) {
   const scanningFiles = mention != null && fileIndex == null;
   /** 当前菜单条数（两种菜单互斥，非零的那个说了算） */
   const menuCount = slash ? hints.length : fileMatches.length;
-  /** 菜单渲染行数：`@` 候选可能几十条，必须开视窗（与 `MentionMenu` 严格一致，否则输入框位移） */
-  const menuRows = slash ? hints.length : mentionMenuRows(fileMatches.length, scanningFiles);
+  /**
+   * 菜单**想吃**的行数：候选条数 + 「扫描中…」占位。
+   *
+   * 实际能拿多少由布局决定（`computeChatLayout` 按输入框上方的剩余空间放行，
+   * 不设固定上限）—— 这里交上去的是「想要多少」，渲染与 IME 光标一律读回
+   * `layout.hintRows`，三处同源。
+   */
+  const menuWant = slash ? hints.length : fileMatches.length + (scanningFiles ? 1 : 0);
+  /** 菜单条目：斜杠命令带说明，`@` 路径目录带尾斜杠（提示「选中后继续下钻」） */
+  const menuItems: MenuItem[] = slash
+    ? hints.map((hint) => ({ key: hint.names[0]!, label: hint.label, hint: hint.description }))
+    : fileMatches.map((entry) => ({
+        key: entry.path,
+        label: entry.dir ? `${entry.path}/` : entry.path,
+      }));
 
   /** 每次「重新唤起 `@`」都问一次索引：`listProjectPaths` 内部有 15s 缓存，未过期时几乎零成本，
    *  过期则顺手重扫 —— 于是会话里新建的文件不会因为「只扫过一次」而永远看不到。 */
@@ -848,7 +861,7 @@ export function Chat(props: ChatScreenProps) {
       }
       if (key.escape) {
         // `@` 菜单开着时，Esc 只关菜单：清草稿太粗暴（`@` 打一半按 Esc 会连正文一起没）
-        if (mention && menuRows > 0) {
+        if (mention && menuWant > 0) {
           setMentionOff(true);
           return;
         }
@@ -1040,7 +1053,7 @@ export function Chat(props: ChatScreenProps) {
     transcript,
     input,
     busy,
-    hintCount: menuRows,
+    hintCount: menuWant,
     noticeCount: noticeTextLines.length,
     attachmentLines,
     agentTabLines,
@@ -1089,7 +1102,7 @@ export function Chat(props: ChatScreenProps) {
           agentTabCount: agentTabLines,
           noticeCount: noticeTextLines.length,
           attachmentCount: attachmentLines,
-          hintCount: menuRows,
+          hintCount: layout.hintRows,
           cursorRow: inputLayout.cursorRow,
           cursorCol: inputLayout.cursorCol,
           lineText: bodyLines[inputLayout.cursorRow] ?? "",
@@ -1116,10 +1129,15 @@ export function Chat(props: ChatScreenProps) {
           <NoticeBar lines={noticeTextLines} />
           {/* 附件提示行：必须在 NoticeBar 之后、菜单之前（与 computeInputCursorPosition 的顺序一致） */}
           {attachmentLines > 0 ? <PastedImagesBar count={pastedImages.length} /> : null}
-          {slash && hints.length > 0 ? <SlashMenu hints={hints} selected={menuIndex} /> : null}
-          {/* `@` 文件菜单：扫描中先占一行，拿到索引后按 `MENTION_ROWS` 开视窗（行数已算进 menuRows） */}
-          {mention ? (
-            <MentionMenu items={fileMatches} selected={menuIndex} scanning={scanningFiles} />
+          {/* 斜杠命令 / `@` 文件补全共用一套底部锚定菜单：行数取布局放行的 `layout.hintRows`，
+              与上面 `computeChatLayout` 的 `hintCount`、下面 IME 光标的 `hintCount` 同源 */}
+          {menuWant > 0 ? (
+            <BottomMenu
+              items={menuItems}
+              selected={menuIndex}
+              maxRows={layout.hintRows}
+              topLine={scanningFiles ? t("mention.scanning") : undefined}
+            />
           ) : null}
           <Box paddingX={1}>
             <Text color={theme.border} wrap="truncate">

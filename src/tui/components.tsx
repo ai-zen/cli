@@ -7,8 +7,6 @@ import { Box, Text } from "ink";
 import { useInput } from "ink";
 import { theme } from "./theme.js";
 import { clipWidth } from "./text.js";
-import type { CommandHint } from "../conversation-commands/registry.js";
-import { menuWindow, type PathEntry } from "./mention.js";
 import type { RateSample } from "./token-rate.js";
 import { packSegments, type StatusSegment } from "./status-segments.js";
 import { t } from "../i18n/index.js";
@@ -248,74 +246,92 @@ export function StatusBar(props: StatusBarProps) {
   );
 }
 
-// ==================== 斜杠命令菜单 ====================
+// ==================== 底部锚定菜单（`/` 与 `@` 共用）====================
 
-export interface SlashMenuProps {
-  hints: CommandHint[];
-  selected: number;
-}
-
-export function SlashMenu({ hints, selected }: SlashMenuProps) {
-  return (
-    <Box flexDirection="column" paddingLeft={2}>
-      {hints.map((hint, i) => {
-        const active = i === selected;
-        return (
-          <Box key={hint.label}>
-            <Text color={active ? theme.brand[0] : theme.faint}>{active ? "❯ " : "  "}</Text>
-            <Text bold={active} color={active ? theme.highlight : theme.assistant}>
-              {hint.label}
-            </Text>
-            <Text color={theme.dim}>  {hint.description}</Text>
-          </Box>
-        );
-      })}
-    </Box>
-  );
+export interface MenuItem {
+  /** React key；同一份候选里唯一（命令取首个别名，路径取相对路径） */
+  key: string;
+  label: string;
+  /** 右侧灰字说明（命令的 description）；不传则只有 label */
+  hint?: string;
 }
 
 /**
- * `@` 文件路径菜单。
+ * 菜单视窗：**自底部锚定**的连续滚动。
  *
- * 与斜杠菜单同构（同一套 `❯` 高亮 + 两格缩进），差别只有三点：
- *   · **开视窗**：候选可达几十条，只渲染 `MENTION_ROWS` 行并跟随高亮滚动 ——
- *     行数必须与 `computeChatLayout` 收到的 `hintCount` 一致，否则输入框会位移；
- *   · 目录带尾斜杠（`src/tui/`），一眼能看出「选中它会继续往下钻」；
- *   · 索引还没扫好时先占一行「扫描中…」，避免首帧空窗像没反应。
+ * 菜单长在输入框上方，`items[0]` 紧贴输入框、往后各项依次向上。于是「数据顺序」与
+ * 「视觉顺序」相反 —— 换算只发生在渲染层（`slice(from, to).reverse()`），`selected`
+ * 始终是**数据下标**：按键、回车、滚动、测试都按数据顺序读，不反转数据。
+ *
+ * 高亮一旦越过窗口顶部就整窗上移（`from = selected − size + 1`），保证选中项永远可见；
+ * 装不下的从**顶部**丢弃（即索引大的候选先消失，因为它们离输入框最远）。
  */
-export interface MentionMenuProps {
-  items: PathEntry[];
-  selected: number;
-  /** 索引尚未就绪（首次 `@` 时后台正在扫） */
-  scanning: boolean;
+export function menuViewport(
+  total: number,
+  selected: number,
+  maxRows: number,
+): { from: number; to: number } {
+  const size = Math.min(total, Math.max(0, maxRows));
+  if (size <= 0) return { from: 0, to: 0 };
+  const active = Math.max(0, Math.min(selected, total - 1));
+  const from = Math.max(0, Math.min(active - size + 1, total - size));
+  return { from, to: from + size };
 }
 
-export function MentionMenu({ items, selected, scanning }: MentionMenuProps) {
-  const { from, to } = menuWindow(items.length, selected);
-  const visible = items.slice(from, to);
+export interface BottomMenuProps {
+  /** 按数据顺序（`items[0]` 最靠近输入框） */
+  items: MenuItem[];
+  /** 高亮项：**数据下标** */
+  selected: number;
+  /**
+   * 布局放行的行数 —— 必须来自 `computeChatLayout().hintRows`，不能自己另算。
+   * 差一行输入框就整体位移一行，硬件光标（IME 候选框）跟着偏。
+   */
+  maxRows: number;
+  /** 菜单顶端附加的一行（`@` 索引未就绪时的「扫描中…」），与候选共用这份高度预算 */
+  topLine?: string;
+}
+
+/**
+ * 底部锚定菜单 —— 斜杠命令与 `@` 文件补全**共用同一套**（此前是两套各自实现的视窗）。
+ *
+ * 布局契约：整块高度 = `min(候选数 + (topLine ? 1 : 0), maxRows)`，与
+ * `computeChatLayout` 回传的 `hintRows` 严格一致。
+ */
+export function BottomMenu({ items, selected, maxRows, topLine }: BottomMenuProps) {
+  const innerRows = Math.max(0, maxRows - (topLine ? 1 : 0));
+  const { from, to } = menuViewport(items.length, selected, innerRows);
   const active = Math.max(0, Math.min(selected, items.length - 1));
   return (
     <Box flexDirection="column" paddingLeft={2}>
-      {scanning ? (
+      {/* 高度预算为 0 时连「扫描中…」也不画：多一行就把输入框顶出屏幕 */}
+      {topLine && maxRows > 0 ? (
         <Text color={theme.faint} wrap="truncate">
-          {t("mention.scanning")}
+          {topLine}
         </Text>
       ) : null}
-      {visible.map((item, i) => {
-        const isActive = from + i === active;
-        return (
-          <Box key={item.path}>
-            <Text color={isActive ? theme.brand[0] : theme.faint}>{isActive ? "❯ " : "  "}</Text>
-            <Text
-              bold={isActive}
-              color={isActive ? theme.highlight : theme.assistant}
-              wrap="truncate"
-            >
-              {item.dir ? `${item.path}/` : item.path}
-            </Text>
-          </Box>
-        );
-      })}
+      {items
+        .slice(from, to)
+        // 视觉反转只在这一行：下标大（离输入框远）的排在上面
+        .reverse()
+        .map((item, i) => {
+          // 反转后的第 i 行对应数据下标 `to - 1 - i`
+          const isActive = to - 1 - i === active;
+          return (
+            <Box key={item.key}>
+              <Text color={isActive ? theme.brand[0] : theme.faint}>{isActive ? "❯ " : "  "}</Text>
+              <Text bold={isActive} color={isActive ? theme.highlight : theme.assistant} wrap="truncate">
+                {item.label}
+              </Text>
+              {item.hint ? (
+                <Text color={theme.dim} wrap="truncate">
+                  {"  "}
+                  {item.hint}
+                </Text>
+              ) : null}
+            </Box>
+          );
+        })}
     </Box>
   );
 }
