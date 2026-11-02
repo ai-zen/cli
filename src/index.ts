@@ -21,6 +21,17 @@ import { t } from "./i18n/index.js";
 process.env.NODE_ENV ||= "production";
 
 /**
+ * stdout 被提前关闭（`ai --help | head -1`、`ai "…" | head`）时的 EPIPE。
+ *
+ * 默认行为是未捕获的 `'error'` 事件：Node 把堆栈打到 stderr、退出码 1 —— 管道下游
+ * 主动不读了不是错误，按正常结束处理（退出码 0）。不在这里 flush 任何东西：
+ * 写不进去就是没人要。
+ */
+process.stdout.on("error", (error: NodeJS.ErrnoException) => {
+  if (error.code === "EPIPE") process.exit(0);
+});
+
+/**
  * CLI 入口 —— 双模式路由
  *
  *   ai                      → TUI（仅当无参数且 stdin/stdout 均为 TTY）
