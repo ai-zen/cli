@@ -15,7 +15,7 @@ outline: deep
 - **Node.js**: the package is published as ESM (`"type": "module"`). `package.json` does not declare an `engines` field, so the actual required version follows the Node ecosystem (a recent LTS is recommended).
 - **Runtime dependencies** (declared in `package.json`):
   - `@ai-zen/agents-core` `^4.5.3`
-  - `@ai-zen/agents-sdk` `1.0.0-alpha.24`
+  - `@ai-zen/agents-sdk` `1.0.0-alpha.25`
   - `@modelcontextprotocol/sdk` `^1.29.0`
   - `dayjs`, `ink`, `react`, `zod`, `highlight.js`, `lowlight`
 - **Platform**: the underlying tools and the Shell hook depend on a Unix shell (`bash`/`zsh`) and `process.env.SHELL`; the Shell hook is unavailable on Windows (`hook` will report "unsupported shell").
@@ -70,7 +70,7 @@ On start, an animated gradient ASCII splash appears, then you land **directly in
 
 If the round spawns sub-agents, a **main / sub-agent bar** appears below the transcript (`主AGENT　◈子AGENT1　◈子AGENT2`): `←` / `→` switches which agent's conversation the transcript shows, the diamond shows each one's state (blue blinking while running / green when done / red when failed), and the bar disappears once this round's inner loop finishes.
 
-The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word, `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word, `Ctrl+K` kills to end of line, `Ctrl+U` kills to line start, `Esc` clears the input, `Ctrl+V` pastes (an image if the clipboard holds one, otherwise text), `PgUp` / `PgDn` (or `Alt+V`) scroll the transcript), and an inline `/` command menu. Tool calls render as `⚙ name(args)` with **JSON highlighting**; the answer/reasoning is **Markdown-source-colored** (headings / bold / italic / inline code / lists / quotes / links), and fenced code blocks are highlighted by language with the **fence markers kept**.
+The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word, `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word, `Ctrl+K` kills to end of line, `Ctrl+U` kills to line start, `Esc` clears the input, `Ctrl+V` pastes (an image if the clipboard holds one, otherwise text — text is capped at 256KB and refused, not truncated) / `↑` `↓` move the cursor inside a multi-line draft (history only at the first / last row) / the input area is capped at 8 rows and the window follows the cursor / `PgUp` / `PgDn` (or `Alt+V`) scroll the transcript), and an inline `/` command menu. Tool calls render as `⚙ name(args)` with **JSON highlighting**; the answer/reasoning is **Markdown-source-colored** (headings / bold / italic / inline code / lists / quotes / links), and fenced code blocks are highlighted by language with the **fence markers kept**.
 
 ### First-run setup (API Key)
 
@@ -99,7 +99,7 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 | Command | Description |
 |---------|-------------|
 | `/exit` `/quit` | Exit the conversation (offers to save) |
-| `/save` | Save the conversation |
+| `/save [name]` | Save the conversation; with a name it is saved as that file name (asks first if it exists) |
 | `/new` | Reset the session (clear history) |
 | `/back` | Retract the last message (edit and resend) |
 | `/editor` | Compose a long message in your editor |
@@ -114,10 +114,10 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 | `/think` `/effort` | Switch reasoning effort |
 | `/key` | Set the endpoint API key |
 | `/migrate` | Hand off and start a new session |
-| `/load` | Load a conversation (replaces this one) |
+| `/load` | Load a conversation (replaces this one; the picker lists saved conversation file names only) |
 | `/help` | Show help |
 
-> Note: typing `/` lists candidate commands below the input line (↑↓ to choose, `Tab` to complete, `Enter` to submit/run). Commands are matched by their full names; an unrecognized `/xxx` reports "Unknown command".
+> Note: typing `/` lists candidate commands below the input line (↑↓ to choose, `Tab` to complete, `Enter` to submit/run; the menu is anchored right above the input). Commands are matched by their full names; an unrecognized `/xxx` reports "Unknown command".
 
 ## Shell fallback hook
 
