@@ -49,20 +49,17 @@ function fakeChild(opts: { stdout?: string; code?: number | null; error?: Error 
   return child;
 }
 
-vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>();
-  return {
-    ...actual,
-    // 其余命令（`/editor` 等）仍走同步版，保持原桩
-    spawnSync: () => ({ stdout: "", status: 0 }),
-    spawn: (cmd: string, args: string[] = []) => {
-      state.spawns.push({ cmd, args });
-      if (args[0] === "root") return fakeChild({ stdout: state.root });
-      if (args[0] === "view") return fakeChild({ stdout: state.distTags, code: state.tagsStatus });
-      return fakeChild({ code: state.installStatus, error: state.installError });
-    },
-  };
-});
+/**
+ * 假的 spawn —— 通过 `ChatCommandHost.spawn` 注入，**不再** `vi.mock("node:child_process")`：
+ * 模块级 mock 是全局注册的，进程内共享模块时会波及所有用到子进程的模块（实测会让
+ * 会话落盘等无关测试随机失败）。
+ */
+const fakeSpawn = ((_cmd: string, args: string[] = []) => {
+  state.spawns.push({ cmd: _cmd, args });
+  if (args[0] === "root") return fakeChild({ stdout: state.root });
+  if (args[0] === "view") return fakeChild({ stdout: state.distTags, code: state.tagsStatus });
+  return fakeChild({ code: state.installStatus, error: state.installError });
+}) as unknown as typeof import("node:child_process").spawn;
 
 /** 造一个假的全局安装目录：`<root>/@ai-zen/cli/package.json` */
 function fakeGlobalInstall(root: string, version: string): void {
@@ -113,6 +110,7 @@ function createHost(options: { confirmAnswer?: boolean; withHistory?: boolean } 
     setInputText: vi.fn(),
     setEffortView: vi.fn(),
     refreshLocale: vi.fn(),
+    spawn: fakeSpawn,
   } as unknown as ChatCommandHost;
   const installs = () =>
     state.spawns.filter((s) => s.args[0] === "install").map((s) => s.args.join(" "));

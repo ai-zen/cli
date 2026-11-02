@@ -13,6 +13,14 @@ import { t } from "../../i18n/index.js";
 
 // ==================== 多行文本编辑屏（系统编辑器）====================
 
+/** 打开系统编辑器的实现（默认 spawnSync）；供测试注入假实现 */
+export type OpenEditor = (editor: string, file: string) => void;
+
+const defaultOpenEditor: OpenEditor = (editor, file) => {
+  const result = spawnSync(editor, [file], { stdio: "inherit" });
+  if (result.error) throw result.error;
+};
+
 export interface PromptEditorScreenProps {
   columns: number;
   rows: number;
@@ -23,6 +31,11 @@ export interface PromptEditorScreenProps {
   /** 临时文件扩展名（默认 md；参数 schema 等 JSON 用 json，便于编辑器语法高亮 / 格式化） */
   ext?: string;
   notice?: string | null;
+  /**
+   * 打开编辑器的实现。缺省用 `spawnSync`；测试注入假实现，**不必** `vi.mock("child_process")`
+   * ——模块级 mock 是全局注册的，多个测试文件各自 mock 同一说明符会互相覆盖。
+   */
+  openEditor?: OpenEditor;
   onSave: (text: string) => Promise<string | null>;
   onBack: () => void;
 }
@@ -44,6 +57,7 @@ export function PromptEditorScreen({
   text,
   ext = "md",
   notice,
+  openEditor,
   onSave,
   onBack,
 }: PromptEditorScreenProps) {
@@ -63,8 +77,7 @@ export function PromptEditorScreen({
       await suspendTerminal(() => {
         const editor =
           process.env.EDITOR || process.env.VISUAL || (process.platform === "win32" ? "notepad" : "vi");
-        const result = spawnSync(editor, [file], { stdio: "inherit" });
-        if (result.error) throw result.error;
+        (openEditor ?? defaultOpenEditor)(editor, file);
       });
       const edited = readFileSync(file, "utf-8").replace(/\r\n/g, "\n").trimEnd();
       if (edited === before) return; // 未改动：不写盘

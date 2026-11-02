@@ -5,20 +5,19 @@ import { Message } from "@ai-zen/agents-core";
 import type { McpConfig, McpScope } from "../config.js";
 import type { AgentKind, AgentStore } from "../agents-store.js";
 import { ConfigWizard, PromptScreen, promptLayout } from "./config-wizard/index.js";
-import { spawnSync } from "child_process";
 import { writeFileSync } from "fs";
 import { setLocale } from "../i18n/index.js";
 
 // 配置中心文案已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
-beforeEach(() => setLocale("zh"));
-
-// 拦截系统编辑器：把「打开编辑器」替换为向临时文件写入指定内容（用例内自行 mockImplementation）
-vi.mock("child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("child_process")>();
-  return { ...actual, spawnSync: vi.fn(() => ({ status: 0 })) };
+beforeEach(() => {
+  setLocale("zh");
 });
 
-const tick = () => new Promise((r) => setTimeout(r, 25));
+// 拦截系统编辑器：把「打开编辑器」替换为向临时文件写入指定内容（用例内自行 mockImplementation）
+
+// 普通按键的帧变化实测 0.5~3.4ms；单独 ESC 要 20ms（ink 对 lone ESC 的序列判定）
+const tick = () => new Promise((r) => setTimeout(r, 4));
+const tickEsc = () => new Promise((r) => setTimeout(r, 30));
 const DOWN = "\u001B[B";
 const ENTER = "\r";
 const ESC = "\u001B";
@@ -116,7 +115,7 @@ describe("PromptScreen（凭据输入屏）", () => {
     expect(lastFrame()).toContain("明文显示");
 
     stdin.write(ESC);
-    await tick();
+    await tickEsc();
     expect(onCancel).toHaveBeenCalled();
     unmount();
   });
@@ -315,11 +314,11 @@ describe("ConfigWizard（配置中心）", () => {
     expect(lastFrame()).toContain("API Key 已更新");
 
     stdin.write(ESC); // 回到端点列表
-    await tick();
+    await tickEsc();
     stdin.write(ESC); // 回到菜单
-    await tick();
+    await tickEsc();
     stdin.write(ESC); // 关闭
-    await tick();
+    await tickEsc();
     expect(onClose).toHaveBeenCalledWith({
       dirty: true,
       summary: ["端点 DeepSeek 的 API Key 已更新"],
@@ -812,11 +811,11 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     expect(onSave.mock.calls[0]![0].abortedMessageStrategy).toBe("drop");
 
     stdin.write(ESC); // 回默认项
-    await tick();
+    await tickEsc();
     stdin.write(ESC); // 回菜单
-    await tick();
+    await tickEsc();
     stdin.write(ESC); // 关闭
-    await tick();
+    await tickEsc();
     // 策略在建 Agent 时才读：必须让宿主知道「该重建会话」，否则用户得自己 /reload
     expect(onClose.mock.calls[0]![0].sessionOptionsChanged).toBe(true);
     unmount();
@@ -1102,11 +1101,11 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     await tick();
     await tick();
     stdin.write(ESC); // → MCP 列表
-    await tick();
+    await tickEsc();
     stdin.write(ESC); // → 菜单
-    await tick();
+    await tickEsc();
     stdin.write(ESC); // 关闭
-    await tick();
+    await tickEsc();
     expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ dirty: true, mcpChanged: true }));
     unmount();
   });
@@ -1331,15 +1330,15 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const { store, save } = makeAgentStore([], [
       makeAgentDef({ id: "helper", name: "Helper", function: { name: "sub_agent_helper", description: "d", parameters: { type: "object" } } }),
     ]);
-    const spawnMock = vi.mocked(spawnSync);
-    spawnMock.mockImplementation(((_editor: string, args: string[]) => {
-      writeFileSync(args[0]!, "{ not json", "utf-8");
-      return { status: 0 } as never;
-    }) as never);
+    // 编辑器注入，不依赖 vi.mock("child_process")
+    const openEditor = vi.fn((_editor: string, file: string) => {
+      writeFileSync(file, "{ not json", "utf-8");
+    });
 
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
         config={makeConfig()}
+        openEditor={openEditor}
         initialStep={{ kind: "agent", agentKind: "subagent", agentId: "helper" }}
         agentStore={store}
         onSave={makeOnSave()}
@@ -1359,7 +1358,7 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     await tick();
     await tick();
     await tick();
-    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(openEditor).toHaveBeenCalledTimes(1);
     expect(save).not.toHaveBeenCalled();
     expect(lastFrame()).toContain("JSON 解析失败");
     unmount();
@@ -1369,15 +1368,14 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const { store, save } = makeAgentStore([], [
       makeAgentDef({ id: "helper2", name: "Helper2", function: { name: "sub_agent_helper2", description: "d", parameters: { type: "object" } } }),
     ]);
-    const spawnMock = vi.mocked(spawnSync);
-    spawnMock.mockImplementation(((_editor: string, args: string[]) => {
-      writeFileSync(args[0]!, '{"type":"object","properties":{"q":{"type":"string"}}}', "utf-8");
-      return { status: 0 } as never;
-    }) as never);
+    const openEditor = vi.fn((_editor: string, file: string) => {
+      writeFileSync(file, '{"type":"object","properties":{"q":{"type":"string"}}}', "utf-8");
+    });
 
     const { stdin, unmount } = render(
       <ConfigWizard
         config={makeConfig()}
+        openEditor={openEditor}
         initialStep={{ kind: "agent", agentKind: "subagent", agentId: "helper2" }}
         agentStore={store}
         onSave={makeOnSave()}
@@ -1448,11 +1446,11 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     await tick();
     await tick();
     stdin.write(ESC); // → Agent 列表
-    await tick();
+    await tickEsc();
     stdin.write(ESC); // → 菜单
-    await tick();
+    await tickEsc();
     stdin.write(ESC); // 关闭
-    await tick();
+    await tickEsc();
     expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ dirty: true, agentsChanged: true }));
     unmount();
   });

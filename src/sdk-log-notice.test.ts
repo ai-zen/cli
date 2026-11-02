@@ -2,7 +2,7 @@
 //
 // 这里测的是「机制」而不是某个功能：SDK 任何模块只要 `getLogger().warn/error`，
 // 就应该出现在通知栏，不需要为此新加回调。另含封顶 / 去重 / 启动期缓冲三件护栏。
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,17 +10,17 @@ import { join } from "node:path";
 let dir: string;
 
 /**
- * 每个用例取一份**全新**的模块状态。
+ * 每个用例取一份**干净**的模块状态。
  *
- * `sdk-log.ts` 里的 sink / 缓冲 / 计数是模块级单例（本来就该如此：它们描述的是
- * 「进程内的一个界面」），所以用例之间必须靠 `resetModules()` 隔离，而不是给它
- * 加一个只为测试存在的 reset 接口。
+ * `sdk-log.ts` 里的 sink / 缓冲 / 计数是模块级单例（它们描述的是「进程内的一个界面」），
+ * 用例之间必须复位。这里用 `resetSdkLogState()` 而不是 `vi.resetModules()`：
+ * 重置模块注册表会连带影响同一进程里其他文件已持有的实例。
  */
-async function freshLib() {
-  vi.resetModules();
-  const sdkLog = await import("./sdk-log.js");
-  // 必须在 sdk-log 之后取：这样才能拿到它 setLogger() 写进去的那个「同一个」模块实例
-  const { getLogger } = await import("@ai-zen/agents-sdk");
+const sdkLog = await import("./sdk-log.js");
+const { getLogger } = await import("@ai-zen/agents-sdk");
+
+function freshLib() {
+  sdkLog.resetSdkLogState();
   return { sdkLog, getLogger };
 }
 

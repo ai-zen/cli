@@ -1,17 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { promises as fs } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /**
  * Agent 定义迁移：旧版 `/think` 把档位名写在 `reasoningEffort` 上，
  * 现在档位在写入时就展开成参数（`modelParams`）。
  *
- * 通过设置 `AI_ZEN_DIR` 指向临时目录来驱动真实的读盘/写盘路径。
+ * 通过把 `AI_ZEN_DIR` 钉到临时目录来驱动真实的读盘/写盘路径。
  */
-let dir: string;
-let mod: typeof import("./agents-store.js");
-let presetMod: typeof import("./reasoning-presets.js");
+import * as mod from "./agents-store.js";
+import * as presetMod from "./reasoning-presets.js";
+import { useTempAiZenDir } from "./test-support/temp-dir.js";
+
+/** 临时根：`pin()` 把 env 与路径一起重算，`cleanup()` 收尾时连 env 一起还原 */
+const zen = useTempAiZenDir("aiz-agent-mig-");
+const dir = zen.dir;
 
 const LEGACY_AGENT = {
   id: "default",
@@ -55,19 +58,16 @@ const CONFIG = {
 };
 
 beforeEach(async () => {
-  dir = await fs.mkdtemp(join(tmpdir(), "aiz-agent-mig-"));
-  process.env.AI_ZEN_DIR = dir;
+  // 进程内共享模块：别的文件会改 `AI_ZEN_DIR`，每个用例前钉回本文件的临时根
+  zen.pin();
+  // 每例从空目录开始：上个用例写下的 Agent / config 不能漏进来
+  await fs.rm(dir, { recursive: true, force: true });
   await fs.mkdir(join(dir, "agents"), { recursive: true });
   await fs.writeFile(join(dir, "config.json"), JSON.stringify(CONFIG, null, 2), "utf-8");
-  // 重置模块注册表，让 `AI_ZEN_DIR` 常量按本次的 env 重新求值
-  vi.resetModules();
-  mod = await import("./agents-store.js");
-  presetMod = await import("./reasoning-presets.js");
 });
 
-afterEach(async () => {
-  delete process.env.AI_ZEN_DIR;
-  await fs.rm(dir, { recursive: true, force: true });
+afterAll(() => {
+  zen.cleanup();
 });
 
 async function writeAgent(name: string, value: unknown): Promise<void> {

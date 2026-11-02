@@ -8,7 +8,7 @@ import { Text, useInput } from "ink";
 import { useChatOverlays } from "./use-overlays.js";
 
 const flush = async () => {
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await new Promise((resolve) => setTimeout(resolve, 4));
 };
 
 /** `log` 记录 settlement 顺序；按键模拟「命令层弹窗」与「用户作答」 */

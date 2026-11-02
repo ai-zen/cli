@@ -9,7 +9,7 @@
 // `WizardHostDeps` 传进来，于是 hook 可以在测试里用假依赖跑完整生命周期。
 import { useRef, useState } from "react";
 import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { readConfig, readMcpConfig, readReasoningPresets } from "../../config.js";
+import { readConfig, readMcpConfig, readReasoningPresets, type McpConfig, type McpScope } from "../../config.js";
 import { readAgentStore, type AgentStore } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
 import type { McpSnapshot, WizardCloseResult, WizardStep } from "../config-wizard/index.js";
@@ -27,6 +27,16 @@ export interface WizardHostDeps {
   restart: () => void;
   /** 改了当前端点 / MCP / Agent 定义 / 中断策略 → 重载会话（消息保留） */
   reloadSession: () => void;
+  /**
+   * 快照读取器。缺省用真实实现；测试注入假实现即可，**不必** `vi.mock` 整个 config 模块
+   * ——模块级替换在进程内共享模块时会泄漏到其他测试文件。
+   */
+  readers?: {
+    readConfig: () => Promise<AppConfig>;
+    readMcpConfig: (scope: McpScope) => Promise<McpConfig>;
+    readReasoningPresets: () => Promise<ReasoningPresets>;
+    readAgentStore: () => Promise<AgentStore>;
+  };
 }
 
 export interface WizardHost {
@@ -50,7 +60,15 @@ export function useWizardHost({
   hasSession,
   restart,
   reloadSession,
+  readers: injected,
 }: WizardHostDeps): WizardHost {
+  const readers = {
+    readConfig,
+    readMcpConfig,
+    readReasoningPresets,
+    readAgentStore,
+    ...injected,
+  };
   const [wizardStep, setWizardStep] = useState<WizardStep | null>(null);
   const [wizardConfig, setWizardConfig] = useState<AppConfig | null>(null);
   const [wizardPresets, setWizardPresets] = useState<ReasoningPresets>({});
@@ -67,14 +85,17 @@ export function useWizardHost({
 
   const openWizard = async (step: WizardStep) => {
     try {
-      const config = await readConfig();
+      const config = await readers.readConfig();
       currentEndpointRef.current = resolveCredential(config, modelId)?.endpointId ?? null;
-      const agentStore = await readAgentStore();
+      const agentStore = await readers.readAgentStore();
       setWizardConfig(config);
-      setWizardPresets(await readReasoningPresets());
+      setWizardPresets(await readers.readReasoningPresets());
       setWizardAgents(agentStore.agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id })));
       setWizardAgentStore(agentStore);
-      setWizardMcp({ global: await readMcpConfig("global"), project: await readMcpConfig("project") });
+      setWizardMcp({
+        global: await readers.readMcpConfig("global"),
+        project: await readers.readMcpConfig("project"),
+      });
       setWizardStep(step);
     } catch (error: any) {
       notify(t("chat.configReadFailed", { error: error?.message ?? error }), "error");
@@ -83,7 +104,7 @@ export function useWizardHost({
 
   const openKeyEditor = async () => {
     try {
-      const config = await readConfig();
+      const config = await readers.readConfig();
       const credential = resolveCredential(config, modelId);
       if (!credential) {
         notify(t("chat.modelNoEndpoint", { id: modelId }), "error");

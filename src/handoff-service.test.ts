@@ -7,15 +7,16 @@ import type { ConversationContext } from "./types.js";
 import { createHandoffService } from "./handoff-service.js";
 import { conversationRepository } from "./conversation-repository.js";
 import { setLocale } from "./i18n/index.js";
+import { useTempAiZenDir } from "./test-support/temp-dir.js";
 
-// 交接日志已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
-beforeEach(() => setLocale("zh"));
+// 会话存档要落到临时根，绝不能碰真实 `~/.ai-zen`
+const zen = useTempAiZenDir("aiz-handoff-");
 
-// 在静态导入之前固定 AI_ZEN_DIR（config.ts 导入时即固化路径，避免污染真实 ~/.ai-zen）
-const state = vi.hoisted(() => {
-  const dir = `/tmp/aiz-handoff-${process.pid}-${Date.now()}`;
-  process.env.AI_ZEN_DIR = dir;
-  return { dir };
+beforeEach(() => {
+  // 交接日志已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
+  setLocale("zh");
+  // 进程内共享模块：别的文件会改 `AI_ZEN_DIR`，每个用例前钉回本文件的临时根
+  zen.pin();
 });
 
 let handoffDir: string;
@@ -26,7 +27,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await fs.rm(handoffDir, { recursive: true, force: true });
-  await fs.rm(state.dir, { recursive: true, force: true });
+  zen.cleanup();
 });
 
 /**
@@ -70,8 +71,6 @@ function uniqueDir(name: string): string {
 
 describe("createHandoffService", () => {
   it("migrate：交接 + 剔除历史 + 清空陈旧用量 + 开启新会话", async () => {
-    expect(state.dir).toBeTruthy(); // 确保临时目录已生效，不落到真实 HOME
-
     const agent = makeAgent({ prompt_tokens: 999, completion_tokens: 1, total_tokens: 1000 });
     const ctx = makeCtx(agent);
     const dir = uniqueDir("migrate");
@@ -89,7 +88,7 @@ describe("createHandoffService", () => {
     expect(result.handoffPath.startsWith(dir)).toBe(true);
     // 新会话：id 已切换并落盘
     expect(ctx.currentId).not.toBe("会话_x");
-    const saved = await conversationRepository.read(ctx.currentId!);
+    const saved = await conversationRepository().read(ctx.currentId!);
     expect(saved).toBeTruthy();
     expect(saved!.messages.length).toBe(1);
   });

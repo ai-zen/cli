@@ -51,7 +51,16 @@ class AtomicConversationRepository extends EntityRepository<Conversation> {
   }
 }
 
-export const conversationRepository = new AtomicConversationRepository(CONVERSATIONS_DIR);
+/**
+ * 会话仓储。
+ *
+ * 每次调用新建一个轻对象：仓储本身无内部状态（只包一个目录），而目录（`CONVERSATIONS_DIR`）
+ * 是会变的活绑定。若在模块加载时固化成单例，进程内共享模块跑测试时后一个用例会
+ * 继续读写前一个用例的目录。
+ */
+export function conversationRepository(): AtomicConversationRepository {
+  return new AtomicConversationRepository(CONVERSATIONS_DIR);
+}
 
 /**
  * 生成文件名安全的会话 id：英文前缀 + 全下划线时间戳，中英一致。
@@ -88,9 +97,12 @@ export interface PersistConversationInput {
  * 废弃的 `modelId`。收敛到这里后，各处差异只剩「是否更新指针」一个显式开关。
  */
 export async function persistConversation(input: PersistConversationInput): Promise<string> {
-  const existing = await conversationRepository.read(input.id);
+  // 仓储**只取一次**：`read` 与 `write` 之间隔着 await，取两次就可能落到两个目录
+  // （`CONVERSATIONS_DIR` 是活绑定）。同一份落盘必须读写同一个目录。
+  const repository = conversationRepository();
+  const existing = await repository.read(input.id);
   const now = new Date().toISOString();
-  await conversationRepository.write({
+  await repository.write({
     id: input.id,
     agentId: input.agentId || "default",
     messages: input.messages,
@@ -148,18 +160,19 @@ export function conversationPreview(conversation: Conversation | null): string {
  * 逐个 `JSON.parse` 会明显拖慢 `/load`。
  */
 export async function listConversations(options: { previewLimit: number }): Promise<ConversationSummary[]> {
+  const dir = CONVERSATIONS_DIR;
   try {
-    await fs.access(CONVERSATIONS_DIR);
+    await fs.access(dir);
   } catch {
     return [];
   }
-  const files = await fs.readdir(CONVERSATIONS_DIR);
+  const files = await fs.readdir(dir);
   const stats: Array<{ id: string; name: string; updatedAt: string; size: number }> = [];
   for (const file of files) {
     if (!file.endsWith(".json")) continue;
     const id = file.replace(/\.json$/, "");
     try {
-      const st = await fs.stat(join(CONVERSATIONS_DIR, file));
+      const st = await fs.stat(join(dir, file));
       stats.push({ id, name: id, updatedAt: st.mtime.toISOString(), size: st.size });
     } catch {
       /* 跳过读取失败的条目 */
@@ -172,7 +185,7 @@ export async function listConversations(options: { previewLimit: number }): Prom
   const withPreview = await Promise.all(
     stats.map(async (item, index): Promise<ConversationSummary> => {
       if (index >= options.previewLimit) return { ...item, preview: "" };
-      return { ...item, preview: conversationPreview(await conversationRepository.read(item.id)) };
+      return { ...item, preview: conversationPreview(await conversationRepository().read(item.id)) };
     }),
   );
   return withPreview;

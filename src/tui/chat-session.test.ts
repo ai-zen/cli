@@ -1,14 +1,21 @@
-import { describe, expect, it, vi, afterAll } from "vitest";
+import { describe, expect, it, vi, afterAll, beforeEach } from "vitest";
 import { existsSync, promises as fs } from "node:fs";
 import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
 import { ChatSession } from "./chat-session.js";
+import { refreshPaths } from "../config.js";
 
 // 在静态导入之前设置 AI_ZEN_DIR（config.ts 在导入时即固化该路径）
 const state = vi.hoisted(() => {
   const dir = `/tmp/aiz-reset-${process.pid}-${Date.now()}`;
   process.env.AI_ZEN_DIR = dir;
   return { dir };
+});
+
+// 进程内共享模块时其他文件会改写 process.env.AI_ZEN_DIR，每个用例前重新钉回去并刷新路径
+beforeEach(() => {
+  process.env.AI_ZEN_DIR = state.dir;
+  refreshPaths();
 });
 
 // 本文件把 AI_ZEN_DIR 指到 /tmp 下的临时目录做隔离；跑完删掉，不在 /tmp 留垃圾。
@@ -37,32 +44,43 @@ function makeEvents() {
   };
 }
 
-// 把 agent-creator 打桩，避免真实构建 Agent / 访问网络
-vi.mock("../agent-creator.js", () => ({
-  createAgent: vi.fn(async (opts: any) => {
-    const agent: any = {
-      // definition 是模型真相源（ChatSession.modelId 从它读）
-      definition: { id: opts?.agentId ?? "default", modelId: "m1", messages: [] },
-      messages: opts?.messages ? [...opts.messages] : [],
-      lastUsage: undefined,
-      use: () => {},
-      init: async () => {},
-      abort: () => {},
-      send: async () => {},
-      events: makeEvents(),
-    };
-    harness.agents.push(agent);
-    return agent;
-  }),
-  resetScope: vi.fn(async () => {}),
-  listSkillDirs: vi.fn(() => []),
-}));
+/**
+ * 假的 Agent 工厂 / Scope 重置 —— 通过 `ChatSessionOptions.deps` 注入，
+ * **不再** `vi.mock("../agent-creator.js")`：模块级 mock 是全局注册的，进程内共享
+ * 模块时会泄漏到其他测试文件（`chat.test.tsx` 就因此读到真实配置）。
+ */
+const fakeCreateAgent = async (opts: any) => {
+  const agent: any = {
+    // definition 是模型真相源（ChatSession.modelId 从它读）
+    definition: { id: opts?.agentId ?? "default", modelId: "m1", messages: [] },
+    messages: opts?.messages ? [...opts.messages] : [],
+    lastUsage: undefined,
+    use: () => {},
+    init: async () => {},
+    abort: () => {},
+    send: async () => {},
+    events: makeEvents(),
+  };
+  harness.agents.push(agent);
+  return agent;
+};
+const fakeResetScope = async () => {};
+
+/** 统一入口：把注入项塞进 options，用例只关心自己的参数 */
+const newSession = (
+  options: any = {},
+  notifier: any = { onChange: () => {}, onNotice: () => {} },
+): Promise<ChatSession> =>
+  ChatSession.create(
+    { ...options, deps: { createAgent: fakeCreateAgent as any, resetScope: fakeResetScope as any } },
+    notifier,
+  );
 
 describe("ChatSession.reset（/new 归档旧对话）", () => {
   it("空对话不落盘；有内容则归档到原 id，且不误写到新 id", async () => {
     const dir = state.dir;
     const convFile = (id: string) => join(dir, "cli", "conversations", `${id}.json`);
-    const session = await ChatSession.create(
+    const session = await newSession(
       {},
       { onChange: () => {}, onNotice: () => {} },
     );
@@ -95,7 +113,7 @@ describe("ChatSession.reset（/new 归档旧对话）", () => {
 
 describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
   it("只改 ctx.currentId 时 session.currentId 立即跟随（自动迁移换 id 的回归）", async () => {
-    const session = await ChatSession.create(
+    const session = await newSession(
       {},
       { onChange: () => {}, onNotice: () => {} },
     );
@@ -112,7 +130,7 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
   });
 
   it("赋值 session.currentId 会同步写回 ctx", async () => {
-    const session = await ChatSession.create(
+    const session = await newSession(
       {},
       { onChange: () => {}, onNotice: () => {} },
     );
@@ -122,7 +140,7 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
     expect((session as any).ctx.currentId).toBe("会话_手动");
   });
   it("端到端：handoffService.migrate() 之后 currentId 必须跟随新会话（自动迁移路径）", async () => {
-    const session = await ChatSession.create(
+    const session = await newSession(
       {},
       { onChange: () => {}, onNotice: () => {} },
     );
@@ -173,7 +191,7 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
 
 describe("ChatSession.totalUsage（本会话累计用量）", () => {
   it("逐消息求和：assistant 的 usage + 工具消息的 subAgentUsage（含子 Agent）", async () => {
-    const session = await ChatSession.create(
+    const session = await newSession(
       {},
       { onChange: () => {}, onNotice: () => {} },
     );
@@ -223,7 +241,7 @@ describe("生成阶段（消息栏 spinner 的六态）", () => {
   };
 
   it("按 SDK 事件时序推进：open → queued，delta → thinking/streaming，parsed+tool_calls → tool-waiting", async () => {
-    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
     const agent = harness.agents.at(-1)!;
 
     agent.events.emit("open");
@@ -240,7 +258,7 @@ describe("生成阶段（消息栏 spinner 的六态）", () => {
   });
 
   it("子 Agent 的输出**不**覆盖主阶段（主 Agent 此刻在等工具返回）", async () => {
-    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
     const agent = harness.agents.at(-1)!;
 
     agent.events.emit("open");
@@ -259,7 +277,7 @@ describe("生成阶段（消息栏 spinner 的六态）", () => {
   });
 
   it("send 结束时阶段归零（spinner 消失后不留残影）", async () => {
-    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
     // send() 内部会调用 agent.send()，此处假 Agent 立即返回
     await session.send("你好");
     expect(session.phase).toBeNull();
@@ -286,7 +304,7 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
   };
 
   it("按出现顺序编号（标签就叫「子AGENT1/2」，不看工具名）", async () => {
-    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
     const agent = harness.agents.at(-1)!;
     expect(session.subAgents).toEqual([]);
 
@@ -307,7 +325,7 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
   });
 
   it("委派结束后仍保留实例且状态转 done（栏目可回看子 Agent 自己的 messages）", async () => {
-    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
     const agent = harness.agents.at(-1)!;
     const subAgent = makeSubAgent();
     subAgent.messages.push({ role: AgentNS.Role.Assistant, content: "子 Agent 的结论" });
@@ -323,7 +341,7 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
   });
 
   it("子 Agent 出错 → failed，且不会被随后的 end 覆盖成 done", async () => {
-    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
     const agent = harness.agents.at(-1)!;
     const subAgent = makeSubAgent();
     const toolCallContext = { tool_call: { function: { name: "sub_agent_default" } } };
@@ -338,9 +356,9 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
 
   it("子 Agent 的进度不进通知栏（只更新状态，避免整帧高度跳动）", async () => {
     const notices: string[] = [];
-    const session = await ChatSession.create(
+    const session = await newSession(
       {},
-      { onChange: () => {}, onNotice: (text) => notices.push(text) },
+      { onChange: () => {}, onNotice: (text: string) => notices.push(text) },
     );
     const agent = harness.agents.at(-1)!;
     const subAgent = makeSubAgent();
@@ -355,7 +373,7 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
   });
 
   it("本轮内循环全部结束（send 收尾）时清空，序号归零", async () => {
-    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
     const agent = harness.agents.at(-1)!;
     const toolCallContext = { tool_call: { function: { name: "sub_agent_default" } } };
 
@@ -384,7 +402,7 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
   });
 
   it("中止 / 出错也清空（finally 路径，不留残影）", async () => {
-    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
     const agent = harness.agents.at(-1)!;
     const toolCallContext = { tool_call: { function: { name: "sub_agent_default" } } };
 
@@ -397,7 +415,7 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
   });
 
   it("reset / reload 换了 Agent 也清空（它们不重建会话实例，不清就会残留）", async () => {
-    const session = await ChatSession.create({}, { onChange: () => {}, onNotice: () => {} });
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
     const toolCallContext = { tool_call: { function: { name: "sub_agent_default" } } };
 
     harness.agents.at(-1)!.events.emit("sub-agent-start", {

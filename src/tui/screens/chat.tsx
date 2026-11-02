@@ -18,7 +18,7 @@ import {
   matchCommandHints,
   parseCommandInput,
 } from "../../conversation-commands/registry.js";
-import { readConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "../../config.js";
+import { readConfig, readMcpConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "../../config.js";
 import { readAgentStore } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
 import { ConfigWizard } from "../config-wizard/index.js";
@@ -38,7 +38,7 @@ import { NoticeBar } from "./notice-bar.js";
 import { AgentTabs, type AgentTab } from "./agent-tabs.js";
 import { useChatViewport } from "./use-chat-viewport.js";
 import { useChatOverlays } from "./use-overlays.js";
-import { useWizardHost } from "./use-wizard-host.js";
+import { useWizardHost, type WizardHostDeps } from "./use-wizard-host.js";
 import { useInputEditing } from "./use-input-editing.js";
 import { extractMention, mentionInsertText, mentionMenuRows, rankPaths, type PathEntry } from "../mention.js";
 import { listProjectPaths } from "../file-index.js";
@@ -47,8 +47,31 @@ import { handleCtrlDExit, handleScrollKey } from "./common-keys.js";
 
 // ==================== 对话屏幕 ====================
 
+/**
+ * `Chat` 的外部依赖。
+ *
+ * 全部可注入是为了让集成测试**不必** `vi.mock` 整模块 —— 模块级 mock 在
+ * 进程内共享模块（`isolate: false`）时是全局生效的，会把别的测试文件也带偏。
+ */
+export interface ChatDeps {
+  readConfig: typeof readConfig;
+  readReasoningPresets: typeof readReasoningPresets;
+  readAgentStore: typeof readAgentStore;
+  createSession: typeof ChatSession.create;
+  listProjectPaths: typeof listProjectPaths;
+  readClipboardImage: typeof readClipboardImage;
+  readClipboardText: typeof readClipboardText;
+  /** 配置向导读快照的四个读取器（`/config`、`/key` 路径） */
+  wizardReaders: NonNullable<WizardHostDeps["readers"]>;
+  /** 向导落盘（不注入就会写真实配置目录） */
+  saveConfig: typeof saveConfig;
+  writeMcpConfig: typeof writeMcpConfig;
+}
+
 export interface ChatScreenProps {
   agentId?: string;
+  /** 依赖注入（测试用；缺省全部走真实实现） */
+  deps?: Partial<ChatDeps>;
   messages?: AgentNS.Message[];
   conversationId?: string;
   conversationName?: string;
@@ -108,6 +131,24 @@ export function busySpinnerLabel(phase: PhaseInfo | null, command: string | null
 }
 
 export function Chat(props: ChatScreenProps) {
+  const deps: ChatDeps = {
+    readConfig,
+    readReasoningPresets,
+    readAgentStore,
+    createSession: ChatSession.create,
+    listProjectPaths,
+    readClipboardImage,
+    readClipboardText,
+    wizardReaders: {
+      readConfig,
+      readMcpConfig,
+      readReasoningPresets,
+      readAgentStore,
+    },
+    saveConfig,
+    writeMcpConfig,
+    ...props.deps,
+  };
   const { exit, suspendTerminal } = useApp();
   const { setCursorPosition } = useCursor();
   const { columns, rows } = useWindowSize();
@@ -238,6 +279,8 @@ export function Chat(props: ChatScreenProps) {
           noticeChannel.push(t("chat.sessionReloadFailed", { error: error?.message ?? error }), "error"),
         );
     },
+    // 向导读快照 / 落盘也走注入：集成测试不该碰真实配置目录
+    readers: deps.wizardReaders,
   });
 
   /**
@@ -266,7 +309,7 @@ export function Chat(props: ChatScreenProps) {
     if (!modelId) return;
     let alive = true;
     // 档位存在 Agent 定义上（`modelParams`），可选档位在策略表里（`reasoningPreset` 指向），两者都要读
-    Promise.all([readConfig(), readAgentStore(), readReasoningPresets()])
+    Promise.all([deps.readConfig(), deps.readAgentStore(), deps.readReasoningPresets()])
       .then(([config, store, presets]) => {
         const model = config.models?.find((item) => item.id === modelId);
         const agentId = props.agentId ?? "default";
@@ -294,7 +337,7 @@ export function Chat(props: ChatScreenProps) {
         if (!disposed) noticeChannel.push(text, tone);
       },
     };
-    ChatSession.create(
+    deps.createSession(
       {
         agentId: props.agentId,
         messages: props.messages,
@@ -428,7 +471,7 @@ export function Chat(props: ChatScreenProps) {
   useEffect(() => {
     if (mention == null) return;
     let alive = true;
-    void listProjectPaths(process.cwd())
+    void deps.listProjectPaths(process.cwd())
       .then((paths) => {
         if (alive) setFileIndex(paths);
       })
@@ -465,7 +508,7 @@ export function Chat(props: ChatScreenProps) {
    * 还能继续打字；回到结果时只做一次 setState / 插字。
    */
   const pasteClipboard = async () => {
-    const result = await readClipboardImage();
+    const result = await deps.readClipboardImage();
     if (result.kind === "image") {
       if (pastedImages.length >= MAX_PASTED_IMAGES) {
         noticeChannel.push(t("notice.imageLimit", { n: MAX_PASTED_IMAGES }), "error");
@@ -481,7 +524,7 @@ export function Chat(props: ChatScreenProps) {
     }
 
     // 没有图片 → 当成普通粘贴：把剪贴板文本插到光标处
-    const text = await readClipboardText();
+    const text = await deps.readClipboardText();
     if (text == null) {
       noticeChannel.push(t("notice.clipboardUnavailable"), "error");
       return;
@@ -886,9 +929,9 @@ export function Chat(props: ChatScreenProps) {
         agents={wizardAgents}
         mcp={wizardMcp ?? undefined}
         agentStore={wizardAgentStore ?? undefined}
-        onSave={saveConfig}
+        onSave={deps.saveConfig}
         onSaveMcp={async (scope, cfg) => {
-          await writeMcpConfig(cfg, scope);
+          await deps.writeMcpConfig(cfg, scope);
         }}
         onClose={closeWizard}
       />

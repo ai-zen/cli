@@ -49,6 +49,13 @@ import { chooseHandoffMode } from "./handoff-choice.js";
 
 export interface ChatCommandHost {
   session: ChatSession;
+  /**
+   * 起子进程的实现（`/update` 用）。缺省用 `node:child_process` 的 `spawn`。
+   *
+   * 做成可注入是为了让测试不必 `vi.mock("node:child_process")` —— 模块级 mock 是
+   * 全局注册的，进程内共享模块时会波及所有用到子进程的模块。
+   */
+  spawn?: typeof spawn;
   /** 通知通道：命令反馈（保存 / 清除 / 迁移结果 …）走独立栏位，不进 messages */
   notice: (text: string, tone?: "info" | "error") => void;
   /** 清屏（保留上下文）：把转录显示起点推到最新 */
@@ -171,7 +178,7 @@ const cmdLoad: CommandHandler = async ({ push, rows, exit, pick }) => {
     push(t("cmd.load.cancelled"));
     return;
   }
-  const conversation = await conversationRepository.read(choice);
+  const conversation = await conversationRepository().read(choice);
   if (!conversation) {
     push(t("cmd.load.readFailed", { id: choice }), "error");
     return;
@@ -398,11 +405,12 @@ const UPDATE_QUERY_TIMEOUT_MS = 20_000;
  */
 function runNpmCapture(
   args: string[],
+  spawnImpl: typeof spawn = spawn,
 ): Promise<{ code: number | null; stdout: string; error?: string }> {
   return new Promise((resolve) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const child = spawn("npm", args, { stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawnImpl("npm", args, { stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
     const done = (value: { code: number | null; stdout: string; error?: string }) => {
       if (settled) return;
@@ -435,8 +443,11 @@ function runNpmCapture(
  *
  * 失败（npm 不存在 / 网络不通 / 输出不是 JSON）返回 `undefined`，由调用方报错。
  */
-async function readDistTags(pkg: string): Promise<Record<string, string> | undefined> {
-  const result = await runNpmCapture(["view", pkg, "dist-tags", "--json", "--prefer-online"]);
+async function readDistTags(
+  pkg: string,
+  spawnImpl?: typeof spawn,
+): Promise<Record<string, string> | undefined> {
+  const result = await runNpmCapture(["view", pkg, "dist-tags", "--json", "--prefer-online"], spawnImpl);
   if (result.code !== 0) return undefined;
   try {
     const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
@@ -451,8 +462,8 @@ async function readDistTags(pkg: string): Promise<Record<string, string> | undef
 }
 
 /** 全局安装目录（`npm root -g`）；读不到返回 `undefined` */
-async function readGlobalRoot(): Promise<string | undefined> {
-  const result = await runNpmCapture(["root", "-g"]);
+async function readGlobalRoot(spawnImpl?: typeof spawn): Promise<string | undefined> {
+  const result = await runNpmCapture(["root", "-g"], spawnImpl);
   const dir = result.stdout.trim();
   return result.code === 0 && dir ? dir : undefined;
 }
@@ -464,9 +475,12 @@ async function readGlobalRoot(): Promise<string | undefined> {
  * 刚装完的版本在 registry 上通常要几分钟才可见（发布经验，见交接文档），
  * 拿它报「装好了没」会把成功误报成失败。
  */
-async function readGlobalInstalledVersion(pkg: string): Promise<string | undefined> {
+async function readGlobalInstalledVersion(
+  pkg: string,
+  spawnImpl?: typeof spawn,
+): Promise<string | undefined> {
   try {
-    const root = await readGlobalRoot();
+    const root = await readGlobalRoot(spawnImpl);
     if (!root) return undefined;
     const parsed = JSON.parse(readFileSync(join(root, pkg, "package.json"), "utf-8")) as {
       version?: string;
@@ -483,9 +497,9 @@ async function readGlobalInstalledVersion(pkg: string): Promise<string | undefin
  * `--prefer-online` 治 npm 的元数据缓存（否则刚发版的包可能解析失败 / 装到旧版本）；
  * `--no-fund` 只是减噪 —— 募捐提示对正在等结果的人没有信息量。
  */
-function installGlobal(spec: string): Promise<string | undefined> {
+function installGlobal(spec: string, spawnImpl: typeof spawn = spawn): Promise<string | undefined> {
   return new Promise((resolve) => {
-    const child = spawn("npm", ["install", "-g", spec, "--prefer-online", "--no-fund"], {
+    const child = spawnImpl("npm", ["install", "-g", spec, "--prefer-online", "--no-fund"], {
       stdio: "inherit",
     });
     child.on("error", (err: Error) => resolve(err.message));
@@ -499,10 +513,11 @@ const cmdUpdate: CommandHandler = async ({
   confirm,
   restartProcess,
   session,
+  spawn: spawnImpl,
 }) => {
   // 每一步都说清「在干什么、看到什么」：只给一个转圈，无法区分「在查」和「在装」
   push(t("cmd.update.checking", { pkg: UPDATE_PACKAGE }));
-  const tags = await readDistTags(UPDATE_PACKAGE);
+  const tags = await readDistTags(UPDATE_PACKAGE, spawnImpl);
   if (!tags) {
     push(t("cmd.update.tagsFailed", { pkg: UPDATE_PACKAGE }), "error");
     return;
@@ -525,7 +540,7 @@ const cmdUpdate: CommandHandler = async ({
   // 安装过程交给**真实终端**（`suspendTerminal` 期间 Ink 暂停渲染）：npm 的进度条与
   // 报错直接打在 TTY 上，比捕获后回放可读。移交之前先在 TTY 上打一段头部 ——
   // 否则用户只看到 npm 自己的滚动输出，不知道装的是什么、从哪来、装到哪。
-  const root = await readGlobalRoot();
+  const root = await readGlobalRoot(spawnImpl);
   let error: string | undefined;
   await suspendTerminal(async () => {
     process.stdout.write(
@@ -535,7 +550,7 @@ const cmdUpdate: CommandHandler = async ({
         root: root ?? t("cmd.update.rootUnknown"),
       }) + "\n",
     );
-    error = await installGlobal(spec);
+    error = await installGlobal(spec, spawnImpl);
   });
 
   if (error) {
@@ -544,7 +559,7 @@ const cmdUpdate: CommandHandler = async ({
   }
 
   // 装完读全局目录里的版本：读不到（自建安装路径 / 别的包管理器）就按目标版本报
-  const installed = (await readGlobalInstalledVersion(UPDATE_PACKAGE)) ?? target;
+  const installed = (await readGlobalInstalledVersion(UPDATE_PACKAGE, spawnImpl)) ?? target;
   if (installed === CLI_VERSION) {
     push(t("cmd.update.same", { version: installed }));
     return;

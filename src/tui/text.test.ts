@@ -163,3 +163,18 @@ describe("wrapText / clipWidth：也不会把 emoji 劈成两半", () => {
     expect(displayWidth(clipped)).toBeLessThanOrEqual(5);
   });
 });
+
+describe("wrapText / displayWidth：纯文本折行（CJK 与换行）", () => {
+  it("wrapText 按显示宽度折行且不超宽", () => {
+    expect(wrapText("", 10)).toEqual([""]);
+    const lines = wrapText("a".repeat(21), 10);
+    expect(lines).toHaveLength(3);
+    for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(10);
+  });
+
+  it("CJK 每个字 2 列；已有的换行原样保留为分行", () => {
+    expect(displayWidth("中文")).toBe(4);
+    expect(wrapText("中文中文中文", 4)).toEqual(["中文", "中文", "中文"]);
+    expect(wrapText("a\nb", 10)).toEqual(["a", "b"]);
+  });
+});

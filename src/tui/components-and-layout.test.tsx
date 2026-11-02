@@ -1,10 +1,17 @@
+// 对话屏**非交互**部分的两类契约：
+//
+// 1. 渲染输出：`components.tsx` 的四个小组件（状态栏 / 斜杠菜单 / 选择列表 / 启动画面），
+//    断言的是帧内容与「量出来的行数 == 渲染出来的行数」这类必须自洽的约束；
+// 2. 数学：转录行生成（`screens/messages-view.ts`）、帧布局（`screens/layout.ts`）、
+//    IME 光标位置（`screens/input.ts`）、按键词法（`text.ts`）。
+//
+// 交互相关（按键 → 状态迁移）在 `screens/*.test.tsx` 各自文件里，不在这里。
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "ink-testing-library";
 import { StatusBar, statusBarRows, SlashMenu, SelectList } from "./components.js";
 import {
   Splash,
   displayWidth,
-  wrapText,
   messageToLines,
   cachedMessageToLines,
   transcriptLines,
@@ -482,23 +489,8 @@ describe("cachedMessageToLines（缓存）", () => {
   });
 });
 
-describe("文本测量与折行", () => {
-  it("displayWidth 将宽字符计为 2", () => {
-    expect(displayWidth("abc")).toBe(3);
-    expect(displayWidth("中文")).toBe(4);
-    expect(displayWidth("a中")).toBe(3);
-  });
-
-  it("wrapText 按显示宽度折行且不超宽", () => {
-    expect(wrapText("", 10)).toEqual([""]);
-    const lines = wrapText("a".repeat(21), 10);
-    expect(lines).toHaveLength(3);
-    for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(10);
-    expect(wrapText("中文中文中文", 4)).toEqual(["中文", "中文", "中文"]);
-    expect(wrapText("a\nb", 10)).toEqual(["a", "b"]);
-  });
-
-  it("inputLines：空输入显示占位提示", () => {
+describe("inputLines", () => {
+  it("空输入显示占位提示", () => {
     expect(inputLines("", 80)).toEqual(["输入消息，/ 命令，@ 文件…"]);
     expect(inputLines("hi", 80)).toEqual(["hi"]);
   });

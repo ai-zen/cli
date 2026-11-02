@@ -1,41 +1,25 @@
-import { describe, it, expect, afterAll, beforeAll, vi } from "vitest";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import { promises as fs } from "fs";
 import { join } from "path";
-import { tmpdir } from "os";
+import * as config from "./config.js";
+import { useTempAiZenDir } from "./test-support/temp-dir.js";
 
-// ==================== 使用动态 import 隔离测试 ====================
+// ==================== 路径隔离方式 ====================
 //
-// 注意！这里不能用静态 import 加载 ./config.js，因为 ESM 的 import 会被提升到文件顶部执行，
-// 导致 process.env.AI_ZEN_DIR 在 config.ts 加载时尚未设置，AI_ZEN_DIR 会指向真实的 ~/.ai-zen，
-// 测试中的文件操作（删除/覆写）会破坏用户真实文件！
-//
-// 解决方案：在 beforeAll 中先设置环境变量，清除模块缓存，再通过动态 import() 加载 config.ts。
+// 不再用 `vi.resetModules()` + 动态 import：重置模块注册表会连带影响同一进程里
+// 其他测试文件已经持有的模块实例（进程内共享模块时尤其严重）。
+// `useTempAiZenDir()` 在设好 `AI_ZEN_DIR` 后调 `refreshPaths()`，导入方靠 ESM 活绑定
+// 自动读到新路径，收尾时把 env 一并还原。
 
-const testDir = join(tmpdir(), `ai-zen-cli-config-${Date.now()}`);
+const zen = useTempAiZenDir("ai-zen-cli-config-");
+const testDir = zen.dir;
 
-type ConfigModule = typeof import("./config.js");
-let config: ConfigModule;
-
-beforeAll(async () => {
-  // 1. 先设置环境变量
-  process.env.AI_ZEN_DIR = testDir;
-
-  // 2. 清除模块缓存，确保 config.ts 被重新加载
-  vi.resetModules();
-
-  // 3. 创建临时目录结构（writeMcpConfig 不会自动创建父目录）
-  await fs.mkdir(testDir, { recursive: true });
-
-  // 4. 动态 import 加载 config.ts（此时 AI_ZEN_DIR 已指向临时目录）
-  config = await import("./config.js");
+beforeAll(() => {
+  zen.pin();
 });
 
-afterAll(async () => {
-  try {
-    await fs.rm(testDir, { recursive: true, force: true });
-  } catch {
-    // 忽略清理错误
-  }
+afterAll(() => {
+  zen.cleanup();
 });
 
 describe("readMcpConfig / writeMcpConfig", () => {

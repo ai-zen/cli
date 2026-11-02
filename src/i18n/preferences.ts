@@ -13,17 +13,18 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { detectLocale, setLocale, normalizeLocale, type Locale } from "./index.js";
 
-/** 共享根目录（与 `config.ts` 的 `AI_ZEN_DIR` 同一约定） */
-const AI_ZEN_DIR =
-  process.env.AI_ZEN_DIR ||
-  join(process.env.HOME || process.env.USERPROFILE || "", ".ai-zen");
-
-/** CLI 运行时目录 */
-export const CLI_DIR = join(AI_ZEN_DIR, "cli");
-
-/** 偏好文件；`AIZ_PREFERENCES_FILE` 可覆盖（测试与特殊部署用） */
-export const PREFERENCES_FILE =
-  process.env.AIZ_PREFERENCES_FILE || join(CLI_DIR, "preferences.json");
+/**
+ * 偏好文件路径；`AIZ_PREFERENCES_FILE` 可覆盖（测试与特殊部署用）。
+ *
+ * 每次调用都重新解析：测试会在用例之间换 `AI_ZEN_DIR`，若在模块加载时固化成常量，
+ * 进程内共享模块时后一个用例会继续读写前一个用例的目录。
+ */
+export function preferencesFile(): string {
+  const root =
+    process.env.AI_ZEN_DIR ||
+    join(process.env.HOME || process.env.USERPROFILE || "", ".ai-zen");
+  return process.env.AIZ_PREFERENCES_FILE || join(root, "cli", "preferences.json");
+}
 
 /** CLI 本地偏好 */
 export interface CliPreferences {
@@ -33,7 +34,7 @@ export interface CliPreferences {
 
 /** 读取偏好：文件缺失 / 损坏 / 字段非法都按「没设置」处理，绝不抛错 */
 export async function readPreferences(
-  file: string = PREFERENCES_FILE,
+  file: string = preferencesFile(),
 ): Promise<CliPreferences> {
   try {
     const raw = await readFile(file, "utf-8");
@@ -51,7 +52,7 @@ export async function readPreferences(
 /** 写入偏好（先写临时文件再 rename，避免半个 JSON 留在磁盘上） */
 export async function writePreferences(
   next: CliPreferences,
-  file: string = PREFERENCES_FILE,
+  file: string = preferencesFile(),
 ): Promise<void> {
   const payload: CliPreferences = {};
   if (next.language) payload.language = next.language;
@@ -71,7 +72,7 @@ export async function writePreferences(
  * 落盘这一步是有意的：识别结果只算一次，用户之后改了系统语言也不会让界面语言
  * 悄悄漂移——想换就 `/lang`。
  */
-export async function initLocale(file: string = PREFERENCES_FILE): Promise<Locale> {
+export async function initLocale(file: string = preferencesFile()): Promise<Locale> {
   const prefs = await readPreferences(file);
   const locale = prefs.language ?? detectLocale();
   setLocale(locale);
@@ -82,7 +83,7 @@ export async function initLocale(file: string = PREFERENCES_FILE): Promise<Local
 /** 切换语言并落盘（`/lang` 用） */
 export async function persistLocale(
   locale: Locale,
-  file: string = PREFERENCES_FILE,
+  file: string = preferencesFile(),
 ): Promise<void> {
   setLocale(locale);
   await writePreferences({ language: locale }, file);

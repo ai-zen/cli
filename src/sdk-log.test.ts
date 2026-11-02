@@ -8,7 +8,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { refreshPaths } from "./config.js";
 import { getLogger, setLogger } from "@ai-zen/agents-sdk";
 import {
   createFileLogger,
@@ -16,8 +17,8 @@ import {
   formatSdkLogLine,
   installSdkLogger,
   MAX_LOG_BYTES,
-  SDK_LOG_ENABLED,
-  SDK_LOG_FILE,
+  sdkLogEnabled,
+  sdkLogFile,
 } from "./sdk-log.js";
 
 /** 本文件创建过的临时目录，`afterAll` 统一删除（否则每跑一次测试就在 /tmp 留一堆） */
@@ -92,10 +93,38 @@ describe("SDK 日志接管", () => {
     expect(readFileSync(file, "utf8")).toContain("[load_mcp] manifest 不该打到界面上");
   });
 
-  it("默认落盘到 ~/.ai-zen/logs/sdk.log（AIZ_DEBUG_SDK 未置 0 时）", () => {
-    if (process.env.AIZ_DEBUG_SDK === "0") return; // 显式关闭时行为由下一条用例覆盖
-    expect(SDK_LOG_ENABLED).toBe(true);
-    expect(SDK_LOG_FILE).toContain(join(".ai-zen", "logs", "sdk.log"));
+  it("默认落盘到 <AI_ZEN_DIR>/logs/sdk.log", () => {
+    // 走真实接线：改 `AI_ZEN_DIR` → `refreshPaths()` → 不传参的 `sdkLogFile()`
+    const dir = tmpLogFile(); // 只借用它建临时目录的能力
+    const root = dirname(dir);
+    const saved = process.env.AI_ZEN_DIR;
+    try {
+      process.env.AI_ZEN_DIR = root;
+      refreshPaths();
+      expect(sdkLogFile()).toBe(join(root, "logs", "sdk.log"));
+    } finally {
+      if (saved === undefined) delete process.env.AI_ZEN_DIR;
+      else process.env.AI_ZEN_DIR = saved;
+      refreshPaths();
+    }
+  });
+
+  /**
+   * `AIZ_DEBUG_SDK=0` 是用户真正会用的关掉方式，走的是 `sdkLogEnabled()` 的 env 分支
+   * （`installSdkLogger({ enabled })` 传参那条路是另一回事）。它现在是函数、按调用时读 env，
+   * 所以两个状态都能直接验。
+   */
+  it("AIZ_DEBUG_SDK=0 时默认不落盘，改回后恢复（按调用时读 env）", () => {
+    const saved = process.env.AIZ_DEBUG_SDK;
+    try {
+      process.env.AIZ_DEBUG_SDK = "0";
+      expect(sdkLogEnabled()).toBe(false);
+      process.env.AIZ_DEBUG_SDK = "1";
+      expect(sdkLogEnabled()).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.AIZ_DEBUG_SDK;
+      else process.env.AIZ_DEBUG_SDK = saved;
+    }
   });
 
   it("超过单文件上限时轮转为 .1，文件不会无限膨胀", () => {

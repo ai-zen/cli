@@ -182,7 +182,7 @@ async function resolveTarget(): Promise<ChatTarget> {
 async function resumeLastSession(): Promise<ChatTarget | null> {
   const pointer = await readLastSession(process.cwd());
   if (!pointer) return null;
-  const conversation = await conversationRepository.read(pointer.id);
+  const conversation = await conversationRepository().read(pointer.id);
   if (!conversation) return null;
   // 模型由 Agent 定义决定（旧存档里的 modelId 一律忽略）
   return targetFromMessages({

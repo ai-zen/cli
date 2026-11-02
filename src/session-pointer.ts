@@ -24,7 +24,13 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { CLI_DIR } from "./config.js";
 
-const POINTER_FILE = join(CLI_DIR, "last-session.json");
+/**
+ * 指针文件路径。每次调用重新拼接：`CLI_DIR` 是会变的活绑定（测试会在用例之间换
+ * `AI_ZEN_DIR`），**在模块顶层固化成常量**才是快照。
+ */
+function pointerFile(): string {
+  return join(CLI_DIR, "last-session.json");
+}
 const FILE_VERSION = 1;
 
 /** 单个工作目录的续接记录 */
@@ -46,7 +52,7 @@ async function readPointerFile(): Promise<PointerFile> {
   const empty: PointerFile = { version: FILE_VERSION, sessions: {} };
   let parsed: any;
   try {
-    parsed = JSON.parse(await fs.readFile(POINTER_FILE, "utf-8"));
+    parsed = JSON.parse(await fs.readFile(pointerFile(), "utf-8"));
   } catch {
     return empty;
   }
@@ -71,9 +77,9 @@ async function writePointerFile(file: PointerFile): Promise<void> {
   } catch {
     await fs.mkdir(CLI_DIR, { recursive: true });
   }
-  const tmp = `${POINTER_FILE}.tmp`;
+  const tmp = `${pointerFile()}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(file, null, 2), "utf-8");
-  await fs.rename(tmp, POINTER_FILE);
+  await fs.rename(tmp, pointerFile());
 }
 
 /** 读取指定工作目录的「上一轮会话 id」；无记录时返回 null */

@@ -23,26 +23,17 @@ const { calls, fakeConfig, fakeAgents } = vi.hoisted(() => {
   return { calls, fakeConfig, fakeAgents };
 });
 
-vi.mock("../../config.js", async (importOriginal) => {
-  const actual = await importOriginal<any>();
-  return {
-    ...actual,
-    readConfig: vi.fn(async () => fakeConfig()),
-    readReasoningPresets: vi.fn(async () => ({})),
-    readMcpConfig: vi.fn(async (scope: string) => ({ mcpServers: {}, scope })),
-  };
-});
-
-vi.mock("../../agents-store.js", async (importOriginal) => {
-  const actual = await importOriginal<any>();
-  return { ...actual, readAgentStore: vi.fn(async () => actual.createAgentStore(fakeAgents().agents as any, [])) };
-});
+// 不用 `vi.mock` 整模块替换：进程内共享模块（`isolate: false`）时它会泄漏到其他测试文件，
+// 让它们读到这里的假配置。改成注入读取器，边界只在这个文件里。
 
 import { useWizardHost } from "./use-wizard-host.js";
-import { readConfig } from "../../config.js";
+import { createAgentStore } from "../../agents-store.js";
+
+/** 可替换的读配置实现：用例按需改它，代替原来的 `vi.mocked(readConfig)` */
+let readConfigImpl: () => Promise<any> = async () => fakeConfig();
 
 const flush = async () => {
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await new Promise((resolve) => setTimeout(resolve, 4));
 };
 
 /** 探针：把 hook 的状态写成一行，按键触发各个入口 */
@@ -56,6 +47,12 @@ function Probe({ hasSession }: { hasSession: boolean }) {
     },
     reloadSession: () => {
       calls.reloaded += 1;
+    },
+    readers: {
+      readConfig: () => readConfigImpl(),
+      readMcpConfig: async () => ({ mcpServers: {} }),
+      readReasoningPresets: async () => ({}),
+      readAgentStore: async () => createAgentStore(fakeAgents().agents as any, []),
     },
   });
   useInput((char) => {
@@ -108,7 +105,7 @@ describe("useWizardHost", () => {
     calls.notify = [];
     calls.restarted = 0;
     calls.reloaded = 0;
-    vi.mocked(readConfig).mockImplementation(async () => fakeConfig() as any);
+    readConfigImpl = async () => fakeConfig();
   });
 
   it("打开向导：先读齐快照再接管", async () => {
@@ -120,7 +117,9 @@ describe("useWizardHost", () => {
   });
 
   it("读配置失败时只报错，不进向导", async () => {
-    vi.mocked(readConfig).mockRejectedValueOnce(new Error("EACCES"));
+    readConfigImpl = async () => {
+      throw new Error("EACCES");
+    };
     const p = await probe();
     await p.press("o");
     expect(p.frame()).toBe("step=null config=null agents=0 mcp=null store=null");
@@ -129,11 +128,11 @@ describe("useWizardHost", () => {
   });
 
   it("`/key`：当前模型没绑端点时提示，不进向导", async () => {
-    vi.mocked(readConfig).mockResolvedValueOnce({
+    readConfigImpl = async () => ({
       models: [{ id: "gpt-6", name: "GPT 6", endpointId: "missing" }],
       endpoints: [],
       imageModels: [],
-    } as any);
+    });
     const p = await probe();
     await p.press("k");
     expect(p.frame()).toBe("step=null config=null agents=0 mcp=null store=null");

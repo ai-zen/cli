@@ -54,23 +54,41 @@ import { t } from "./i18n/index.js";
 
 // ==================== 根目录 ====================
 
-export const AI_ZEN_DIR = process.env.AI_ZEN_DIR || join(
-  process.env.HOME || process.env.USERPROFILE || "",
-  ".ai-zen",
-);
+/**
+ * 解析配置根目录：显式 `AI_ZEN_DIR` 优先，否则 `$HOME/.ai-zen`。
+ *
+ * 单独抽成函数是为了让 {@link refreshPaths} 能在测试用例之间重算。
+ */
+function resolveRoot(): string {
+  return (
+    process.env.AI_ZEN_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".ai-zen")
+  );
+}
+
+/**
+ * 全部路径都导出为 `let`：ESM 的 import 是**活绑定**，导入方每次取值都读到最新值
+ * （实测：跨模块 import 的常量在 `refreshPaths()` 之后立刻是新目录），所以 `refreshPaths()`
+ * 不需要召回任何引用点。
+ *
+ * **会失效的是快照**：在模块顶层把路径塞进常量或实例（`const POINTER_FILE = join(CLI_DIR, …)`、
+ * `new Repo(CONVERSATIONS_DIR)`、`new ConfigManager(CONFIG_FILE)`）—— 那个值在模块求值那一刻就定死了。
+ * 这类地方一律改成函数（`pointerFile()` / `conversationRepository()` / `configManager()`），
+ * 由调用时机决定读哪个目录。
+ */
+export let AI_ZEN_DIR = resolveRoot();
 
 // ==================== CLI 运行时目录 ====================
 
-export const CLI_DIR = join(AI_ZEN_DIR, "cli");
-export const CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
-export const CONVERSATIONS_DIR = join(CLI_DIR, "conversations");
+export let CLI_DIR = join(AI_ZEN_DIR, "cli");
+export let CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
+export let CONVERSATIONS_DIR = join(CLI_DIR, "conversations");
 
 // ==================== 共享目录 ====================
 
-export const AGENTS_DIR = join(AI_ZEN_DIR, "agents");
-export const SUB_AGENTS_DIR = join(AI_ZEN_DIR, "sub-agents");
-export const SKILLS_DIR = join(AI_ZEN_DIR, "skills");
-export const TOOLS_DIR = join(AI_ZEN_DIR, "tools");
+export let AGENTS_DIR = join(AI_ZEN_DIR, "agents");
+export let SUB_AGENTS_DIR = join(AI_ZEN_DIR, "sub-agents");
+export let SKILLS_DIR = join(AI_ZEN_DIR, "skills");
+export let TOOLS_DIR = join(AI_ZEN_DIR, "tools");
 
 // ==================== 项目级目录（基于 CWD）====================
 
@@ -87,13 +105,14 @@ export const PROJECT_HANDOFFS_DIR = join(process.cwd(), ".ai-zen", "handoffs");
 
 // ==================== 业界通用规范 ~/.agents/ 目录 ====================
 
-const USER_AGENTS_DIR = join(
-  process.env.HOME || process.env.USERPROFILE || "",
-  ".agents",
-);
+function resolveUserAgentsDir(): string {
+  return join(process.env.HOME || process.env.USERPROFILE || "", ".agents");
+}
 
-export const USER_AGENTS_SKILLS_DIR = join(USER_AGENTS_DIR, "skills");
-export const USER_AGENTS_MCP_CONFIG_FILE = join(USER_AGENTS_DIR, "mcp.json");
+let USER_AGENTS_DIR = resolveUserAgentsDir();
+
+export let USER_AGENTS_SKILLS_DIR = join(USER_AGENTS_DIR, "skills");
+export let USER_AGENTS_MCP_CONFIG_FILE = join(USER_AGENTS_DIR, "mcp.json");
 
 // ==================== 业界通用规范 项目/.agents/ 目录 ====================
 
@@ -103,13 +122,22 @@ export const PROJECT_AGENTS_MCP_CONFIG_FILE = join(PROJECT_AGENTS_DIR, "mcp.json
 
 // ==================== MCP 配置 ====================
 
-export const MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
+export let MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
 export const PROJECT_MCP_CONFIG_FILE = join(process.cwd(), ".ai-zen", "mcp.json");
 export const SHARED_MCP_CONFIG_FILE = join(process.cwd(), ".mcp.json");
 
 // ==================== SDK ConfigManager ====================
 
-const sdkConfigMgr = new SdkConfigManager(CONFIG_FILE);
+/**
+ * 按**当前** `CONFIG_FILE` 造一个 ConfigManager。
+ *
+ * 不缓存实例：`ConfigManager` 在构造时固化路径，缓存它等于把路径也缓存了 ——
+ * 进程内共享模块时（测试换 `AI_ZEN_DIR`）就会一直读写旧目录。构造本身很轻，
+ * 重活（bootstrap / 解析）在 `read()` 里，且由 `ensureConfigDir()` 兜住只做一次。
+ */
+function configManager(): SdkConfigManager {
+  return new SdkConfigManager(CONFIG_FILE);
+}
 
 // ==================== 目录初始化 ====================
 
@@ -122,6 +150,34 @@ const sdkConfigMgr = new SdkConfigManager(CONFIG_FILE);
  * `await` 窗口期内不成立，并发调用会一起穿透、重复 bootstrap。
  */
 let initPromise: Promise<void> | null = null;
+
+/**
+ * 重新解析全部路径（**仅测试使用**）。
+ *
+ * 生产代码从不在运行期改 `AI_ZEN_DIR`，所以业务路径上不需要调用它。它存在只是因为
+ * 测试会给每个用例换一个临时目录，而进程内共享模块（`vitest isolate: false`）时，
+ * 模块顶层的路径常量只在首次加载时算过一次。
+ *
+ * 调用后：导入方靠活绑定自动看到新值（见文件顶部注释）；持有快照的模块由各自的
+ * 工厂/重置负责 —— 测试侧统一走 `src/test-support/temp-dir.ts` 的 `useTempAiZenDir()`，
+ * 它保证「设 env + 刷新路径 + 收尾还原」三件事一起做。
+ */
+export function refreshPaths(): void {
+  AI_ZEN_DIR = resolveRoot();
+  CLI_DIR = join(AI_ZEN_DIR, "cli");
+  CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
+  CONVERSATIONS_DIR = join(CLI_DIR, "conversations");
+  AGENTS_DIR = join(AI_ZEN_DIR, "agents");
+  SUB_AGENTS_DIR = join(AI_ZEN_DIR, "sub-agents");
+  SKILLS_DIR = join(AI_ZEN_DIR, "skills");
+  TOOLS_DIR = join(AI_ZEN_DIR, "tools");
+  MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
+  USER_AGENTS_DIR = resolveUserAgentsDir();
+  USER_AGENTS_SKILLS_DIR = join(USER_AGENTS_DIR, "skills");
+  USER_AGENTS_MCP_CONFIG_FILE = join(USER_AGENTS_DIR, "mcp.json");
+  // 一次性初始化缓存是按旧目录算的，必须作废，否则新目录永远不会被 bootstrap
+  initPromise = null;
+}
 
 /**
  * 确保配置目录和默认文件存在（进程内只真正执行一次）。
@@ -143,7 +199,7 @@ export async function ensureConfigDir(): Promise<void> {
 
 async function initOnce(): Promise<void> {
   // SDK bootstrap：目录 + config.json + default Agent + default SubAgent + 出厂思考策略表
-  await sdkConfigMgr.bootstrap();
+  await configManager().bootstrap();
 
   // CLI 运行时目录（recursive 模式已存在时不报错，无需先 access 探测）
   for (const dir of [CLI_DIR, CONVERSATIONS_DIR]) {
@@ -161,7 +217,7 @@ async function initOnce(): Promise<void> {
 
 export async function readConfig(): Promise<AppConfig> {
   await ensureConfigDir();
-  return await sdkConfigMgr.read();
+  return await configManager().read();
 }
 
 /**
@@ -172,12 +228,12 @@ export async function readConfig(): Promise<AppConfig> {
  */
 export async function readReasoningPresets(): Promise<ReasoningPresets> {
   // 表归 SDK 管（CLI / 桌面端共享），此处只做透传；缺失/损坏时 SDK 会回落出厂种子
-  return await sdkConfigMgr.readReasoningPresets();
+  return await configManager().readReasoningPresets();
 }
 
 export async function saveConfig(config: AppConfig): Promise<void> {
   await ensureConfigDir();
-  await sdkConfigMgr.write(config);
+  await configManager().write(config);
 }
 
 // ==================== MCP 配置读写 ====================

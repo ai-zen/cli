@@ -117,6 +117,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     if (field === "fnParams") {
       return (
         <PromptEditorScreen
+          openEditor={ctx.props.openEditor}
           columns={cols}
           rows={rows}
           title={t("wiz.agent.subscreenTitle", { kind: agentKindLabel(agentKind), id: def.id, label: t("field.paramsSchema") })}
@@ -137,6 +138,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     if (field === "fnDesc") {
       return (
         <PromptEditorScreen
+          openEditor={ctx.props.openEditor}
           columns={cols}
           rows={rows}
           title={t("wiz.agent.subscreenTitle", { kind: agentKindLabel(agentKind), id: def.id, label: t("field.functionDescription") })}
@@ -152,6 +154,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     // field === "prompt"
     return (
       <PromptEditorScreen
+        openEditor={ctx.props.openEditor}
         columns={cols}
         rows={rows}
         title={t("wiz.agent.subscreenTitle", { kind: agentKindLabel(agentKind), id: def.id, label: t("field.prompt") })}

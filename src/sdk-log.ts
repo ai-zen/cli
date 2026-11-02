@@ -30,18 +30,22 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { setLogger, type Logger } from "@ai-zen/agents-sdk";
+import { AI_ZEN_DIR } from "./config.js";
 
-/** 共享根目录 `~/.ai-zen`（与 config.ts 的 AI_ZEN_DIR 同一约定） */
-const AI_ZEN_DIR =
-  process.env.AI_ZEN_DIR ||
-  join(process.env.HOME || process.env.USERPROFILE || "", ".ai-zen");
+/**
+ * 日志落盘路径（测试与用户都可能改写，故每次重新解析）。
+ *
+ * 不在模块加载时固化成常量：`AI_ZEN_DIR` 是活绑定，测试会在用例之间改它 ——
+ * 而**顶层常量**拿到的才是快照。
+ */
+export function sdkLogFile(root: string = AI_ZEN_DIR): string {
+  return process.env.AIZ_SDK_LOG_FILE || join(root, "logs", "sdk.log");
+}
 
 /** 是否把 SDK 日志落盘（默认开启，`AIZ_DEBUG_SDK=0` 关闭） */
-export const SDK_LOG_ENABLED = process.env.AIZ_DEBUG_SDK !== "0";
-
-/** 日志落盘路径（测试与用户都可能改写，故导出常量） */
-export const SDK_LOG_FILE =
-  process.env.AIZ_SDK_LOG_FILE || join(AI_ZEN_DIR, "logs", "sdk.log");
+export function sdkLogEnabled(): boolean {
+  return process.env.AIZ_DEBUG_SDK !== "0";
+}
 
 /** 单文件上限 2MB；超出后轮转为 `<file>.1`（只保留上一份，总量有界） */
 export const MAX_LOG_BYTES = 2 * 1024 * 1024;
@@ -87,6 +91,20 @@ const deliveredOnce = new Set<string>();
 /** 界面还没起来时攒下的 warn / error，注册 sink 时补推 */
 const pending: Array<{ level: "warn" | "error"; message: string }> = [];
 
+/**
+ * 重置全部模块级投递状态（**仅测试使用**）。
+ *
+ * 去重表与封顶计数器是进程级单例：进程内共享模块跑测试时，前一个用例上过栏的文案
+ * 会让后一个用例看不见同一条日志，表现为“日志没出来”的假失败。
+ */
+export function resetSdkLogState(): void {
+  noticeSink = null;
+  delivered = 0;
+  capReported = false;
+  deliveredOnce.clear();
+  pending.length = 0;
+}
+
 function deliver(level: "warn" | "error", message: string): void {
   if (!message) return;
   if (!noticeSink) {
@@ -98,7 +116,7 @@ function deliver(level: "warn" | "error", message: string): void {
   if (delivered >= MAX_SDK_NOTICES) {
     if (!capReported) {
       capReported = true;
-      noticeSink("warn", `More SDK warnings suppressed — see ${SDK_LOG_FILE}`);
+      noticeSink("warn", `More SDK warnings suppressed — see ${sdkLogFile()}`);
     }
     return;
   }
@@ -157,8 +175,8 @@ export function createSilentLogger(): Logger {
 export function installSdkLogger(
   options: { enabled?: boolean; file?: string } = {},
 ): Logger {
-  const enabled = options.enabled ?? SDK_LOG_ENABLED;
-  const file = options.file ?? SDK_LOG_FILE;
+  const enabled = options.enabled ?? sdkLogEnabled();
+  const file = options.file ?? sdkLogFile();
   const logger = enabled ? createFileLogger(file) : createSilentLogger();
   setLogger(logger);
   return logger;

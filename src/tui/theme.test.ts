@@ -14,9 +14,12 @@ import {
 } from "./theme.js";
 
 describe("颜色工具", () => {
-  it("parseHex / toHex 往返一致", () => {
-    expect(toHex(parseHex("#22d3ee"))).toBe("#22d3ee");
-    expect(toHex(parseHex("#000000"))).toBe("#000000");
+  it("parseHex 按 RGB 通道拆分，toHex 反向拼接并做钳制", () => {
+    // 通道顺序必须钉死：往返恒等式发现不了 R/B 互换
+    expect(parseHex("#22d3ee")).toEqual([0x22, 0xd3, 0xee]);
+    expect(toHex([0x22, 0xd3, 0xee])).toBe("#22d3ee");
+    // mixColor 的插值结果是浮点、端点外也可能越界，靠 toHex 的钳制 + 四舍五入兜住
+    expect(toHex([-5, 300, 12.6])).toBe("#00ff0d");
   });
 
   it("mixColor 端点与中值", () => {

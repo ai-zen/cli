@@ -1,5 +1,6 @@
+import { existsSync, statSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { formatKeyEvent, terminalSummary, keyDebug, KEY_DEBUG_ENABLED } from "./key-debug.js";
+import { formatKeyEvent, terminalSummary, keyDebug, KEY_DEBUG_ENABLED, KEY_DEBUG_FILE } from "./key-debug.js";
 
 describe("按键诊断日志", () => {
   it("formatKeyEvent 记录 input、置位的修饰键与 raw 状态", () => {
@@ -22,8 +23,17 @@ describe("按键诊断日志", () => {
     expect(line).toContain(`platform=${process.platform}`);
   });
 
-  it("默认（未开 AIZ_DEBUG_KEYS）不产生任何写入", () => {
-    if (KEY_DEBUG_ENABLED) return; // 该环境变量由测试进程启动时决定，开启时不校验
-    expect(() => keyDebug("a", {})).not.toThrow();
+  /**
+   * 开关是加载时固化的常量（`AIZ_DEBUG_KEYS=1` 决定），所以只能靠「文件是否长大」判定行为，
+   * 不能自己切开关。两个分支都要有真断言：未开启时**一个字节都不能写**（否则每键一次同步写盘）；
+   * 开启时**必须**写（否则诊断日志根本不存在，而用户正是为它开的开关）。
+   */
+  it("keyDebug 落盘行为与开关一致（关闭时不写、开启时追加一行）", () => {
+    const size = () => (existsSync(KEY_DEBUG_FILE) ? statSync(KEY_DEBUG_FILE).size : 0);
+    const before = size();
+    keyDebug("a", {});
+    const after = size();
+    if (KEY_DEBUG_ENABLED) expect(after).toBeGreaterThan(before);
+    else expect(after).toBe(before);
   });
 });

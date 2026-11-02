@@ -4,36 +4,19 @@
 // `saveConversation()` 漏写 cwd、stdio 的 `--save` 不更新指针、还写了一个已废弃的
 // `modelId`。这里把收敛后的契约钉住：保留 createdAt、总是写 cwd、指针可开关。
 //
-// 目录用 mock 顶成临时目录（`CONVERSATIONS_DIR` 是模块级常量，只能在模块求值时替换），
-// 指针函数整体 mock —— 否则会写进真实的 `~/.ai-zen/cli/last-session.json`。
+// 目录走临时 `AI_ZEN_DIR`（见 `useTempAiZenDir`）：绝不能写进真实的
+// `~/.ai-zen/cli/conversations/` 与 `last-session.json`。
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-vi.mock("./config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./config.js")>();
-  const { join: joinPath } = await import("node:path");
-  const { tmpdir: tempDir } = await import("node:os");
-  const root = joinPath(tempDir(), `aiz-conv-test-${process.pid}`);
-  return {
-    ...actual,
-    CONVERSATIONS_DIR: joinPath(root, "conversations"),
-    CLI_DIR: joinPath(root, "cli"),
-  };
-});
-
-vi.mock("./session-pointer.js", () => ({
-  writeLastSession: vi.fn(async () => {}),
-  readLastSession: vi.fn(async () => null),
-  clearLastSession: vi.fn(async () => {}),
-}));
-
 import { persistConversation, type Conversation } from "./conversation-repository.js";
-import { writeLastSession } from "./session-pointer.js";
+import { readLastSession } from "./session-pointer.js";
+import { useTempAiZenDir } from "./test-support/temp-dir.js";
 
-const ROOT = join(tmpdir(), `aiz-conv-test-${process.pid}`);
-const CONV_DIR = join(ROOT, "conversations");
+const zen = useTempAiZenDir("aiz-conv-test-");
+const ROOT = zen.dir;
+const CONV_DIR = join(ROOT, "cli", "conversations");
 
 /** 最小用户消息（只用到 role / content） */
 const userMsg = (text: string) => ({ role: "user", content: text }) as never;
@@ -42,11 +25,14 @@ const readBack = (id: string): Conversation =>
   JSON.parse(readFileSync(join(CONV_DIR, `${id}.json`), "utf-8")) as Conversation;
 
 beforeEach(() => {
-  vi.mocked(writeLastSession).mockClear();
+  // 进程内共享模块：别的文件会改 `AI_ZEN_DIR`，每个用例前钉回本文件的临时根
+  zen.pin();
+  // 每例从空目录开始
+  rmSync(ROOT, { recursive: true, force: true });
 });
 
 afterAll(() => {
-  rmSync(ROOT, { recursive: true, force: true });
+  zen.cleanup();
 });
 
 describe("persistConversation（会话落盘的唯一入口）", () => {
@@ -87,7 +73,7 @@ describe("persistConversation（会话落盘的唯一入口）", () => {
 
   it("默认更新「本目录上一轮会话」指针", async () => {
     await persistConversation({ id: "chat_pointer_on", messages: [userMsg("x")], cwd: "/work" });
-    expect(writeLastSession).toHaveBeenCalledWith("/work", "chat_pointer_on");
+    expect((await readLastSession("/work"))?.id).toBe("chat_pointer_on");
   });
 
   it("setAsLastSession=false 时不碰指针（stdio 的 --save 语义）", async () => {
@@ -97,7 +83,7 @@ describe("persistConversation（会话落盘的唯一入口）", () => {
       cwd: "/work",
       setAsLastSession: false,
     });
-    expect(writeLastSession).not.toHaveBeenCalled();
+    expect(await readLastSession("/work")).toBeNull();
   });
 
   it("返回会话 id（调用方要用它展示「已保存」）", async () => {
@@ -129,10 +115,11 @@ describe("persistConversation（会话落盘的唯一入口）", () => {
       spy.mockRestore();
     }
 
-    expect(seen).toHaveLength(1);
-    expect(seen[0]!.from.endsWith(".json.tmp")).toBe(true);
-    expect(seen[0]!.to.endsWith("chat_atomic_mech.json")).toBe(true);
-    expect(seen[0]!.tmpExisted).toBe(true);
+    // 指针文件也走 tmp + rename，这里只看会话文件那一次
+    const conversationRenames = seen.filter((r) => r.to.endsWith("chat_atomic_mech.json"));
+    expect(conversationRenames).toHaveLength(1);
+    expect(conversationRenames[0]!.from.endsWith(".json.tmp")).toBe(true);
+    expect(conversationRenames[0]!.tmpExisted).toBe(true);
     // rename 之后临时文件不残留
     expect(readdirSync(CONV_DIR).filter((f) => f.endsWith(".tmp"))).toEqual([]);
   });

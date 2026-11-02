@@ -49,63 +49,65 @@ const { created, createFakeSession } = vi.hoisted(() => {
   return { created, createFakeSession };
 });
 
-vi.mock("../chat-session.js", () => ({
-  ChatSession: {
-    create: vi.fn(async (_options: unknown, notifier: any) => {
-      const session = createFakeSession(notifier);
-      created.notifier = notifier;
-      created.session = session;
-      return session;
-    }),
-  },
-  // chat-commands 也从这里 import 它
-  stripCwdNote: (text: string) => text,
-}));
+/**
+ * 全部依赖改为**注入**（`Chat` 的 `deps`），不再 `vi.mock`：
+ * 模块级 mock 是全局注册的，进程内共享模块（`isolate: false`）时会污染其他测试文件
+ * —— 实测它会把这个文件里的假 `readConfig`（models 为空）泄漏给 `agent-creator` 等。
+ */
+const fakeAgentStore = () => ({ agents: [], subAgents: [], save: async () => {}, remove: async () => {} }) as any;
 
-vi.mock("../../config.js", async (importOriginal) => {
-  const actual = await importOriginal<any>();
-  return {
-    ...actual,
-    readConfig: vi.fn(async () => ({ models: [], endpoints: [], imageModels: [] })),
-    readReasoningPresets: vi.fn(async () => ({})),
-    readMcpConfig: vi.fn(async () => ({ mcpServers: {} })),
-    saveConfig: vi.fn(async () => undefined),
-    writeMcpConfig: vi.fn(async () => undefined),
-  };
-});
+/** 空配置 + 空 Agent 仓储：向导与思考档位读取都走它 */
+const fakeConfig = () => ({ models: [], endpoints: [], imageModels: [] }) as any;
+const fakeReaders = {
+  readConfig: async () => fakeConfig(),
+  readMcpConfig: async () => ({ mcpServers: {} }) as any,
+  readReasoningPresets: async () => ({}),
+  readAgentStore: async () => fakeAgentStore(),
+};
 
-vi.mock("../../agents-store.js", async (importOriginal) => {
-  const actual = await importOriginal<any>();
-  return { ...actual, readAgentStore: vi.fn(async () => actual.createAgentStore([], [])) };
-});
+const fakeIndex = [
+  { path: "src/tui", dir: true },
+  { path: "src/tui/screens/chat.tsx", dir: false },
+  { path: "README.md", dir: false },
+];
 
-// `@` 补全的候选源：不打桩就会真去 spawn `git ls-files`
-vi.mock("../file-index.js", () => ({
-  listProjectPaths: vi.fn(async () => [
-    { path: "src/tui", dir: true },
-    { path: "src/tui/screens/chat.tsx", dir: false },
-    { path: "README.md", dir: false },
-  ]),
-}));
-
-// 剪贴板：不打桩就会真去 spawn `pbpaste` / `wl-paste`
+/** 剪贴板桩：不打桩就会真去 spawn `pbpaste` / `wl-paste` */
 const clipboardMock = vi.hoisted(() => ({
   image: { kind: "none" } as { kind: string; image?: { base64: string; mime: string } },
   text: null as string | null,
-}));
-vi.mock("../../clipboard.js", () => ({
-  readClipboardImage: vi.fn(async () => clipboardMock.image),
-  readClipboardText: vi.fn(async () => clipboardMock.text),
 }));
 
 import { Chat } from "./chat.js";
 
 /** 等 effect / Promise / FrameBuffer 合帧跑完（合帧间隔 60ms） */
-const flush = async (ms = 80) => {
+const flush = async (ms = 4) => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-const mount = () => render(<Chat agentId="default" />);
+const mount = () =>
+  render(
+    <Chat
+      agentId="default"
+      deps={{
+        readConfig: async () => fakeConfig(),
+        readReasoningPresets: async () => ({}),
+        readAgentStore: async () => fakeAgentStore(),
+        createSession: (async (_options: unknown, notifier: any) => {
+          const session = createFakeSession(notifier);
+          created.notifier = notifier;
+          created.session = session;
+          return session;
+        }) as any,
+        listProjectPaths: async () => fakeIndex as any,
+        readClipboardImage: async () => clipboardMock.image as any,
+        readClipboardText: async () => clipboardMock.text,
+        // 向导路径（`/config`、`/key`）也要注入，否则会读写真实配置目录
+        wizardReaders: fakeReaders,
+        saveConfig: async () => {},
+        writeMcpConfig: async () => {},
+      }}
+    />,
+  );
 
 describe("Chat 集成（拆分前的护栏）", () => {
   beforeEach(() => {
@@ -366,7 +368,7 @@ describe("`@` 文件路径补全", () => {
     stdin.write("@chat");
     await flush();
     stdin.write("\u001b");
-    await flush();
+    await flush(30); // lone ESC 需 ~20ms（ink 序列判定）
     const frame = lastFrame() ?? "";
     expect(frame).toContain("@chat");
     expect(frame).not.toContain("screens/chat.tsx");
@@ -432,7 +434,7 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
     expect(lastFrame() ?? "").toContain("已附加 1 张图片");
 
     stdin.write("\u001b");
-    await flush();
+    await flush(30); // lone ESC 需 ~20ms（ink 序列判定）
     const frame = lastFrame() ?? "";
     expect(frame).not.toContain("已附加 1 张图片");
     expect(frame).toContain("看这张");

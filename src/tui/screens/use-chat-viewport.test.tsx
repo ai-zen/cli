@@ -33,18 +33,25 @@ function Probe({ totalLines, budget }: { totalLines: number; budget: number }) {
   return <Text>top={vp.viewTop === null ? "null" : String(vp.viewTop)}</Text>;
 }
 
-const flush = async () => {
-  await new Promise((resolve) => setTimeout(resolve, 40));
+/** 等到帧真正变化：先给 2ms（覆盖绝大多数按键），没变再逐毫秒轮询到 ~26ms（覆盖 lone ESC） */
+const waitFrame = async (getFrame: () => string) => {
+  const start = getFrame();
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  if (getFrame() !== start) return;
+  for (let i = 0; i < 24; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    if (getFrame() !== start) return;
+  }
 };
 
 /** 挂载探针，返回「发键 + 读当前 top」的小工具 */
 async function probe(totalLines: number, budget: number) {
   const { stdin, lastFrame, unmount } = render(<Probe totalLines={totalLines} budget={budget} />);
-  await flush();
+  await new Promise((resolve) => setTimeout(resolve, 5));
   const top = () => (lastFrame() ?? "").trim();
   const press = async (seq: string) => {
     stdin.write(seq);
-    await flush();
+    await waitFrame(top);
   };
   return { top, press, unmount };
 }
@@ -66,7 +73,10 @@ describe("useChatViewport", () => {
 
   it("连续 PgUp 到顶后停在第 0 行（越界方向被吃掉）", async () => {
     const p = await probe(100, 10);
-    for (let i = 0; i < 30; i++) await p.press("\u001b[5~");
+    for (let i = 0; i < 20 && p.top() !== "top=0"; i++) await p.press("\u001b[5~");
+    expect(p.top()).toBe("top=0");
+    // 到顶后再按一次：越界方向要被吃掉，不能变成负数
+    await p.press("\u001b[5~");
     expect(p.top()).toBe("top=0");
     p.unmount();
   });
@@ -74,7 +84,7 @@ describe("useChatViewport", () => {
   it("往下翻回贴底后自动恢复跟随最新内容（null，而不是 0）", async () => {
     const p = await probe(100, 10);
     await p.press("\u001b[5~");
-    for (let i = 0; i < 30; i++) await p.press("\u001b[6~");
+    for (let i = 0; i < 20 && p.top() !== "top=null"; i++) await p.press("\u001b[6~");
     expect(p.top()).toBe("top=null");
     p.unmount();
   });

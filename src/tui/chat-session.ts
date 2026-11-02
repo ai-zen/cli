@@ -101,6 +101,14 @@ export interface ChatSessionOptions {
    * 返回 `null` 表示跳过本次迁移；未提供时按默认执行者（原 agent 自交接）直接迁移。
    */
   requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
+  /**
+   * 可注入的 Agent 工厂 / Scope 重置。缺省用真实实现；测试注入假实现即可，
+   * **不必** `vi.mock("../agent-creator.js")` —— 进程内共享模块时模块级 mock 会串。
+   */
+  deps?: {
+    createAgent?: typeof createAgent;
+    resetScope?: typeof resetScope;
+  };
 }
 
 /** 去掉 CwdTrackerPlugin 追加在用户消息末尾的工作目录提示（转发自 ./text.js） */
@@ -175,6 +183,9 @@ export class ChatSession {
    * 而选中态是按 id 匹配的——残留的选中 id 会突然「接上」新一轮的子 Agent。
    */
   private subAgentIdSeq = 0;
+  /** Agent 工厂 / Scope 重置（构造时可注入，见 `ChatSessionOptions.deps`） */
+  private readonly createAgentFn: typeof createAgent;
+  private readonly resetScopeFn: typeof resetScope;
 
   private constructor(
     handoffService: HandoffService,
@@ -191,6 +202,8 @@ export class ChatSession {
     this.currentName = ctx.currentName;
     this.notifier = notifier;
     this.requestMode = options.requestMode;
+    this.createAgentFn = options.deps?.createAgent ?? createAgent;
+    this.resetScopeFn = options.deps?.resetScope ?? resetScope;
   }
 
   /** 创建会话：装配 Agent、插件与「变更信号」 */
@@ -202,7 +215,8 @@ export class ChatSession {
 
     // 先建 Agent：模型来自 Agent 定义（`createAgent` 内部解析 modelId），
     // 阈值再按该模型查配置——不存在「CLI 以为的模型」与「实发模型」两套值。
-    const agent = await createAgent({ messages: options.messages, agentId: options.agentId });
+    const createAgentFn = options.deps?.createAgent ?? createAgent;
+    const agent = await createAgentFn({ messages: options.messages, agentId: options.agentId });
     const model = config.models.find((m) => m.id === agent.definition.modelId);
     // 阈值由配置直接给出（旧字段已在 SDK 的 ConfigManager.read() 里迁移过）
     const tokenThresholds = model?.tokenThresholds;
@@ -340,7 +354,7 @@ export class ChatSession {
 
     this.dispose();
     this.clearSubAgents();
-    const agent = await createAgent({
+    const agent = await this.createAgentFn({
       agentId: this.agentId === "default" ? undefined : this.agentId,
     });
     this.agent = agent;
@@ -364,8 +378,8 @@ export class ChatSession {
     const messages = [...this.agent.messages];
     this.dispose();
     this.clearSubAgents();
-    await resetScope();
-    const agent = await createAgent({
+    await this.resetScopeFn();
+    const agent = await this.createAgentFn({
       messages,
       agentId: this.agentId === "default" ? undefined : this.agentId,
     });

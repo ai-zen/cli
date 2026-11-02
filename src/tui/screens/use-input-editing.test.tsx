@@ -9,7 +9,7 @@ import { setLocale } from "../../i18n/index.js";
 import { useInputEditing } from "./use-input-editing.js";
 
 const flush = async () => {
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await new Promise((resolve) => setTimeout(resolve, 4));
 };
 
 function Probe({ initialText, log }: { initialText?: string; log: string[] }) {
