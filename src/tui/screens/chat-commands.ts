@@ -222,6 +222,9 @@ const cmdBack: CommandHandler = async ({ session, push, rows, exit, pick }) => {
     return;
   }
   const text = session.rollbackTo(Number(choice));
+  // 撤回也要落盘：否则存档里仍留着被撤回的消息，下次 `/load` 或重启就「复活」。
+  // `save()` 会顺带更新 last-session 指针 —— 刚撤回的会话就是本目录的上一轮，符合预期。
+  await session.save();
   exit({ restart: true, messages: session.messages, initialInput: text });
 };
 
