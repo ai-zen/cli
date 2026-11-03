@@ -20,11 +20,11 @@ Migration is therefore "handoff + onboarding": the old agent steps down, the new
 Every handoff (manual or automatic) produces one Markdown file:
 
 ```
-<project>/.ai-zen/handoffs/<YYYYMMDD-HHmmss>-<conversationId first 8 chars>.md
+<project>/.ai-zen/handoffs/<YYYYMMDD-HHmmss>.md
 ```
 
 - The directory sits inside the project so the document can be reviewed and committed alongside the code.
-- The file name is deterministic and contains the originating conversation id, making it easy to trace back.
+- The file name is a plain timestamp down to the second — no conversation id: session names are hand-edited, so the suffix only made the name harder to read. Two handoffs within the same second are the caller's problem to avoid, not something to paper over with a random suffix.
 - The breakpoint message injected into a new session contains **only the path** — the next agent reads it with `read` when it actually needs the details.
 
 ### The template lives in a Skill, not in code
@@ -69,7 +69,7 @@ Sections produced by the default template:
 
 - **Stopping is code-enforced, not just requested.** During the handoff turn a one-shot `HandoffGuardPlugin` rejects `edit` / `batch_edit` / `rm` / `rename` / `mkdir` / `copy`, and only allows `write` when the target resolves to the handoff file. Rejections are *soft*: the reason is returned to the model as a tool result, so it re-focuses instead of crashing the turn.
 - **Boundary**: this cannot stop `exec` (`echo > file` always works). It reduces accidental damage, it is not a sandbox.
-- **The guardrail relaxes instead of disappearing.** `ContextGuardPlugin` switches from `maxTokens × 1.5` to `maxTokens × 2` while `service.busy` — a handoff happens exactly when context is fullest, but a fuse is still in place.
+- **The guard steps aside by itself.** `ContextGuardPlugin` is wired with `isSuspended: () => handoffService.busy`, so while `service.busy` it skips the overflow check for that turn — a handoff happens exactly when the context is fullest and would otherwise be rejected. The threshold itself stays absolute (no multiplier, no looser tier); whoever imposes the limit lifts it, and nobody patches usage data.
 - **No recursion.** The handoff turn is itself a `send()`; `AutoMigratePlugin` steps aside while `service.busy`, so "handoff triggers migration triggers handoff" cannot happen.
 
 ## Triggering
@@ -102,7 +102,7 @@ Non-interactive environments (pipes, redirects, e2e scripts) have no picker: the
 2. **Handoff turn** — abort in-flight work, run the `self` turn (or the `summary` call), verify the file (`exists` + ≥ 400 bytes, one retry, then degrade).
 3. **`onHandoff`** — log the document path; for migration, save the old conversation **now** (it already contains the handoff turn, so the archive is auditable).
 4. **`migrate` strategy `prune`** — physically drop history, keeping `definition.messages` + one breakpoint message holding the path.
-5. **`onMigrated`** — clear `agent.lastUsage` (otherwise the guardrail would kill the first message of the new session using stale token counts), assign a new conversation id, persist it, update the last-session pointer.
+5. **`onMigrated`** — assign a new conversation id, persist it, update the last-session pointer. It does **not** touch `lastUsage`: that is a read-only value derived from `messages`, so `prune` replacing them already drops the old usage. Letting the guard step aside during the handoff turn is `ContextGuardPlugin.isSuspended`'s job (`() => handoffService.busy`).
 
 The old conversation is always saved before pruning, so a failed handoff never costs you history: you can retry or keep chatting.
 

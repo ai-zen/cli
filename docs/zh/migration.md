@@ -20,11 +20,12 @@ outline: deep
 每一次交接（手动或自动）都会产出一个 Markdown 文件：
 
 ```
-<项目>/.ai-zen/handoffs/<YYYYMMDD-HHmmss>-<会话id前8位>.md
+<项目>/.ai-zen/handoffs/<YYYYMMDD-HHmmss>.md
 ```
 
 - 目录在项目内，便于随代码一起审阅、提交；
-- 文件名确定性可预期，并带原始会话 id，方便回溯；
+- 文件名只到秒、不带会话 id：会话名往往是人手改的，带上只会更难认；同一秒内的两次交接
+  本就该避免，不为它加随机后缀；
 - 注入新会话的断点消息**只包含路径**——接手的 agent 在真正需要细节时才 `read` 它。
 
 ### 模板来自 Skill，不在代码里
@@ -69,7 +70,7 @@ outline: deep
 
 - **「停手」由代码兜底，不只是提示词**：交接回合会临时启用一次性 `HandoffGuardPlugin`，拒绝 `edit` / `batch_edit` / `rm` / `rename` / `mkdir` / `copy`，`write` 仅在目标路径归一后等于交接文档时放行。拒绝是**软拒绝**——原因作为工具结果回给模型，它会转回正题，而不是把整轮交接打断。
 - **边界**：挡不住 `exec`（`echo > file` 总能绕过）。它降低的是误操作概率，不是沙箱。
-- **护栏是放宽而非消失**：`service.busy` 期间 `ContextGuardPlugin` 从 `maxTokens × 1.5` 放宽到 `× 2`——交接恰好发生在上下文最满的时刻，但仍保留熔断。
+- **护栏自己让行**：`ContextGuardPlugin` 接的是 `isSuspended: () => handoffService.busy`，`service.busy` 期间本轮不做超限判定——交接恰好发生在上下文最满的时刻，不放宽必定被打回。阈值本身仍是绝对值（没有倍数、没有放宽档），「谁做限制谁放宽」，没人去改用量数据。
 - **不会递归**：交接回合本身也是一次 `send()`，`AutoMigratePlugin` 在 `service.busy` 时让行，因此「交接触发迁移、迁移再触发交接」不可能发生。
 
 ## 触发方式
@@ -102,7 +103,7 @@ outline: deep
 2. **交接回合** —— 中止在途请求，执行 `self` 回合（或 `summary` 调用），校验文件（存在 + ≥ 400 字节，失败重试一次，再失败降级）；
 3. **`onHandoff`** —— 提示文档路径；若是迁移，此刻保存旧会话（已包含交接回合，归档可审计）；
 4. **`migrate` 的 `prune` 策略** —— 物理剔除历史，只保留 `definition.messages` + 一条只含路径的断点消息；
-5. **`onMigrated`** —— 清空 `agent.lastUsage`（否则护栏会拿陈旧用量误杀新会话的第一条消息），分配新会话 id、落盘、更新「上一轮会话」指针。
+5. **`onMigrated`** —— 分配新会话 id、落盘、更新「上一轮会话」指针。**不碰 `lastUsage`**：它已是从 `messages` 派生的只读值，`prune` 换掉 `messages` 后自然就没有旧用量；交接回合本身的护栏让行由 `ContextGuardPlugin.isSuspended`（接线 `() => handoffService.busy`）负责。
 
 旧会话一定在剔除前保存，因此即使交接失败也不会丢历史：可以重试，也可以继续当前对话。
 

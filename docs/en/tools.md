@@ -18,22 +18,22 @@ These tools are instantiated by the SDK's static registry (`discoverBuiltinTools
 | `read` | Read file contents (supports `range` for partial reads) |
 | `inspect_file` | Inspect file structure (lines, chars, column widths, line-ending style) without reading content |
 | `write` | Write content to a file |
-| `edit` | Replace text in a file (single replacement) |
-| `batch_edit` | Batch-replace text in files |
-| `exec` | Execute a shell command |
-| `spawn` | Execute a shell command asynchronously (returns immediately) |
+| `edit` | Replace text in a file (single replacement; empty `oldText` is rejected, replacement text is written literally) |
+| `batch_edit` | Batch-replace text in a file (applied in order, each on the result of the previous one) |
+| `exec` | Execute a shell command (`timeout` required; reports `exitCode: 0` on success, kills the whole process group on timeout/abort) |
+| `spawn` | Execute a shell command asynchronously (returns immediately; reports `started` only — it does not track the exit status, use `exec` for that) |
 | `mkdir` | Create directories |
 | `rm` | Delete files or directories |
-| `glob` | Scan files with glob patterns |
+| `glob` | Scan files with glob patterns (a missing base directory is an error, not an empty result) |
 | `ls` | List directory contents |
 | `exist` | Check whether a path exists |
 | `find_text` | Search for text inside files |
-| `download_file` | Download a file from a URL |
+| `download_file` | Download a file from a URL (`timeout` required, streamed to disk, never deletes an existing file) |
 | `rename` | Rename or move files/directories |
 | `copy` | Copy files or directories |
 | `sleep` | Wait for the specified number of milliseconds |
 | `view_image` | View/analyze an image (vision models only) |
-| `generate_image` | Generate images from a text description |
+| `generate_image` | Generate images from a text description (endpoints returning only `b64_json` get a file on disk and a local path back) |
 
 ### Availability of the vision and image tools
 

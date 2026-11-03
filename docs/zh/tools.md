@@ -18,22 +18,22 @@ outline: deep
 | `read` | 读取文件内容（支持 `range` 分批读取） |
 | `inspect_file` | 勘察文件结构概况（行数、字符数、列宽分布、行尾风格），不读取内容 |
 | `write` | 写入文件内容 |
-| `edit` | 在文件中替换文本（单次替换） |
-| `batch_edit` | 批量替换文件中的文本 |
-| `exec` | 执行 Shell 命令 |
-| `spawn` | 异步执行 Shell 命令（立即返回） |
+| `edit` | 在文件中替换文本（单次替换；空 `oldText` 直接拒绝，替换文本按字面量写入） |
+| `batch_edit` | 批量替换文件中的文本（按顺序级联，后一条作用于前一条的结果） |
+| `exec` | 执行 Shell 命令（`timeout` 必填；成功报 `exitCode: 0`，超时/中断整组回收子进程） |
+| `spawn` | 异步执行 Shell 命令（立即返回；只报 `started`，不跟踪退出状态——要看结果用 `exec`） |
 | `mkdir` | 创建目录 |
 | `rm` | 删除文件或目录 |
-| `glob` | 用 glob 模式扫描文件 |
+| `glob` | 用 glob 模式扫描文件（基目录不存在时报错，不静默返回空） |
 | `ls` | 列出目录内容 |
 | `exist` | 检查路径是否存在 |
 | `find_text` | 在文件中检索文本 |
-| `download_file` | 从 URL 下载文件 |
+| `download_file` | 从 URL 下载文件（`timeout` 必填，流式写盘，不删除已存在的文件） |
 | `rename` | 重命名或移动文件/目录 |
 | `copy` | 复制文件或目录 |
 | `sleep` | 等待指定毫秒数 |
 | `view_image` | 查看/分析图片（仅视觉模型可用） |
-| `generate_image` | 根据文字描述生成图片 |
+| `generate_image` | 根据文字描述生成图片（端点只回 `b64_json` 时落盘给本地路径） |
 
 ### 视觉与图片工具的可用性
 
