@@ -1,3 +1,59 @@
+## [1.0.0] - 2026-11-03
+
+> First stable release. Everything from the `1.0.0-alpha.x` line — `alpha.1` through
+> `alpha.32` — is folded into this version: nothing was dropped, no alpha behaviour was
+> reverted. The version number is a promise, not a code change: the documented surface (the
+> `ai` command, both run modes, the chat screen and its keybindings, the `/` command set, the
+> configuration center, the config file layout) is now frozen, so `^1.0.0` is safe to depend on.
+>
+> If you are coming from `0.9.0`, read `[1.0.0-alpha.1]` below first — that entry was written
+> as a complete summary of the `0.9.0 → 1.0.0` delta (the `aiz` / `zen` → `ai` rename, dual-mode
+> run, the Ink full-screen rewrite). Everything after it is listed release by release.
+
+### 📌 What this release ships on
+
+- `@ai-zen/agents-sdk@1.0.0` (exact) + `@ai-zen/agents-core@^4.5.4`. The SDK's 1.0.0 is the
+  release where its own public surface freezes, so this pair is the first combination whose
+  type surface is not expected to move underneath you.
+
+### ✨ Where the alpha line landed
+
+- **Bilingual UI** (zh / en), detected from the system locale on first run and changeable with
+  `/lang`; the whole TUI, `/help`, and the command output are covered. `README` ships a key
+  table for both.
+- **Main / sub-agent tabs** — while sub-agents run, a bar appears below the transcript and
+  `←` / `→` switches whose conversation you are reading.
+- **Handoff and migration** — an out-of-context round can hand off to a fresh agent (with a
+  picker for "self / separate summary / skip"), and a conversation can be migrated onto a
+  different model in the configuration center.
+- **Configuration center, end to end** — endpoints, models, image models, defaults, tool
+  output limits, MCP servers (global / project), and Agent definitions with four dimensions of
+  permission. Factory-managed entries are hosted by the SDK; "restore factory defaults" puts
+  them back without hand-editing `custom`.
+- **Composer upgrades** — multi-line editing with a hardware-cursor-synced IME, input history
+  that carries attached images, bottom-anchored `/` and `@` menus, `@` file-path completion,
+  `Ctrl+V` image paste (256KB text limit, over which it errors instead of truncating), and
+  in-app paging with the mouse wheel.
+- **`/update`** reports progress step by step and restarts for real once confirmed.
+- **Syntax highlighting** for JSON tool arguments and fenced code blocks, and a three-block
+  status bar (model · agent · effort | this-round / cumulative tokens · rate | key hints).
+
+### 💥 The last behaviour change before the freeze
+
+- **The startup splash is gone** (`alpha.32`). Startup used to block for about 1.8s on a reveal
+  + gradient sweep before entering the chat; it now goes straight into the chat screen, and an
+  empty conversation shows the brand block (logo, tagline, CLI / SDK / core versions) in the
+  middle of the chat area, scrolling away with the conversation. The animated splash described
+  in `[1.0.0-alpha.1]` no longer exists.
+
+### 🧪 Tests
+
+- 806 unit cases in 58 files, plus e2e 9 passed / 3 skipped (the skipped ones need a real API
+  key). `tsc --noEmit` (production and test configs) and `npm run build` are clean.
+- The two `↑`-history cases in `chat.test.tsx` that were flaky on `HEAD` are fixed in
+  `alpha.32`'s follow-up: they waited a fixed 20ms for a `busy` flip that needs a promise
+  callback plus a frame, so they now wait until the input actually echoes a probe keystroke.
+
 ## [1.0.0-alpha.32] - 2026-11-03
 
 > This release does one thing: it removes the startup splash animation. Previously every `ai`
