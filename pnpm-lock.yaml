@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@ai-zen/agents-core':
-        specifier: ^4.5.3
-        version: 4.5.3(ws@8.22.0)(zod@4.5.4)
+        specifier: ^4.5.4
+        version: 4.5.4(ws@8.22.0)(zod@4.5.4)
       '@ai-zen/agents-sdk':
-        specifier: 1.0.0-alpha.25
-        version: 1.0.0-alpha.25(ws@8.22.0)(zod@4.5.4)
+        specifier: 1.0.0-alpha.26
+        version: 1.0.0-alpha.26(ws@8.22.0)(zod@4.5.4)
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.30.0(zod@4.5.4)
@@ -66,11 +66,11 @@ importers:
 
 packages:
 
-  '@ai-zen/agents-core@4.5.3':
-    resolution: {integrity: sha512-CQEPID8kUdwEb+Kq8w/I5oKBV8WM9I96TTaXIzUWkKZf8dkqULI5xmPpdNyo7bM6w26l6fkhsT3wEXkVRiT3zQ==}
+  '@ai-zen/agents-core@4.5.4':
+    resolution: {integrity: sha512-leCOBwzesYkJckWNdVYGW9Xjr/gmbU757MW7n1q7nProPxiyfNvaBW+iUKAp2cHALQ1/I6mkpFtjGA+AeX9sgA==}
 
-  '@ai-zen/agents-sdk@1.0.0-alpha.25':
-    resolution: {integrity: sha512-7aVdw9bv3tnqyKypHDmQJ7G/h9/1+UTKkbcU9shmDKlc/qTYhmV7ODXsPjZ8e9edXphRp2sdagkX/9gODFXB8w==}
+  '@ai-zen/agents-sdk@1.0.0-alpha.26':
+    resolution: {integrity: sha512-2jcNq2rew6vCSkFeR75IvN64wieQWseDrxR1OHnE+xLqZvdgwJRVqnB6eZNuCHee1qy47SaBk5bEyaVNYw1OFg==}
 
   '@ai-zen/event-bus@1.1.0':
     resolution: {integrity: sha512-xjfQEmUMly++dOSrQMJkwrnBVl7bQHtiw8S09AW5jPuqnFV9OwBk0PsGFc/T+4eP4yWThBJo2X3cCdE5DkAr+Q==}
@@ -1259,7 +1259,7 @@ packages:
 
 snapshots:
 
-  '@ai-zen/agents-core@4.5.3(ws@8.22.0)(zod@4.5.4)':
+  '@ai-zen/agents-core@4.5.4(ws@8.22.0)(zod@4.5.4)':
     dependencies:
       '@ai-zen/event-bus': 1.1.0
       openai: 7.8.0(ws@8.22.0)(zod@4.5.4)
@@ -1271,9 +1271,9 @@ snapshots:
       - ws
       - zod
 
-  '@ai-zen/agents-sdk@1.0.0-alpha.25(ws@8.22.0)(zod@4.5.4)':
+  '@ai-zen/agents-sdk@1.0.0-alpha.26(ws@8.22.0)(zod@4.5.4)':
     dependencies:
-      '@ai-zen/agents-core': 4.5.3(ws@8.22.0)(zod@4.5.4)
+      '@ai-zen/agents-core': 4.5.4(ws@8.22.0)(zod@4.5.4)
       '@modelcontextprotocol/sdk': 1.30.0(zod@4.5.4)
       dayjs: 1.11.23
       openai: 7.8.0(ws@8.22.0)(zod@4.5.4)
