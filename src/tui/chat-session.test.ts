@@ -1,8 +1,9 @@
 import { describe, expect, it, vi, afterAll, beforeEach } from "vitest";
-import { existsSync, promises as fs } from "node:fs";
+import { existsSync, promises as fs, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
 import { ChatSession } from "./chat-session.js";
+import { ContextGuardPlugin } from "@ai-zen/agents-sdk";
 import { ConversationPersistPlugin } from "../conversation-persist-plugin.js";
 import { readLastSession } from "../session-pointer.js";
 import { refreshPaths } from "../config.js";
@@ -237,10 +238,7 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
     (session as any).handoffService.handoffDirPath = join(state.dir, "handoffs");
 
     // 模拟 AutoMigratePlugin：直接调 SDK 服务，不经过 ChatSession.migrate()
-    await (session as any).handoffService.migrate({
-      agent,
-      conversationId: "会话_自动迁移前",
-    });
+    await (session as any).handoffService.migrate({ agent });
 
     // 修复前：currentId 停在旧值 → ConversationPersistPlugin 会把 prune 后的
     // 「系统提示 + 交接断点」写回「会话_自动迁移前」，覆盖掉完整历史。
@@ -255,6 +253,45 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
     // 旧会话保住了原历史（含交接回合），没有被 prune 后的空壳覆盖
     expect(archived.messages.length).toBeGreaterThanOrEqual(1);
     expect(String(archived.messages[0].content)).toContain("旧对话内容");
+  });
+});
+
+describe("交接回合的护栏让行（ContextGuardPlugin.isSuspended）", () => {
+  it("护栏接线为 handoffService.busy：交接中让行，结束后恢复硬线", async () => {
+    // 护栏只在模型配了 tokenThresholds 时才装；假 agent 的模型 id 是 m1
+    mkdirSync(state.dir, { recursive: true });
+    writeFileSync(
+      join(state.dir, "config.json"),
+      JSON.stringify({
+        endpoints: [],
+        models: [
+          {
+            id: "m1",
+            name: "M1",
+            endpointId: "e",
+            tokenThresholds: { handoff: 1000, guard: 1500 },
+            custom: true,
+          },
+        ],
+        version: 4,
+      }),
+    );
+
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
+    const guard = harness.plugins.filter((p) => p instanceof ContextGuardPlugin).at(-1) as any;
+    expect(guard).toBeTruthy();
+
+    // 上下文最满的时刻（交接恰好在这种时刻发起）
+    const ctx = { agent: { lastUsage: { prompt_tokens: 10_000_000 } }, content: "", messages: [] };
+
+    await expect(guard.onInnerLoopStart(ctx)).rejects.toThrow();
+
+    const service = (session as any).handoffService;
+    (service as any)._busy = true;
+    await expect(guard.onInnerLoopStart(ctx)).resolves.toBeUndefined();
+
+    (service as any)._busy = false;
+    await expect(guard.onInnerLoopStart(ctx)).rejects.toThrow();
   });
 });
 

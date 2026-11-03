@@ -403,7 +403,6 @@ export class ChatSession {
       this.handoffService.migrate({
         agent: this.agent,
         mode,
-        conversationId: this.currentId,
         signal,
       }),
     );
@@ -428,7 +427,6 @@ export class ChatSession {
       this.handoffService.handoff({
         agent: this.agent,
         mode,
-        conversationId: this.currentId,
         signal,
       }),
     );
@@ -506,8 +504,14 @@ export class ChatSession {
 
     if (this.tokenThresholds) {
       const { handoff, guard } = this.tokenThresholds;
-      // 硬线：请求前用量超过 guard 即中断本轮（绝对值，不再有 ratio/放宽档）
-      agent.use(new ContextGuardPlugin({ guardTokens: guard }));
+      // 硬线：请求前用量超过 guard 即中断本轮（绝对值，不再有 ratio/放宽档）。
+      // 交接/迁移回合本身就是"上下文最满"时才发起的，由护栏自己让行（谁做限制谁放宽）
+      agent.use(
+        new ContextGuardPlugin({
+          guardTokens: guard,
+          isSuspended: () => this.handoffService.busy,
+        }),
+      );
       agent.use(
         createAutoMigratePlugin({
           service: this.handoffService,

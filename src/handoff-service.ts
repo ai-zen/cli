@@ -79,13 +79,9 @@ export function createHandoffService(
       }
     },
     onMigrated: async (hctx: HandoffContext) => {
-      // 清空「最近一次用量」：prune 已把上下文物理重置（仅留系统提示 + 交接断点），
-      // 但 lastUsage 仍是迁移前/交接回合的 prompt_tokens。若不清理，下一次发送时
-      // ContextGuardPlugin（`onInnerLoopStart` 以 tokenThresholds.guard 为硬上限）会拿这个
-      // 陈旧值判定，立即抛出「上下文严重超限」而中断——用户表现为「迁移完成后第一条
-      // 消息就被总上下文保护插件拦截」。置空后护栏首轮无据可查而放行，待下一次响应
-      // 以真实（已大幅缩小的）用量回填。
-      hctx.agent.lastUsage = undefined;
+      // 不再清理 lastUsage：它是从 messages 派生的只读值，prune 换了 messages 后
+      // 自动就没有旧用量了。交接/迁移回合自身的护栏让行由
+      // `ContextGuardPlugin.isSuspended`（接线 `() => handoffService.busy`）负责。
 
       // 迁移开启新会话：分配新的会话 id 与名称
       const id = generateConversationId();

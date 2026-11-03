@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { Agent } from "@ai-zen/agents-core";
+import { Agent, AgentNS, Message } from "@ai-zen/agents-core";
 import type { SendContext, SubAgentContext } from "@ai-zen/agents-core";
 import { ContextOverflowError } from "@ai-zen/agents-sdk";
 import { SubAgentGuardInstallerPlugin } from "./sub-agent-guard-plugin.js";
@@ -31,9 +31,22 @@ function createRealAgent(): Agent {
   return new Agent({ client: {} as never, model: "test-model" });
 }
 
-/** 设置子 Agent 上一轮的用量（等价于流式响应写入 agent.lastUsage 后的状态） */
+/**
+ * 设置子 Agent 上一轮的用量：`lastUsage` 是从 messages 派生的只读值，
+ * 所以这里造一条带 usage 的 assistant 消息（等价于流式响应写入后的状态）。
+ */
 function setUsage(agent: Agent, promptTokens: number): void {
-  agent.lastUsage = { prompt_tokens: promptTokens } as never;
+  agent.messages.push(
+    new Message({
+      role: AgentNS.Role.Assistant,
+      content: "上一轮回复",
+      usage: {
+        prompt_tokens: promptTokens,
+        completion_tokens: 0,
+        total_tokens: promptTokens,
+      },
+    }),
+  );
 }
 
 /** 构造委派上下文 */

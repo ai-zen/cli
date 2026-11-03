@@ -32,7 +32,7 @@ afterAll(async () => {
 
 /**
  * 假 agent：无 `write` 工具 → 交接走「独立摘要」路径（不触网，文档由桩返回）。
- * 这样测试聚焦 CLI 钩子（存档 / 新会话 / lastUsage），不重复测 SDK 的自交接细节。
+ * 这样测试聚焦 CLI 钩子（存档 / 新会话），不重复测 SDK 的自交接细节。
  */
 function makeAgent(lastUsage: unknown) {
   return {
@@ -70,16 +70,21 @@ function uniqueDir(name: string): string {
 }
 
 describe("createHandoffService", () => {
-  it("migrate：交接 + 剔除历史 + 清空陈旧用量 + 开启新会话", async () => {
+  it("migrate：交接 + 剔除历史 + 开启新会话", async () => {
     const agent = makeAgent({ prompt_tokens: 999, completion_tokens: 1, total_tokens: 1000 });
     const ctx = makeCtx(agent);
     const dir = uniqueDir("migrate");
     const service = createHandoffService(ctx, { log: () => {}, handoffDir: dir });
 
-    const result = await service.migrate({ agent: agent as any, conversationId: "会话_x" });
+    const result = await service.migrate({ agent: agent as any });
 
-    // 关键断言：陈旧用量被清空（护栏 onInnerLoopStart 无据可查 → 放行）
-    expect(agent.lastUsage).toBeUndefined();
+    // 用量不再由 CLI 改写：lastUsage 是从 messages 派生的只读值，
+    // prune 换掉 messages 后自然就没有旧用量了（护栏让行由 isSuspended 负责）
+    expect(agent.lastUsage).toEqual({
+      prompt_tokens: 999,
+      completion_tokens: 1,
+      total_tokens: 1000,
+    });
     // prune 生效：仅剩模板(def.messages) + 交接断点
     expect(agent.messages.length).toBe(1);
     expect(String(agent.messages[0].content)).toContain(result.handoffPath);
@@ -99,7 +104,7 @@ describe("createHandoffService", () => {
     const dir = uniqueDir("handoff");
     const service = createHandoffService(ctx, { log: () => {}, handoffDir: dir });
 
-    const result = await service.handoff({ agent: agent as any, conversationId: "会话_x" });
+    const result = await service.handoff({ agent: agent as any });
 
     expect(existsSync(result.handoffPath)).toBe(true);
     expect(result.handoffPath.startsWith(dir)).toBe(true);
