@@ -154,7 +154,7 @@ export const en: Record<string, string> = {
   "cmd.editor.failed": "Failed to open the editor: {error}",
   "cmd.unknown": "Unknown command: {cmd} (type /help for available commands)",
 
-  // ---------- Handoff picker / sub-task notices / splash / message placeholders ----------
+  // ---------- Handoff picker / sub-task notices / welcome block / message placeholders ----------
   "handoff.pickTitle": "Context is about to overflow ({used}/{limit} tokens) · choose how to hand off",
   "handoff.modeSelf": "The current session writes the handoff itself",
   "handoff.modeSelfHint": "faithful · verifies the real state",
@@ -173,9 +173,7 @@ export const en: Record<string, string> = {
   "chat.sessionReloadFailed": "Failed to rebuild the session: {error}",
   "chat.bootFailed": "✖ Cannot start the conversation: {error}",
   "chat.bootHint": "Press k to open the configuration center (set the API key / endpoint URL) · Enter to go back",
-  "splash.tagline": "The AI collaboration desk in your terminal",
-  "splash.pressAnyKey": "Press any key to start…",
-  "splash.preparing": "Preparing",
+  "welcome.tagline": "The AI collaboration desk in your terminal",
   "msg.image": "[Image: {url}]",
   "msg.imageInline": "[image]",
   "msg.file": "[File: {name}]",

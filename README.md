@@ -55,7 +55,7 @@ ai --version
 
 ## Interface (TUI)
 
-When run with no arguments on an interactive terminal, the CLI opens a full-screen interface built with **Ink (React)**. It starts with an animated, gradient ASCII splash:
+When run with no arguments on an interactive terminal, the CLI opens a full-screen interface built with **Ink (React)** and lands **straight in the chat screen** — there is no splash animation to wait out. An empty conversation shows the brand block at the top of the transcript (it scrolls away with the conversation):
 
 ```
  █████╗ ██╗    ███████╗███████╗███╗   ██╗
@@ -69,7 +69,7 @@ When run with no arguments on an interactive terminal, the CLI opens a full-scre
               v1.0.0-alpha.31 · sdk x · core y
 ```
 
-After the splash, you land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and a **status bar** (three priority-ordered blocks: model · agent · reasoning effort | this-round / cumulative tokens · generation rate | key hints; a block that does not fit moves to the next line whole, so nothing is truncated and no block gets split) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line and its label shows **which phase** the round is in: connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming; the two tool phases include the tool name. The generation rate shows a live value while streaming (2-second sliding window, estimated from output deltas) and switches to this round's average once it finishes (preferring the real `completion_tokens` from the API).
+You land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and a **status bar** (three priority-ordered blocks: model · agent · reasoning effort | this-round / cumulative tokens · generation rate | key hints; a block that does not fit moves to the next line whole, so nothing is truncated and no block gets split) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line and its label shows **which phase** the round is in: connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming; the two tool phases include the tool name. The generation rate shows a live value while streaming (2-second sliding window, estimated from output deltas) and switches to this round's average once it finishes (preferring the real `completion_tokens` from the API).
 
 While sub-agents are running, a **main / sub-agent bar** appears below the transcript (`主AGENT　◈子AGENT1　◈子AGENT2`): `←` / `→` switches which agent's conversation the transcript shows, the status diamond tells you where each one stands (blue blinking while running / green when done / red when failed), and the bar disappears once this round's inner loop finishes.
 
@@ -174,7 +174,7 @@ On first launch the language is detected from the system: `LC_ALL` → `LC_MESSA
 
 The preference lives in the CLI's own `preferences.json`, **not in the shared `config.json`** — the latter is the config contract shared by the CLI and the Desktop app.
 
-The whole TUI is covered (chat screen, commands and `/help`, every configuration-center screen, the handoff picker, the splash / boot-error screens), plus the terminal output of `ai --help` and `ai hook install / uninstall`. **Deliberately not translated:**
+The whole TUI is covered (chat screen, commands and `/help`, every configuration-center screen, the handoff picker, the welcome block / boot-error screens), plus the terminal output of `ai --help` and `ai hook install / uninstall`. **Deliberately not translated:**
 
 - **pipe mode (`ai "prompt"` / piped input) prints and errors in English only** — it is meant for scripts and should not follow a human user's UI language;
 - the working-directory note injected into the model's history: English plus a `[system-injected: …]` marker saying it was not typed by the user. This is the only piece of protocol content left untranslated (the `task` parameter description of a new Sub-agent does follow the UI language);

@@ -27,6 +27,7 @@ import { AGENT_TABS_LINES, computeChatLayout } from "./layout.js";
 import { FrameBuffer } from "./frame-buffer.js";
 import { LineView } from "./render.js";
 import { messageToLines, transcriptLines } from "./messages-view.js";
+import { welcomeLines } from "./welcome.js";
 import { PickerOverlay, Confirm } from "./overlays.js";
 import { CursorInputRow, type CursorPosition } from "./input-row.js";
 import { chooseHandoffMode } from "./handoff-choice.js";
@@ -1005,6 +1006,14 @@ export function Chat(props: ChatScreenProps) {
     activeSub ? activeSub.agent.messages : messages.slice(transcriptFrom),
     cols,
   );
+  /**
+   * 空对话：对话区顶部展示品牌区（logo + 标语 + 版本）。
+   *
+   * 判据里必须带 `showPending` —— 用户刚敲下第一条消息、乐观回显已经上屏，
+   * 这时欢迎块要立刻让位，不能等消息真正落地。
+   */
+  const showWelcome = !activeSub && !showPending && messages.length === 0;
+  if (showWelcome) transcript.unshift(...welcomeLines({ columns: cols }));
   if (showPending) {
     // 带粘贴图片的消息：乐观回显要与实际发送的结构一致（文本段 + 图片占位块），
     // 否则图片那几条会在真实消息落地前「消失」一下。
@@ -1082,6 +1091,8 @@ export function Chat(props: ChatScreenProps) {
     pickerItems: pickerState?.items.length ?? 0,
     viewTop,
     statusBarLines: statusRows.length,
+    // 空对话的品牌块落在对话区垂直中部（贴顶太空、贴底太挤）
+    anchor: showWelcome ? "center" : undefined,
   });
   layoutRef.current = layout;
   const isPlaceholder = input.length === 0;

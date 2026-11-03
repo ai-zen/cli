@@ -35,7 +35,7 @@ export {
 export { CONFIRM_LINES, STATUS_BAR_LINES, AGENT_TABS_LINES, pickerLines, computeChatLayout, clampViewTop } from "./layout.js";
 export type { ChatLayoutInput, ChatLayout } from "./layout.js";
 
-export { Splash } from "./splash.js";
+export { welcomeLines } from "./welcome.js";
 
 export { NoticeChannel, noticeLines, MAX_NOTICE_LINES } from "./notice.js";
 export type { Notice } from "./notice.js";

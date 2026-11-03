@@ -12,7 +12,6 @@ import { Box } from "ink";
 import { StatusBar, statusBarRows, BottomMenu, SelectList } from "./components.js";
 import { truncate } from "./screens/render.js";
 import {
-  Splash,
   displayWidth,
   messageToLines,
   cachedMessageToLines,
@@ -467,29 +466,8 @@ describe("SelectList", () => {  it("方向键移动、回车确认", async () =>
   });
 });
 
-describe("Splash", () => {
-  it("显示品牌标语与版本", () => {
-    const { lastFrame, unmount } = render(<Splash />);
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("终端里的 AI 协作台");
-    expect(frame).toContain("v");
-    unmount();
-  });
-
-  it("鼠标上报（滚轮 / 点击）不算「任意键跳过」", async () => {
-    const onDone = vi.fn();
-    const { stdin, unmount } = render(<Splash onDone={onDone} />);
-    stdin.write("\u001b[<64;10;5M"); // 滚轮上
-    await tick();
-    stdin.write("\u001b[<0;10;5M"); // 左键按下
-    await tick();
-    expect(onDone).not.toHaveBeenCalled();
-    stdin.write("x"); // 真正的按键才跳过
-    await tick();
-    expect(onDone).toHaveBeenCalledTimes(1);
-    unmount();
-  });
-});
+// Splash 已移除：启动不再有一次性开屏，空对话的品牌区由 `welcome.ts` 生成，
+// 用例分别在 `welcome.test.ts`（纯函数）与 `screens/chat.test.tsx`（接入对话区）里。
 
 describe("stripCwdNote", () => {
   it("去除首次注入的工作目录后缀", () => {
@@ -725,6 +703,15 @@ describe("computeChatLayout（吸底 + 应用内翻页）", () => {
     expect(layout.bottomLines).toBe(4);
     expect(layout.lines).toHaveLength(20);
     expect(layout.lines.every((l) => l.kind === "gap")).toBe(true);
+  });
+
+  it("anchor: center 时余量上下均分（空对话的品牌块居中）", () => {
+    const layout = computeChatLayout({ ...base, transcript: [line(0)], anchor: "center" });
+    expect(layout.lines).toHaveLength(20);
+    // 对话区 20 行、内容 1 行 → 余量 19：上 9 下 10（多的一行留给下方）
+    expect(layout.lines[9].text).toBe("L0");
+    expect(layout.lines.slice(0, 9).every((l) => l.kind === "gap")).toBe(true);
+    expect(layout.lines.slice(10).every((l) => l.kind === "gap")).toBe(true);
   });
 
   it("内容超出时自底部截断，最新一条在最后", () => {

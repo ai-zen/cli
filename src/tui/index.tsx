@@ -17,7 +17,7 @@ import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
 import { conversationRepository } from "../conversation-repository.js";
 import { readLastSession } from "../session-pointer.js";
-import { Splash, Chat } from "./screens/index.js";
+import { Chat } from "./screens/index.js";
 import { keyDebugStart } from "./key-debug.js";
 import { disableMouseTracking, enableMouseTracking } from "./mouse.js";
 import { installSdkLogger } from "../sdk-log.js";
@@ -323,9 +323,6 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
     // 而「续接上一轮会话」这条路径不会经过 `resolveTarget()`，少了这一步，
     // 升级后第一次启动会直接报「Agent 未绑定模型」。
     await ensureConfigDir();
-
-    // 启动界面（一次性）
-    await mount(<Splash />);
 
     // 直达对话：优先续接「上一轮会话」，否则新建对话。
     // `--new` 跳过续接（不读 last-session.json 指针），直接走新建路径

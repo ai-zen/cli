@@ -66,7 +66,7 @@ ai Hello, please introduce yourself.
 cat README.md | ai "summarize in three sentences"
 ```
 
-On start, an animated gradient ASCII splash appears, then you land **directly in the chat screen** (rendered with Ink/React) — resuming the last session if there is one, otherwise starting a new conversation. The chat screen is **bottom-pinned**: a divider, the input line, and the status bar always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the input row is replaced by a **phase indicator** (connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming).
+Startup goes **directly into the chat screen** (rendered with Ink/React) — there is no splash animation — resuming the last session if there is one, otherwise starting a new conversation. An empty conversation shows the brand block (logo, tagline, CLI / SDK / core versions) at the top of the transcript, and it scrolls away with the conversation. The chat screen is **bottom-pinned**: a divider, the input line, and the status bar always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the input row is replaced by a **phase indicator** (connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming).
 
 If the round spawns sub-agents, a **main / sub-agent bar** appears below the transcript (`主AGENT　◈子AGENT1　◈子AGENT2`): `←` / `→` switches which agent's conversation the transcript shows, the diamond shows each one's state (blue blinking while running / green when done / red when failed), and the bar disappears once this round's inner loop finishes.
 

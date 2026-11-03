@@ -140,6 +140,29 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
+  it("空对话在对话区顶部显示欢迎块（logo + 标语），且不阻塞输入", async () => {
+    const { lastFrame, unmount } = mount();
+    await flush();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("终端里的 AI 协作台");
+    // 品牌 logo（宽终端出 6 行宽版，窄终端退化成单行）
+    expect(frame).toMatch(/█████╗|AI · ZEN/);
+    // 底部输入框与状态栏照常在
+    expect(frame).toContain("输入消息");
+    unmount();
+  });
+
+  it("发出首条消息后欢迎块消失", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    stdin.write("你好");
+    await flush();
+    stdin.write("\r");
+    await flush();
+    expect(lastFrame() ?? "").not.toContain("终端里的 AI 协作台");
+    unmount();
+  });
+
   it("回车把输入框内容作为消息发出", async () => {
     const { stdin, unmount } = mount();
     await flush();

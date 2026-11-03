@@ -45,6 +45,18 @@ export interface ChatLayoutInput {
    * 缺省用 `STATUS_BAR_LINES`。
    */
   statusBarLines?: number;
+  /**
+   * 内容不足一屏时，余量怎么分。
+   *
+   * 缺省 `bottom`：余量全部补在头部，内容贴底（对话屏的常规行为——最新一行的
+   * 下沿永远紧挨分隔线）。
+   *
+   * `center`：余量上下均分，内容落在对话区垂直中部 —— 只用于空对话的欢迎块
+   * （否则 6 行 logo + 标语只能贴顶或贴底，两个位置都不好看）。
+   *
+   * 内容超出一屏时该参数无效（此时两侧都没有余量）。
+   */
+  anchor?: "bottom" | "center";
 }
 
 export interface ChatLayout {
@@ -132,10 +144,13 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
   const maxTop = Math.max(0, totalLines - budget);
   const top = input.viewTop == null ? maxTop : Math.min(Math.max(0, input.viewTop), maxTop);
   const viewLines = transcript.slice(top, top + budget);
-  const padTop = Math.max(0, budget - viewLines.length);
+  const slack = Math.max(0, budget - viewLines.length);
+  const padTop = input.anchor === "center" ? Math.floor(slack / 2) : slack;
+  const padBottom = slack - padTop;
   const lines: RLine[] = [
     ...Array.from({ length: padTop }, (_, i) => ({ key: `pad-${i}`, kind: "gap" as const, text: " " })),
     ...viewLines,
+    ...Array.from({ length: padBottom }, (_, i) => ({ key: `tail-${i}`, kind: "gap" as const, text: " " })),
   ];
   return { lines, bottomLines, totalLines, budget, viewTop: top, scrolled: top < maxTop, hintRows };
 }
