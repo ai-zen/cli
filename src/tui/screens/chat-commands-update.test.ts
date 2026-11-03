@@ -14,6 +14,17 @@ import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
 import { t } from "../../i18n/index.js";
 import { CLI_VERSION } from "../../version.js";
+
+/**
+ * 假 registry 里那个「比当前更新的版本」。
+ *
+ * 不能写死版本号：`/update` 判断「有没有新版」靠 semver 比较，写死的 `1.0.0-alpha.99`
+ * 在 `1.0.0` 正式版发布后反而比当前版本**旧**，于是整组用例会误判成「已是最新」。
+ * 这里按当前版本升一个大版本来保证永远更新。
+ */
+const NEXT_VERSION = `${Number(CLI_VERSION.split(".")[0]) + 1}.0.0-alpha.99`;
+/** 比当前版本旧的版本（1.x 之后一直成立） */
+const OLDER_VERSION = "0.9.0";
 import { runCommand, type ChatCommandHost } from "./chat-commands.js";
 import type { ChatSession } from "../chat-session.js";
 
@@ -136,7 +147,7 @@ let writeSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "aizen-update-"));
   state.root = root;
-  state.distTags = JSON.stringify({ latest: "0.9.0", alpha: "1.0.0-alpha.99" });
+  state.distTags = JSON.stringify({ latest: OLDER_VERSION, alpha: NEXT_VERSION });
   state.tagsStatus = 0;
   state.installStatus = 0;
   state.installError = undefined;
@@ -154,26 +165,26 @@ afterEach(() => {
 
 describe("/update：装最新版（不区分 alpha / 正式版）", () => {
   it("alpha 比 latest 新时选 alpha，报告 旧 → 新，确认后重启", async () => {
-    fakeGlobalInstall(root, "1.0.0-alpha.99");
+    fakeGlobalInstall(root, NEXT_VERSION);
     const { host, notices, confirms, restarts, saves, installs, text } = createHost();
 
     await runCommand("update", "/update", host);
 
     expect(installs()).toEqual([
-      "install -g @ai-zen/cli@1.0.0-alpha.99 --prefer-online --no-fund",
+      `install -g @ai-zen/cli@${NEXT_VERSION} --prefer-online --no-fund`,
     ]);
-    expect(text()).toContain("1.0.0-alpha.99");
+    expect(text()).toContain(NEXT_VERSION);
     expect(text()).toContain(CLI_VERSION);
     expect(notices.every((n) => n.tone !== "error")).toBe(true);
     // 装完先问一句，再重启；重启前把当前对话落盘
     expect(confirms).toHaveLength(1);
-    expect(confirms[0]).toContain("1.0.0-alpha.99");
+    expect(confirms[0]).toContain(NEXT_VERSION);
     expect(saves.count).toBe(1);
     expect(restarts.count).toBe(1);
   });
 
   it("拒绝重启：不重启、仍提示手动重启，但对话照样已落盘", async () => {
-    fakeGlobalInstall(root, "1.0.0-alpha.99");
+    fakeGlobalInstall(root, NEXT_VERSION);
     const { host, notices, restarts, saves, text } = createHost({ confirmAnswer: false });
 
     await runCommand("update", "/update", host);
@@ -185,7 +196,7 @@ describe("/update：装最新版（不区分 alpha / 正式版）", () => {
   });
 
   it("刚开的新会话（无用户消息）不落盘，避免留下空会话文件", async () => {
-    fakeGlobalInstall(root, "1.0.0-alpha.99");
+    fakeGlobalInstall(root, NEXT_VERSION);
     const { host, saves, restarts } = createHost({ withHistory: false });
 
     await runCommand("update", "/update", host);
@@ -196,7 +207,7 @@ describe("/update：装最新版（不区分 alpha / 正式版）", () => {
   });
 
   it("正式版追上之后反过来选正式版", async () => {
-    state.distTags = JSON.stringify({ latest: "9.9.9", alpha: "1.0.0-alpha.99" });
+    state.distTags = JSON.stringify({ latest: "9.9.9", alpha: NEXT_VERSION });
     fakeGlobalInstall(root, "9.9.9");
     const { host, installs } = createHost();
 
@@ -206,7 +217,7 @@ describe("/update：装最新版（不区分 alpha / 正式版）", () => {
   });
 
   it("registry 上没有比当前更新的版本：只报「已是最新」，不装也不催重启", async () => {
-    state.distTags = JSON.stringify({ latest: "0.9.0" }); // 比当前运行的 alpha 旧
+    state.distTags = JSON.stringify({ latest: OLDER_VERSION }); // 比当前版本旧
     const { host, notices, confirms, restarts, installs, text } = createHost();
 
     await runCommand("update", "/update", host);
@@ -219,7 +230,7 @@ describe("/update：装最新版（不区分 alpha / 正式版）", () => {
   });
 
   it("安装失败：error 语气上报，且不弹确认框、不提重启", async () => {
-    fakeGlobalInstall(root, "1.0.0-alpha.99");
+    fakeGlobalInstall(root, NEXT_VERSION);
     state.installStatus = 1;
     const { host, notices, confirms, restarts, text } = createHost();
 
@@ -256,31 +267,31 @@ describe("/update：装最新版（不区分 alpha / 正式版）", () => {
 
 describe("/update：过程信息（不再只有一个转圈）", () => {
   it("依次报出「查询 → 发现 → 装好」，而不是等装完才吭声", async () => {
-    fakeGlobalInstall(root, "1.0.0-alpha.99");
+    fakeGlobalInstall(root, NEXT_VERSION);
     const { host, notices, text } = createHost();
 
     await runCommand("update", "/update", host);
 
     expect(notices).toHaveLength(3);
     expect(notices[0]!.text).toBe(t("cmd.update.checking", { pkg: "@ai-zen/cli" }));
-    expect(notices[1]!.text).toContain("1.0.0-alpha.99");
+    expect(notices[1]!.text).toContain(NEXT_VERSION);
     expect(notices[2]!.text).toContain("✅");
     expect(text()).toContain(CLI_VERSION);
   });
 
   it("移交终端前先打出「装什么 / 装到哪 / 跑什么命令」", async () => {
-    fakeGlobalInstall(root, "1.0.0-alpha.99");
+    fakeGlobalInstall(root, NEXT_VERSION);
     const { host } = createHost();
 
     await runCommand("update", "/update", host);
 
-    expect(terminalOut).toContain("@ai-zen/cli@1.0.0-alpha.99");
+    expect(terminalOut).toContain(`@ai-zen/cli@${NEXT_VERSION}`);
     expect(terminalOut).toContain(root);
     expect(terminalOut).toContain("--prefer-online");
   });
 
   it("查询带上 --prefer-online：避免 npm 元数据缓存把「有新版」读成「已是最新」", async () => {
-    fakeGlobalInstall(root, "1.0.0-alpha.99");
+    fakeGlobalInstall(root, NEXT_VERSION);
     const { host, quoted } = createHost();
 
     await runCommand("update", "/update", host);
