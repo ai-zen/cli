@@ -98,6 +98,52 @@ const flush = async (ms = 4) => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
+/**
+ * 轮询直到条件成立（上限 `ms`，超时就交给后续断言去报错）。
+ *
+ * 合帧间隔是 60ms，而按键触发的状态更新要等一次重渲染才会被下一个按键看到 ——
+ * 用固定的 `flush(20)` 等这件事就是玄学：本机快的时候够、CI 或负载高的时候不够，
+ * 于是同一份代码时红时绿。这里改成「等到可观测的效果出现」。
+ */
+const waitFor = async (predicate: () => boolean, ms = 1000) => {
+  const deadline = Date.now() + ms;
+  while (!predicate() && Date.now() < deadline) await flush(8);
+};
+
+/**
+ * 取帧里输入框那一行的内容（分隔线之后、状态栏之前），用于判断草稿是否已经落到输入框
+ */
+const inputLineOf = (frame: string): string => {
+  const lines = frame.split("\n");
+  const divider = lines.map((line) => line.includes("───")).lastIndexOf(true);
+  return divider >= 0 ? (lines[divider + 1] ?? "") : "";
+};
+
+/**
+ * 等到输入区真的可编辑（会话空闲）。
+ *
+ * 生成中第一个 `useInput` 是关着的（`isActive: !busy`），此时按键直接被丢掉 ——
+ * 而发送后的 `busy` 翻转要等 Promise 回调 + 合帧，用固定 `flush(20)` 撞不撞得上
+ * 全看机器快慢，于是同一条用例时红时绿（发版门禁被它卡住过一次）。
+ *
+ * 判据用「敲一个字符看输入框有没有回显」：有回显就证明编辑处理器在收键，
+ * 随即退格清掉，不影响后续断言。
+ */
+const waitUntilEditable = async (
+  stdin: { write: (data: string) => void },
+  lastFrame: () => string | undefined,
+) => {
+  for (let i = 0; i < 60; i++) {
+    stdin.write("z");
+    await flush(16);
+    if (inputLineOf(lastFrame() ?? "").includes("z")) {
+      stdin.write("\u007f"); // Backspace：把探针字符退掉
+      await flush(16);
+      return;
+    }
+  }
+};
+
 const mount = (options: { initialInput?: string } = {}) =>
   render(
     <Chat
@@ -243,20 +289,20 @@ describe("Chat 集成（拆分前的护栏）", () => {
   // ==================== ↑/↓：多行先移光标，到边界才翻历史 ====================
 
   it("光标已在首行时 ↑ 才翻历史（单行输入保持原行为）", async () => {
-    const { stdin, unmount } = mount();
+    const { stdin, lastFrame, unmount } = mount();
     await flush();
     stdin.write("hello");
     await flush();
     stdin.write("\r");
-    await flush(20);
+    await waitFor(() => created.session.send.mock.calls.length === 1);
     expect(created.session.send).toHaveBeenCalledTimes(1);
 
     // 输入框已空、单行 → ↑ 拿回历史，再回车又发一遍同样的内容
-    // （箭头键要等一次重渲染才能把新草稿交给按键处理器，实测 20ms 够）
+    await waitUntilEditable(stdin, lastFrame);
     stdin.write("\u001b[A");
-    await flush(20);
+    await waitFor(() => inputLineOf(lastFrame() ?? "").includes("hello"));
     stdin.write("\r");
-    await flush();
+    await waitFor(() => created.session.send.mock.calls.length === 2);
     expect(created.session.send).toHaveBeenCalledTimes(2);
     expect(created.session.send.mock.calls[1]![0]).toBe("hello");
     unmount();
@@ -636,19 +682,20 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
     await flush();
     await paste(stdin);
     stdin.write("\r");
-    await flush(20);
+    await waitFor(() => created.session.send.mock.calls.length === 1);
     expect(created.session.send).toHaveBeenCalledWith("看这张", [oneImage.image]);
     // 发送后附件行清空
     expect(lastFrame() ?? "").not.toContain("已附加");
 
+    await waitUntilEditable(stdin, lastFrame);
     stdin.write("\u001b[A"); // ↑ 翻回上一条
-    await flush(20);
+    await waitFor(() => (lastFrame() ?? "").includes("已附加 1 张图片"));
     const frame = lastFrame() ?? "";
     expect(frame).toContain("看这张"); // 文本回来了
     expect(frame).toContain("已附加 1 张图片"); // 图片也回来了（旧实现只有文本）
 
     stdin.write("\r");
-    await flush(20);
+    await waitFor(() => created.session.send.mock.calls.length === 2);
     expect(created.session.send).toHaveBeenLastCalledWith("看这张", [oneImage.image]);
     unmount();
   });
