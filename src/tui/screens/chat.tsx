@@ -1072,7 +1072,7 @@ export function Chat(props: ChatScreenProps) {
 
   // 子 Agent 视图读它**自己**的 messages（从第 0 条起，不受主会话 /clear 的显示起点影响）
   const transcript = transcriptLines(
-    activeSub ? activeSub.agent.messages : messages.slice(transcriptFrom),
+    activeSub ? activeSub.messages : messages.slice(transcriptFrom),
     cols,
   );
   /**

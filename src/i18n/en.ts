@@ -59,6 +59,9 @@ export const en: Record<string, string> = {
   "notice.languageChanged": "Language switched to English",
   "notice.turnAborted": "Turn aborted — the session is back to where it was",
   "notice.toolFailed": "Tool failed: {error}",
+  // A sub-agent failed: the template only echoes the raw message (no prefix), matching
+  // what the client used to push straight onto the notice bar
+  "notice.subAgentFailed": "{message}",
   "notice.mcpUnavailable": "MCP server unreachable: {name}",
   "notice.storeUnavailable": "The session store is unavailable: {error}",
   "notice.remoteImagesTooLarge": "Images are too large ({size}MB) for a single frame — only the text was sent",

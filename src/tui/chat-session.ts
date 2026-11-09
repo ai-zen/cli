@@ -78,7 +78,7 @@ export interface ChatSessionLike {
   readonly currentName: string;
   /** 对话消息（屏幕的唯一数据源） */
   readonly messages: AgentNS.Message[];
-  /** 本次会话出现过的子 Agent（远程模式暂时没有） */
+  /** 本轮内出现过的子 Agent（只活当前一轮；两个实现都给） */
   readonly subAgents: readonly SubAgentView[];
   /** 最近一轮用量；未知时 `undefined`（客户端别自己编一个） */
   readonly lastUsage?: AgentNS.Usage;
@@ -155,8 +155,14 @@ export interface SubAgentView {
   id: string;
   /** 出现序号（从 1 起）：栏目标签直接叫「子AGENT1」，序号就是展示的一部分 */
   index: number;
-  /** 子 Agent 实例：`.messages` 即它自己的完整对话 */
-  agent: CoreAgent;
+  /**
+   * 这个子 Agent 到目前为止的完整对话。
+   *
+   * 这里**刻意不是子 Agent 实例**：实例只存在于「Agent 跑在这个进程里」那种形态
+   * （`CoreAgent.messages`）。远程时对话在服务端，客户端能拿到的是数据而不是对象。
+   * 契约写成数据，进程内 / 远程两个实现才共用同一份接口，屏幕也只需要「读消息」。
+   */
+  messages: AgentNS.Message[];
   /** 执行状态（渲染期读，故设为可变字段） */
   status: SubAgentStatus;
 }
@@ -244,6 +250,13 @@ export class ChatSession implements ChatSessionLike {
   private readonly phaseTracker = new PhaseTracker();
   /** 本次会话中已出现的子 Agent（只保留当前一轮，见 {@link SubAgentView} 的生命周期说明） */
   private subAgentViews: SubAgentView[] = [];
+  /**
+   * 视图 id → 子 Agent 实例。
+   *
+   * 视图对外只暴露 `messages`，但**事件监听要按实例认领**（`sub-agent-end` / `error`
+   * 的载荷是实例而不是 id）。所以实例仍留在本类里，只做内部索引，不进公开契约。
+   */
+  private subAgentAgents = new Map<string, CoreAgent>();
   /** 展示序号（每轮归零，标签回到「子AGENT1」） */
   private subAgentSeq = 0;
   /**
@@ -393,7 +406,16 @@ export class ChatSession implements ChatSessionLike {
   /** 清空 Agent 栏目（新一轮输入 / 换 Agent / 换会话时调用；序号一并归零） */
   private clearSubAgents(): void {
     this.subAgentViews = [];
+    this.subAgentAgents.clear();
     this.subAgentSeq = 0;
+  }
+
+  /** 按实例找回它的视图（`sub-agent-end` / `error` 的载荷是实例，不是 id） */
+  private viewOf(agent: CoreAgent): SubAgentView | undefined {
+    for (const [id, instance] of this.subAgentAgents) {
+      if (instance === agent) return this.subAgentViews.find((item) => item.id === id);
+    }
+    return undefined;
   }
 
   /**
@@ -692,10 +714,12 @@ export class ChatSession implements ChatSessionLike {
       const view: SubAgentView = {
         id: `sub-${++this.subAgentIdSeq}`,
         index,
-        agent: subAgent,
+        // 存的是数组引用：SDK 每次往实例里 push 消息，这里跟着变（与改造前等价）
+        messages: subAgent.messages,
         status: "running",
       };
       this.subAgentViews.push(view);
+      this.subAgentAgents.set(view.id, subAgent);
       // 记进 Agent 栏目：实例在委派结束后仍保留 messages，所以这里存引用即可随时回看。
       // 不看 `sub_agent_*` 与 `call_skill_sub_agent` 的差别——两条路径现在都走 core 的
       // AgentToolLazy，全部会在 onSubAgentStart 出现。
@@ -718,7 +742,7 @@ export class ChatSession implements ChatSessionLike {
     };
     const onSubEnd = ({ subAgent }: SubAgentContext) => {
       // 只把「还在跑」的置为完成：失败已由 error 监听标成 failed，不能被这里覆盖
-      const view = this.subAgentViews.find((item) => item.agent === subAgent);
+      const view = this.viewOf(subAgent);
       if (view && view.status === "running") view.status = "done";
       notify(true);
     };

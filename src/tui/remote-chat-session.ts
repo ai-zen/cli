@@ -29,10 +29,18 @@
  *     必须来自会话真正跑在哪个目录，那是服务端的事实；
  *   · 续接（`resume`）问 `session.last`：哪一段是「上一轮」也只存在于服务端。
  *
- * ## 现在还没有的三样（协议里就没有，不是 bug）
+ * ## 子 Agent 栏目（Agent 标签页）
  *
- * 图片粘贴、子 Agent 栏目、按阈值自动迁移。前者在界面上是「说清楚」而不是静默丢弃：
- * 带图提交会明确提示本次只发了文字；子 Agent 列表恒为空，栏目因此不出现。
+ * 栏目里的东西全**由服务端给**：`session.subAgent.started` 说「来了一个，序号是几、
+ * id 是什么」，`message.delta` 带 `subAgentId` 时属于它，`session.subAgent.ended`
+ * 收尾。客户端只做两件事：把增量拼到那个子 Agent 自己的临时消息上（让屏幕能滚），
+ * 以及拉一次 `session.subAgent.snapshot` 把已有内容补齐 —— 合并规则见
+ * {@link mergeSubAgentSnapshot}（那里也是唯一需要处理竞态的地方）。
+ *
+ * ## 现在还没有的两样（协议里就没有，不是 bug）
+ *
+ * 图片粘贴、按阈值自动迁移。前者在界面上是「说清楚」而不是静默丢弃：带图提交会
+ * 明确提示本次只发了文字。
  */
 
 import { AgentNS, sumUsage } from "@ai-zen/agents-core";
@@ -40,6 +48,7 @@ import type { HandoffMode } from "@ai-zen/agents-sdk";
 import {
   MAX_FRAME_BYTES,
   SESSION_EVENTS,
+  SESSION_METHODS,
   type MessageContent,
   type PhaseInfo,
   type ServerEvent,
@@ -66,6 +75,102 @@ import { TokenRateMeter, type RateSample } from "./token-rate.js";
 
 /** 客户端的身份：只进握手首帧与服务端日志，不参与鉴权 */
 export const REMOTE_CLIENT_INFO = { name: "@ai-zen/cli", version: CLI_VERSION };
+
+/**
+ * 子 Agent 的本地拼接状态（一个子 Agent 一条）。
+ *
+ * 与主 Agent 的 `streaming` 同形状、同策略：增量先拼在一条临时消息上让屏幕能滚起来，
+ * 权威内容以服务端快照为准。差别只在「一个子 Agent 从 `started` 到 `turn.end` 只拼一条」：
+ * 这期间它可能有多轮 assistant（工具调用），拆成多条会让输出断成几段，而主 Agent 那边
+ * 也是这么拼的 —— 一轮收尾时整份清空，不存在「拼错了要修」的问题。
+ */
+export interface SubAgentStream {
+  /** 临时消息：同时也是 `SubAgentView.messages` 里的那一条（增量就地改它，屏幕才跟得上） */
+  message: AgentNS.Message;
+  /** 累计正文（= `message.content`，单独存一份，省得每次从联合类型里往外捞） */
+  text: string;
+  /** 累计推理内容（推理模型才有） */
+  reasoning: string;
+}
+
+/**
+ * 把服务端快照与本地已拼出的增量合并成一份消息列表 —— 「快照与增量怎么合并」的唯一实现。
+ *
+ * ## 为什么不能直接拿快照替换
+ *
+ * `session.subAgent.started` 一到就去要快照，但这个往返可能比第一批 `message.delta` 还慢
+ * （子任务越小越明显）。`view.messages = snapshot.messages` 会把这几片已经上屏的正文换回
+ * 快照那一刻的旧内容 —— 屏幕上是「答案忽然短了一截」，而且本轮不会再补上。
+ * 反过来，快照里的东西也不能丢：工具调用、已完成的 assistant 消息只有服务端有。
+ *
+ * ## 为什么「本地更全」是安全的假设
+ *
+ * 同一条连接上的帧是有序的：快照是服务端处理请求那一刻的**副本**，之后到达的增量只存在
+ * 于本地。所以合并方向永远是「取信息多的那份」，不必担心本地这份更旧。
+ *
+ * ## 规则
+ *
+ * 1. 本地没有增量 → 直接用快照（大多数情况：`started` 时子 Agent 还没吐字）。
+ * 2. 快照末尾那条 assistant 的正文是本地累计正文的**前缀** → 它们是同一段（core 在流式
+ *    开始前就把占位消息追加进了 `messages`，之后就地改它）。取本地的（更全），并让后续
+ *    增量继续拼在这一条上 —— 否则同一段会被拆成两条消息在屏幕上闪。
+ * 3. 否则快照末尾不是「正在拼的那一段」：用「服务端已知 assistant 正文按序拼接」对齐，只接
+ *    上多出来的尾巴 ——
+ *      · 本地以它开头：那截尾巴是快照序列化之后才到的新一段，接在后面；
+ *      · 本地是它的结尾：这一段服务端已经收下了（内容块形态的 assistant 落在这一支），丢掉本地；
+ *      · 都对不上：宁可重复也不吞字 —— 重复看得见，吞了是静默丢内容。
+ *
+ * 导出只为单测：这条竞态靠真 socket 复现不了（要凑时序），而它恰恰是最容易写错的地方。
+ */
+export function mergeSubAgentSnapshot(
+  snapshot: readonly AgentNS.Message[],
+  stream: SubAgentStream | null,
+): { messages: AgentNS.Message[]; stream: SubAgentStream | null } {
+  const base = [...snapshot];
+  if (!stream || (!stream.text && !stream.reasoning)) return { messages: base, stream };
+
+  const tail = base.at(-1);
+  const tailText =
+    tail && tail.role === AgentNS.Role.Assistant && typeof tail.content === "string"
+      ? tail.content
+      : null;
+
+  // 规则 2：同一段，本地更全
+  if (tailText !== null && stream.text.startsWith(tailText)) {
+    const merged = withAssistantText(tail!, stream.text, stream.reasoning);
+    base[base.length - 1] = merged;
+    return { messages: base, stream: { ...stream, message: merged } };
+  }
+
+  // 规则 3：对齐「服务端已知的 assistant 正文」，只接上多出来的那截
+  const confirmed = base
+    .filter(
+      (message) =>
+        message.role === AgentNS.Role.Assistant && typeof message.content === "string",
+    )
+    .map((message) => message.content as string)
+    .join("");
+  if (confirmed.endsWith(stream.text)) return { messages: base, stream: null };
+
+  const rest = stream.text.startsWith(confirmed) ? stream.text.slice(confirmed.length) : stream.text;
+  const appended = withAssistantText(
+    { role: AgentNS.Role.Assistant, content: "" } as AgentNS.Message,
+    rest,
+    stream.reasoning,
+  );
+  return { messages: [...base, appended], stream: { ...stream, message: appended, text: rest } };
+}
+
+/** 写一条 assistant 消息的正文/推理，其余字段（`tool_calls` 等）原样保留 */
+function withAssistantText(
+  message: AgentNS.Message,
+  text: string,
+  reasoning: string,
+): AgentNS.Message {
+  const next = { ...message, role: AgentNS.Role.Assistant, content: text } as AgentNS.Message;
+  if (reasoning) next.reasoning_content = reasoning;
+  return next;
+}
 
 /** 开一段远程会话需要的最小输入 */
 export interface OpenRemoteSessionInput {
@@ -120,6 +225,20 @@ export class RemoteChatSession implements ChatSessionLike {
   private pendingTurn: { turnId: number; resolve: () => void } | null = null;
   /** 最近一次收到的 `turn.end` 的轮次：挡住「事件比回执先到」那种竞态 */
   private lastEndedTurn = 0;
+  /**
+   * 本次会话出现过的子 Agent（按 `session.subAgent.started` 的顺序）。
+   *
+   * **只活当前这一轮**：`turn.end` 一到就清空（见 {@link finishTurn}），与进程内实现
+   * `send()` 的 `finally` 等价 —— 那一轮内循环已经结束，子 Agent 只剩历史价值，留着
+   * 只会白占一行。换会话（`reset` / `reload` / `migrate` / `session.idChanged`）同样清空。
+   *
+   * 注意这里**没有本地计数器**：`id` 与 `index` 都是服务端在 `started` 里给的（`index`
+   * 本轮从 1 起）。客户端自己数就会多出第二份会漂的答案，而「哪个是子AGENT2」只有
+   * 服务端知道（它才是分配方）。
+   */
+  private subAgentViews: SubAgentView[] = [];
+  /** 子 Agent id → 它正在拼的临时消息（见 {@link SubAgentStream}） */
+  private readonly subAgentStreams = new Map<string, SubAgentStream>();
 
   private constructor(
     client: ServerClient,
@@ -240,14 +359,13 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   /**
-   * 子 Agent 视图：**恒为空**。
+   * 本次会话已出现的子 Agent（按出现顺序）。
    *
-   * 协议里还没有子 Agent 事件（那是下一批的事），所以远程模式下 Agent 栏目不出现。
-   * 返回空数组而不是报错：界面把「没有子 Agent」与「暂不支持子 Agent」渲染成同一件事，
-   * 等协议补上事件，这里换个数据源就行。
+   * 屏幕每帧现取（`session?.subAgents ?? []`），所以这里返回活数组即可：清空、追加都
+   * 会被下一次渲染看到，不需要额外的信号渠道。
    */
   get subAgents(): readonly SubAgentView[] {
-    return [];
+    return this.subAgentViews;
   }
 
   get lastUsage(): AgentNS.Usage | undefined {
@@ -291,6 +409,7 @@ export class RemoteChatSession implements ChatSessionLike {
     // 工作区里换一段会话」，换到客户端进程的目录就等于替服务端换了地方
     const opened = await this.sessions.open({ path: this.path, agentId: this.agentId });
     this.sessionId = opened.sessionId;
+    this.clearSubAgents();
     this.currentMessages = [];
     this.streaming = null;
     this.currentPhase = null;
@@ -300,6 +419,8 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   async reload(): Promise<void> {
+    // 重建 Agent 之后旧的子 Agent 已经不属于它了（与进程内实现 `reload()` 同步）
+    this.clearSubAgents();
     this.applySnapshot(await this.sessions.reload(this.sessionId));
     this.notifier.onChange(true);
   }
@@ -315,6 +436,8 @@ export class RemoteChatSession implements ChatSessionLike {
     const result = await this.sessions.migrate(this.sessionId, mode);
     // 先换 id：换完之后旧 id 的事件一律过滤掉，新会话的事件才接得上
     this.sessionId = result.sessionId;
+    // 会话换了，栏目里那些是旧会话的子 Agent（与进程内实现 `migrate()` 同步）
+    this.clearSubAgents();
     this.currentPhase = null;
     this.applyMessages(result.messages);
     this.notifier.onChange(true);
@@ -436,9 +559,51 @@ export class RemoteChatSession implements ChatSessionLike {
     });
 
     mine(SESSION_EVENTS.delta, (event) => {
-      this.applyDelta(event.text, event.reasoning);
+      // 子 Agent 的 token 也是真从网络来的，速率里算上（进程内实现的 `onSubChunk` 同样计）
       this.rate.addDelta(event.text + event.reasoning);
+      if (event.subAgentId) {
+        // 带 `subAgentId` 的增量属于那个子 Agent：拼到它自己的临时消息上，**不碰**主会话的
+        // 拼接状态（`streaming`），也不改 `phase` —— 子 Agent 的流是工具内部的事，主阶段
+        // 此刻应停在「等待 xxx 返回」（与进程内实现同一条规矩：子 Agent 的增量不推进主阶段）。
+        this.applySubAgentDelta(event.subAgentId, event.text, event.reasoning);
+      } else {
+        this.applyDelta(event.text, event.reasoning);
+      }
       this.notifier.onChange(false);
+    });
+
+    /**
+     * 子 Agent 开工：标签上多一个「子AGENT{n}」。
+     *
+     * `index` / `subAgentId` 都用服务端给的：序号是本轮内从 1 起（`started` 携带），
+     * id 是稳定值（React key 与选中态都靠它，不能每轮重编）。
+     */
+    mine(SESSION_EVENTS.subAgentStarted, (event) => {
+      this.subAgentViews.push({
+        id: event.subAgentId,
+        index: event.index,
+        messages: [],
+        status: "running",
+      });
+      // 立刻拉一次快照：`started` 说明它已经在跑，服务端此刻可能已经有内容（任务描述、
+      // 上一轮工具调用）。首次通常只是一条空占位，但这一下让「中途接上连接」与「增量先于
+      // 快照到达」都收敛到同一份数据上（合并规则见 `mergeSubAgentSnapshot`）。
+      //
+      // 失败不升级成通知：这次拉取只是「把已有内容补上」，增量照样拼、`turn.end` 照样清，
+      // 连接真断了会有别的信号。
+      void this.syncSubAgent(event.subAgentId).catch(() => {});
+      // 标签立刻上屏（「它开跑了」这件事不该等一个往返）：此刻内容是空的，增量一到就填
+      this.notifier.onChange(true);
+    });
+
+    /** 子 Agent 收尾：只改状态（正文由增量与快照负责，这里不再拉一次） */
+    mine(SESSION_EVENTS.subAgentEnded, (event) => {
+      const view = this.subAgentViews.find((item) => item.id === event.subAgentId);
+      if (!view) return;
+      // **failed 不能被 done 覆盖**：core 的 `onSubAgentEnd` 在 `finally` 里分发，出错的那次
+      // 也照样会来一条 end —— 无脑覆盖会把 ✖ 擦成 ✓，用户以为子任务成功了。
+      if (!(view.status === "failed" && event.status === "done")) view.status = event.status;
+      this.notifier.onChange(true);
     });
 
     mine(SESSION_EVENTS.turnEnd, (event) => {
@@ -457,6 +622,8 @@ export class RemoteChatSession implements ChatSessionLike {
       this.client.on(SESSION_EVENTS.idChanged, (event) => {
         if (event.from !== this.sessionId) return;
         this.sessionId = event.sessionId;
+        // 换了会话，Agent 栏目里那些就是上一段会话的东西了（同 `migrate()` 的清空）
+        this.clearSubAgents();
         // 迁移已经把历史剔成「模板 + 断点」：屏幕上的那份已经作废，重取一次
         void this.syncFromServer()
           .catch(() => {})
@@ -464,6 +631,14 @@ export class RemoteChatSession implements ChatSessionLike {
       }),
     );
 
+    /**
+     * 对话内通知（包括子 Agent 出错时的 `subAgentFailed`）。
+     *
+     * 一律走「code → 本地词典」这条路：服务端只给 `{ code, params }`，不给句子。
+     * `subAgentFailed` 的模板只是把 `params.message` 原样吐出来 —— 与今天进程内实现
+     * 直接把 `error.message` 推上通知栏**逐字一致**，所以这里不必为它单开一条分支
+     * （多一条分支就多一处会与词典说不同话的地方）。
+     */
     mine(SESSION_EVENTS.notice, (event) => {
       this.notifier.onNotice(noticeText(event.code, event.params), toneOf(event.level));
     });
@@ -474,6 +649,66 @@ export class RemoteChatSession implements ChatSessionLike {
         this.notifier.onNotice(noticeText(event.code, event.params), toneOf(event.level));
       }),
     );
+  }
+
+  /**
+   * 清空 Agent 栏目。
+   *
+   * 调用点对应进程内实现的每一处 `clearSubAgents()`：`turn.end`（= 那边的 `send()` 收尾）、
+   * `reset` / `reload` / `migrate`、以及 `session.idChanged`（自动迁移换会话）。
+   * 远程侧没有“计数器”要归零：`id` 与 `index` 都是服务端给的，清掉列表就够。
+   */
+  private clearSubAgents(): void {
+    this.subAgentViews = [];
+    this.subAgentStreams.clear();
+  }
+
+  /**
+   * 子 Agent 的增量：拼到**它自己**的临时消息上。
+   *
+   * 与 `applyDelta` 是同一套拼接策略（临时消息 + 快照纠正），但**状态完全不共享**：
+   * 主会话的 `streaming` / `currentMessages` / `lastEndedTurn` 一个都不碰 —— 共享就会让
+   * 主会话里凭空多出子 Agent 的正文，或者把主会话的临时消息提前收尾。
+   */
+  private applySubAgentDelta(subAgentId: string, text: string, reasoning: string): void {
+    const view = this.subAgentViews.find((item) => item.id === subAgentId);
+    // 没有 `started` 就没有这个标签（`index` 是服务端在 started 里给的，客户端编不出来）。
+    // 严格按 sessionId 过滤后这只会发生在「中途接上连接」时，而那时快照才是数据的来源。
+    if (!view) return;
+
+    let stream = this.subAgentStreams.get(subAgentId);
+    if (!stream) {
+      const message = { role: AgentNS.Role.Assistant, content: "" } as AgentNS.Message;
+      stream = { message, text: "", reasoning: "" };
+      this.subAgentStreams.set(subAgentId, stream);
+      view.messages.push(message);
+    }
+    stream.text += text;
+    stream.reasoning += reasoning;
+    // 就地改这两个字段：屏幕读的是同一个对象，不必每次新建一条消息
+    stream.message.content = stream.text;
+    if (stream.reasoning) stream.message.reasoning_content = stream.reasoning;
+  }
+
+  /**
+   * 拉一次子 Agent 快照并合并进视图（合并规则见 {@link mergeSubAgentSnapshot}）。
+   *
+   * 换会话时列表已经被清空，所以迟到的快照自然落空 —— 不必再比一次 `sessionId`。
+   */
+  private async syncSubAgent(subAgentId: string): Promise<void> {
+    // 只用到 `messages`：`index` / `status` 已经由 `started` / `ended` 事件给过，
+    // 同一份事实不在这条路上读第二遍（否则两个来源说法不同时得二选一，又多一处判定）。
+    const snapshot = await this.sessions.subAgentSnapshot(this.sessionId, subAgentId);
+    const view = this.subAgentViews.find((item) => item.id === subAgentId);
+    if (!view) return;
+
+    const merged = mergeSubAgentSnapshot(
+      snapshot.messages as AgentNS.Message[],
+      this.subAgentStreams.get(subAgentId) ?? null,
+    );
+    view.messages = merged.messages;
+    if (merged.stream) this.subAgentStreams.set(subAgentId, merged.stream);
+    else this.subAgentStreams.delete(subAgentId);
   }
 
   /** 增量落到一条**暂时的** assistant 消息上（`turn.end` 之后会被快照替换掉） */
@@ -503,6 +738,10 @@ export class RemoteChatSession implements ChatSessionLike {
   private async finishTurn(turnId: number, failure?: string): Promise<void> {
     this.lastEndedTurn = Math.max(this.lastEndedTurn, turnId);
     this.streaming = null;
+    // 本轮内循环（含全部委派）已结束：子 Agent 只剩历史价值，栏目随之消失 —— 与进程内
+    // 实现 `send()` 的 `finally` 等价（中止 / 出错也走到这里，不留残影）。
+    // 放在取快照之前：快照只描述主会话，栏目不该被它带着复活。
+    this.clearSubAgents();
     this.currentPhase = null;
     this.rate.finish();
     try {

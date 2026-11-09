@@ -559,14 +559,14 @@ describe("Chat 集成（拆分前的护栏）", () => {
 
   // ==================== Agent 栏目（主 / 子 Agent 切换）====================
 
-  /** 造一个子 Agent 视图（只需 messages 与状态，组件只读这些） */
+  /** 造一个子 Agent 视图（契约里它就是数据：自己的 messages + 状态，组件只读这些） */
   const addSubAgent = (content: string) => {
     const index = created.session.subAgents.length + 1;
     created.session.subAgents.push({
       id: `sub-${index}`,
       index,
       status: "done",
-      agent: { messages: [{ id: `sub-${index}`, role: "assistant", content }] },
+      messages: [{ id: `sub-${index}`, role: "assistant", content }],
     });
   };
   /** 触发一帧重绘（不走输入框：敲字符会让「输入为空」的前提失效） */
@@ -588,6 +588,33 @@ describe("Chat 集成（拆分前的护栏）", () => {
     expect(frame).toContain("主AGENT");
     expect(frame).toContain("子AGENT1");
     expect(frame).toContain("子AGENT2");
+    unmount();
+  });
+
+  /**
+   * 子 Agent 视图的数据形状（`messages` 而不是 `agent` 实例）—— 切到栏目读的是哪份对话。
+   *
+   * 只断言这一件事：屏幕读的是子 Agent 自己那份 messages，不是主会话的 messages。
+   * 契约若退回「实例」形态，这条会直接红（`activeSub.agent` 取不到东西）。
+   */
+  it("子 AGENT 栏目显示子 Agent 自己的 messages（不是主会话的）", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    created.session.messages.push({ id: "m1", role: "assistant", content: "主 Agent 的话" });
+    created.session.subAgents.push({
+      id: "sub-1",
+      index: 1,
+      messages: [{ id: "s1", role: "assistant", content: "子 Agent 自己的话" }],
+      status: "running",
+    });
+    await repaint();
+
+    // →：输入框为空，切到子 AGENT1
+    stdin.write("\u001b[C");
+    await flush();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("子 Agent 自己的话");
+    expect(frame).not.toContain("主 Agent 的话");
     unmount();
   });
 

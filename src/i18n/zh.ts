@@ -62,6 +62,8 @@ export const zh: Record<string, string> = {
   "notice.languageChanged": "界面语言已切换为中文",
   "notice.turnAborted": "已中止本轮，会话回到中止前的状态",
   "notice.toolFailed": "工具执行失败：{error}",
+  // 子 Agent 出错：模板只把原文吐出来（不加前缀）—— 与原来直接把 error.message 推上通知栏逐字一致
+  "notice.subAgentFailed": "{message}",
   "notice.mcpUnavailable": "MCP server 连不上：{name}",
   "notice.storeUnavailable": "会话存档目录不可用：{error}",
   "notice.remoteImagesTooLarge": "图片太大（{size}MB），超过单帧上限，本次只发了文字",

@@ -27,6 +27,10 @@ const NOTICE_KEYS: Record<NoticeCode, string> = {
   turnAborted: "notice.turnAborted",
   persistFailed: "handoff.persistFailed",
   toolFailed: "notice.toolFailed",
+  // 子 Agent 出错（`params.index` 指哪个子 Agent，`params.message` 是原文）。
+  // 模板只是把 `message` 原样吐出来 —— 与进程内实现「直接把 `error.message` 推上通知栏」
+  // 逐字一致，**不加**「子 Agent 1 出错：」这类前缀（那是交互变化）。
+  subAgentFailed: "notice.subAgentFailed",
   // ---- 全局 ----
   mcpUnavailable: "notice.mcpUnavailable",
   storeUnavailable: "notice.storeUnavailable",

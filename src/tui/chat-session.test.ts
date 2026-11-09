@@ -493,7 +493,7 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
     expect(session.subAgents.map((view) => view.status)).toEqual(["running", "running"]);
   });
 
-  it("委派结束后仍保留实例且状态转 done（栏目可回看子 Agent 自己的 messages）", async () => {
+  it("委派结束后仍保留对话且状态转 done（栏目可回看子 Agent 自己的 messages）", async () => {
     const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
     const agent = harness.agents.at(-1)!;
     const subAgent = makeSubAgent();
@@ -504,8 +504,10 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
     agent.events.emit("sub-agent-end", { subAgent, toolCallContext });
 
     expect(session.subAgents).toHaveLength(1);
-    expect(session.subAgents[0]!.agent).toBe(subAgent);
-    expect(session.subAgents[0]!.agent.messages[0]!.content).toBe("子 Agent 的结论");
+    // 视图对外只有数据（`messages`）：进程内实现存的就是子 Agent 实例的那个数组引用，
+    // 远程实现存的是服务端给的数据 —— 两种形态在契约上是同一件事
+    expect(session.subAgents[0]!.messages).toBe(subAgent.messages);
+    expect(session.subAgents[0]!.messages[0]!.content).toBe("子 Agent 的结论");
     expect(session.subAgents[0]!.status).toBe("done");
   });
 

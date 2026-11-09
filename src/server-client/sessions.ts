@@ -29,6 +29,7 @@ import {
   type SessionSaveResult,
   type SessionSendResult,
   type SessionSnapshotResult,
+  type SubAgentSnapshotResult,
   type WorkspaceResolveResult,
   type WorkspaceFilesResult,
 } from "@ai-zen/agents-server";
@@ -75,6 +76,19 @@ export class RemoteSessions {
   /** 某个工作区「上一轮会话」的指针（续接用；没有则 null） */
   async last(workspaceId: string): Promise<SessionLastResult> {
     return await this.client.call<SessionLastResult>(SESSION_METHODS.last, { workspaceId });
+  }
+
+  /**
+   * 某个子 Agent 到目前为止的完整对话（Agent 栏目切过去时对齐用）。
+   *
+   * 子 Agent 只活在当前一轮：`turn.end` 之后服务端会丢弃它，这条调用会报
+   * `sub-agent-missing` —— 那不是服务端出错，客户端该做的是把栏目收回去。
+   */
+  async subAgentSnapshot(sessionId: string, subAgentId: string): Promise<SubAgentSnapshotResult> {
+    return await this.client.call<SubAgentSnapshotResult>(SESSION_METHODS.subAgentSnapshot, {
+      sessionId,
+      subAgentId,
+    });
   }
 
   /** 开（或续接）一个会话 */

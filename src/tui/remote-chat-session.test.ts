@@ -20,11 +20,12 @@ import {
   SessionManager,
   type AgentLike,
 } from "@ai-zen/agents-server";
+import { AgentNS } from "@ai-zen/agents-core";
 import { RemoteSessions } from "../server-client/sessions.js";
 import { SocketServerClient } from "../server-client/socket-server-client.js";
 import { setLocale } from "../i18n/index.js";
 import { useTempAiZenDir } from "../test-support/temp-dir.js";
-import { RemoteChatSession } from "./remote-chat-session.js";
+import { RemoteChatSession, mergeSubAgentSnapshot, type SubAgentStream } from "./remote-chat-session.js";
 import type { ChatSessionNotifier } from "./chat-session.js";
 
 class FakeAgent implements AgentLike {
@@ -228,7 +229,7 @@ describe("RemoteChatSession：开一段会话", () => {
     expect(opened.modelId).toBe("test-model");
     expect(opened.phase).toBeNull();
     expect(opened.messages).toEqual([{ role: "user", content: "上次聊到这儿" }]);
-    // 子 Agent 栏目还没有协议承载：恒为空，界面因此不出现这一栏
+    // 还没人委派：栏目不出现（有子 Agent 才有这一栏）
     expect(opened.subAgents).toEqual([]);
   });
 });
@@ -492,5 +493,233 @@ describe("RemoteChatSession：服务端在一轮内部换 id（自动迁移）",
     expect(opened.currentId).not.toBe("chat_1");
     expect(JSON.stringify(opened.messages)).not.toContain("旧任务");
     expect(opened.phase).toBeNull();
+  });
+});
+
+// ==================== 子 Agent 栏目 ====================
+//
+// 这里分两块：
+//   · 快照与增量的合并是纯逻辑，直接测（那种竞态无法用真 socket 稳定复现）；
+//   · 其余走**真 Daemon + 假 Agent**：假 Agent 手动 `fire("sub-agent-start", { subAgent })`，
+//     于是「SDK 何时委派」在测试里是可编程的，不依赖真模型与工具。
+
+describe("子 Agent：快照与增量的合并（竞态）", () => {
+  const assistant = (content: string) =>
+    ({ role: AgentNS.Role.Assistant, content }) as unknown as AgentNS.Message;
+  const user = (content: string) =>
+    ({ role: AgentNS.Role.User, content }) as unknown as AgentNS.Message;
+  const tool = (content: string) =>
+    ({ role: AgentNS.Role.Tool, tool_call_id: "t1", content }) as unknown as AgentNS.Message;
+  /** 本地已经拼出来的那条临时消息（就是 `applySubAgentDelta` 累积的那个状态） */
+  const streamOf = (text: string, reasoning = ""): SubAgentStream => {
+    const message = assistant(text);
+    if (reasoning) message.reasoning_content = reasoning;
+    return { message, text, reasoning };
+  };
+
+  it("本地还没有增量：结果就是快照（started 时最常见）", () => {
+    const snapshot = [user("任务")];
+    const merged = mergeSubAgentSnapshot(snapshot, null);
+
+    expect(merged.messages).toEqual(snapshot);
+    expect(merged.stream).toBeNull();
+  });
+
+  it("快照晚于第一批增量：已经拼出来的正文不丢，也不多出一条", () => {
+    // 服务端那份里是**空占位**（core 在开始流式前就把 assistant 消息 append 进了 messages），
+    // 本地已经拼出半句「答」—— 无脑覆盖就会把这半句摸掉
+    const snapshot = [user("任务"), assistant("")];
+    const merged = mergeSubAgentSnapshot(snapshot, streamOf("答", "想"));
+
+    expect(merged.messages).toHaveLength(2);
+    expect(merged.messages[1]!.content).toBe("答");
+    expect(merged.messages[1]!.reasoning_content).toBe("想");
+    // 之后的增量继续拼在**同一条**上（否则屏幕上会凭空多出一条消息）
+    expect(merged.stream!.message).toBe(merged.messages[1]);
+  });
+
+  it("快照那份比本地旧：取信息多的那份（本地只多不少）", () => {
+    const snapshot = [user("任务"), assistant("答")];
+    const merged = mergeSubAgentSnapshot(snapshot, streamOf("答完了"));
+
+    expect(merged.messages).toHaveLength(2);
+    expect(merged.messages[1]!.content).toBe("答完了");
+  });
+
+  it("服务端已经收下这段（当前没有在流的 assistant）：不重复追加", () => {
+    // 本地累计的「先想」已经在快照里了，而快照末尾是工具结果（下一段还没开始）
+    const merged = mergeSubAgentSnapshot(
+      [user("任务"), assistant("先想"), tool("结果")],
+      streamOf("先想"),
+    );
+
+    expect(merged.messages).toHaveLength(3);
+    // 临时消息丢掉：之后的增量重新起一条（否则会接在已收尾的旧消息后面）
+    expect(merged.stream).toBeNull();
+  });
+
+  it("快照之后才开的新一段：只接上多出来的尾巴", () => {
+    const merged = mergeSubAgentSnapshot(
+      [user("任务"), assistant("先想"), tool("结果")],
+      streamOf("先想结论"),
+    );
+
+    expect(merged.messages).toHaveLength(4);
+    expect(merged.messages[3]!.content).toBe("结论");
+    expect(merged.stream!.message).toBe(merged.messages[3]);
+  });
+
+  it("对不上任何一段时宁重不丢：整段追加，不静默吞字", () => {
+    const merged = mergeSubAgentSnapshot(
+      [user("任务"), assistant("旧内容"), tool("结果")],
+      streamOf("新内容"),
+    );
+
+    expect(merged.messages).toHaveLength(4);
+    expect(merged.messages[3]!.content).toBe("新内容");
+  });
+});
+
+/**
+ * 假子 Agent：带事件总线（服务端会订阅它并转成带 `subAgentId` 的 `message.delta`）。
+ *
+ * 形状跟 `FakeAgent` 同一个思路 —— 测试就是服务端那侧的「SDK」，手动驱动时序。
+ */
+function makeSubAgent() {
+  const handlers = new Map<string, Set<(payload: any) => void>>();
+  return {
+    messages: [] as any[],
+    events: {
+      on: (event: string, handler: (payload: any) => void) => {
+        if (!handlers.has(event)) handlers.set(event, new Set());
+        handlers.get(event)!.add(handler);
+      },
+      off: (event: string, handler: (payload: any) => void) => {
+        handlers.get(event)?.delete(handler);
+      },
+      fire: (event: string, payload?: unknown) => {
+        for (const handler of handlers.get(event) ?? []) handler(payload);
+      },
+    },
+  };
+}
+
+/**
+ * 整条链路的用例 —— **等**服务端把子 Agent 协议落地（当前 `@ai-zen/agents-server` 里还没有）：
+ *
+ *   1. `SESSION_EVENTS.subAgentStarted` / `subAgentEnded`（`session.subAgent.started/ended`）；
+ *   2. `MessageDeltaEvent.subAgentId?`；
+ *   3. `SESSION_METHODS.subAgentSnapshot`（`session.subAgent.snapshot`）；
+ *   4. `SESSION_NOTICE_CODES.subAgentFailed`；
+ *   5. `SessionManager` 把 SDK 的 `sub-agent-start` / `sub-agent-end` / 子 Agent 的
+ *      `chunk-parsed` 翻译成上面这些（假 Agent 已经能 `fire()`，`SessionManager.createAgent`
+ *      是注入的，所以服务端一接上这些用例就能真跑）。
+ */
+describe("RemoteChatSession：子 Agent 栏目（等服务端协议）", () => {
+  it("started 给出 index / id：标签按服务端编号出现，快照把已有消息填上", async () => {
+    const opened = await open();
+    const subAgent = makeSubAgent();
+    subAgent.messages.push({ role: "user", content: "子任务：数文件" });
+
+    agent.fire("sub-agent-start", { subAgent });
+
+    await waitUntil(() => opened.subAgents.length === 1);
+    const view = opened.subAgents[0]!;
+    expect(view.index).toBe(1);
+    expect(view.status).toBe("running");
+    // 已有内容由 `session.subAgent.snapshot` 补上（不从主会话搬）
+    await waitUntil(() => JSON.stringify(view.messages).includes("子任务：数文件"));
+    // 与主会话互不干扰
+    expect(opened.messages).toEqual([]);
+  });
+
+  it("生成中切过去能看到实时输出（带 subAgentId 的增量落在它自己的对话里）", async () => {
+    const opened = await open();
+    const subAgent = makeSubAgent();
+    agent.fire("sub-agent-start", { subAgent });
+    await waitUntil(() => opened.subAgents.length === 1);
+
+    subAgent.events.fire("chunk-parsed", { choices: [{ delta: { content: "数到 3 个" } }] });
+
+    const view = opened.subAgents[0]!;
+    await waitUntil(() => JSON.stringify(view.messages).includes("数到 3 个"));
+    // 子 Agent 的增量不进主会话
+    expect(JSON.stringify(opened.messages)).not.toContain("数到 3 个");
+  });
+
+  it("子 Agent 的增量不推进主阶段（主 Agent 此刻在等工具返回）", async () => {
+    const opened = await open();
+    void opened.send("统计一下");
+    await waitUntil(() => agent.sent.length === 1);
+    agent.fire("parsed", { tool_calls: [{ function: { name: "sub_agent_default" } }] });
+    await waitUntil(() => opened.phase?.kind === "tool-waiting");
+
+    const subAgent = makeSubAgent();
+    agent.fire("sub-agent-start", { subAgent });
+    subAgent.events.fire("chunk-parsed", { choices: [{ delta: { content: "子任务输出" } }] });
+    await waitUntil(() => JSON.stringify(opened.subAgents).includes("子任务输出"));
+
+    // 阶段仍停在「等待 sub_agent_default 返回」
+    expect(opened.phase).toMatchObject({ kind: "tool-waiting", tools: ["sub_agent_default"] });
+    agent.fire("finally");
+  });
+
+  it("ended 把状态改成 done；failed 不会被随后的 done 覆盖", async () => {
+    const opened = await open();
+    const subAgent = makeSubAgent();
+    agent.fire("sub-agent-start", { subAgent });
+    await waitUntil(() => opened.subAgents.length === 1);
+
+    agent.fire("sub-agent-end", { subAgent });
+    await waitUntil(() => opened.subAgents[0]!.status === "done");
+
+    // 第二个子 Agent 出错：core 在 `finally` 里照常分发 end，不能被擦成 done
+    const failing = makeSubAgent();
+    agent.fire("sub-agent-start", { subAgent: failing });
+    await waitUntil(() => opened.subAgents.length === 2);
+    failing.events.fire("error", new Error("boom"));
+    agent.fire("sub-agent-end", { subAgent: failing });
+
+    await waitUntil(() => opened.subAgents[1]!.status === "failed");
+    expect(opened.subAgents[1]!.status).toBe("failed");
+  });
+
+  it("子 Agent 出错：标签 failed + 通知栏一条原文（无前缀，逐字等于今天）", async () => {
+    const opened = await open();
+    const subAgent = makeSubAgent();
+    agent.fire("sub-agent-start", { subAgent });
+    await waitUntil(() => opened.subAgents.length === 1);
+
+    subAgent.events.fire("error", new Error("boom"));
+
+    await waitUntil(() => notices.length === 1);
+    expect(notices[0]).toEqual({ text: "boom", tone: "error" });
+    expect(opened.subAgents[0]!.status).toBe("failed");
+  });
+
+  it("只活当前一轮：turn.end 清空列表", async () => {
+    const opened = await open();
+    const pending = opened.send("统计一下");
+    await waitUntil(() => agent.sent.length === 1);
+
+    agent.fire("sub-agent-start", { subAgent: makeSubAgent() });
+    await waitUntil(() => opened.subAgents.length === 1);
+
+    agent.fire("finally");
+    await pending;
+
+    expect(opened.subAgents).toEqual([]);
+  });
+
+  it("reset / reload / migrate 换了会话也清空（不清就会残留上一段会话的子 Agent）", async () => {
+    const opened = await open();
+    agent.messages = [{ role: "user", content: "任务" }];
+
+    for (const change of [() => opened.reset(), () => opened.reload(), () => opened.migrate()]) {
+      agent.fire("sub-agent-start", { subAgent: makeSubAgent() });
+      await waitUntil(() => opened.subAgents.length === 1);
+      await change();
+      expect(opened.subAgents).toEqual([]);
+    }
   });
 });
