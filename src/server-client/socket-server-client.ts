@@ -1,11 +1,15 @@
 /**
- * 走 TCP 的 {@link SessionClient} 实现 —— 客户端侧唯一的「线上」实现。
+ * 走 TCP 的 {@link ServerClient} 实现 —— 客户端侧唯一的「线上」实现。
  *
- * ## 为什么叫 Socket 而不是 Remote
+ * ## 为什么叫 Socket 而不是 Remote，为什么是 Server 而不是 Session
  *
- * 后缀写**传输**，不写**距离**。v1 连的就是 `127.0.0.1`，叫 `Remote` 等于把一个还没
- * 发生的事实提前写进类型；将来真要跨机时它照样叫这个名字（跨不跨机不是类名该管的事）。
- * WebSocket / stdio 各来一个 `WebSocketSessionClient` / `StdioSessionClient`，换的是后缀。
+ * 后缀写**传输**，不写**距离**：v1 连的就是 `127.0.0.1`，叫 `Remote` 等于把一个还没
+ * 发生的事实提前写进类型；将来真要跨机时它照样叫这个名字。
+ * WebSocket / stdio 各来一个 `WebSocketServerClient` / `StdioServerClient`，换的是前缀。
+ *
+ * 而主体是 **Server**：它是一条到服务端的连接，`ping`、`workspace.*`、`session.*` 都走它。
+ * `session` 在本项目里特指「与某个 Agent 的一段会话」（workspace 的下级对象），
+ * 不是连接 —— 一条连接可以陆续服务好几个会话。
  *
  * ## 握手在 `connect()` 里做完
  *
@@ -22,7 +26,7 @@ import {
   type ResponseFrame,
   type SessionEvent,
 } from "@ai-zen/agents-server";
-import type { CallOptions, ClientInfo, ServerAddress, SessionClient } from "./types.js";
+import type { CallOptions, ClientInfo, ServerAddress, ServerClient } from "./types.js";
 
 interface PendingCall {
   resolve: (value: unknown) => void;
@@ -30,7 +34,7 @@ interface PendingCall {
   timer: ReturnType<typeof setTimeout>;
 }
 
-export interface SocketSessionClientOptions {
+export interface SocketServerClientOptions {
   address: ServerAddress;
   client: ClientInfo;
   /** 建连 + 握手的总时限。握手是两趟往返，但都在本机，1s 都算宽裕 */
@@ -42,7 +46,7 @@ export interface SocketSessionClientOptions {
 const DEFAULT_CONNECT_TIMEOUT_MS = 3000;
 const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 
-export class SocketSessionClient implements SessionClient {
+export class SocketServerClient implements ServerClient {
   readonly address: ServerAddress;
 
   private readonly socket: Socket;
@@ -65,25 +69,25 @@ export class SocketSessionClient implements SessionClient {
   }
 
   /** 建连 + 握手；握手被拒或超时一律抛错（调用方据此决定"重拉一个"还是"报给人看"） */
-  static async connect(options: SocketSessionClientOptions): Promise<SocketSessionClient> {
+  static async connect(options: SocketServerClientOptions): Promise<SocketServerClient> {
     const { address, client } = options;
     const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
 
     const socket = createConnection({ host: address.host, port: address.port });
     socket.setEncoding("utf-8");
-    const session = new SocketSessionClient(
+    const connection = new SocketServerClient(
       socket,
       address,
       options.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS,
     );
 
     const ready = new Promise<void>((resolve, reject) => {
-      session.pendingHandshake = { resolve, reject };
+      connection.pendingHandshake = { resolve, reject };
     });
-    session.attach();
+    connection.attach();
 
     const timer = setTimeout(() => {
-      session.settleHandshake(
+      connection.settleHandshake(
         new Error(`handshake timeout after ${connectTimeoutMs}ms (${address.host}:${address.port})`),
       );
       socket.destroy();
@@ -101,7 +105,7 @@ export class SocketSessionClient implements SessionClient {
 
     try {
       await ready;
-      return session;
+      return connection;
     } catch (error) {
       socket.destroy();
       throw error;

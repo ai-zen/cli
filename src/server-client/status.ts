@@ -9,13 +9,13 @@
  */
 
 import { readDescriptor } from "@ai-zen/agents-server";
-import { SocketSessionClient } from "./socket-session-client.js";
-import type { ClientInfo, ServerAddress, SessionClient } from "./types.js";
+import { SocketServerClient } from "./socket-server-client.js";
+import type { ClientInfo, ServerAddress, ServerClient } from "./types.js";
 
 export interface ServerStatusDeps {
   aiZenDir: string;
-  client: ClientInfo;
-  connect?: (address: ServerAddress) => Promise<SessionClient>;
+  clientInfo: ClientInfo;
+  connect?: (address: ServerAddress) => Promise<ServerClient>;
 }
 
 export type ServerStatus =
@@ -28,9 +28,9 @@ export async function readServerStatus(deps: ServerStatusDeps): Promise<ServerSt
 
   const connect =
     deps.connect ??
-    ((address: ServerAddress) => SocketSessionClient.connect({ address, client: deps.client }));
+    ((address: ServerAddress) => SocketServerClient.connect({ address, client: deps.clientInfo }));
 
-  let client: SessionClient;
+  let client: ServerClient;
   try {
     client = await connect({ host: descriptor.host, port: descriptor.port });
   } catch (error) {

@@ -7,7 +7,7 @@ import { Daemon, writeDescriptor } from "@ai-zen/agents-server";
 import { readServerStatus } from "./status.js";
 import type { ClientInfo } from "./types.js";
 
-const client: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
+const clientInfo: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
 
 let dir: string;
 let daemon: Daemon | null = null;
@@ -33,7 +33,7 @@ async function unusedPort(): Promise<number> {
 
 describe("readServerStatus", () => {
   it("没有发现文件 → running:false（原因写明是没发现文件）", async () => {
-    expect(await readServerStatus({ aiZenDir: dir, client })).toEqual({
+    expect(await readServerStatus({ aiZenDir: dir, clientInfo })).toEqual({
       running: false,
       reason: "no descriptor",
     });
@@ -43,7 +43,7 @@ describe("readServerStatus", () => {
     daemon = new Daemon({ aiZenDir: dir, port: 0, version: "0.0.0-test" });
     await daemon.start();
 
-    const status = await readServerStatus({ aiZenDir: dir, client });
+    const status = await readServerStatus({ aiZenDir: dir, clientInfo });
     expect(status.running).toBe(true);
     if (!status.running) return; // 类型收窄（失败时上面已断言）
     expect(status.port).toBe(daemon.port);
@@ -64,7 +64,7 @@ describe("readServerStatus", () => {
       schema: 1,
     });
 
-    const status = await readServerStatus({ aiZenDir: dir, client });
+    const status = await readServerStatus({ aiZenDir: dir, clientInfo });
     expect(status.running).toBe(false);
     if (status.running) return;
     expect(status.pid).toBe(process.pid);

@@ -1,8 +1,8 @@
 /**
  * 客户端 ↔ 服务端的**事件线**端到端：真 socket、真帧、假 Agent。
  *
- * 这里不测业务（服务端包里有 16 例管着），只证明一件事：`SocketSessionClient.on()` 收得到
- * 服务端推过来的事件，且 `SessionClient` 端口的事件名是编译期可查的。
+ * 这里不测业务（服务端包里有 16 例管着），只证明一件事：`SocketServerClient.on()` 收得到
+ * 服务端推过来的事件，且 `ServerClient` 端口的事件名是编译期可查的。
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -14,14 +14,15 @@ import {
   createSessionHandlers,
   SessionManager,
   SESSION_EVENTS,
+  EVENT_METHODS,
   SESSION_METHODS,
-  type SessionAgent,
+  type AgentLike,
   type SessionEvent,
 } from "@ai-zen/agents-server";
-import { SocketSessionClient } from "./socket-session-client.js";
+import { SocketServerClient } from "./socket-server-client.js";
 import type { ClientInfo } from "./types.js";
 
-class FakeAgent implements SessionAgent {
+class FakeAgent implements AgentLike {
   messages: unknown[] = [];
   private readonly handlers = new Map<string, Set<(payload: any) => void>>();
   readonly events = {
@@ -42,13 +43,13 @@ class FakeAgent implements SessionAgent {
   }
 }
 
-const client: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
+const clientInfo: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
 
 let dir: string;
 let daemon: Daemon | null = null;
 let manager: SessionManager | null = null;
 let agent: FakeAgent;
-let session: SocketSessionClient | null = null;
+let connection: SocketServerClient | null = null;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aiz-cli-events-"));
@@ -57,8 +58,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  session?.close();
-  session = null;
+  connection?.close();
+  connection = null;
   manager?.dispose();
   manager = null;
   if (daemon) {
@@ -68,7 +69,7 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-async function start(): Promise<SocketSessionClient> {
+async function start(): Promise<SocketServerClient> {
   daemon = new Daemon({
     aiZenDir: dir,
     port: 0,
@@ -76,11 +77,11 @@ async function start(): Promise<SocketSessionClient> {
     handlers: createSessionHandlers({ manager: manager!, workspacesRoot: join(dir, "workspaces") }),
   });
   await daemon.start();
-  session = await SocketSessionClient.connect({
+  connection = await SocketServerClient.connect({
     address: { host: "127.0.0.1", port: daemon.port },
-    client,
+    client: clientInfo,
   });
-  return session;
+  return connection;
 }
 
 /** 等到某个事件出现（事件是推的，没有"等这一帧"的 API） */
@@ -92,7 +93,7 @@ async function waitFor(received: SessionEvent[], name: string, count = 1): Promi
   throw new Error(`timeout waiting for ${count}× ${name}, got ${JSON.stringify(received)}`);
 }
 
-describe("SocketSessionClient.on（服务端推的事件）", () => {
+describe("SocketServerClient.on（服务端推的事件）", () => {
   it("watch 之后收得到阶段 / 正文增量 / 轮次收尾", async () => {
     const client = await start();
     const received: SessionEvent[] = [];
@@ -100,7 +101,7 @@ describe("SocketSessionClient.on（服务端推的事件）", () => {
     client.on(SESSION_EVENTS.delta, (event) => received.push(event));
     client.on(SESSION_EVENTS.turnEnd, (event) => received.push(event));
 
-    await client.call(SESSION_METHODS.watch);
+    await client.call(EVENT_METHODS.watch);
     const created = await client.call<{ sessionId: string }>(SESSION_METHODS.create, {
       workspaceId: "ws-1",
       path: dir,
@@ -131,7 +132,7 @@ describe("SocketSessionClient.on（服务端推的事件）", () => {
     const received: SessionEvent[] = [];
     const off = client.on(SESSION_EVENTS.phase, (event) => received.push(event));
 
-    await client.call(SESSION_METHODS.watch);
+    await client.call(EVENT_METHODS.watch);
     const created = await client.call<{ sessionId: string }>(SESSION_METHODS.create, {
       workspaceId: "ws-1",
       path: dir,

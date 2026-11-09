@@ -6,7 +6,7 @@ import { Daemon, writeDescriptor } from "@ai-zen/agents-server";
 import { ensureServer } from "./ensure-server.js";
 import type { ClientInfo } from "./types.js";
 
-const client: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
+const clientInfo: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
 /** 不可能存在的 pid：证明"发现文件还在、进程已经没了"这条路径 */
 const DEAD_PID = 2 ** 22 + 12345;
 
@@ -44,7 +44,7 @@ describe("ensureServer", () => {
     let spawnCount = 0;
     const result = await ensureServer({
       aiZenDir: dir,
-      client,
+      clientInfo,
       startServerProcess: async () => {
         spawnCount++;
       },
@@ -66,7 +66,7 @@ describe("ensureServer", () => {
     let spawnCount = 0;
     const result = await ensureServer({
       aiZenDir: dir,
-      client,
+      clientInfo,
       // 注入"拉起"：进程内起一个真 Daemon，模拟 detached 子进程最终把发现文件覆盖掉
       startServerProcess: async () => {
         spawnCount++;
@@ -90,7 +90,7 @@ describe("ensureServer", () => {
     await expect(
       ensureServer({
         aiZenDir: dir,
-        client,
+        clientInfo,
         startServerProcess: async () => {
           /* 什么都没起 */
         },
@@ -109,7 +109,7 @@ describe("ensureServer", () => {
     await expect(
       ensureServer({
         aiZenDir: dir,
-        client,
+        clientInfo,
         startServerProcess: async () => {
           throw new Error("spawn ENOENT");
         },

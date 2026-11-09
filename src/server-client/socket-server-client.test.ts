@@ -4,7 +4,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Daemon, encodeFrame } from "@ai-zen/agents-server";
-import { SocketSessionClient } from "./socket-session-client.js";
+import { SocketServerClient } from "./socket-server-client.js";
 import type { ClientInfo, ServerAddress } from "./types.js";
 
 const client: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
@@ -16,7 +16,7 @@ let fakeServer: Server | null = null;
 const fakeSockets = new Set<Socket>();
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "aiz-cli-session-"));
+  dir = mkdtempSync(join(tmpdir(), "aiz-cli-server-client-"));
   daemon = new Daemon({ aiZenDir: dir, port: 0, version: "0.0.0-test" });
 });
 
@@ -52,42 +52,42 @@ async function startFakeServer(onConnection?: (socket: Socket) => void): Promise
   return { host: "127.0.0.1", port: address.port };
 }
 
-describe("SocketSessionClient", () => {
+describe("SocketServerClient", () => {
   it("握手后可以直接调 ping / status（不用自己发 hello）", async () => {
-    const session = await SocketSessionClient.connect({ address: await startServer(), client });
+    const connection = await SocketServerClient.connect({ address: await startServer(), client });
     try {
-      expect(await session.call("ping")).toEqual({ pong: true });
+      expect(await connection.call("ping")).toEqual({ pong: true });
 
-      const status = await session.call<{ port: number; pid: number; protocol: number }>("status");
+      const status = await connection.call<{ port: number; pid: number; protocol: number }>("status");
       expect(status.port).toBe(daemon!.port);
       expect(status.pid).toBe(process.pid);
       expect(status.protocol).toBe(1);
 
       // 握手回执里服务端自报的身份
-      expect(session.server?.name).toBe("@ai-zen/agents-server");
+      expect(connection.server?.name).toBe("@ai-zen/agents-server");
     } finally {
-      session.close();
+      connection.close();
     }
   });
 
   it("方法不存在 → 抛 unknown-method（错误码原样带出来）", async () => {
-    const session = await SocketSessionClient.connect({ address: await startServer(), client });
+    const connection = await SocketServerClient.connect({ address: await startServer(), client });
     try {
-      await expect(session.call("nope")).rejects.toThrow(/unknown-method/);
+      await expect(connection.call("nope")).rejects.toThrow(/unknown-method/);
     } finally {
-      session.close();
+      connection.close();
     }
   });
 
   it("服务端收摊后：调用立刻失败，不挂到超时", async () => {
-    const session = await SocketSessionClient.connect({ address: await startServer(), client });
+    const connection = await SocketServerClient.connect({ address: await startServer(), client });
     await daemon!.stop("test");
     daemon = null;
 
-    await expect(session.call("ping", undefined, { timeoutMs: 1000 })).rejects.toThrow(
+    await expect(connection.call("ping", undefined, { timeoutMs: 1000 })).rejects.toThrow(
       /closed|connection closed/,
     );
-    session.close();
+    connection.close();
   });
 
   it("握手被拒（版本不符）→ connect 抛错并带上服务端的 code", async () => {
@@ -103,13 +103,13 @@ describe("SocketSessionClient", () => {
       });
     });
 
-    await expect(SocketSessionClient.connect({ address, client })).rejects.toThrow(/version-mismatch/);
+    await expect(SocketServerClient.connect({ address, client })).rejects.toThrow(/version-mismatch/);
   });
 
   it("服务端不回 hello → connect 在 connectTimeoutMs 后超时失败", async () => {
     const address = await startFakeServer(); // 接受连接但永不回话
     await expect(
-      SocketSessionClient.connect({ address, client, connectTimeoutMs: 100 }),
+      SocketServerClient.connect({ address, client, connectTimeoutMs: 100 }),
     ).rejects.toThrow(/handshake timeout/);
   });
 
@@ -119,7 +119,7 @@ describe("SocketSessionClient", () => {
     await new Promise<void>((resolve) => fakeServer!.close(() => resolve()));
     fakeServer = null;
 
-    await expect(SocketSessionClient.connect({ address: { host: "127.0.0.1", port: deadPort }, client })).rejects.toThrow(
+    await expect(SocketServerClient.connect({ address: { host: "127.0.0.1", port: deadPort }, client })).rejects.toThrow(
       /ECONNREFUSED|connect/i,
     );
   });

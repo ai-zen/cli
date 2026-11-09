@@ -85,7 +85,7 @@ async function main(): Promise<void> {
       // 顺手拉一个起来会让答案失去意义。输出 JSON 供脚本消费（无需 i18n）。
       const status = await readServerStatus({
         aiZenDir: AI_ZEN_DIR,
-        client: { name: "@ai-zen/cli", version: CLI_VERSION },
+        clientInfo: { name: "@ai-zen/cli", version: CLI_VERSION },
       });
       process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
       process.exitCode = status.running ? 0 : 1;

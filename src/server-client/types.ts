@@ -1,7 +1,7 @@
 /**
  * 客户端侧对「服务端」的全部认知。
  *
- * 这里只有**端口**（能力接口），没有实现：TUI / 命令层只认 {@link SessionClient}，
+ * 这里只有**端口**（能力接口），没有实现：TUI / 命令层只认 {@link ServerClient}，
  * 不认 TCP、不认 HTTP，也不知道服务端跑在同机还是别处。将来换传输（WebSocket / stdio /
  * ssh 隧道）只换实现类，调用点一行不改 —— 这是「传输自由」在类型上的落点。
  */
@@ -31,12 +31,18 @@ export interface CallOptions {
 }
 
 /**
- * 会话能力端口。
+ * 服务端连接的端口。
+ *
+ * ## 为什么叫 ServerClient 而不是 SessionClient
+ *
+ * 它是一条**到服务端的连接**，承载的是全部方法：`ping` / `workspace.*` / `session.*`。
+ * 而 `session` 在本项目里特指「与某个 Agent 进行的一段会话」（workspace 的下级对象），
+ * 拿它当“连接”用会让两层概念糊在一起 —— 一条连接可以陆续服务好几个会话。
  *
  * `call` 是请求/响应，`on` 是服务端主动推的事件（阶段、增量、轮次收尾）—— 两者
- * 共用一条连接，事件的载荷形状由 `protocol/sessions.ts` 定义。
+ * 共用一条连接，事件的载荷形状由 `@ai-zen/agents-server` 的 `protocol/sessions.ts` 定义。
  */
-export interface SessionClient {
+export interface ServerClient {
   readonly address: ServerAddress;
   call<T = unknown>(method: string, params?: unknown, options?: CallOptions): Promise<T>;
   /**

@@ -21,17 +21,17 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { readDescriptor, type ServerDescriptor } from "@ai-zen/agents-server";
-import { SocketSessionClient } from "./socket-session-client.js";
-import type { ClientInfo, ServerAddress, SessionClient } from "./types.js";
+import { SocketServerClient } from "./socket-server-client.js";
+import type { ClientInfo, ServerAddress, ServerClient } from "./types.js";
 
 export interface EnsureServerDeps {
   /** 配置根目录（`AI_ZEN_DIR`）。**注入**：本模块不读进程级全局，便于测试换目录 */
   aiZenDir: string;
-  client: ClientInfo;
+  clientInfo: ClientInfo;
   /** 拉起服务端进程；默认 spawn 一个 detached 的 `agents-server serve` */
   startServerProcess?: (deps: { aiZenDir: string }) => Promise<void>;
-  /** 建连 + 握手；默认 {@link SocketSessionClient.connect} */
-  connect?: (address: ServerAddress) => Promise<SessionClient>;
+  /** 建连 + 握手；默认 {@link SocketServerClient.connect} */
+  connect?: (address: ServerAddress) => Promise<ServerClient>;
   /** 轮询间隔的等待；注入出来是为了让超时用例不用真等 */
   waitBeforeRetry?: (ms: number) => Promise<void>;
   /** 拉起后多久还连不上就放弃 */
@@ -40,7 +40,7 @@ export interface EnsureServerDeps {
 }
 
 export interface EnsureServerResult {
-  client: SessionClient;
+  client: ServerClient;
   address: ServerAddress;
   /** `true` = 本次调用拉起了新进程；`false` = 连上的是已在跑的那个 */
   started: boolean;
@@ -52,7 +52,7 @@ const DEFAULT_RETRY_INTERVAL_MS = 100;
 const PROBE_TIMEOUT_MS = 1000;
 
 export async function ensureServer(deps: EnsureServerDeps): Promise<EnsureServerResult> {
-  const connect = deps.connect ?? ((address: ServerAddress) => SocketSessionClient.connect({ address, client: deps.client }));
+  const connect = deps.connect ?? ((address: ServerAddress) => SocketServerClient.connect({ address, client: deps.clientInfo }));
   const waitBeforeRetry = deps.waitBeforeRetry ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const retryIntervalMs = deps.retryIntervalMs ?? DEFAULT_RETRY_INTERVAL_MS;
@@ -89,10 +89,10 @@ function addressOf(descriptor: ServerDescriptor): ServerAddress {
 
 /** 连上并 ping 一次；连不上 / ping 不通都返回 `null`（"不在跑"），不抛错 */
 async function probe(
-  connect: (address: ServerAddress) => Promise<SessionClient>,
+  connect: (address: ServerAddress) => Promise<ServerClient>,
   descriptor: ServerDescriptor,
-): Promise<SessionClient | null> {
-  let client: SessionClient | null = null;
+): Promise<ServerClient | null> {
+  let client: ServerClient | null = null;
   try {
     client = await connect(addressOf(descriptor));
     await client.call("ping", undefined, { timeoutMs: PROBE_TIMEOUT_MS });
