@@ -313,6 +313,25 @@ export class RemoteChatSession implements ChatSessionLike {
       void this.finishTurn(event.turnId, event.error?.message);
     });
 
+    /**
+     * 服务端换 id（迁移 / 另存为 / **一轮进行中的自动迁移**）。
+     *
+     * 这里没有 `mine()` 那层 `sessionId` 过滤：这条事件的载荷说的是「`from` 那段会话
+     * 现在叫 `sessionId` 了」，旧 id 已经不存在，用 `from` 认领。
+     * 不跟着换的后果很硬：自动迁移发生在一轮内部，客户端会在旧 id 上等一个永远不会到的
+     * `turn.end`，界面就永久卡在「生成中」。
+     */
+    this.offs.push(
+      this.client.on(SESSION_EVENTS.idChanged, (event) => {
+        if (event.from !== this.sessionId) return;
+        this.sessionId = event.sessionId;
+        // 迁移已经把历史剔成「模板 + 断点」：屏幕上的那份已经作废，重取一次
+        void this.syncFromServer()
+          .catch(() => {})
+          .finally(() => this.notifier.onChange(true));
+      }),
+    );
+
     mine(SESSION_EVENTS.notice, (event) => {
       this.notifier.onNotice(noticeText(event.code, event.params), toneOf(event.level));
     });
@@ -395,6 +414,10 @@ export class RemoteChatSession implements ChatSessionLike {
     this.currentPhase = snapshot.phase;
     this.modelIdValue = snapshot.modelId;
     this.lastUsageValue = snapshot.lastUsage as AgentNS.Usage | undefined;
+  }
+
+  private async syncFromServer(): Promise<void> {
+    this.applySnapshot(await this.sessions.snapshot(this.sessionId));
   }
 
   private applyMessages(messages: unknown[]): void {

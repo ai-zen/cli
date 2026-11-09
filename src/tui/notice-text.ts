@@ -19,6 +19,7 @@ type NoticeCode = SessionNoticeCode | GlobalNoticeCode;
 /** 通知码 → 词典 key。新增 code 时**必须**在这里加一行（否则界面上显示裸 key） */
 const NOTICE_KEYS: Record<NoticeCode, string> = {
   // ---- 对话内 ----
+  handoffAutoDetected: "handoff.autoDetected",
   handoffWriting: "handoff.writing",
   handoffPath: "handoff.path",
   handoffArchived: "handoff.savedSession",

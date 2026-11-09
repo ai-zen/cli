@@ -288,3 +288,25 @@ describe("RemoteChatSession：存档与换 id 的方法", () => {
     expect(text).not.toContain("（self）");
   });
 });
+
+describe("RemoteChatSession：服务端在一轮内部换 id（自动迁移）", () => {
+  it("跟着换 id 并重取消息，send 才能等到新 id 上的 turn.end", async () => {
+    const opened = await open();
+    agent.messages = [{ role: "user", content: "旧任务" }];
+
+    const pending = opened.send("继续");
+    await waitUntil(() => agent.sent.length === 1);
+
+    // 服务端这一侧：自动迁移（存档 + prune + 换 id）后这一轮才收尾
+    const migrated = await (manager as any).autoMigrate(opened.currentId);
+    void migrated;
+    agent.messages = [{ role: "user", content: "交接断点：/tmp/x.md" }];
+    agent.fire("finally");
+    await pending;
+
+    // id 变了，消息是迁移之后那份（客户端不能还挂着旧历史）
+    expect(opened.currentId).not.toBe("chat_1");
+    expect(JSON.stringify(opened.messages)).not.toContain("旧任务");
+    expect(opened.phase).toBeNull();
+  });
+});
