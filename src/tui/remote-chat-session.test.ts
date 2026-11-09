@@ -11,7 +11,7 @@
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -36,6 +36,7 @@ import {
   type SubAgentStream,
 } from "./remote-chat-session.js";
 import { clientWorkspacePath } from "../server-client/local-host.js";
+import type { ConfigPort } from "../server-client/config-port.js";
 import type { ChatSessionNotifier } from "./chat-session.js";
 
 class FakeAgent implements AgentLike {
@@ -112,6 +113,21 @@ let reconnectCalls: number;
  * 进程内共享模块下只有 `pin()` 能让路径真的生效（见 test-support/temp-dir.ts）。
  */
 const zen = useTempAiZenDir("aiz-remote-chat-");
+
+/**
+ * 配置面：图片链路按「服务端那份配置」判断端点能力，这里就是临时根里那份文件。
+ *
+ * 别让它走真实实现 —— `createRemoteConfigPort()` 会 `ensureServer`（拉起一个真进程）。
+ */
+const testConfigPort: ConfigPort = {
+  readConfig: async () => JSON.parse(readFileSync(join(zen.dir, "config.json"), "utf-8")),
+  saveConfig: async () => {},
+  readReasoningPresets: async () => ({}) as never,
+  readMcpConfig: async () => ({ ok: true, config: { mcpServers: {} } }) as never,
+  writeMcpConfig: async () => {},
+  readAgentStore: async () => ({ agents: [], subAgents: [], save: async () => {}, remove: async () => {} }) as never,
+  setModel: async () => {},
+};
 
 const notifier: ChatSessionNotifier = {
   onChange: () => {
@@ -321,7 +337,7 @@ async function open(
     /** 自动迁移的选择器（`ChatSessionOptions.requestMode` 的同一个回调） */
     requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
   } = {},
-  deps: RemoteChatSessionDeps = { reconnect: reconnectToNextServer },
+  deps: RemoteChatSessionDeps = { reconnect: reconnectToNextServer, config: testConfigPort },
 ): Promise<RemoteChatSession> {
   const connected = await startServer();
   session = await RemoteChatSession.openWith(
@@ -1157,5 +1173,28 @@ describe("RemoteChatSession：换 Agent 与保活区", () => {
     const again = await sessions.attach({ workspaceId, sessionId: id, path: workspaceDir });
     expect(again.sessionId).toBe(id);
     expect((await sessions.snapshot(id)).messages).toHaveLength(1);
+  });
+});
+
+describe("RemoteChatSession：只带用量的增量", () => {
+  it("流末只带 usage 的 chunk 不会在转录里留下空 assistant", async () => {
+    const opened = await open();
+    const done = watch(opened.send("问一句"));
+    await waitUntil(() => agent.sent.length === 1);
+
+    agent.fire("open");
+    agent.fire("chunk-parsed", { choices: [{ delta: { content: "答案" } }] });
+    // 流末 chunk：正文为空、只带用量（客户端拿它校准速率，见 `addExact`）
+    agent.fire("chunk-parsed", {
+      choices: [{ delta: {}, finish_reason: "stop" }],
+      usage: { completion_tokens: 40 },
+    });
+    agent.fire("finally");
+    await waitUntil(() => done.settled);
+
+    // 一条 assistant（「答案」），没有多出来的空消息
+    const assistants = opened.messages.filter((message) => message.role === AgentNS.Role.Assistant);
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0]!.content).toBe("答案");
   });
 });

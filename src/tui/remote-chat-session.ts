@@ -96,6 +96,7 @@ import { AI_ZEN_DIR, readConfig } from "../config.js";
 import { t } from "../i18n/index.js";
 import { ensureServer } from "../server-client/ensure-server.js";
 import { clientWorkspacePath } from "../server-client/local-host.js";
+import { createRemoteConfigPort, type ConfigPort } from "../server-client/config-port.js";
 import { RemoteSessions } from "../server-client/sessions.js";
 import type { ServerClient } from "../server-client/types.js";
 import { buildUserContent } from "../user-content.js";
@@ -232,6 +233,13 @@ const RECONNECT_BACKOFF_MS = [100, 300] as const;
 export interface RemoteChatSessionDeps {
   /** 重建一条到服务端的连接；缺省是 {@link connectToServer} */
   reconnect?: () => Promise<ServerClient>;
+  /**
+   * 配置面（拼图片内容块要读**服务端**的端点 / 视觉能力）。
+   *
+   * 缺省自建一个远程端口：本进程里它与 TUI 用的那个是同一类对象（懒连接），多一个
+   * 也只会在真要发图时才建连。注入是为了测试（别连真服务端）。
+   */
+  config?: ConfigPort;
 }
 
 /**
@@ -303,6 +311,13 @@ export class RemoteChatSession implements ChatSessionLike {
   private readonly requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
   /** 重建连接（生产 = `ensureServer` + `connect`；测试注入另一个端口） */
   private readonly reconnectFn: () => Promise<ServerClient>;
+  /**
+   * 配置面：拼图片内容块时按**服务端**的端点能力判断（走 Files API 还是内联）。
+   *
+   * 曾经读的是客户端本机的配置文件 —— 旧版进程内模式那是对的（客户端就是运行方），
+   * 现在会话跑在服务端，那是**另一份**配置：两机部署或客户端没配过时必然判断错。
+   */
+  private readonly configPort: ConfigPort;
   private readonly rate = new TokenRateMeter();
   /** 事件订阅的解绑函数（`wire()` 每次都产出一整组，重连时整组换掉） */
   private readonly offs: Array<() => void> = [];
@@ -364,11 +379,13 @@ export class RemoteChatSession implements ChatSessionLike {
     },
     notifier: ChatSessionNotifier,
     reconnect: () => Promise<ServerClient>,
+    configPort: ConfigPort,
   ) {
     this.client = client;
     this.sessions = sessions;
     this.notifier = notifier;
     this.reconnectFn = reconnect;
+    this.configPort = configPort;
     this.path = input.path;
     this.agentId = input.agentId;
     this.sessionId = input.sessionId;
@@ -463,6 +480,7 @@ export class RemoteChatSession implements ChatSessionLike {
       },
       notifier,
       deps.reconnect ?? connectToServer,
+      deps.config ?? createRemoteConfigPort(),
     );
     // 续接时的历史也在这份快照里：服务端 `session.create` 已经把存档消息装进了 Agent，
     // 客户端不搬、不拼，屏幕上的第一条都来自服务端。
@@ -703,7 +721,8 @@ export class RemoteChatSession implements ChatSessionLike {
     const { content, warnings } = await buildUserContent({
       text: input,
       images,
-      config: await readConfig(),
+      // 端点 / 视觉能力从**服务端**那份配置反查（见 `configPort` 的注释）
+      config: await this.configPort.readConfig(),
       apiModelName: this.apiModelValue || undefined,
     });
     for (const warning of warnings) this.notifier.onNotice(warning, "info");
@@ -756,12 +775,16 @@ export class RemoteChatSession implements ChatSessionLike {
     mine(SESSION_EVENTS.delta, (event) => {
       // 子 Agent 的 token 也是真从网络来的，速率里算上（进程内实现的 `onSubChunk` 同样计）
       this.rate.addDelta(event.text + event.reasoning);
+      // 流末 chunk 带真实产物 token 数：状态栏的 tok/s 用它校准（只有字符估算会偏，
+      // 中文尤其明显 —— 旧版进程内实现也是这么做的）
+      this.rate.addExact(event.usage?.completionTokens);
       if (event.subAgentId) {
         // 带 `subAgentId` 的增量属于那个子 Agent：拼到它自己的临时消息上，**不碰**主会话的
         // 拼接状态（`streaming`），也不改 `phase` —— 子 Agent 的流是工具内部的事，主阶段
         // 此刻应停在「等待 xxx 返回」（与进程内实现同一条规矩：子 Agent 的增量不推进主阶段）。
         this.applySubAgentDelta(event.subAgentId, event.text, event.reasoning);
-      } else {
+      } else if (event.text || event.reasoning) {
+        // 只带用量的收尾 chunk 不拼正文（拼了会在转录里多出一条空消息）
         this.applyDelta(event.text, event.reasoning);
       }
       this.notifier.onChange(false);
@@ -1307,5 +1330,6 @@ export async function createRemoteChatSession(
       requestMode: options.requestMode,
     },
     notifier,
+    { config: options.config },
   );
 }

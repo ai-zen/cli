@@ -20,6 +20,7 @@ import { AgentNS } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 import type { PhaseInfo } from "@ai-zen/agents-server";
 import type { ClipboardImage } from "../clipboard.js";
+import type { ConfigPort } from "../server-client/config-port.js";
 import type { PathEntry } from "./mention.js";
 import type { RateSample } from "./token-rate.js";
 import { stripCwdNote } from "./text.js";
@@ -134,6 +135,12 @@ export interface SubAgentView {
 export interface ChatSessionOptions {
   agentId?: string;
   sessionId?: string;
+  /**
+   * 配置面：拼图片内容块要按**服务端**的端点 / 视觉能力判断。
+   *
+   * 屏幕层已经持有一个（懒连接的远程端口），递下来省一条连接；不给则实现自己建一个。
+   */
+  config?: ConfigPort;
   sessionName?: string;
   /**
    * 续接该工作区的「上一轮会话」（有就接着，没有就开新的）。

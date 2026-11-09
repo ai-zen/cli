@@ -10,7 +10,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { AgentNS } from "@ai-zen/agents-core";
 import type { HandoffMode } from "@ai-zen/agents-sdk";
-import { HandoffAbortedError } from "@ai-zen/agents-sdk";
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -767,6 +766,17 @@ const cmdKey: CommandHandler = async ({ openKeyEditor }) => {
   await openKeyEditor();
 };
 
+/**
+ * 这次失败是不是「用户按 Ctrl+C 取消了」。
+ *
+ * 不能 `instanceof HandoffAbortedError`：远程模式下错误是 `SocketServerClient` 现造的
+ * 普通 `Error` + `code`（跨进程没有类的同一性），`instanceof` 永远为假 —— 取消就会显示成
+ * 「交接失败：handoff-aborted: …」。服务端本来就发机器可判的 code，认它即可。
+ */
+function isHandoffAborted(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === "handoff-aborted";
+}
+
 const cmdHandoff: CommandHandler = async ({ session, push, args, setPickerState }) => {
   const handoff = parseHandoffSelection(args);
   if (handoff.invalid !== undefined) {
@@ -789,7 +799,7 @@ const cmdHandoff: CommandHandler = async ({ session, push, args, setPickerState 
   } catch (error: any) {
     // 用户按 Ctrl+C 取消：不是失败，也不该报错堆栈。交接回合已由服务截掉、
     // 本次新建的文档也删了，会话处于交接前的状态
-    if (error instanceof HandoffAbortedError) {
+    if (isHandoffAborted(error)) {
       push(t("cmd.handoff.cancelled"));
       return;
     }
@@ -823,7 +833,7 @@ const cmdMigrate: CommandHandler = async ({ session, push, args, setPickerState,
   } catch (error: any) {
     // 用户按 Ctrl+C 取消：不是失败。交接已停下且会话已退回交接前（交接回合被截掉、
     // 没有开新会话），不能报成「失败」
-    if (error instanceof HandoffAbortedError) {
+    if (isHandoffAborted(error)) {
       push(t("cmd.migrate.cancelled"));
       return;
     }

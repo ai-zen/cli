@@ -398,6 +398,8 @@ export function Chat(props: ChatScreenProps) {
         // （`props.messages` 仍用于本屏首帧渲染与 `/back` 的显示起点）
         sessionId: props.sessionId,
         sessionName: props.sessionName,
+        // 配置面复用屏幕这一个：图片链路的端点能力要读服务端那份（见 `ChatSessionOptions.config`）
+        config: deps.config,
         // 「接着上次」只是意图：接哪一段由会话实现去问（服务端存档 / 本地指针），屏幕不判断
         resume: props.resume,
         // 自动迁移：与手动 /migrate、/handoff 共用同一套「交接方式三选一」选择器
