@@ -31,7 +31,7 @@ export interface TtyState {
 /**
  * 一次启动要执行的动作（路由结果）。
  *
- * 子命令（hook/help/version）与运行模式正交：命中子命令时短路模式判定，
+ * 子命令（hook/help/version/server-status）与运行模式正交：命中子命令时短路模式判定，
  * 不进入 stdio/TUI 任一路径。
  */
 export type Invocation =
@@ -43,6 +43,8 @@ export type Invocation =
   | { kind: "hook"; action: "install" | "uninstall" | "usage"; invalidAction?: string }
   | { kind: "help" }
   | { kind: "version" }
+  /** `--server-status`：打印常驻服务进程的状态（诊断用，**不**拉起、不进界面） */
+  | { kind: "server-status" }
   | { kind: "stdio"; instruction: string; save: boolean }
   /**
    * `initialPrompt`：进 TUI 后**自动作为首条消息**发送的内容（shell 钩子用）
@@ -81,6 +83,7 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
   let save = false;
   let wantHelp = false;
   let wantVersion = false;
+  let wantServerStatus = false;
   let wantTui = false;
   let wantNew = false;
   let passthrough = false;
@@ -114,6 +117,10 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
       wantVersion = true;
       continue;
     }
+    if (arg === "--server-status") {
+      wantServerStatus = true;
+      continue;
+    }
     positional.push(arg);
   }
 
@@ -125,6 +132,8 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
     if (action === undefined) return { kind: "hook", action: "usage" };
     return { kind: "hook", action: "usage", invalidAction: action };
   }
+  // 诊断动作：只读发现文件，不拉起服务端 —— 所以优先级高于 help/version（要的就是当前状态）
+  if (wantServerStatus) return { kind: "server-status" };
   if (wantHelp) return { kind: "help" };
   if (wantVersion) return { kind: "version" };
   // `ai help` / `ai version`：单词形式与 `--help` / `--version` 等价。

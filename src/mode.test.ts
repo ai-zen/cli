@@ -97,6 +97,15 @@ describe("resolveInvocation", () => {
     expect(resolveInvocation(["-v"], PIPE_IN)).toEqual({ kind: "version" });
   });
 
+  it("--server-status 短路为诊断动作：即使带位置参数也不当提问", () => {
+    expect(resolveInvocation(["--server-status"], TTY)).toEqual({ kind: "server-status" });
+    expect(resolveInvocation(["--server-status", "随便说点什么"], TTY)).toEqual({
+      kind: "server-status",
+    });
+    // 管道场景下同样是诊断动作（不该因为没有 TTY 就退化成 stdio 提问）
+    expect(resolveInvocation(["--server-status"], PIPE_OUT)).toEqual({ kind: "server-status" });
+  });
+
   it("`--` 之后的内容视为位置参数", () => {
     expect(resolveInvocation(["--", "--save"], TTY)).toEqual({
       kind: "stdio",
