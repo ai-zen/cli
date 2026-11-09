@@ -304,6 +304,7 @@ export function Chat(props: ChatScreenProps) {
   const {
     wizardStep,
     wizardConfig,
+    wizardConfigPath,
     wizardPresets,
     wizardAgents,
     wizardMcp,
@@ -1040,6 +1041,7 @@ export function Chat(props: ChatScreenProps) {
     return (
       <ConfigWizard
         config={wizardConfig}
+        configPath={wizardConfigPath}
         reasoningPresets={wizardPresets}
         initialStep={wizardStep}
         closeOnSave={wizardStep.kind !== "menu"}

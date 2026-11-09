@@ -5,14 +5,21 @@
  *   - 顶层 Agent：`~/.ai-zen/agents/*.json`（`/config`「默认 Agent」可选的那些）
  *   - 子 Agent：  `~/.ai-zen/sub-agents/*.json`（可被委派，额外带 `function` 定义）
  *
- * 单文件读写委托 SDK 的 `AgentRepository`（`EntityRepository`），本模块只做「按 kind 分派」
- * 与「快照 + 写操作」的组装，便于 TUI 与单测共用。
+ * ## 这里只剩「词汇表 + 数据整形」
+ *
+ * 读写**不在**客户端：Agent 定义的真相在服务端，客户端经 `ConfigPort.readAgentStore()`
+ * 拿快照 + 两个写操作（`server-client/config-port.ts`）。本模块保留的是三样东西：
+ * 两处目录常量（仅本进程布局用）、`kind` 词表与分派、以及给假件/测试用的
+ * `createAgentStore()`。
+ *
+ * 曾经这里还有 `readAgentStore()`（直接读 `~/.ai-zen/agents`，附带一次性的
+ * `reasoningEffort` → `modelParams` 迁移）。它随「配置面搬到服务端」失去调用方，
+ * 而那份迁移现在归**持有定义的那一侧**（服务端 `SessionAgentFactory` / SDK）。
  */
 
 import { AgentRepository } from "@ai-zen/agents-sdk";
-import type { AgentDefinition, AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { AGENTS_DIR, SUB_AGENTS_DIR, readConfig, readReasoningPresets } from "./config.js";
-import { patchOf, presetFor } from "./reasoning-presets.js";
+import type { AgentDefinition } from "@ai-zen/agents-sdk";
+import { AGENTS_DIR, SUB_AGENTS_DIR } from "./config.js";
 
 /** Agent 定义的类型：顶层 Agent / 子 Agent */
 export type AgentKind = "agent" | "subagent";
@@ -55,7 +62,12 @@ export function findAgentDefinition(
   return agentList(store, kind).find((def) => def.id === id);
 }
 
-/** 用给定快照 + 真实文件读写构造仓储 */
+/**
+ * 用给定快照 + 真实文件读写构造仓储 —— **只给假件与测试用**。
+ *
+ * 生产路径不经过它：服务端的 `ConfigService` 读定义，写走 `agent.save` / `agent.remove`。
+ * 这里保留是因为编辑屏要的是「快照 + 两个写操作」这个形状，测试拿它当假件最省事。
+ */
 export function createAgentStore(
   agents: AgentDefinition[],
   subAgents: AgentDefinition[],
@@ -70,60 +82,4 @@ export function createAgentStore(
       await new AgentRepository(agentDir(kind)).delete(id);
     },
   };
-}
-
-/** 从磁盘读取 Agent / Sub-agent 快照，并附带真实读写能力 */
-export async function readAgentStore(): Promise<AgentStore> {
-  const repoAgents = new AgentRepository(AGENTS_DIR);
-  const repoSubAgents = new AgentRepository(SUB_AGENTS_DIR);
-  const [rawAgents, rawSubAgents] = await Promise.all([repoAgents.list(), repoSubAgents.list()]);
-
-  // 旧版 `/think` 把档位名写在 `reasoningEffort` 上；现在档位在写入时就展开成参数。
-  // 这里做一次性迁移：能查到策略就展开进 `modelParams`，查不到就只删旧字段。
-  const isLegacy = (def: AgentDefinition) =>
-    "reasoningEffort" in (def as unknown as Record<string, unknown>);
-  const legacy = (defs: AgentDefinition[]) => defs.filter(isLegacy);
-  const needsMigration = legacy(rawAgents).length + legacy(rawSubAgents).length > 0;
-
-  if (!needsMigration) return createAgentStore(rawAgents, rawSubAgents);
-
-  const [config, presets] = await Promise.all([readConfig(), readReasoningPresets()]);
-  const migrate = async (
-    repo: AgentRepository,
-    defs: AgentDefinition[],
-  ): Promise<AgentDefinition[]> => {
-    const out: AgentDefinition[] = [];
-    for (const def of defs) {
-      if (!isLegacy(def)) {
-        out.push(def);
-        continue;
-      }
-      out.push(await migrateDefinition(repo, def, config, presets));
-    }
-    return out;
-  };
-
-  const agents = await migrate(repoAgents, rawAgents);
-  const subAgents = await migrate(repoSubAgents, rawSubAgents);
-  return createAgentStore(agents, subAgents);
-}
-
-/** 把旧 `reasoningEffort` 展开成 `modelParams` 并写回（只跑一次：写完旧字段就没了） */
-async function migrateDefinition(
-  repo: AgentRepository,
-  def: AgentDefinition,
-  config: AppConfig,
-  presets: ReasoningPresets,
-): Promise<AgentDefinition> {
-  const { reasoningEffort, ...rest } = def as AgentDefinition & { reasoningEffort?: string };
-  // 模型只认 Agent 定义自身的 modelId（配置层已无 defaultModel）
-  const modelId = rest.modelId;
-  const model = (config.models ?? []).find((item) => item.id === modelId);
-  const preset = model ? presetFor(model.id, model.reasoningPreset, presets) : undefined;
-  const patch = reasoningEffort ? patchOf(preset, reasoningEffort) : undefined;
-  const next: AgentDefinition = patch
-    ? { ...rest, modelParams: { ...(rest.modelParams ?? {}), ...patch } }
-    : rest;
-  await repo.write(next);
-  return next;
 }

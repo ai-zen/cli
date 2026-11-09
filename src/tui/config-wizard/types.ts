@@ -96,6 +96,13 @@ export interface McpSnapshot {
   global: McpConfig;
   project: McpConfig;
   /**
+   * 两个作用域各自的**服务端**文件路径（屏上要告诉用户「你改的是哪个文件」）。
+   *
+   * 客户端算不出来：`~/.ai-zen/mcp.json` 是客户端本机的，与服务端那份不是一个文件，
+   * 两机部署时更可能根本不存在。所以由 `config.mcp.get` 跟着内容一起回。
+   */
+  paths: Record<McpScope, string>;
+  /**
    * 各作用域 mcp.json 读 / 解析失败的原因。
    *
    * 有值 = 该文件已损坏：屏上要写明「无法解析」，但仍让用户继续编辑 ——
@@ -105,6 +112,12 @@ export interface McpSnapshot {
 }
 
 export interface ConfigWizardProps {
+  /**
+   * `config.json` 的**服务端**路径（菜单上要印它）。
+   *
+   * 必填：客户端算不出来 —— `~/.ai-zen/config.json` 是它自己的，与服务端那份不是一个文件。
+   */
+  configPath: string;
   /** 打开向导时的配置快照 */
   config: AppConfig;
   /**
@@ -138,8 +151,13 @@ export interface ConfigWizardProps {
   agentStore?: AgentStore;
   /** 持久化配置（通常是 `saveConfig`） */
   onSave: (config: AppConfig) => Promise<void>;
-  /** 持久化 MCP 配置（缺省写入 scope 对应的 mcp.json） */
-  onSaveMcp?: (scope: McpScope, config: McpConfig) => Promise<void>;
+  /**
+   * 持久化 MCP 配置（**必填**：客户端没有本地 mcp.json 可写，真相在服务端）。
+   *
+   * 曾经它是可选的，缺省会写本机 `<AI_ZEN_DIR>/mcp.json` —— 而屏上显示的是服务端那份
+   * 配置，于是「保存成功」却什么都没改到真正在用的文件。
+   */
+  onSaveMcp: (scope: McpScope, config: McpConfig) => Promise<void>;
   /** 关闭向导 */
   onClose: (result: WizardCloseResult) => void;
 }

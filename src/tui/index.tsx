@@ -11,7 +11,6 @@
 
 import { render, useApp, type Instance } from "ink";
 import type { AppConfig } from "@ai-zen/agents-sdk";
-import { ensureConfigDir } from "../config.js";
 import { createRemoteConfigPort } from "../server-client/config-port.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
@@ -112,15 +111,26 @@ function mount(node: Parameters<typeof render>[0]): Promise<unknown> {
  *
  * 输入完成（或放弃）后退出该屏，把结果回传给 `mount()` 的返回值。
  */
-function CredentialGate({ config, endpointId }: { config: AppConfig; endpointId: string }) {
+function CredentialGate({
+  config,
+  configPath,
+  endpointId,
+}: {
+  config: AppConfig;
+  configPath: string;
+  endpointId: string;
+}) {
   const { exit } = useApp();
   return (
     <ConfigWizard
       config={config}
+      configPath={configPath}
       onboarding
       closeOnSave
       initialStep={{ kind: "edit", field: "apiKey", endpointId }}
       onSave={(config) => configPort.saveConfig(config)}
+      // 首启凭据屏不碰 MCP：这里给一个明确的空实现，而不是让组件去写本机 mcp.json
+      onSaveMcp={async () => {}}
       onClose={(result) => exit(result)}
     />
   );
@@ -133,13 +143,14 @@ function CredentialGate({ config, endpointId }: { config: AppConfig; endpointId:
  * 那里可按 `k` 打开配置中心自行修配置。
  */
 async function ensureCredential(modelId: string): Promise<boolean> {
-  // 凭据要从**实际会用它的那一份配置**里取：远程模式下就在服务端，不是本机磁盘
-  const config = await configPort.readConfig();
+  // 凭据要从**实际会用它的那一份配置**里取：在服务端，不是本机磁盘。
+  // 顺带拿那份文件的路径 —— 凭据屏是同一个 `ConfigWizard`，它要知道自己改的是哪个文件。
+  const { config, path } = await configPort.readConfigFile();
   const credential = resolveCredential(config, modelId);
   if (!credential || credential.configured) return true;
 
   const result = (await mount(
-    <CredentialGate config={config} endpointId={credential.endpointId} />,
+    <CredentialGate config={config} configPath={path} endpointId={credential.endpointId} />,
   )) as WizardCloseResult | undefined;
   return Boolean(result?.dirty);
 }
@@ -331,16 +342,7 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
   keyDebugStart();
 
   try {
-    // 本地目录初始化（`~/.ai-zen`：config.json / 默认 Agent / 出厂策略表 / `cli/` 运行时目录）。
-    //
-    // 远程模式下 TUI 的配置读写已经全部走服务端，这次调用**不再是**「为了让屏幕读到配置」；
-    // 保留在原位是因为它仍是 stdio / 进程内模式那条路径的初始化入口（`readConfig()` 内部
-    // 也会调本函数），`config.ts` 的模块级路径常量被别处（hook 安装、SDK 日志落盘）继续使用。
-    // 它幂等（进程内只真正执行一次），留着的代价是一次调用；要彻底移除需连那些路径一起改，
-    // 不在本次接线的范围内。
-    await ensureConfigDir();
-
-    // 直达对话：Agent 身份与它绑的模型都由配置面给（远程时以服务端为准）；
+    // 直达对话：Agent 身份与它绑的模型都由配置面给（服务端那份配置）；
     // 「接不接上次」只在这里定 —— 不带 `--new` 就带上 resume 意图，带上就一定是新会话。
     let target: ChatTarget | null = null;
     try {

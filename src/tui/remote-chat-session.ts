@@ -92,7 +92,7 @@ import {
   type SessionSnapshotResult,
 } from "@ai-zen/agents-server";
 import type { ClipboardImage } from "../clipboard.js";
-import { AI_ZEN_DIR, readConfig } from "../config.js";
+import { AI_ZEN_DIR } from "../config.js";
 import { t } from "../i18n/index.js";
 import { CLIENT_INFO } from "../server-client/client-info.js";
 import { ensureServer } from "../server-client/ensure-server.js";

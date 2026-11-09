@@ -1,7 +1,7 @@
 // 由 src/tui/config-wizard.tsx 拆分而来 —— MCP 列表 / 详情 / 键值 / 新建
 import { ReactNode } from "react";
 import { SelectItem } from "../components.js";
-import { mcpConfigPath, McpScope, McpServerEntry } from "../../config.js";
+import { McpScope, McpServerEntry } from "../../config.js";
 import {
   addMcpServer,
   findMcpServer,
@@ -46,7 +46,7 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
         title={t("wiz.mcp.listTitle", { scope: scopeLabel(scope) })}
         subtitle={t("wiz.mcp.listSubtitle", {
           n: mcpCount(mcp, scope),
-          path: mcpConfigPath(scope),
+          path: mcp.paths[scope],
         })}
         // 文件坏了照常进屏编辑：保存产出的是一份格式正确的新文件，那就是修复
         warning={damaged ? t("wiz.mcp.damaged", { error: damaged }) : undefined}
@@ -71,7 +71,7 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
         rows={rows}
         title={t("wiz.mcp.detailTitle", { id: serverId })}
         details={[
-          t("wiz.scopePath", { scope: scopeLabel(scope), path: mcpConfigPath(scope) }),
+          t("wiz.scopePath", { scope: scopeLabel(scope), path: mcp.paths[scope] }),
           t("wiz.mcp.detailLine", { transport: entry.type ?? "stdio" }),
         ]}
         fields={mcpServerFields(scope, serverId, entry)}

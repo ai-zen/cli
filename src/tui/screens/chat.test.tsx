@@ -102,6 +102,7 @@ const fakeConfig = () => ({ models: [], endpoints: [], imageModels: [] }) as any
 const fakePort = (config: any = fakeConfig()) =>
   ({
     readConfig: vi.fn(async () => config),
+    readConfigFile: vi.fn(async () => ({ config, path: "/srv/.ai-zen/config.json" })),
     saveConfig: vi.fn(async (_next: any) => {}),
     readReasoningPresets: vi.fn(async () => ({}) as any),
     readMcpConfig: vi.fn(async (_scope?: any) => ({ ok: true, config: { mcpServers: {} } }) as any),
@@ -335,7 +336,10 @@ describe("Chat 集成（拆分前的护栏）", () => {
     stdin.write("/config");
     await flush();
     stdin.write("\r");
-    await waitFor(() => (lastFrame() ?? "").includes("配置中心"), 4000);
+    // 打开向导 = 串行读 5 份快照（配置 / Agent / 策略表 / 两份 mcp）再整屏接管。
+    // 这台机器忙时实测有 6.4s 的（全量首跑红、单跑 392ms），所以这里给到 10s ——
+    // 与「外层 20s、内层预算合计小于它」同一条口径（见定案 30）。
+    await waitFor(() => (lastFrame() ?? "").includes("配置中心"), 10_000);
     await flush(40); // 等向导自己的按键监听就位（同上一条用例）
 
     // 菜单：端点 → 模型 → 图片模型 → MCP 服务器

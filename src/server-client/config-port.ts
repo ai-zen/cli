@@ -41,26 +41,31 @@ import {
   type WorkspaceResolveResult,
 } from "@ai-zen/agents-server";
 import type { AgentDefinition, AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { readAgentStore, type AgentKind, type AgentStore } from "../agents-store.js";
-import {
-  AI_ZEN_DIR,
-  readConfig,
-  readMcpConfig,
-  readReasoningPresets,
-  saveConfig,
-  writeMcpConfig,
-  type McpConfig,
-  type McpReadResult,
-  type McpScope,
-} from "../config.js";
+import type { AgentKind, AgentStore } from "../agents-store.js";
+import { AI_ZEN_DIR, type McpConfig, type McpReadResult, type McpScope } from "../config.js";
 import { CLIENT_INFO } from "./client-info.js";
 import { ensureServer } from "./ensure-server.js";
 import { clientWorkspacePath } from "./local-host.js";
 import type { ClientInfo, ServerClient } from "./types.js";
 
+/** 一份全局配置 + 那份文件的**服务端**位置（配置中心的菜单要印后者） */
+export interface ConfigFileSnapshot {
+  config: AppConfig;
+  /** `<配置根>/config.json` 在服务端的绝对路径 */
+  path: string;
+}
+
 export interface ConfigPort {
   /** 读全局配置（服务端侧读到即迁移；旧字段不会漏出来） */
   readConfig(): Promise<AppConfig>;
+  /**
+   * 读全局配置**并带回那份文件的路径**。
+   *
+   * 与 {@link readConfig} 是同一次调用（`config.get`）的两个视图：只要配置本身的地方用前者，
+   * 要把「你改的是哪个文件」印在屏上的地方（配置中心菜单）用后者 —— 客户端算不出服务端的
+   * 路径，那个 `~/.ai-zen/config.json` 是它自己的。
+   */
+  readConfigFile(): Promise<ConfigFileSnapshot>;
   /** 整份写回全局配置 */
   saveConfig(config: AppConfig): Promise<void>;
   /** 读思考策略表（文件缺失/损坏时回落出厂种子） */
@@ -212,6 +217,11 @@ export function createRemoteConfigPort(deps: RemoteConfigPortDeps = {}): ConfigP
       const result = await call<ConfigGetResult>(CONFIG_METHODS.get);
       // 协议层刻意不解释 `config` 的形状（线上契约不认识 SDK），到这一层才回收成 AppConfig
       return result.config as AppConfig;
+    },
+
+    readConfigFile: async () => {
+      const result = await call<ConfigGetResult>(CONFIG_METHODS.get);
+      return { config: result.config as AppConfig, path: result.path };
     },
 
     saveConfig: async (config) => {

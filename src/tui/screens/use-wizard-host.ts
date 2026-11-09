@@ -43,6 +43,8 @@ export interface WizardHostDeps {
 export interface WizardHost {
   wizardStep: WizardStep | null;
   wizardConfig: AppConfig | null;
+  /** 服务端那份 `config.json` 的路径（菜单要印它；未进向导时为空串） */
+  wizardConfigPath: string;
   wizardPresets: ReasoningPresets;
   wizardAgents: { id: string; name: string }[];
   wizardMcp: McpSnapshot | null;
@@ -65,6 +67,7 @@ export function useWizardHost({
 }: WizardHostDeps): WizardHost {
   const [wizardStep, setWizardStep] = useState<WizardStep | null>(null);
   const [wizardConfig, setWizardConfig] = useState<AppConfig | null>(null);
+  const [wizardConfigPath, setWizardConfigPath] = useState<string>("");
   const [wizardPresets, setWizardPresets] = useState<ReasoningPresets>({});
   const [wizardAgents, setWizardAgents] = useState<{ id: string; name: string }[]>([]);
   const [wizardMcp, setWizardMcp] = useState<McpSnapshot | null>(null);
@@ -79,7 +82,9 @@ export function useWizardHost({
 
   const openWizard = async (step: WizardStep) => {
     try {
-      const config = await configPort.readConfig();
+      // 一次调用拿两样：配置本身 + 那份文件在服务端的位置（菜单要印后者）
+      const { config, path } = await configPort.readConfigFile();
+      setWizardConfigPath(path);
       currentEndpointRef.current = resolveCredential(config, modelId)?.endpointId ?? null;
       const agentStore = await configPort.readAgentStore();
       setWizardConfig(config);
@@ -97,6 +102,8 @@ export function useWizardHost({
       setWizardMcp({
         global: mcpConfigOrEmpty(globalMcp),
         project: mcpConfigOrEmpty(projectMcp),
+        // 路径来自服务端（读那份文件的人才知道它在哪）
+        paths: { global: globalMcp.path, project: projectMcp.path },
         ...(Object.keys(errors).length ? { errors } : {}),
       });
       setWizardStep(step);
@@ -164,6 +171,7 @@ export function useWizardHost({
   return {
     wizardStep,
     wizardConfig,
+    wizardConfigPath,
     wizardPresets,
     wizardAgents,
     wizardMcp,

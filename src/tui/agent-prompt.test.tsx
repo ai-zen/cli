@@ -56,6 +56,7 @@ describe("Agent 提示词（系统编辑器）", () => {
 
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         openEditor={openEditor}
         initialStep={{
@@ -67,6 +68,7 @@ describe("Agent 提示词（系统编辑器）", () => {
         agentStore={store}
         onSave={vi.fn(async () => undefined)}
         onClose={() => undefined}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -100,6 +102,7 @@ describe("Agent 提示词（系统编辑器）", () => {
 
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         openEditor={openEditor}
         initialStep={{
@@ -111,6 +114,7 @@ describe("Agent 提示词（系统编辑器）", () => {
         agentStore={store}
         onSave={vi.fn(async () => undefined)}
         onClose={() => undefined}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();

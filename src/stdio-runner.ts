@@ -44,7 +44,7 @@
 
 import { AgentNS } from "@ai-zen/agents-core";
 import { setLogger } from "@ai-zen/agents-sdk";
-import { readConfig } from "./config.js";
+import { createRemoteConfigPort, type ConfigPort } from "./server-client/config-port.js";
 import { RemoteSessions } from "./server-client/sessions.js";
 import type { ServerClient } from "./server-client/types.js";
 import type { ChatSessionNotifier } from "./tui/chat-session.js";
@@ -72,6 +72,12 @@ export interface StdioRunDeps {
   writeOut?: (text: string) => void;
   /** 日志出口；缺省 `process.stderr.write` */
   writeErr?: (line: string) => void;
+  /**
+   * 配置面（只为读「用哪个 Agent」）。缺省在连上服务端之后自建一个、复用同一条连接 ——
+   * 客户端不再读本机 `config.json`：那份在这一侧可能根本不存在，也可能与 Agent
+   * 实际用的不是一份。
+   */
+  config?: ConfigPort;
 }
 
 /** 向 stderr 写一行（stdlib 日志统一出口） */
@@ -128,19 +134,6 @@ export function extractText(content: AgentNS.MessageContent | undefined): string
   return parts.join("\n");
 }
 
-/**
- * 用哪个 Agent：与 TUI 同源（`AppConfig.defaultAgent`，缺省 `default`）。
- *
- * 这里只读**这一个字段**是有意的。旧版还在这里自己解析 model → endpoint → apiKey 并给出
- * 各自的报错文案，那是服务端装配方的职责（`SessionAgentFactory` + SDK 的 `createAgent`）：
- * 配置有毛病时 `session.create` 会把 SDK 的原话带回来，客户端只负责转达 —— 两份解析迟早
- * 给出两种答案（尤其「哪份配置文件」在两机部署时根本不是一回事）。
- */
-async function defaultAgentId(): Promise<string> {
-  const config = await readConfig();
-  return config.defaultAgent ?? "default";
-}
-
 /** 运行一次纯 stdio 对话，返回进程退出码 */
 export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}): Promise<number> {
   const { instruction, save } = options;
@@ -165,9 +158,18 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
   let client: ServerClient | null = null;
   let session: RemoteChatSession | null = null;
   try {
-    const agentId = await defaultAgentId();
     client = await (deps.connect ?? connectToServer)();
     const sessions = new RemoteSessions(client);
+
+    /**
+     * 用哪个 Agent 也问服务端（`AppConfig.defaultAgent`，缺省 `default`）。
+     *
+     * 这里只读**这一个字段**是有意的：model → endpoint → apiKey 的解析属于服务端装配方
+     * （`SessionAgentFactory` + SDK 的 `createAgent`），配置有毛病时 `session.create`
+     * 会把 SDK 的原话带回来，客户端只负责转达。
+     */
+    const configPort = deps.config ?? createRemoteConfigPort({ client });
+    const agentId = (await configPort.readConfig()).defaultAgent ?? "default";
 
     /**
      * 通知就是这一模式的「通知栏」，落在 stderr 上。

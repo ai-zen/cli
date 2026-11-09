@@ -56,6 +56,10 @@ function Probe({ hasSession }: { hasSession: boolean }) {
     // 假配置面：向导读快照要走的那四个方法接上本文件的两个旋钮，其余给空实现
     config: {
       readConfig: () => readConfigImpl(),
+      readConfigFile: async () => ({
+        config: await readConfigImpl(),
+        path: "/srv/.ai-zen/config.json",
+      }),
       readMcpConfig: (scope?: "global" | "project") => readMcpImpl(scope ?? "global"),
       readReasoningPresets: async () => ({}),
       readAgentStore: async () => createAgentStore(fakeAgents().agents as any, []),

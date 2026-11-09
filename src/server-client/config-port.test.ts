@@ -203,12 +203,21 @@ describe("createRemoteConfigPort：客户端模式（配置落在服务端）", 
     // （不然这用例会往真实工作区写 mcp.json）
     const port = createRemoteConfigPort({ client: connection!, workspacePath: () => dir });
 
-    // 没有文件时是空配置；project 作用域要的 workspaceId 由服务端按这个路径解析
-    expect(await port.readMcpConfig("project")).toEqual({ ok: true, config: { mcpServers: {} } });
+    // 没有文件时是空配置；project 作用域要的 workspaceId 由服务端按这个路径解析。
+    // 结果里的 `path` 是**服务端**认的那个文件（编辑屏要印它，客户端算不出来）
+    expect(await port.readMcpConfig("project")).toEqual({
+      ok: true,
+      config: { mcpServers: {} },
+      path: join(dir, ".ai-zen", "mcp.json"),
+    });
 
     const mcpConfig = { mcpServers: { demo: { command: "echo", args: ["hi"] } } };
     await port.writeMcpConfig(mcpConfig, "project");
-    expect(await port.readMcpConfig("project")).toEqual({ ok: true, config: mcpConfig });
+    expect(await port.readMcpConfig("project")).toEqual({
+      ok: true,
+      config: mcpConfig,
+      path: join(dir, ".ai-zen", "mcp.json"),
+    });
 
     // 项目级 mcp.json 的位置是 `<工作区>/.ai-zen/mcp.json`，而工作区 = 服务端的目录
     expect(existsSync(join(dir, ".ai-zen", "mcp.json"))).toBe(true);

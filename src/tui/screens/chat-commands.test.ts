@@ -139,10 +139,16 @@ function fakeAgentStore(agents: AgentDefinition[], subAgents: AgentDefinition[] 
 function fakeConfigPort(overrides: Partial<ConfigPort> = {}): ConfigPort {
   return {
     readConfig: vi.fn(async () => BASE_CONFIG),
+    readConfigFile: vi.fn(async () => ({ config: BASE_CONFIG, path: "/srv/.ai-zen/config.json" })),
     saveConfig: vi.fn(async () => {}),
     readReasoningPresets: vi.fn(async () => PRESETS),
     // 空 MCP 配置：`/mcp` 无参时的默认作用域落在 global
-    readMcpConfig: vi.fn(async () => ({ ok: true as const, config: { mcpServers: {} } })),
+    readMcpConfig: vi.fn(async () => ({
+      ok: true as const,
+      config: { mcpServers: {} },
+      // 服务端那份文件的真实路径：屏上要印它（不是客户端本机的 mcp.json）
+      path: "/srv/.ai-zen/mcp.json",
+    })),
     writeMcpConfig: vi.fn(async () => {}),
     readAgentStore: vi.fn(async () => fakeAgentStore([agentDefinition("default", "m1")])),
     setModel: vi.fn(async () => {}),

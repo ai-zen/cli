@@ -121,6 +121,10 @@ const zen = useTempAiZenDir("aiz-remote-chat-");
  */
 const testConfigPort: ConfigPort = {
   readConfig: async () => JSON.parse(readFileSync(join(zen.dir, "config.json"), "utf-8")),
+  readConfigFile: async () => ({
+    config: JSON.parse(readFileSync(join(zen.dir, "config.json"), "utf-8")),
+    path: join(zen.dir, "config.json"),
+  }),
   saveConfig: async () => {},
   readReasoningPresets: async () => ({}) as never,
   readMcpConfig: async () => ({ ok: true, config: { mcpServers: {} } }) as never,

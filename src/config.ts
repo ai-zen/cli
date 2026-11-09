@@ -1,8 +1,21 @@
 /**
- * 配置管理 — CLI 层
+ * 配置**路径**与 MCP 配置的**纯类型** —— 客户端侧只剩这两样。
  *
- * 负责配置文件的路径管理和初始化。
- * 默认配置、Agent、SubAgent 全部委托给 @ai-zen/agents-sdk。
+ * ## 为什么不再有读写
+ *
+ * 读配置、写配置、初始化配置目录（`~/.ai-zen` 下的 `config.json` / 默认 Agent / 策略表）
+ * 全是**服务端**的事：真相在那边，读写经 `ConfigPort`（`server-client/config-port.ts`）
+ * 走 `config.*` / `agent.*`。客户端本地那套实现（`readConfig` / `saveConfig` /
+ * `readMcpConfig` / `writeMcpConfig` / `ensureConfigDir`）曾经还在，作为「忘了注入」时的
+ * 缺省值 —— 那正是最坏的一种：静默读客户端本机、写却写到服务端，界面上一切正常。
+ *
+ * 本文件剩下的东西只有两类：
+ *   - 路径常量（`AI_ZEN_DIR` 等）与 `projectDirs()`：**本进程**的目录布局，给
+ *     「SDK 日志落盘」「hook 安装」「临时目录隔离」这些真正本地的事情用；
+ *   - MCP 配置的类型（`McpScope` / `McpConfig` / `McpReadResult`）：与协议同形的词汇表，
+ *     编辑屏与命令层拿它做数据整形（不吃盘）。
+ *
+ * 默认配置、Agent、SubAgent 的定义与出厂值全部委托给 @ai-zen/agents-sdk。
  *
  * 目录结构：
  *   ~/.ai-zen/                    ← 共享根（AI_ZEN_DIR）
@@ -150,30 +163,7 @@ export function projectDirs(cwd: string = process.cwd()): ProjectDirs {
 
 export let MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
 
-// ==================== SDK ConfigManager ====================
-
-/**
- * 按**当前** `CONFIG_FILE` 造一个 ConfigManager。
- *
- * 不缓存实例：`ConfigManager` 在构造时固化路径，缓存它等于把路径也缓存了 ——
- * 进程内共享模块时（测试换 `AI_ZEN_DIR`）就会一直读写旧目录。构造本身很轻，
- * 重活（bootstrap / 解析）在 `read()` 里，且由 `ensureConfigDir()` 兜住只做一次。
- */
-function configManager(): SdkConfigManager {
-  return new SdkConfigManager(CONFIG_FILE);
-}
-
 // ==================== 目录初始化 ====================
-
-/**
- * 一次性初始化的 Promise（进程生命周期内只跑一次）。
- *
- * 为什么必须缓存 **Promise** 而不是「已初始化」布尔：`readConfig()` 内部就会调它，而
- * `readConfig()` 被 TUI 的 effect、命令层、`createAgent()`、`getScope()` 反复调用 ——
- * 等于每次读配置都重跑一遍全量初始化（bootstrap + 多次 stat/mkdir）。而布尔判据在
- * `await` 窗口期内不成立，并发调用会一起穿透、重复 bootstrap。
- */
-let initPromise: Promise<void> | null = null;
 
 /**
  * 重新解析全部路径（**仅测试使用**）。
@@ -193,63 +183,6 @@ export function refreshPaths(): void {
   AGENTS_DIR = join(AI_ZEN_DIR, "agents");
   SUB_AGENTS_DIR = join(AI_ZEN_DIR, "sub-agents");
   MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
-  // 一次性初始化缓存是按旧目录算的，必须作废，否则新目录永远不会被 bootstrap
-  initPromise = null;
-}
-
-/**
- * 确保配置目录和默认文件存在（进程内只真正执行一次）。
- *
- * 共享实体（Agent、SubAgent、Skill 目录等）委托给 SDK 的 ConfigManager.bootstrap()。
- * CLI 自身的运行时目录（cli/）由本函数额外创建。
- * SDK 的出厂默认配置会自动写入 config.json（如果不存在）。
- */
-export async function ensureConfigDir(): Promise<void> {
-  if (!initPromise) {
-    initPromise = initOnce().catch((error) => {
-      // 失败不缓存：否则一次瞬时故障（如磁盘短暂只读）会让整个进程永久失能
-      initPromise = null;
-      throw error;
-    });
-  }
-  return initPromise;
-}
-
-async function initOnce(): Promise<void> {
-  // SDK bootstrap：目录 + config.json + default Agent + default SubAgent + 出厂思考策略表
-  await configManager().bootstrap();
-
-  // CLI 运行时目录（recursive 模式已存在时不报错，无需先 access 探测）
-  try {
-    await fs.mkdir(CLI_DIR, { recursive: true });
-  } catch (error: any) {
-    // 走统一日志出口：TUI 下已改道落盘、stdio 下走 stderr。
-    // 这里不能用 console.warn —— 那会绕过日志系统，界面里看不见、日志文件里也查不到。
-    getLogger().warn(t("app.mkdirFailed", { dir: CLI_DIR, error: error?.message ?? error }));
-  }
-}
-
-// ==================== 配置读写 ====================
-
-export async function readConfig(): Promise<AppConfig> {
-  await ensureConfigDir();
-  return await configManager().read();
-}
-
-/**
- * 读取思考策略表（`~/.ai-zen/reasoning-presets.json`）。
- *
- * 这张表**只属于 CLI**：档位与参数补丁的对应关系是产品的编织知识，不在 SDK 里。
- * 文件缺失或损坏时回落到出厂种子。
- */
-export async function readReasoningPresets(): Promise<ReasoningPresets> {
-  // 表归 SDK 管（CLI / 桌面端共享），此处只做透传；缺失/损坏时 SDK 会回落出厂种子
-  return await configManager().readReasoningPresets();
-}
-
-export async function saveConfig(config: AppConfig): Promise<void> {
-  await ensureConfigDir();
-  await configManager().write(config);
 }
 
 // ==================== MCP 配置读写 ====================
@@ -294,68 +227,19 @@ export function mcpConfigPath(scope: McpScope): string {
 }
 
 /**
- * 读取 mcp.json 的结果。
+ * 读一份 mcp.json 的结果 —— 与协议里的 `ConfigMcpGetResult` 同形。
  *
  * 「文件不存在」与「读取 / 解析失败」必须分开：前者是正常的空配置，后者是文件已损坏。
  * 以前两者都返回 `{ mcpServers: {} }`，于是损坏的文件在配置中心里看起来「没有服务器」，
  * 用户一保存就把原内容整个覆盖掉 —— 静默丢数据。
+ *
+ * `path` 是**那个文件在服务端的位置**（客户端只负责把它印在编辑屏上）：客户端的
+ * `~/.ai-zen/mcp.json` 与服务端那份不是一个文件，两机部署时更可能根本不存在。
  */
-export type McpReadResult = { ok: true; config: McpConfig } | { ok: false; error: string };
+export type McpReadResult =
+  { ok: true; config: McpConfig; path: string } | { ok: false; error: string; path: string };
 
 /** 读失败时按空配置继续（仅用于「读来只为做判断」的场景；界面上要显示损坏由编辑屏负责） */
 export function mcpConfigOrEmpty(result: McpReadResult): McpConfig {
   return result.ok ? result.config : { mcpServers: {} };
-}
-
-/**
- * 读取指定路径的 mcp.json。
- * 采用业界标准 `mcpServers` 顶层字段（与 SDK discoverMcpServers 一致）。
- */
-export async function readMcpConfigAt(path: string): Promise<McpReadResult> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(path, "utf-8");
-  } catch (cause: any) {
-    // 只有「文件不存在」算正常空配置；权限 / 是目录这类真错误照样报上去
-    if (cause?.code === "ENOENT") return { ok: true, config: { mcpServers: {} } };
-    return { ok: false, error: cause?.message ?? String(cause) };
-  }
-  try {
-    const parsed = JSON.parse(raw) as Partial<McpConfig>;
-    return { ok: true, config: { mcpServers: parsed.mcpServers ?? {} } };
-  } catch (cause: any) {
-    return { ok: false, error: cause?.message ?? String(cause) };
-  }
-}
-
-/**
- * 原子写入指定路径的 mcp.json（必要时创建父目录）。
- */
-export async function writeMcpConfigAt(path: string, mcpConfig: McpConfig): Promise<void> {
-  await fs.mkdir(dirname(path), { recursive: true });
-  const tmp = path + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(mcpConfig, null, 2), "utf-8");
-  await fs.rename(tmp, path);
-}
-
-/**
- * 读取某个作用域的 mcp.json（默认全局 ~/.ai-zen/mcp.json）。
- */
-export async function readMcpConfig(scope: McpScope = "global"): Promise<McpReadResult> {
-  return readMcpConfigAt(mcpConfigPath(scope));
-}
-
-/**
- * 原子写入某个作用域的 mcp.json（默认全局 ~/.ai-zen/mcp.json）。
- */
-export async function writeMcpConfig(
-  mcpConfig: McpConfig,
-  scope: McpScope = "global",
-): Promise<void> {
-  await writeMcpConfigAt(mcpConfigPath(scope), mcpConfig);
-}
-
-/** 读取项目级 <cwd>/.ai-zen/mcp.json（等价于 readMcpConfig("project")） */
-export async function readProjectMcpConfig(): Promise<McpReadResult> {
-  return readMcpConfigAt(projectDirs().mcpConfig);
 }

@@ -12,6 +12,7 @@ export function renderMenuStep(ctx: WizardContext): ReactNode {
         columns={cols}
         rows={rows}
         config={config}
+        configPath={props.configPath}
         mcp={mcp}
         agentStore={store}
         savedCount={acc.current.summary.length}

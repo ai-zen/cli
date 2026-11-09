@@ -9,12 +9,14 @@
  * 全部契约，靠假服务端是断言不出来的（落盘与回收都发生在服务端那一侧）。
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, readdirSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  ConfigService,
   Daemon,
+  createConfigHandlers,
   createSessionHandlers,
   FileSessionStore,
   SessionManager,
@@ -23,7 +25,6 @@ import {
 import { SocketServerClient } from "./server-client/socket-server-client.js";
 import type { ClientInfo } from "./server-client/types.js";
 import { mergePrompt, extractText, runStdio } from "./stdio-runner.js";
-import { useTempAiZenDir } from "./test-support/temp-dir.js";
 
 describe("mergePrompt", () => {
   it("仅有指令", () => {
@@ -135,16 +136,7 @@ let manager: SessionManager | null = null;
 let connection: SocketServerClient | null = null;
 let agent: FakeAgent;
 let workspaceId: string;
-/**
- * `AI_ZEN_DIR`：`runStdio` 会读它拿 `defaultAgent`。
- *
- * 必须钉到临时目录 —— 不钉就是读开发者本机那份配置（没有 `config.json` 时直接抛错，
- * 用例会在「不是被测行为」的地方红）。
- */
-const aiz = useTempAiZenDir("aizen-stdio-agent-");
-
 beforeEach(async () => {
-  aiz.pin();
   dir = mkdtempSync(join(tmpdir(), "aiz-stdio-"));
   agent = new FakeAgent();
   manager = new SessionManager({
@@ -161,6 +153,16 @@ beforeEach(async () => {
         manager,
         workspacesRoot: join(dir, "workspaces"),
         defaultWorkspacePath: dir,
+      }),
+      // stdio 也从服务端读「用哪个 Agent」（`config.get`），所以配置面要接上
+      ...createConfigHandlers({
+        config: new ConfigService({
+          configFile: join(dir, "config.json"),
+          agentsDir: join(dir, "agents"),
+          subAgentsDir: join(dir, "sub-agents"),
+          globalMcpFile: join(dir, "mcp.json"),
+          workspacesRoot: join(dir, "workspaces"),
+        }),
       }),
     },
   });
@@ -183,8 +185,6 @@ afterEach(async () => {
   }
   rmSync(dir, { recursive: true, force: true });
 });
-
-afterAll(() => aiz.cleanup());
 
 /** 跑一次 `ai "…"`：注入真 socket，把 stdout / stderr 抓成字符串 */
 async function run(options: {

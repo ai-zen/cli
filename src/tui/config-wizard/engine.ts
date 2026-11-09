@@ -1,7 +1,7 @@
 // 由 src/tui/config-wizard.tsx 拆分而来 —— 配置向导引擎（状态 + 写盘/跳转处理器）
 import { useRef, useState, Dispatch, SetStateAction } from "react";
 import { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
-import { mcpConfigPath, McpConfig, McpScope, writeMcpConfigAt } from "../../config.js";
+import type { McpConfig, McpScope } from "../../config.js";
 import {
   agentKindLabel,
   agentList,
@@ -66,7 +66,12 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   const [step, setStep] = useState<WizardStep>(props.initialStep ?? { kind: "menu" });
   const [draft, setDraft] = useState<NewEndpointDraft>({ name: "", baseUrl: "", apiKey: "" });
   const [mcp, setMcp] = useState<McpSnapshot>(
-    props.mcp ?? { global: { mcpServers: {} }, project: { mcpServers: {} } },
+    props.mcp ?? {
+      global: { mcpServers: {} },
+      project: { mcpServers: {} },
+      // 没有注入快照就没有路径可显示（空串而不是「猜一个客户端路径」）
+      paths: { global: "", project: "" },
+    },
   );
   const [store, setStore] = useState<AgentStore>(
     () => props.agentStore ?? createAgentStore([], []),
@@ -157,8 +162,8 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     message: string,
   ): Promise<string | null> => {
     try {
-      if (props.onSaveMcp) await props.onSaveMcp(scope, next);
-      else await writeMcpConfigAt(mcpConfigPath(scope), next);
+      // 只有一条路：调用方给的落盘回调（真相在服务端，客户端没有本地 mcp.json 可写）
+      await props.onSaveMcp(scope, next);
     } catch (cause: any) {
       return t("wiz.writeMcpFailed", { error: cause?.message ?? cause });
     }

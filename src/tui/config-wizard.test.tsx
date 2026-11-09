@@ -97,6 +97,7 @@ const makeMcp = () => ({
     },
   },
   project: { mcpServers: {} },
+  paths: { global: "/srv/.ai-zen/mcp.json", project: "/srv/proj/.ai-zen/mcp.json" },
 });
 
 /** 带类型的 MCP 持久化 mock：`calls[0]` 即 `[scope, config]` */
@@ -260,10 +261,12 @@ describe("ConfigWizard（吸底布局）", () => {
   it("整帧高度 = 终端行数 − 1，内容贴底（顶部为空白，不会飘到视口外）", async () => {
     const { lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         terminalSize={SIZE}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -282,11 +285,13 @@ describe("ConfigWizard（吸底布局）", () => {
   it("列表步骤同样贴底且不超帧", async () => {
     const { lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "endpoints" }}
         terminalSize={SIZE}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -301,7 +306,13 @@ describe("ConfigWizard（吸底布局）", () => {
 describe("ConfigWizard（配置中心）", () => {
   it("菜单展示配置概览与配置文件路径", async () => {
     const { lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} onSave={makeOnSave()} onClose={noop} />,
+      <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
+        config={makeConfig()}
+        onSave={makeOnSave()}
+        onClose={noop}
+        onSaveMcp={async () => {}}
+      />,
     );
     await tick();
     const frame = lastFrame() ?? "";
@@ -320,7 +331,13 @@ describe("ConfigWizard（配置中心）", () => {
     const onSave = makeOnSave();
     const onClose = vi.fn();
     const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} onSave={onSave} onClose={onClose} />,
+      <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
+        config={makeConfig()}
+        onSave={onSave}
+        onClose={onClose}
+        onSaveMcp={async () => {}}
+      />,
     );
     await tick();
 
@@ -374,10 +391,12 @@ describe("ConfigWizard（配置中心）", () => {
     const onClose = vi.fn();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "edit", field: "apiKey", endpointId: "deepseek" }}
         onSave={onSave}
         onClose={onClose}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -393,12 +412,14 @@ describe("ConfigWizard（配置中心）", () => {
     const onClose = vi.fn();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         onboarding
         closeOnSave
         initialStep={{ kind: "edit", field: "apiKey", endpointId: "deepseek" }}
         onSave={onSave}
         onClose={onClose}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -420,10 +441,12 @@ describe("ConfigWizard（配置中心）", () => {
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "edit", field: "baseUrl", endpointId: "deepseek" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -443,6 +466,7 @@ describe("ConfigWizard（配置中心）", () => {
     const onClose = vi.fn();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{
           kind: "new-endpoint",
@@ -451,6 +475,7 @@ describe("ConfigWizard（配置中心）", () => {
         }}
         onSave={onSave}
         onClose={onClose}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -484,7 +509,13 @@ describe("ConfigWizard（配置中心）", () => {
   it("默认迁移模型可切换（配置级已无「默认模型」）", async () => {
     const onSave = makeOnSave();
     const { stdin, unmount } = render(
-      <ConfigWizard config={makeConfig()} onSave={onSave} onClose={noop} />,
+      <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
+        config={makeConfig()}
+        onSave={onSave}
+        onClose={noop}
+        onSaveMcp={async () => {}}
+      />,
     );
     await tick();
     stdin.write(DOWN); // → 模型管理
@@ -519,10 +550,12 @@ describe("ConfigWizard（端点详情 · 就地编辑）", () => {
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "endpoint", endpointId: "deepseek" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -548,10 +581,12 @@ describe("ConfigWizard（端点详情 · 就地编辑）", () => {
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "endpoint", endpointId: "deepseek" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -574,10 +609,12 @@ describe("ConfigWizard（端点详情 · 就地编辑）", () => {
     const onSave = makeOnSave();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "endpoint", endpointId: "openai" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -597,10 +634,12 @@ describe("ConfigWizard（端点详情 · 就地编辑）", () => {
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "endpoint", endpointId: "openai" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -622,7 +661,13 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
   it("模型管理：新建模型自动 custom: true 并进入详情", async () => {
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} onSave={onSave} onClose={noop} />,
+      <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
+        config={makeConfig()}
+        onSave={onSave}
+        onClose={noop}
+        onSaveMcp={async () => {}}
+      />,
     );
     await tick();
     stdin.write(DOWN); // → 模型管理
@@ -653,10 +698,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -675,11 +722,13 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         reasoningPresets={{ openai: { levels: { low: {}, high: {} } } }}
         initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -703,11 +752,13 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         reasoningPresets={{ openai: { levels: { low: {} } } }}
         initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -732,10 +783,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -757,10 +810,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeFactoryModelConfig()}
         initialStep={{ kind: "model", modelId: FACTORY_MODEL.id }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -788,10 +843,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeFactoryModelConfig({ name: "改过的名字", vision: false, custom: true })}
         initialStep={{ kind: "model", modelId: FACTORY_MODEL.id }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -813,10 +870,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
   it("模型详情：自建模型（出厂清单里没有同 id）不显示「恢复出厂设置」", async () => {
     const { lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -831,10 +890,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={{ ...makeConfig(), imageModels: [drifted] }}
         initialStep={{ kind: "image-model", modelId: factory.id }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -859,10 +920,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={{ ...makeConfig(), endpoints: [], models: [] }}
         initialStep={{ kind: "new-model" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -879,10 +942,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={{ ...makeConfig(), endpoints: [], imageModels: [] }}
         initialStep={{ kind: "new-image-model" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -899,10 +964,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "endpoint", endpointId: "deepseek" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -928,6 +995,7 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         agents={[
           { id: "default", name: "默认助手" },
@@ -935,6 +1003,7 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
         ]}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -968,7 +1037,13 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const onClose = vi.fn();
     const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} onSave={onSave} onClose={onClose} />,
+      <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
+        config={makeConfig()}
+        onSave={onSave}
+        onClose={onClose}
+        onSaveMcp={async () => {}}
+      />,
     );
     await tick();
     // 菜单第 6 项即「默认项」
@@ -1013,10 +1088,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "pick-default", target: "abortedToolRoundStrategy" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1034,10 +1111,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     const onSave = makeOnSave();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "max-tool-output" }}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1055,7 +1134,14 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
 describe("ConfigWizard（MCP 服务器管理）", () => {
   it("配置中心菜单列出「MCP 服务器」并显示全局/项目数量", async () => {
     const { lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} mcp={makeMcp()} onSave={makeOnSave()} onClose={noop} />,
+      <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
+        config={makeConfig()}
+        mcp={makeMcp()}
+        onSave={makeOnSave()}
+        onClose={noop}
+        onSaveMcp={async () => {}}
+      />,
     );
     await tick();
     const frame = lastFrame()!;
@@ -1066,7 +1152,14 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
 
   it("菜单 → MCP 服务器：显示作用域切换 / 新建 / 列表；可切换作用域", async () => {
     const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} mcp={makeMcp()} onSave={makeOnSave()} onClose={noop} />,
+      <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
+        config={makeConfig()}
+        mcp={makeMcp()}
+        onSave={makeOnSave()}
+        onClose={noop}
+        onSaveMcp={async () => {}}
+      />,
     );
     await tick();
     stdin.write(DOWN);
@@ -1095,11 +1188,13 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     const onSaveMcp = makeOnSaveMcp();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "mcp", scope: "global" }}
         mcp={{
           global: { mcpServers: {} },
           project: { mcpServers: {} },
+          paths: { global: "/srv/.ai-zen/mcp.json", project: "/srv/proj/.ai-zen/mcp.json" },
           errors: { global: "Unexpected token 'b'" },
         }}
         onSave={makeOnSave()}
@@ -1134,6 +1229,7 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     const onSaveMcp = makeOnSaveMcp();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "mcp-new", scope: "global" }}
         mcp={makeMcp()}
@@ -1163,6 +1259,7 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     const onSaveMcp = makeOnSaveMcp();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "mcp-server", scope: "global", serverId: "socket-pty" }}
         mcp={makeMcp()}
@@ -1198,6 +1295,7 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     const onSaveMcp = makeOnSaveMcp();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "mcp-server", scope: "global", serverId: "socket-pty" }}
         mcp={makeMcp()}
@@ -1222,6 +1320,7 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     const onSaveMcp = makeOnSaveMcp();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "mcp-server", scope: "global", serverId: "slack" }}
         mcp={makeMcp()}
@@ -1251,6 +1350,7 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     const onSaveMcp = makeOnSaveMcp();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "mcp-server", scope: "global", serverId: "slack" }}
         mcp={makeMcp()}
@@ -1279,6 +1379,7 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     const onSaveMcp = makeOnSaveMcp();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "mcp-kv", scope: "global", serverId: "socket-pty", field: "env" }}
         mcp={makeMcp()}
@@ -1304,6 +1405,7 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     const onSaveMcp = makeOnSaveMcp();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "mcp-kv", scope: "global", serverId: "socket-pty", field: "env" }}
         mcp={makeMcp()}
@@ -1339,9 +1441,11 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
         },
       },
       project: { mcpServers: {} },
+      paths: { global: "/srv/.ai-zen/mcp.json", project: "/srv/proj/.ai-zen/mcp.json" },
     };
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "mcp-kv", scope: "global", serverId: "socket-pty", field: "env" }}
         mcp={mcp}
@@ -1372,6 +1476,7 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     const onClose = vi.fn();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "mcp-server", scope: "global", serverId: "socket-pty" }}
         mcp={makeMcp()}
@@ -1443,10 +1548,12 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     );
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1480,11 +1587,13 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const onSave = makeOnSave();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={config}
         initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
         agentStore={store}
         onSave={onSave}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1509,11 +1618,13 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const { store, save } = makeAgentStore([makeAgentDef()]);
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "agent-new", agentKind: "agent" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1537,11 +1648,13 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const { store, save } = makeAgentStore();
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "agent-new", agentKind: "subagent" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1563,11 +1676,13 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const { store, save } = makeAgentStore([makeAgentDef({ custom: false })]);
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1599,11 +1714,13 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     ]);
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1634,11 +1751,13 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const { store, save, remove } = makeAgentStore([makeAgentDef()]);
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1662,11 +1781,13 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const { store, save } = makeAgentStore([makeAgentDef()]);
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "agent-perms", agentKind: "agent", agentId: "default" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1689,11 +1810,13 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const { store, save } = makeAgentStore([makeAgentDef()]);
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "agent-perms", agentKind: "agent", agentId: "default" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1729,12 +1852,14 @@ describe("ConfigWizard（Agent 定义管理）", () => {
 
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         openEditor={openEditor}
         initialStep={{ kind: "agent", agentKind: "subagent", agentId: "helper" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1773,12 +1898,14 @@ describe("ConfigWizard（Agent 定义管理）", () => {
 
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         openEditor={openEditor}
         initialStep={{ kind: "agent", agentKind: "subagent", agentId: "helper2" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1805,11 +1932,13 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const { store, remove } = makeAgentStore([makeAgentDef()]);
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1832,11 +1961,13 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const onClose = vi.fn();
     const { stdin, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={onClose}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();
@@ -1863,11 +1994,13 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     const { store } = makeAgentStore([makeAgentDef()]);
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
+        configPath="/srv/.ai-zen/config.json"
         config={makeConfig()}
         initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
         agentStore={store}
         onSave={makeOnSave()}
         onClose={noop}
+        onSaveMcp={async () => {}}
       />,
     );
     await tick();

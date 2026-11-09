@@ -3,7 +3,6 @@ import { Box, useCursor, useInput } from "ink";
 import { AppConfig } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
 import { SelectList, KeyHints, SelectItem } from "../components.js";
-import { CONFIG_FILE } from "../../config.js";
 import { AgentStore } from "../../agents-store.js";
 import { summarizeEndpoints } from "../../config-editor.js";
 import { McpSnapshot } from "./types.js";
@@ -18,6 +17,8 @@ export interface MenuStepProps {
   /** 终端行数（吸底布局用） */
   rows: number;
   config: AppConfig;
+  /** `config.json` 在**服务端**的位置（屏上印它） */
+  configPath: string;
   mcp: McpSnapshot;
   agentStore: AgentStore;
   savedCount: number;
@@ -31,6 +32,7 @@ export function MenuStep({
   columns,
   rows,
   config,
+  configPath,
   mcp,
   agentStore,
   savedCount,
@@ -104,7 +106,7 @@ export function MenuStep({
 
   const headerRows: Row[] = [
     ...textRows(t("wiz.menu.title"), columns, theme.highlight, true),
-    ...textRows(t("wiz.menu.configFile", { path: CONFIG_FILE }), columns, theme.faint),
+    ...textRows(t("wiz.menu.configFile", { path: configPath }), columns, theme.faint),
     ...textRows(t("wiz.menu.hint"), columns, theme.dim),
     ...(notice ? textRows(`✔ ${notice}`, columns, theme.ok) : []),
   ];
