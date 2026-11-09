@@ -40,7 +40,7 @@ import {
 import type { ConversationContext } from "../types.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, deltaText, type RateSample } from "./token-rate.js";
-import { PhaseTracker, type PhaseInfo } from "./phase.js";
+import { PhaseTracker, pendingToolCalls, type PhaseInfo } from "./phase.js";
 
 /**
  * 把「请求即将发出」报给阶段跟踪器。
@@ -268,7 +268,23 @@ export class ChatSession {
 
   /** 当前生成阶段；空闲时为 null（消息栏据此显示「处理中」或不起 spinner） */
   get phase(): PhaseInfo | null {
-    return this.phaseTracker.phase;
+    return this.pendingPhase(this.phaseTracker.phase);
+  }
+
+  /**
+   * 把 `tool-waiting` 里的工具名收窄到**仍在跑**的那几个。
+   *
+   * 阶段本身是事件快照，而「谁跑完了」只能从结果消息的状态看出来（结果消息在执行前
+   * 就以 `pending` 追加、跑完才翻终态）。这一步放在**读取时**做而不是在事件里改状态：
+   * `tool-call-end` 与消息翻状态发生在同一时刻，读时算一遍既不会漏，也不需维护第二份状态。
+   * 并行调 `edit` + `exec` 时，edit 一落地这里就只剩 `exec`，标签不再说错话。
+   */
+  private pendingPhase(phase: PhaseInfo | null): PhaseInfo | null {
+    if (!phase || phase.kind !== "tool-waiting" || !phase.calls?.length) return phase;
+    const pending = pendingToolCalls(phase.calls, this.agent.messages);
+    // 全都结束了（下一轮 `connecting` 马上就到）：留全部名字，别把标签闪成「等待工具返回…」
+    const shown = pending.length > 0 ? pending : phase.calls;
+    return { ...phase, tools: shown.map((call) => call.name) };
   }
 
   /** 清空 Agent 栏目（新一轮输入 / 换 Agent / 换会话时调用；序号一并归零） */
@@ -540,6 +556,14 @@ export class ChatSession {
       this.notifier.onNotice(error?.message ?? String(error), "error");
       notify(true);
     };
+    /**
+     * 单个工具结束（core 的 `tool-call-end`）：只当「该重绘了」的信号。
+     *
+     * 不在这里推阶段 —— 这一轮仍是 `tool-waiting`，变的只是「还在等谁」，那个由
+     * `phase` 读取时算（见 `pendingPhase`）。没有这条订阅，并行工具里先完成的那个
+     * 永远等不到重绘，标签就一直把已完成的名字念下去。
+     */
+    const onToolCallEnd = () => notify(true);
 
     const onSubStart = ({ subAgent }: SubAgentContext) => {
       // 执行状态内联到栏目标签（`●` / `✓` / `✖`），**不再推「子任务运行中」通知**：
@@ -586,6 +610,7 @@ export class ChatSession {
     agent.events.on("error", onError);
     agent.events.on("sub-agent-start", onSubStart);
     agent.events.on("sub-agent-end", onSubEnd);
+    agent.events.on("tool-call-end", onToolCallEnd);
 
     this.disposers.push(() => {
       agent.events.off("open", onOpen);
@@ -595,6 +620,7 @@ export class ChatSession {
       agent.events.off("error", onError);
       agent.events.off("sub-agent-start", onSubStart);
       agent.events.off("sub-agent-end", onSubEnd);
+      agent.events.off("tool-call-end", onToolCallEnd);
     });
   }
 }

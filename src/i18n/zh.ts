@@ -85,6 +85,8 @@ export const zh: Record<string, string> = {
 
   // ---------- 命令交互文案（通知 / 选择器） ----------
   "common.current": "（当前）",
+  /** 列举多个名字时的分隔符（如「等待 edit、exec 返回…」） */
+  "common.listSeparator": "、",
   "cmd.model.noModels": "配置里还没有任何模型，请用 /config 添加端点与模型",
   "cmd.model.title": "切换模型（会写入配置）",
   "cmd.model.cancelled": "已取消切换模型",

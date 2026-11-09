@@ -82,6 +82,8 @@ export const en: Record<string, string> = {
 
   // ---------- Command interaction text (notices / pickers) ----------
   "common.current": " (current)",
+  /** Separator when listing several names (e.g. "Waiting for edit, exec…") */
+  "common.listSeparator": ", ",
   "cmd.model.noModels": "No models configured yet — use /config to add endpoints and models",
   "cmd.model.title": "Switch model (writes to config)",
   "cmd.model.cancelled": "Model switch cancelled",

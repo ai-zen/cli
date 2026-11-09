@@ -1,3 +1,36 @@
+## [1.0.2] - 2026-11-09
+
+> The spinner no longer lies about what it is waiting for. A round can call several tools in
+> parallel (`edit` + `exec`), but the label named only the **first** call in the message — so
+> while `exec` was still running (and `edit` had long returned) it read "waiting for edit".
+> Two smaller inaccuracies came from the same place: the "calling a tool" label carried the
+> previous tool's name over to the next one's argument stream, and nothing in the event surface
+> said **when a single tool finishes** — `finally` fires once per round, after `Promise.all`
+> settles, so the CLI could not have narrowed the label even if it had wanted to.
+>
+> Ships on `@ai-zen/agents-core@^4.5.5` (new `tool-call-end` event) + `@ai-zen/agents-sdk@1.1.0`
+> (exact).
+
+### 🐛 Fixed
+
+- **"Waiting for …" names only the tools still running** — the phase now records every call in
+  the round (with its `id`) and filters them against the result messages' status at read time
+  (`pending` = still running, `completed` / `error` / `aborted` = done). With `edit` + `exec` in
+  flight the label goes `等待 edit、exec 返回…` → `等待 exec 返回…` the moment `edit` lands.
+- **The label refreshes when a tool finishes** — `ChatSession` subscribes to core's new
+  `tool-call-end` event and re-renders; without it the first finisher would never be noticed.
+- **"Calling a tool …" keeps names per `index`** — every `tool_calls` delta after the first one
+  carries only argument fragments, so the old "reuse the last known name" made a parallel round
+  label `exec`'s arguments as `edit`. Names are now remembered per call index.
+
+### 🧪 Tests
+
+- 819 unit cases in 59 files — 8 new: parallel calls recorded in full, names kept per index,
+  `pendingToolCalls` filtering (pending / completed / error / aborted / no result message yet /
+  id-less legacy calls), multi-name labels in zh and en, the read-time narrowing in
+  `ChatSession.phase`, and the `tool-call-end` re-render subscription. Plus 9 e2e cases
+  (3 skipped — they need a real API key). `tsc` and the build are clean.
+
 ## [1.0.1] - 2026-11-09
 
 > Interrupting a handoff now puts you back where you were. Before this release `Ctrl+C` only

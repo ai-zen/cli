@@ -381,7 +381,43 @@ describe("生成阶段（消息栏 spinner 的六态）", () => {
     expect(session.phase).toEqual({ kind: "streaming" });
 
     agent.events.emit("parsed", { tool_calls: [{ function: { name: "grep" } }] });
-    expect(session.phase).toEqual({ kind: "tool-waiting", tool: "grep" });
+    expect(session.phase).toMatchObject({ kind: "tool-waiting", tools: ["grep"] });
+  });
+
+  it("并行工具：先完成的那个从「等待」里消失，只剩仍在跑的", async () => {
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
+    const agent = harness.agents.at(-1)!;
+
+    agent.events.emit("parsed", {
+      tool_calls: [
+        { id: "t1", index: 0, function: { name: "edit" } },
+        { id: "t2", index: 1, function: { name: "exec" } },
+      ],
+    });
+    expect(session.phase).toMatchObject({ tools: ["edit", "exec"] });
+
+    // 结果消息在执行前就以 pending 追加，跑完才翻终态
+    agent.messages.push({ role: AgentNS.Role.Tool, tool_call_id: "t1", status: "pending" } as any);
+    agent.messages.push({ role: AgentNS.Role.Tool, tool_call_id: "t2", status: "pending" } as any);
+    expect(session.phase).toMatchObject({ tools: ["edit", "exec"] });
+
+    // edit 落地（就在 core 发 tool-call-end 的同一时刻）—— 真正的等待已经只剩 exec
+    agent.messages[0]!.status = "completed" as any;
+    expect(session.phase).toMatchObject({ tools: ["exec"] });
+  });
+
+  it("tool-call-end 触发一次立即重绘（并行时先完成的那个否则永远等不到刷新）", async () => {
+    const onChange = vi.fn();
+    const session = await newSession({}, { onChange, onNotice: () => {} });
+    const agent = harness.agents.at(-1)!;
+    onChange.mockClear();
+
+    agent.events.emit("tool-call-end", {
+      toolCall: { id: "t1", function: { name: "edit" } },
+      result: { role: AgentNS.Role.Tool, tool_call_id: "t1", status: "completed" },
+    });
+
+    expect(onChange).toHaveBeenCalledWith(true);
   });
 
   it("子 Agent 的输出**不**覆盖主阶段（主 Agent 此刻在等工具返回）", async () => {
@@ -390,7 +426,7 @@ describe("生成阶段（消息栏 spinner 的六态）", () => {
 
     agent.events.emit("open");
     agent.events.emit("parsed", { tool_calls: [{ function: { name: "sub_agent_default" } }] });
-    expect(session.phase).toEqual({ kind: "tool-waiting", tool: "sub_agent_default" });
+    expect(session.phase).toMatchObject({ kind: "tool-waiting", tools: ["sub_agent_default"] });
 
     const subAgent = makeSubAgent();
     agent.events.emit("sub-agent-start", {
@@ -400,7 +436,7 @@ describe("生成阶段（消息栏 spinner 的六态）", () => {
     // 子 Agent 开始吐内容 / 换轮次：主阶段必须仍停在「等待 xxx 返回」
     subAgent.events.emit("open");
     subAgent.events.emit("chunk-parsed", {}, { choices: [{ delta: { content: "子任务输出" } }] });
-    expect(session.phase).toEqual({ kind: "tool-waiting", tool: "sub_agent_default" });
+    expect(session.phase).toMatchObject({ kind: "tool-waiting", tools: ["sub_agent_default"] });
   });
 
   it("send 结束时阶段归零（spinner 消失后不留残影）", async () => {

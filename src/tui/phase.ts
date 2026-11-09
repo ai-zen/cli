@@ -16,6 +16,13 @@
  *
  * 判据只用**事件与 delta 的形状**，不读文案、不猜时序；多轮工具调用时阶段会自然
  * 回到 `connecting`（下一轮请求前由插件钩子重置）。
+ *
+ * ## `tool-waiting` 为什么存一组名字而不是一个
+ *
+ * 一轮里的工具是**并行**跑的（core 用 `Promise.all`）。只报第一个名字等于说错话：
+ * 并行调 `edit` + `exec` 时，edit 早就回来了、真正在等的是 exec，标签却写着「等待 edit」。
+ * 所以这里存这一轮**全部**调用（带 id），再由 {@link pendingToolCalls} 按结果消息的状态
+ * 筛掉已结束的，标签只念还在跑的那几个。
  */
 
 import { t } from "../i18n/index.js";
@@ -29,10 +36,57 @@ export type PhaseKind =
   | "tool-waiting"
   | "streaming";
 
+/** 一次工具调用的最小身份：`id` 用来和结果消息配对，`name` 用来展示 */
+export interface ToolCallRef {
+  id?: string;
+  name: string;
+}
+
 export interface PhaseInfo {
   kind: PhaseKind;
-  /** 工具名（`tool-calling` / `tool-waiting` 时有值；流式早期可能还没吐到 name） */
+  /** 工具名（`tool-calling` 时有值：正在拼参数的那一个） */
   tool?: string;
+  /**
+   * 还在等的工具名（`tool-waiting` 时有值）。
+   *
+   * 存数组而不是单个名字：并行工具只报第一个就是「在等 exec 却说 edit」的由来。
+   * 由读取方（`ChatSession.phase`）按结果状态筛过一遍，这里是「仍在跑」的那几个。
+   */
+  tools?: string[];
+  /** `tool-waiting` 时这一轮的全部调用（带 id），供读取方按状态筛选 */
+  calls?: ToolCallRef[];
+}
+
+/** 结果消息里能表示「这个工具已经结束」的状态（其余一律视为仍在跑） */
+const FINISHED_STATUSES = new Set(["completed", "error", "aborted"]);
+
+/** 判定「谁还在跑」只需要这几个字段，故不依赖 SDK 的 Message 类型 */
+export interface PhaseMessageLike {
+  role?: string;
+  tool_call_id?: string;
+  status?: string;
+}
+
+/**
+ * 从「这一轮的全部工具调用」里筛出**仍在跑**的。
+ *
+ * 工具结果消息在执行**前**就以 `pending` 追加、跑完才翻成终态，所以状态就是唯一真相源。
+ * 找不到对应结果消息时按「仍在跑」算：宁可多念一个名字，也不要在结果消息还没落地的
+ * 那一瞬把标签清成「等待工具返回…」。
+ */
+export function pendingToolCalls(
+  calls: readonly ToolCallRef[],
+  messages: readonly PhaseMessageLike[],
+): ToolCallRef[] {
+  const statusById = new Map<string, string | undefined>();
+  for (const message of messages) {
+    if (message?.tool_call_id) statusById.set(message.tool_call_id, message.status);
+  }
+  return calls.filter((call) => {
+    if (!call.id) return true;
+    if (!statusById.has(call.id)) return true;
+    return !FINISHED_STATUSES.has(statusById.get(call.id) ?? "");
+  });
 }
 
 /**
@@ -42,6 +96,14 @@ export interface PhaseInfo {
  */
 export class PhaseTracker {
   private current: PhaseInfo | null = null;
+  /**
+   * 本轮各下标的工具名。
+   *
+   * 名字只在每个 `index` 的**首个** delta 里给出，后续 delta 只带参数片段。按 index 记，
+   * 而不是一路沿用「上一个记住的名字」：并行时两个工具的参数片段会交替到达，沿用会把
+   * exec 的参数错误地挂在 edit 的名字下。
+   */
+  private toolNames = new Map<number, string>();
 
   /** 当前阶段；空闲（没有在生成的轮次）时为 null */
   get phase(): PhaseInfo | null {
@@ -51,11 +113,13 @@ export class PhaseTracker {
   /** 清空（一轮结束 / 重建会话时调用） */
   reset(): void {
     this.current = null;
+    this.toolNames.clear();
   }
 
   /** 请求已发出、等响应头（DNS / TCP / TLS / 服务端受理都在这一段） */
   connecting(): void {
     this.current = { kind: "connecting" };
+    this.toolNames.clear();
   }
 
   /**
@@ -81,10 +145,11 @@ export class PhaseTracker {
 
     const toolCall = Array.isArray(delta.tool_calls) ? delta.tool_calls[0] : undefined;
     if (toolCall || delta.function_call) {
-      // 工具名只在首个 delta 里给出，后续 delta 只带参数片段 → 沿用已知的名字
-      const name: string | undefined =
-        toolCall?.function?.name || delta.function_call?.name || this.current?.tool;
-      this.current = { kind: "tool-calling", tool: name || undefined };
+      const index = typeof toolCall?.index === "number" ? toolCall.index : 0;
+      const name: string | undefined = toolCall?.function?.name || delta.function_call?.name;
+      if (name) this.toolNames.set(index, name);
+      // 名字按 index 取：无名的参数片段沿用**本下标**已知的名字，不会串到别的工具上
+      this.current = { kind: "tool-calling", tool: this.toolNames.get(index) || undefined };
       return;
     }
     if (delta.content) {
@@ -100,14 +165,20 @@ export class PhaseTracker {
    * 流结束（SDK 的 `parsed` 事件，参数是本轮 assistant 消息）。
    *
    * 本轮带工具调用 → 接下来是工具执行，模型不在跑；不带 → 由调用方 `reset()`。
+   * 记下**全部**调用（不是第一个）：并行时只念第一个名字就是在说错话。
    */
   streamEnded(receiver: unknown): void {
     const message = receiver as any;
-    const calls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
-    if (calls.length === 0 && !message?.function_call) return;
-    const name: string | undefined =
-      calls[0]?.function?.name || message?.function_call?.name || this.current?.tool;
-    this.current = { kind: "tool-waiting", tool: name || undefined };
+    const raw: any[] = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+    const calls: ToolCallRef[] = [];
+    for (const [fallbackIndex, call] of raw.entries()) {
+      const name: string =
+        call?.function?.name ?? this.toolNames.get(call?.index ?? fallbackIndex) ?? "";
+      if (name) calls.push({ id: call?.id, name });
+    }
+    if (message?.function_call?.name) calls.push({ name: message.function_call.name });
+    if (calls.length === 0) return;
+    this.current = { kind: "tool-waiting", tools: calls.map((call) => call.name), calls };
   }
 }
 
@@ -128,8 +199,11 @@ export function phaseLabel(phase: PhaseInfo | null): string {
         ? t("phase.toolCallingWith", { name: phase.tool })
         : t("phase.toolCalling");
     case "tool-waiting":
-      return phase.tool
-        ? t("phase.toolWaitingWith", { name: phase.tool })
+      // 并行时把还在跑的名字一起念出来（`tools` 已由读取方按结果状态筛过）
+      return phase.tools?.length
+        ? t("phase.toolWaitingWith", {
+            name: phase.tools.join(t("common.listSeparator")),
+          })
         : t("phase.toolWaiting");
   }
 }
