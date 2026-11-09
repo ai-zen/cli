@@ -94,8 +94,6 @@ export let CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
 
 export let AGENTS_DIR = join(AI_ZEN_DIR, "agents");
 export let SUB_AGENTS_DIR = join(AI_ZEN_DIR, "sub-agents");
-export let SKILLS_DIR = join(AI_ZEN_DIR, "skills");
-export let TOOLS_DIR = join(AI_ZEN_DIR, "tools");
 
 // ==================== 项目级目录（基于 CWD）====================
 
@@ -148,17 +146,6 @@ export function projectDirs(cwd: string = process.cwd()): ProjectDirs {
   };
 }
 
-// ==================== 业界通用规范 ~/.agents/ 目录 ====================
-
-function resolveUserAgentsDir(): string {
-  return join(process.env.HOME || process.env.USERPROFILE || "", ".agents");
-}
-
-let USER_AGENTS_DIR = resolveUserAgentsDir();
-
-export let USER_AGENTS_SKILLS_DIR = join(USER_AGENTS_DIR, "skills");
-export let USER_AGENTS_MCP_CONFIG_FILE = join(USER_AGENTS_DIR, "mcp.json");
-
 // ==================== MCP 配置 ====================
 
 export let MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
@@ -205,12 +192,7 @@ export function refreshPaths(): void {
   CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
   AGENTS_DIR = join(AI_ZEN_DIR, "agents");
   SUB_AGENTS_DIR = join(AI_ZEN_DIR, "sub-agents");
-  SKILLS_DIR = join(AI_ZEN_DIR, "skills");
-  TOOLS_DIR = join(AI_ZEN_DIR, "tools");
   MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
-  USER_AGENTS_DIR = resolveUserAgentsDir();
-  USER_AGENTS_SKILLS_DIR = join(USER_AGENTS_DIR, "skills");
-  USER_AGENTS_MCP_CONFIG_FILE = join(USER_AGENTS_DIR, "mcp.json");
   // 一次性初始化缓存是按旧目录算的，必须作废，否则新目录永远不会被 bootstrap
   initPromise = null;
 }

@@ -1,5 +1,29 @@
-import { describe, it, expect } from "vitest";
-import { mergePrompt, extractText } from "./stdio-runner.js";
+/**
+ * 纯 stdio 模式的两层测试。
+ *
+ * 上半层是纯函数（`mergePrompt` / `extractText`）：它们决定「喂进去的东西」与「吐出来的
+ * 文本」，改一处就是改用户可见行为。
+ *
+ * 下半层是**真 socket + 真守护进程 + 真存档（临时目录）+ 假 Agent**：stdout 只含答案、
+ * 默认不落盘、`--save` 写档但不挪指针、结束后会话被关掉 —— 这四条是这一模式对外的
+ * 全部契约，靠假服务端是断言不出来的（落盘与回收都发生在服务端那一侧）。
+ */
+
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, readdirSync, rmSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  Daemon,
+  createSessionHandlers,
+  FileSessionStore,
+  SessionManager,
+  type AgentLike,
+} from "@ai-zen/agents-server";
+import { SocketServerClient } from "./server-client/socket-server-client.js";
+import type { ClientInfo } from "./server-client/types.js";
+import { mergePrompt, extractText, runStdio } from "./stdio-runner.js";
+import { useTempAiZenDir } from "./test-support/temp-dir.js";
 
 describe("mergePrompt", () => {
   it("仅有指令", () => {
@@ -54,3 +78,236 @@ describe("extractText", () => {
     expect(text).not.toMatch(/\x1b/);
   });
 });
+
+// ==================== 端到端：一次性调用走服务端 ====================
+
+const clientInfo: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
+
+/**
+ * 假 Agent：`send()` 当场把这一轮的消息写好，再按 SDK 的顺序发事件
+ * （`open` → 正文 → `finally`），于是服务端的收尾、落盘、`turn.end` 全都真跑一遍。
+ */
+class FakeAgent implements AgentLike {
+  messages: any[] = [{ role: "system", content: "你是助手" }];
+  lastUsage: unknown = undefined;
+  definition = { messages: [] as any[] };
+  tools: Array<{ function?: { name?: string } }> = [];
+  model = "m";
+  modelConfig: Record<string, unknown> = {};
+  client: unknown = {};
+  scope = { cwd: "/work/proj" };
+  /** 这一轮要产出的 assistant 消息（用例改它来模拟成功 / 失败） */
+  reply: { content: string; status?: string } = { content: "答复" };
+
+  use(_plugin: unknown): void {}
+
+  private readonly handlers = new Map<string, Set<(payload: any) => void>>();
+  readonly events = {
+    on: (event: string, handler: (payload: any) => void) => {
+      if (!this.handlers.has(event)) this.handlers.set(event, new Set());
+      this.handlers.get(event)!.add(handler);
+    },
+    off: (event: string, handler: (payload: any) => void) => {
+      this.handlers.get(event)?.delete(handler);
+    },
+  };
+
+  send(content: unknown): Promise<unknown> {
+    this.messages = [
+      ...this.messages,
+      { role: "user", content },
+      { role: "assistant", content: this.reply.content, status: this.reply.status },
+    ];
+    // 同步发事件：`SessionManager.send()` 是「立刻回 turnId、过程走事件」，收尾靠 `finally`
+    this.fire("open");
+    this.fire("finally");
+    return Promise.resolve(this.messages);
+  }
+
+  abort(): void {}
+
+  fire(event: string, payload?: unknown): void {
+    for (const handler of this.handlers.get(event) ?? []) handler(payload);
+  }
+}
+
+let dir: string;
+let daemon: Daemon | null = null;
+let manager: SessionManager | null = null;
+let connection: SocketServerClient | null = null;
+let agent: FakeAgent;
+let workspaceId: string;
+/**
+ * `AI_ZEN_DIR`：`runStdio` 会读它拿 `defaultAgent`。
+ *
+ * 必须钉到临时目录 —— 不钉就是读开发者本机那份配置（没有 `config.json` 时直接抛错，
+ * 用例会在「不是被测行为」的地方红）。
+ */
+const aiz = useTempAiZenDir("aizen-stdio-agent-");
+
+beforeEach(async () => {
+  aiz.pin();
+  dir = mkdtempSync(join(tmpdir(), "aiz-stdio-"));
+  agent = new FakeAgent();
+  manager = new SessionManager({
+    createAgent: async () => agent,
+    nextSessionId: () => "chat_stdio",
+    storeFor: (id) => new FileSessionStore({ rootDir: join(dir, "workspaces", id) }),
+  });
+  daemon = new Daemon({
+    aiZenDir: dir,
+    port: 0,
+    version: "0.0.0-test",
+    handlers: {
+      ...createSessionHandlers({
+        manager,
+        workspacesRoot: join(dir, "workspaces"),
+        defaultWorkspacePath: dir,
+      }),
+    },
+  });
+  await daemon.start();
+  connection = await SocketServerClient.connect({
+    address: { host: "127.0.0.1", port: daemon.port },
+    client: clientInfo,
+  });
+  workspaceId = "";
+});
+
+afterEach(async () => {
+  connection?.close();
+  connection = null;
+  manager?.dispose();
+  manager = null;
+  if (daemon) {
+    await daemon.stop("test teardown");
+    daemon = null;
+  }
+  rmSync(dir, { recursive: true, force: true });
+});
+
+afterAll(() => aiz.cleanup());
+
+/** 跑一次 `ai "…"`：注入真 socket，把 stdout / stderr 抓成字符串 */
+async function run(
+  options: { instruction: string; save?: boolean; stdin?: string },
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  let stdout = "";
+  let stderr = "";
+  const code = await runStdio(
+    { instruction: options.instruction, save: options.save ?? false },
+    {
+      connect: async () => connection!,
+      readInput: async () => options.stdin ?? "",
+      writeOut: (text) => {
+        stdout += text;
+      },
+      writeErr: (line) => {
+        stderr += line + "\n";
+      },
+    },
+  );
+  // 工作区目录是服务端按路径建出来的（`workspaces/<id>`）：跑完才知道 id
+  workspaceId = workspaceIdFor(dir);
+  return { code, stdout, stderr };
+}
+
+/** 存档目录（`<aiZenDir>/workspaces/<workspaceId>`）—— 用完才知道 id，现查 */
+function savedSessions(): string[] {
+  const workspaces = join(dir, "workspaces");
+  if (!existsSync(workspaces)) return [];
+  return readdirSync(workspaces).flatMap((id) => {
+    const sessions = join(workspaces, id, "sessions");
+    return existsSync(sessions) ? readdirSync(sessions) : [];
+  });
+}
+
+function pointerFiles(): string[] {
+  const workspaces = join(dir, "workspaces");
+  if (!existsSync(workspaces)) return [];
+  return readdirSync(workspaces)
+    .map((id) => join(workspaces, id, "last-session.json"))
+    .filter(existsSync);
+}
+
+describe("runStdio：一次性调用（真 socket + 真存档）", () => {
+  it("答案只写 stdout，退出码 0，stderr 干净", async () => {
+    const result = await run({ instruction: "你好" });
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe("答复\n");
+    expect(result.stderr).toBe("");
+  });
+
+  it("默认不落盘：不写存档，也不挪「上一轮会话」指针", async () => {
+    const result = await run({ instruction: "脚本里问一句" });
+    expect(result.code).toBe(0);
+
+    // 这条就是「一次性管道调用不该篡改用户的对话列表」的全部证据
+    expect(savedSessions()).toEqual([]);
+    expect(pointerFiles()).toEqual([]);
+  });
+
+  it("--save 写档但不挪指针（下次 `ai` 不会续接到一条管道结果上）", async () => {
+    const result = await run({ instruction: "留一份", save: true });
+
+    expect(result.code).toBe(0);
+    expect(savedSessions()).toHaveLength(1);
+    expect(pointerFiles()).toEqual([]);
+    expect(result.stderr).toContain("Saved conversation: chat_stdio");
+    // 存档写完之后答案照旧只出现在 stdout
+    expect(result.stdout).toBe("答复\n");
+  });
+
+  it("模型报错：stdout 为空、错误走 stderr、退出码 1", async () => {
+    agent.reply = { content: "", status: "error" };
+
+    const result = await run({ instruction: "你好" });
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("ai: ");
+  });
+
+  it("调用完就关会话：服务端不留活会话（每个 `ai` 不泄漏一段）", async () => {
+    // 关会话发生在 finally 里：直接看服务端有没有收到这次 `session.close`
+    const closed: string[] = [];
+    const close = manager!.close.bind(manager!);
+    manager!.close = (sessionId: string) => {
+      closed.push(sessionId);
+      return close(sessionId);
+    };
+
+    await run({ instruction: "你好" });
+
+    await waitFor(() => closed.length === 1);
+    expect(closed).toEqual(["chat_stdio"]);
+    expect(workspaceId).not.toBe("");
+    expect(manager!.list(workspaceId)).toEqual([]);
+  });
+
+  it("无输入：不连服务端也能判定（退出码 2，stdout 为空）", async () => {
+    const result = await run({ instruction: "   " });
+
+    expect(result.code).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("no input");
+  });
+});
+
+/** 工作区 id（`workspace.resolve` 里那套规则；测试直接按目录名反查） */
+function workspaceIdFor(root: string): string {
+  const workspaces = join(root, "workspaces");
+  const ids = existsSync(workspaces) ? readdirSync(workspaces) : [];
+  // 只有一个工作区的用例里，这就是「会话跑在哪个工作区」
+  return ids[0] ?? "";
+}
+
+/** 轮询到条件成立（不固定 sleep） */
+async function waitFor(check: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}

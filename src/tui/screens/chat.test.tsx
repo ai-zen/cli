@@ -78,7 +78,7 @@ const { created, createFakeSession, fakeIndex } = vi.hoisted(() => {
 /**
  * 全部依赖改为**注入**（`Chat` 的 `deps`），不再 `vi.mock`：
  * 模块级 mock 是全局注册的，进程内共享模块（`isolate: false`）时会污染其他测试文件
- * —— 实测它会把这个文件里的假 `readConfig`（models 为空）泄漏给 `agent-creator` 等。
+ * —— 实测它会把这个文件里的假 `readConfig`（models 为空）泄漏给同进程的其它模块。
  */
 const fakeAgentStore = () => ({ agents: [], subAgents: [], save: async () => {}, remove: async () => {} }) as any;
 

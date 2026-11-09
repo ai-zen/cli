@@ -51,6 +51,10 @@ The CLI has two **non-mixing** run modes, chosen automatically from the launch a
 
 In pure stdio mode, logs / progress / errors all go to **stderr**; stdout carries the result only (no ANSI / emoji / spinner). Exit code is `0` on success and non-zero on failure; nothing is persisted by default (use `--save` to keep a conversation archive).
 
+**Pure stdio runs on the server too.** Both modes are the same pipeline: `ai "…"` first makes sure the local daemon is up (spawning one if needed), then opens a **one-off session** and runs a single turn — so the agent assembly, tools, MCP connections and context guard are exactly the same as in the TUI (there is no "pipe mode with a few plugins missing"), and archives land in the same place (`workspaces/<workspaceId>/`).
+
+The trade-off is a one-time **cold start** on the first call (a second or two, never again), plus `<config dir>/run/` must be writable and `node` must be able to spawn a child process. Three behaviours stay as they were: nothing is persisted by default; `--save` only archives and **does not** move the "last session" pointer (so the next `ai` will not resume a pipe result); stdout still carries the answer only.
+
 **The workspace follows your directory.** When the server and the CLI are on the same machine (the default — the CLI starts a local daemon for you), the directory you type `ai` in **is** the session's workspace: created on first use, then resumed from that workspace's last conversation. Deploy the server elsewhere and it flips: the client sends no directory at all, and the workspace is whatever the server was started with (`--workspace`, or its own working directory).
 
 Two modifiers refine this: `--tui` forces the interactive UI (the arguments are auto-sent as the first message; in a non-TTY environment it fails instead of degrading to pipe mode), and `--new` starts a **fresh conversation** instead of resuming the last one in this directory (TUI only; ignored on the stdio path, where a run is always a one-off session).

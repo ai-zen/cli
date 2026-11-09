@@ -31,6 +31,8 @@ The CLI has two **non-mixing** run modes, chosen automatically from the launch a
 
 In pure stdio mode, logs / progress / tool activity / error summaries all go to **stderr**; stdout carries the result only (no ANSI, no emoji prefix, no spinner). Exit code is `0` on success and non-zero on failure. Nothing is persisted by default (no conversation archive).
 
+Pure stdio also **runs on the server**: `ai "…"` makes sure the local daemon is up (spawning one if needed) and opens a **one-off session** for that single turn — same agent assembly, tools, MCP connections and context guard as the TUI, and the same archive location (`workspaces/<workspaceId>/`). The cost is a one-time cold start of a second or two, plus `<config dir>/run/` must be writable and `node` must be able to spawn a child process.
+
 ## Quick Start
 
 ```bash
@@ -166,7 +168,7 @@ On first launch, if the endpoint bound to the selected model has no API Key yet,
 
 ### Session Recovery
 
-Every turn is written to the **workspace** archive before `turn.end` (`workspaces/<workspaceId>/sessions/<id>.json`), and `last-session.json` next to it remembers the **last session id**; next time you start `ai`, that session is **resumed automatically**. With the server on the same machine the workspace is simply the directory you typed `ai` in (created on first use, reused afterwards); with the server on another machine it is whatever the server was started with (`--workspace`). The old `cli/conversations/` location is migrated on first launch.
+Every turn is written to the **workspace** archive before `turn.end` (`workspaces/<workspaceId>/sessions/<id>.json`), and `last-session.json` next to it remembers the **last session id**; next time you start `ai`, that session is **resumed automatically**. With the server on the same machine the workspace is simply the directory you typed `ai` in (created on first use, reused afterwards); with the server on another machine it is whatever the server was started with (`--workspace`). The old `cli/conversations/` location is migrated on first launch. One-off stdio runs (`ai "…"`) are the exception: they are **not** archived and never move the pointer — `--save` archives that single run without touching the pointer either.
 
 ### UI language (Chinese / English)
 

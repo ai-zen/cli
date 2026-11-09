@@ -1,9 +1,10 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeEach } from "vitest";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { workspaceIdFor } from "@ai-zen/agents-server";
+import { readDescriptor, workspaceIdFor } from "@ai-zen/agents-server";
+import { SocketServerClient } from "../server-client/socket-server-client.js";
 
 // ==================== Helpers ====================
 
@@ -43,8 +44,47 @@ function runCli(
 }
 
 let tmpDirs: string[] = [];
+/** 本用例建的目录（`afterEach` 收掉它们里面被拉起的守护进程） */
+let liveDirs: string[] = [];
 
-afterAll(() => {
+/**
+ * 收掉某个临时目录里被 `ai "…"` 顺手拉起的守护进程。
+ *
+ * 纯 stdio 模式现在**跑在服务端**（`ensureServer` 会 spawn 一个 detached 进程），而 e2e
+ * 每个用例一个 `AI_ZEN_DIR` —— 不显式关掉就是一堆常驻进程与删不掉的临时目录（进程的
+ * cwd 还留在里面）。
+ *
+ * 判据用发现文件：`Daemon.stop()` 退出前会删掉它，所以「文件没了」就是真停了。
+ */
+async function stopServer(aizDir: string): Promise<void> {
+  const descriptor = await readDescriptor(aizDir);
+  if (!descriptor) return;
+  const client = await SocketServerClient.connect({
+    address: { host: descriptor.host, port: descriptor.port },
+    client: { name: "@ai-zen/cli-e2e", version: "0.0.0" },
+  }).catch(() => null);
+  if (!client) return;
+  // 回执先到、进程后停：这条调用的 reject 不重要（socket 可能先被关）
+  await client.call("shutdown").catch(() => {});
+  client.close();
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if ((await readDescriptor(aizDir)) === null) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+beforeEach(() => {
+  liveDirs = [];
+});
+
+afterEach(async () => {
+  for (const d of liveDirs) await stopServer(d).catch(() => {});
+  liveDirs = [];
+});
+
+afterAll(async () => {
+  for (const d of tmpDirs) await stopServer(d).catch(() => {});
   for (const d of tmpDirs) {
     try {
       rmSync(d, { recursive: true, force: true });
@@ -56,6 +96,7 @@ function makeTestDir(): string {
   const dir = join(tmpdir(), `ai-e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(dir, { recursive: true });
   tmpDirs.push(dir);
+  liveDirs.push(dir);
   return dir;
 }
 
@@ -203,9 +244,10 @@ describe("E2E: 纯 stdio 模式", () => {
     setupConfigDir(aizDir, { apiKey: "" });
     const result = await runCli(["你好"], undefined, { AI_ZEN_DIR: aizDir });
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("has no API key");
+    // 这句现在由服务端的装配方（SDK `createModel`）说：`session.create` 失败，客户端转达
+    expect(result.stderr).toMatch(/API key/i);
     expect(result.stdout).toBe("");
-  });
+  }, 20000);
 
   it("模型/网络报错时 stdout 保持纯净（无 ANSI），错误只走 stderr", async () => {
     const aizDir = makeTestDir();
@@ -215,7 +257,7 @@ describe("E2E: 纯 stdio 模式", () => {
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).not.toMatch(ANSI_RE);
     expect(result.stderr.length).toBeGreaterThan(0);
-  });
+  }, 20000);
 
   it("stdin 被重定向时也能触发 stdio 模式（无参数）", async () => {
     const aizDir = makeTestDir();
@@ -224,7 +266,7 @@ describe("E2E: 纯 stdio 模式", () => {
     // 无参数 + 管道 → stdio（不会进入 TUI）；这里以请求失败收尾，关键是 stdout 纯净
     expect(result.stdout).not.toMatch(ANSI_RE);
     expect(result.stdout).toBe("");
-  });
+  }, 20000);
 });
 
 describe("E2E: 真实 API 对话（纯 stdio）", () => {
@@ -241,8 +283,10 @@ describe("E2E: 真实 API 对话（纯 stdio）", () => {
     expect(result.stdout).not.toMatch(ANSI_RE);
     // 无 TUI 装饰：不应出现 ✅ 横幅 / emoji 前缀
     expect(result.stdout).not.toContain("对话已开始");
-    // 默认不落盘（纯 stdio 模式不写会话、不更新「上一轮会话 id」指针）
-    expect(existsSync(join(aizDir, "cli", "last-session.json"))).toBe(false);
+    // 默认不落盘（`persist:false`）：工作区里既没存档、也没「上一轮会话」指针
+    const workspace = join(aizDir, "workspaces", workspaceIdFor(process.cwd()));
+    expect(existsSync(join(workspace, "last-session.json"))).toBe(false);
+    expect(existsSync(join(workspace, "sessions"))).toBe(false);
   }, 60000);
 
   it("管道内容 + 指令（cat | ai '总结'）走 stdout", async (ctx) => {
@@ -273,5 +317,9 @@ describe("E2E: 真实 API 对话（纯 stdio）", () => {
     const convDir = join(aizDir, "workspaces", workspaceIdFor(process.cwd()), "sessions");
     const { readdirSync } = await import("node:fs");
     expect(readdirSync(convDir).length).toBeGreaterThan(0);
+    // `--save` 只归档、**不动**续接指针：下次 `ai` 不该续接到一条管道结果上
+    expect(
+      existsSync(join(aizDir, "workspaces", workspaceIdFor(process.cwd()), "last-session.json")),
+    ).toBe(false);
   }, 60000);
 });
