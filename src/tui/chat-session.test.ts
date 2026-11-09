@@ -3,7 +3,7 @@ import { existsSync, promises as fs, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
 import { ChatSession } from "./chat-session.js";
-import { ContextGuardPlugin } from "@ai-zen/agents-sdk";
+import { ContextGuardPlugin, HandoffAbortedError } from "@ai-zen/agents-sdk";
 import { ConversationPersistPlugin } from "../conversation-persist-plugin.js";
 import { readLastSession } from "../session-pointer.js";
 import { refreshPaths } from "../config.js";
@@ -560,5 +560,57 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
     expect(session.subAgents).toHaveLength(1);
     await session.reload();
     expect(session.subAgents).toEqual([]);
+  });
+});
+
+describe("ChatSession.abort（Ctrl+C 中断交接）", () => {
+  /**
+   * 把 session 武装成「能跑 self 交接」：`self` 需要 `write` 工具 + `send`，
+   * 文档目录改指临时区（`PROJECT_HANDOFFS_DIR` 固化自模块加载时的 cwd）。
+   */
+  function armSelfHandoff(session: ChatSession): any {
+    const agent = (session as any).agent;
+    agent.tools = [{ type: "function", function: { name: "write", parameters: {} } }];
+    agent.model = "m";
+    agent.modelConfig = {};
+    (session as any).handoffService.handoffDirPath = join(state.dir, "handoffs-abort");
+    return agent;
+  }
+
+  it("交接中被中断：会话退回交接前（消息逐条不变）", async () => {
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
+    const agent = armSelfHandoff(session);
+    session.messages.push({ role: AgentNS.Role.User, content: "帮我做任务" } as any);
+    const before = JSON.parse(JSON.stringify(session.messages));
+
+    // 真机形态：交接回合就是一次 `agent.send()`，Ctrl+C 后 send 正常返回
+    // （core 把消息标记 Aborted、不抛错），所以取消只能靠服务那条 signal。
+    agent.send = async (content: string) => {
+      agent.messages.push({ role: AgentNS.Role.User, content });
+      agent.messages.push({ role: AgentNS.Role.Assistant, content: "交接文档已写好" });
+      session.abort();
+    };
+
+    await expect(session.handoff("self")).rejects.toThrow(HandoffAbortedError);
+
+    // 那条几 KB 的 Skill 指令不能留在历史里：否则下一次请求会把它当历史再发一遍，
+    // `↑` 翻历史也会把它翻出来
+    expect(session.messages).toEqual(before);
+  });
+
+  it("abort() 把取消转交给 handoffService（自动迁移只有这一个开关）", async () => {
+    const session = await newSession({}, { onChange: () => {}, onNotice: () => {} });
+    const agent: any = (session as any).agent;
+    const serviceAbort = vi.fn();
+    (session as any).handoffService.abort = serviceAbort;
+    const agentAbort = vi.fn();
+    agent.abort = agentAbort;
+
+    session.abort();
+
+    // 自动迁移由 SDK 插件直接驱动、不经过本类，调用方递不进 signal ——
+    // 服务自身的句柄是唯一入口，漏掉它就等于「自动迁移期间 Ctrl+C 无效」
+    expect(serviceAbort).toHaveBeenCalledTimes(1);
+    expect(agentAbort).toHaveBeenCalledTimes(1);
   });
 });

@@ -110,7 +110,15 @@ The old conversation is always saved before pruning, so a failed handoff never c
 
 ## Cancellation
 
-Handoff / migration can be cancelled with an `AbortSignal` (`Ctrl+C` in the TUI): cancellation throws `HandoffAbortedError`, **does not degrade and does not retry**, and discards the half-written document. A cancelled migration **leaves the session history untouched** — no "already migrated" illusion.
+Handoff / migration can be interrupted at any point: `Ctrl+C` in the TUI (`Esc` works too), including the "how should the document be written" picker. Interrupting **returns you to the pre-handoff state**:
+
+- every message the handoff turn appended (that multi-KB skill instruction, tool results, the confirmation) is truncated — it does not show up in the transcript, `↑` history will not bring it back, and the next request will not resend it as history;
+- a handoff document created by this run is deleted (a half-written one even more so);
+- no degradation, no retry, no migration: no "already migrated" illusion.
+
+The cancel handle lives in `HandoffService` (`handoffService.abort()`) rather than in a caller-supplied `signal`: **auto-migration** (the context-overflow path) is driven directly by an SDK plugin, so the CLI never gets a chance to pass a signal in — honouring only an external `signal` means "Ctrl+C during auto-migration is read as 'the model never wrote the document', so it retries once, degrades to `summary` for another round, and migrates anyway". The CLI's `ChatSession.abort()` does exactly two things: `handoffService.abort()` (stop and roll back) plus `agent.abort()` (cut off the round that is currently streaming).
+
+Boundary: once the handoff document **passes validation** (saving the old conversation, pruning history, persisting the new session) it is the **commit point**; a later `Ctrl+C` no longer undoes the migration — that would leave the third state: "old conversation already archived, history already pruned".
 
 Why `agent.abort()` alone is not enough:
 

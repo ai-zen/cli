@@ -167,16 +167,6 @@ export class ChatSession {
   private readonly rate = new TokenRateMeter();
   /** 当前生成阶段（消息栏 spinner 文案，见 `phase.ts`） */
   private readonly phaseTracker = new PhaseTracker();
-  /**
-   * 进行中的交接/迁移的取消句柄（`null` = 当前没有交接）。
-   *
-   * 为什么不能只靠 `agent.abort()`：交接的 `summary` 模式走的是独立的
-   * `chat.completions.create` 请求，`agent.abort()` 根本够不到它；而 `self` 模式
-   * 虽然能中断，但 core 层把中止收敛成「消息标记 Aborted、send 正常返回」，SDK 那边
-   * 会误判成「模型没写出文档」而重试 + 降级 summary 再跑一轮。
-   * 所以交接必须自己带一条 `AbortSignal`。
-   */
-  private handoffAbort: AbortController | null = null;
   /** 本次会话中已出现的子 Agent（只保留当前一轮，见 {@link SubAgentView} 的生命周期说明） */
   private subAgentViews: SubAgentView[] = [];
   /** 展示序号（每轮归零，标签回到「子AGENT1」） */
@@ -325,25 +315,12 @@ export class ChatSession {
 
   /** 中止当前请求（Ctrl+C 语义：仅取消本轮，不退出） */
   abort(): void {
-    // 交接/迁移进行中：先按交接的取消通道（否则 summary 那步压根拦不住）
-    this.handoffAbort?.abort();
+    // 交接/迁移的取消句柄在服务里，不在这里：`self` 之外的路径（尤其是自动迁移，它由
+    // SDK 插件直接驱动、不经过本类）拿不到任何可传的 signal，只有服务自己持有的那个开关
+    // 能拦住。服务负责「停下 + 回到交接前」（不重试、不降级、不迁移、截掉交接回合），
+    // `agent.abort()` 负责立即掐断正在流的这一轮。
+    this.handoffService.abort();
     this.agent.abort();
-  }
-
-  /**
-   * 按「可取消」方式跑一段交接：创建 `AbortController` 并在结束时收尾。
-   *
-   * 收尾放 `finally`：成功后也要清掉，否则下一次 Ctrl+C 会往一个已完成的
-   * controller 上发出无意义的 abort。
-   */
-  private async runCancellable<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
-    const controller = new AbortController();
-    this.handoffAbort = controller;
-    try {
-      return await run(controller.signal);
-    } finally {
-      if (this.handoffAbort === controller) this.handoffAbort = null;
-    }
   }
 
   /**
@@ -399,13 +376,8 @@ export class ChatSession {
     if (!this.messages.some((m) => m.role === AgentNS.Role.User)) {
       throw new Error(t("chat.noMigratable"));
     }
-    const ctx = await this.runCancellable((signal) =>
-      this.handoffService.migrate({
-        agent: this.agent,
-        mode,
-        signal,
-      }),
-    );
+    // 取消通道在服务里（`abort()` → `handoffService.abort()`），这里不再自带 AbortController
+    const ctx = await this.handoffService.migrate({ agent: this.agent, mode });
     // 迁移后服务会开启新会话：新 id 已写进 ctx（唯一真相源），这里只需同步名称并刷新界面
     this.currentName = this.currentId;
     this.clearSubAgents();
@@ -417,19 +389,14 @@ export class ChatSession {
    * 只产出交接文档（`/handoff`）：不切换会话、不改动历史。
    *
    * 交接回合（指令 + 工具调用 + 回执）会留在 `agent.messages` 里，
-   * 用户可继续要求细化同一份文档（重写同一路径即可）。
+   * 用户可继续要求细化同一份文档（重写同一路径即可）。被取消时相反：整个交接回合
+   * 会被服务截掉，会话回到交接前。
    */
   async handoff(mode?: HandoffMode): Promise<string> {
     if (!this.messages.some((m) => m.role === AgentNS.Role.User)) {
       throw new Error(t("chat.noHandoffable"));
     }
-    const ctx = await this.runCancellable((signal) =>
-      this.handoffService.handoff({
-        agent: this.agent,
-        mode,
-        signal,
-      }),
-    );
+    const ctx = await this.handoffService.handoff({ agent: this.agent, mode });
     this.notifier.onChange(true);
     return ctx.handoffPath;
   }

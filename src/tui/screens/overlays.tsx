@@ -18,8 +18,11 @@ export function PickerOverlay({
   columns: number;
   onPick: (value: string | null) => void;
 }) {
-  useInput((_input, key) => {
-    if (key.escape) onPick(null);
+  useInput((input, key) => {
+    // Ctrl+C 与 Esc 同义：选择器阶段也属于「命令执行中」（交接 / 迁移要在这里先选执行者），
+    // 只认 Esc 会让习惯 Ctrl+C 的人在这段等待里按不动、以为卡死了。
+    // 注：两个主输入处理器的 `isActive` 都带 `!pickerState`，此刻它们都失活，没人兼管。
+    if (key.escape || (key.ctrl && input === "c")) onPick(null);
   });
   return (
     <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.border} paddingX={2}>

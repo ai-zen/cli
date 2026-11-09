@@ -751,7 +751,8 @@ const cmdHandoff: CommandHandler = async ({ session, push, args, setPickerState 
     const path = await session.handoff(chosen);
     push(t("cmd.handoff.done", { path }));
   } catch (error: any) {
-    // 用户按 Ctrl+C 取消：不是失败，也不该报错堆栈
+    // 用户按 Ctrl+C 取消：不是失败，也不该报错堆栈。交接回合已由服务截掉、
+    // 本次新建的文档也删了，会话处于交接前的状态
     if (error instanceof HandoffAbortedError) {
       push(t("cmd.handoff.cancelled"));
       return;
@@ -784,7 +785,8 @@ const cmdMigrate: CommandHandler = async ({ session, push, args, setPickerState,
     clearTranscript();
     push(t("cmd.migrate.done", { path }));
   } catch (error: any) {
-    // 用户按 Ctrl+C 取消：交接已停下且未改动会话，不是失败
+    // 用户按 Ctrl+C 取消：不是失败。交接已停下且会话已退回交接前（交接回合被截掉、
+    // 没有开新会话），不能报成「失败」
     if (error instanceof HandoffAbortedError) {
       push(t("cmd.migrate.cancelled"));
       return;
