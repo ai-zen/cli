@@ -177,3 +177,43 @@ describe("RemoteSessions", () => {
     expect(kinds).toContain(SESSION_EVENTS.turnEnd);
   });
 });
+
+describe("RemoteSessions：存档列表与撤回", () => {
+  it("listSaved：只列盘上的存档，随 save 增加", async () => {
+    await start();
+    const { sessionId } = await sessions.open({ path: join(dir, "proj") });
+    const workspace = await sessions.resolveWorkspace(join(dir, "proj"));
+
+    expect((await sessions.listSaved(workspace.workspaceId)).sessions).toEqual([]);
+    await sessions.save(sessionId);
+    expect((await sessions.listSaved(workspace.workspaceId)).sessions.map((ref) => ref.id)).toEqual([
+      sessionId,
+    ]);
+  });
+
+  it("rollback：删掉之后的现场消息随结果返回，且已经落盘", async () => {
+    await start();
+    const { sessionId } = await sessions.open({ path: join(dir, "proj") });
+    agent.messages = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "第一个问题" },
+      { role: "assistant", content: "答" },
+      { role: "user", content: "第二个问题" },
+    ];
+
+    const result = await sessions.rollback(sessionId, 3);
+    expect(result.removed).toBe(1);
+    expect(result.prompt).toBe("第二个问题");
+    expect(result.messages).toHaveLength(3);
+    // 快照与结果一致：客户端不必再要一次
+    expect((await sessions.snapshot(sessionId)).messages).toEqual(result.messages);
+  });
+
+  it("rollback 下标越界：错误码原样带回客户端", async () => {
+    await start();
+    const { sessionId } = await sessions.open({ path: join(dir, "proj") });
+    agent.messages = [{ role: "user", content: "只有一条" }];
+
+    await expect(sessions.rollback(sessionId, 9)).rejects.toThrow(/bad-index/);
+  });
+});
