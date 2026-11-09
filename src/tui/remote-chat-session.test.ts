@@ -23,9 +23,15 @@ import {
 import { AgentNS } from "@ai-zen/agents-core";
 import { RemoteSessions } from "../server-client/sessions.js";
 import { SocketServerClient } from "../server-client/socket-server-client.js";
+import type { ServerClient } from "../server-client/types.js";
 import { setLocale } from "../i18n/index.js";
 import { useTempAiZenDir } from "../test-support/temp-dir.js";
-import { RemoteChatSession, mergeSubAgentSnapshot, type SubAgentStream } from "./remote-chat-session.js";
+import {
+  RemoteChatSession,
+  mergeSubAgentSnapshot,
+  type RemoteChatSessionDeps,
+  type SubAgentStream,
+} from "./remote-chat-session.js";
 import type { ChatSessionNotifier } from "./chat-session.js";
 
 class FakeAgent implements AgentLike {
@@ -86,6 +92,16 @@ let client: SocketServerClient | null = null;
 let session: RemoteChatSession | null = null;
 let notices: Array<{ text: string; tone: "info" | "error" }>;
 let changes: number;
+/**
+ * 下一次重连要连到哪个端口 —— 由用例在**断线之后**才填进来。
+ *
+ * 重连的第一跳就在 `close` 通知里立刻发生，而新 Daemon 的端口要等它起来才知道
+ * （`port: 0` 由系统分配）。用一个信号把两者接上：注入的重连函数先等端口再连，
+ * 于是「断线 → 起新服务端 → 重连」既不需要固定 `sleep`，也不会白白撞掉几次尝试。
+ */
+let nextServer: PortSignal;
+/** 默认注入的重连被调了几次 */
+let reconnectCalls: number;
 
 /**
  * 拼图片内容块要读配置（端点 / 视觉能力），绝不能读真实 `~/.ai-zen`。
@@ -121,14 +137,9 @@ beforeEach(() => {
   agent = new FakeAgent();
   notices = [];
   changes = 0;
-  let counter = 0;
-  manager = new SessionManager({
-    createAgent: async () => agent,
-    nextSessionId: () => `chat_${++counter}`,
-    storeFor: (workspaceId) =>
-      new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) }),
-    handoff: { aiZenDir: join(dir, "ai-zen"), homeDir: dir },
-  });
+  nextServer = portSignal();
+  reconnectCalls = 0;
+  manager = newManager();
 });
 
 afterEach(async () => {
@@ -163,15 +174,39 @@ async function waitUntil(what: () => boolean, timeoutMs = 2000): Promise<void> {
   }
 }
 
+/** 一个可以先发后到的端口：`promise` 给重连等，`settle()` 由用例在新 Daemon 起来后调 */
+interface PortSignal {
+  readonly promise: Promise<number>;
+  settle: (port: number) => void;
+}
+
+function portSignal(): PortSignal {
+  let settle!: (port: number) => void;
+  const promise = new Promise<number>((resolve) => {
+    settle = resolve;
+  });
+  return { promise, settle };
+}
+
 /**
- * 起服务端 + 连一条连接。
+ * 一个**新的** SessionManager（同一个 `dir`、同一份存档根）。
  *
- * 分出来单独一步：有些用例（续接）要**在开会话之前**先往服务端的存档目录里造一份旧档，
- * 而那个目录属于哪个工作区只有服务端知道（`workspace.resolve` 说了算）。
+ * 重连用例要“换一台服务端”：新实例的内存里没有那段会话，只能从盘上把它装回来 ——
+ * 这正是 `session.attach` 的「盘上有就装回来」那条路。
  */
-async function startServer(): Promise<SocketServerClient> {
-  if (client) return client;
-  daemon = new Daemon({
+function newManager(): SessionManager {
+  let counter = 0;
+  return new SessionManager({
+    createAgent: async () => agent,
+    nextSessionId: () => `chat_${++counter}`,
+    storeFor: (workspaceId) =>
+      new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) }),
+    handoff: { aiZenDir: join(dir, "ai-zen"), homeDir: dir },
+  });
+}
+
+function newDaemon(): Daemon {
+  return new Daemon({
     aiZenDir: dir,
     port: 0,
     version: "0.0.0-test",
@@ -182,20 +217,93 @@ async function startServer(): Promise<SocketServerClient> {
       defaultWorkspacePath: workspaceDir,
     }),
   });
-  await daemon.start();
-  client = await SocketServerClient.connect({
-    address: { host: "127.0.0.1", port: daemon.port },
+}
+
+async function connectTo(port: number): Promise<SocketServerClient> {
+  return await SocketServerClient.connect({
+    address: { host: "127.0.0.1", port },
     client: { name: "@ai-zen/cli", version: "0.0.0-test" },
   });
+}
+
+/**
+ * 默认注入的重连：等用例交出端口，再连过去（生产里这里是 `ensureServer` + `connect`）。
+ *
+ * 用例一律走注入而不是 `vi.mock`：模块级 mock 在 `isolate: false` 下会串到别的文件，
+ * 而且「重连到哪个端口」本来就该由用例说了算。
+ */
+const reconnectToNextServer = async (): Promise<ServerClient> => {
+  reconnectCalls += 1;
+  return await connectTo(await nextServer.promise);
+};
+
+/**
+ * 盯着一个 promise（不 await 它）：回调里写，用例轮询着等。
+ *
+ * 用对象回读而不是局部变量：`then` 回调里的赋值不算进 TS 的控制流，局部变量会被收窄成
+ * 初始化值（读到的类型和运行时不是一回事）；对象的属性不受这个收窄影响。
+ */
+interface Watch<T> {
+  settled: boolean;
+  value?: T;
+  error?: Error;
+}
+
+function watch<T>(promise: Promise<T>): Watch<T> {
+  const watched: Watch<T> = { settled: false };
+  void promise.then(
+    (value) => {
+      watched.value = value;
+      watched.settled = true;
+    },
+    (error) => {
+      watched.error = error as Error;
+      watched.settled = true;
+    },
+  );
+  return watched;
+}
+
+/**
+ * 服务端那侧的“断线”：停掉当前 Daemon，并在**同目录**起一个新的（新端口、新 SessionManager）。
+ *
+ * 返回新 Daemon 的端口 —— 用例接着 `nextServer.settle(port)` 把重连引到它上面。
+ */
+async function restartServer(reason = "test disconnect"): Promise<number> {
+  if (daemon) {
+    await daemon.stop(reason);
+    daemon = null;
+  }
+  // 旧连接跟着旧 Daemon 一起没了；之后的调用要么走会话自己的重连，要么就该失败
+  client = null;
+  manager?.dispose();
+  manager = newManager();
+  daemon = newDaemon();
+  await daemon.start();
+  return daemon.port;
+}
+
+/**
+ * 起服务端 + 连一条连接。
+ *
+ * 分出来单独一步：有些用例（续接）要**在开会话之前**先往服务端的存档目录里造一份旧档，
+ * 而那个目录属于哪个工作区只有服务端知道（`workspace.resolve` 说了算）。
+ */
+async function startServer(): Promise<SocketServerClient> {
+  if (client) return client;
+  daemon = newDaemon();
+  await daemon.start();
+  client = await connectTo(daemon.port);
   return client;
 }
 
 /** 起服务端并开一段远程会话 —— **不传 path**：工作区归属服务端 */
 async function open(
   input: { agentId?: string; sessionId?: string; resume?: boolean } = {},
+  deps: RemoteChatSessionDeps = { reconnect: reconnectToNextServer },
 ): Promise<RemoteChatSession> {
   const connected = await startServer();
-  session = await RemoteChatSession.openWith(connected, input, notifier);
+  session = await RemoteChatSession.openWith(connected, input, notifier, deps);
   return session;
 }
 
@@ -692,7 +800,9 @@ describe("RemoteChatSession：子 Agent 栏目（等服务端协议）", () => {
 
     subAgent.events.fire("error", new Error("boom"));
 
-    await waitUntil(() => notices.length === 1);
+    // `subAgentFailed`（通知）与 `subAgentEnded`（状态）是**两帧**：通知先到、状态随后到。
+    // 只等通知就断言状态，会在两帧之间读到还在跑的 `running`（机器一忙就红）。
+    await waitUntil(() => opened.subAgents[0]?.status === "failed");
     expect(notices[0]).toEqual({ text: "boom", tone: "error" });
     expect(opened.subAgents[0]!.status).toBe("failed");
   });
@@ -721,5 +831,147 @@ describe("RemoteChatSession：子 Agent 栏目（等服务端协议）", () => {
       await change();
       expect(opened.subAgents).toEqual([]);
     }
+  });
+});
+
+// ==================== 断线重连 ====================
+//
+// 这条路径的坑几乎都在「连接真的断掉之后」：旧订阅废了、事件丢了、会话在服务端还活着 ——
+// 假客户端复现不了。所以每个用例都真起 Daemon、真断线（停一个、同目录再起一个），
+// 会话只能从盘上装回来，「接回原会话」这件事才算真的被验证过。
+//
+// 等待一律「轮询到条件成立」：断线与重连都没有确定性时机（socket 的 close、新进程的
+// 监听都依赖事件循环），固定 `sleep` 在机器一忙时就翻车。
+
+describe("RemoteChatSession：断线重连", () => {
+  it("空闲时断线：重连接回同一段会话，屏幕由新连接的快照对齐", async () => {
+    const opened = await open();
+    agent.messages = [{ role: "user", content: "断线前的对话" }];
+    // 落盘：新服务端的内存里没有这段会话，只能从盘上把它装回来（`session.attach` 的那条路）
+    expect(await opened.save()).toBe(opened.currentId);
+    const id = opened.currentId;
+    const workspaceId = observed<string>(opened, "workspaceId");
+
+    // 断线（服务端换了一个实例：新端口、新 SessionManager）
+    const port = await restartServer();
+    /**
+     * 断线之后才落到盘上的那条：只有**真的走了新连接上的 `session.snapshot`** 才会出现在
+     * 屏幕上 —— 本地那份是旧的内存，不可能凭空长出这句话。
+     */
+    await new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) }).write({
+      id,
+      agentId: "default",
+      messages: [
+        { role: "user", content: "断线前的对话" },
+        { role: "assistant", content: "断线期间跑完的那句" },
+      ],
+    });
+    nextServer.settle(port);
+
+    // 接上了：手上换成了新连接（旧的那条 `closed` 一直是 true）
+    await waitUntil(() => observed<ServerClient>(opened, "client").closed === false);
+
+    expect(opened.currentId).toBe(id); // 会话没变
+    expect(opened.messages).toEqual([
+      { role: "user", content: "断线前的对话" },
+      { role: "assistant", content: "断线期间跑完的那句" },
+    ]);
+    expect(opened.phase).toBeNull();
+    expect(reconnectCalls).toBe(1); // 单飞：断线只起一次重连
+    // 透明恢复：不弹「已重连」这类通知（那会是交互变化）
+    expect(notices).toEqual([]);
+  });
+
+  it("一轮进行中断线：服务端已空闲，等着的 send() 当场落定（不永远挂着、也不抛）", async () => {
+    agent.messages = [{ role: "user", content: "上一轮" }];
+    const opened = await open();
+    await opened.save(); // 新服务端只能从盘上把这段会话装回来
+
+    const sending = watch(opened.send("长任务"));
+    // 回执到了、这一轮在跑：假 Agent **不** fire finally —— 那个 turn.end 就丢在断线里
+    await waitUntil(() => agent.sent.length === 1);
+
+    nextServer.settle(await restartServer());
+
+    await waitUntil(() => sending.settled);
+    // 既不永远挂着（界面靠它恢复输入），也不把它当错误
+    expect(sending.error).toBeUndefined();
+    expect(opened.phase).toBeNull();
+    // 按快照落定：屏幕上是盘上那份权威消息，不是断线前本地拼的残片
+    expect(opened.messages).toEqual([{ role: "user", content: "上一轮" }]);
+    expect(notices).toEqual([]);
+  });
+
+  it("重连三次都失败：在飞的 send() 以连接错误失败，之后的调用也失败（不无限重试）", async () => {
+    let attempts = 0;
+    const opened = await open(
+      {},
+      {
+        reconnect: async () => {
+          attempts += 1;
+          throw new Error("connect refused (test)");
+        },
+      },
+    );
+
+    const sending = watch(opened.send("长任务"));
+    await waitUntil(() => agent.sent.length === 1);
+
+    await daemon!.stop("test disconnect");
+
+    await waitUntil(() => sending.settled);
+    // 走既有的错误通道：这一轮以连接错误收场 —— 错误进通知栏、`send()` 正常返回
+    // （进程内实现也是 catch 后 `onNotice`，界面表现一致；若让 promise reject，
+    // `chat.tsx` 没有 catch，会变成未处理 rejection 把进程终止）
+    expect(sending.error).toBeUndefined();
+    expect(notices.at(-1)?.tone).toBe("error");
+    expect(notices.at(-1)?.text).toMatch(/connection closed/);
+    // 恰好三次：不无限重试
+    expect(attempts).toBe(3);
+    // 之后的调用同样失败（同样是通知栏，不再开新的一轮重连）
+    await expect(opened.send("再来一条")).resolves.toBeUndefined();
+    expect(notices.at(-1)?.text).toMatch(/closed/);
+    expect(attempts).toBe(3);
+  });
+
+  it("dispose() 之后断线不再重连（主动退出不该在后台拉起连接）", async () => {
+    let attempts = 0;
+    const opened = await open(
+      {},
+      {
+        reconnect: async () => {
+          attempts += 1;
+          return await connectTo(await nextServer.promise);
+        },
+      },
+    );
+    const connected = observed<ServerClient>(opened, "client");
+
+    opened.dispose();
+    // 断线通知是**同步**发的（`failAll` 里直接调监听器）：若 `dispose()` 没先摘掉那个订阅，
+    // 这时 `attempts` 已经是 1 了 —— 所以这里当场断言，不需要再等什么。
+    expect(connected.closed).toBe(true);
+    expect(attempts).toBe(0);
+
+    // 服务端那侧也真把这个连接收掉了：断线确实发生过，不是「还没轮到」
+    if (daemon) {
+      await daemon.stop("test disconnect");
+      await waitUntil(() => daemon!.connectionCount === 0);
+    }
+    expect(attempts).toBe(0);
+    // 手上仍是那条关掉的连接：没有被换成新连接
+    expect(observed<ServerClient>(opened, "client")).toBe(connected);
+  });
+});
+
+describe("RemoteChatSession：send 的同步拒绝（不走事件通道的那一类）", () => {
+  it("连接已断时 send：错误进通知栏，不抛出（否则是未处理的 rejection，进程会被终止）", async () => {
+    const session = await open();
+    // 把连接直接关掉：此刻 `session.send` 会被客户端自己拒（`client is closed`）
+    session.dispose();
+
+    await expect(session.send("有人吗")).resolves.toBeUndefined();
+    expect(notices.at(-1)?.tone).toBe("error");
+    expect(notices.at(-1)?.text).toContain("closed");
   });
 });

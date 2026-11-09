@@ -29,6 +29,30 @@
  *     必须来自会话真正跑在哪个目录，那是服务端的事实；
  *   · 续接（`resume`）问 `session.last`：哪一段是「上一轮」也只存在于服务端。
  *
+ * ## 断线重连（透明恢复，不是一个新的交互）
+ *
+ * Wi-Fi 抖一下、服务端重启一次，连接就没了；而**会话的存活期比连接长** —— 服务端那一轮
+ * 可能还在跑。所以客户端要做的是「接回去」，不是把界面弄死：重建连接（`ensureServer` +
+ * `connect`）→ 重新 `events.watch()` → `session.attach` 接回原会话 → 拉一次快照对齐屏幕。
+ *
+ * 三件事定死了它的形状：
+ *
+ * 1. **在飞的那一轮不能永远挂着**。界面用 `await send()` 包着 busy 状态与输入禁用，而
+ *    `await` 的落定靠的是同一 `turnId` 的 `turn.end`。断线时那条 socket 上的一切都扔了，
+ *    `turn.end` 可能就丢在里面 —— promise 永不落定 = 永久卡在「生成中」，比直接报错更糟。
+ *    判据是重连后那份快照：`phase !== null` 说明服务端还在跑（事件会继续来，接着等）；
+ *    `phase === null` 说明服务端已经空闲，那一轮在我们不在线的时候结束了，快照里的消息
+ *    就是这一轮的结果 —— 用**与 `turn.end` 完全相同**的那条收尾路径落定（同一套
+ *    `lastEndedTurn` / `resolveTurn`，不另造一套“重连专用”的状态机）。
+ * 2. **重连有终点**。最多三次（间隔递增），全失败就回到“连接断了”的既有行为：在飞的
+ *    调用以连接错误失败、之后的调用也失败。不无限重试、不静默吞掉 —— 连不上这件事最终
+ *    必须走到既有的错误通道上。
+ * 3. **不新增任何用户可见文案**。重连是透明恢复：成功不弹「已重连」，失败沿用原来的
+ *    错误通道。任何提示都是交互变化，而这次只做“别死掉”。
+ *
+ * 另外两条边界：主动 `dispose()` 不重连（那是我们自己关的）；多个信号同时触发只跑一次
+ * 重连（单飞），否则会同时开出好几条连接、几条都往上 `attach`。
+ *
  * ## 子 Agent 栏目（Agent 标签页）
  *
  * 栏目里的东西全**由服务端给**：`session.subAgent.started` 说「来了一个，序号是几、
@@ -172,6 +196,41 @@ function withAssistantText(
   return next;
 }
 
+/**
+ * 重连的最多次数（含第一次尝试）。
+ *
+ * **三次就是终点**：连接断了无非两种 —— 网络抖一下（几百毫秒就回来），或服务端重启
+ * （`ensureServer` 会把它拉起来，通常一两秒）。三次足够覆盖这两种；再多只是让用户对着
+ * 卡住的界面干等，而连不上这件事最终必须让人看见（走既有错误通道）。
+ */
+const MAX_RECONNECT_ATTEMPTS = 3;
+
+/** 第 `i` 次**重试**之前等多久（`i=0` 对应第 2 次尝试）：递增，给抖动的网络与服务端重启留时间 */
+const RECONNECT_BACKOFF_MS = [100, 300] as const;
+
+/**
+ * 重连要重建的东西（可注入）。
+ *
+ * 抽成一个函数是因为「怎么建一条连接」在生产里只有一种答案（`ensureServer` + `connect`，
+ * 与 {@link RemoteChatSession.create} 走同一段），而测试要把它指到另一个端口上 —— 注入
+ * 比 `vi.mock` 干净，也不会串到别的文件。
+ */
+export interface RemoteChatSessionDeps {
+  /** 重建一条到服务端的连接；缺省是 {@link connectToServer} */
+  reconnect?: () => Promise<ServerClient>;
+}
+
+/**
+ * 建一条到服务端的连接（没有就把它拉起来）。
+ *
+ * `create()` 与默认的重连走**同一个函数**：重连要接的是同一个服务端，两处各写一份
+ * 「怎么建连」，迟早会漂（一处带了 clientInfo、另一处忘了）。
+ */
+async function connectToServer(): Promise<ServerClient> {
+  const { client } = await ensureServer({ aiZenDir: AI_ZEN_DIR, clientInfo: REMOTE_CLIENT_INFO });
+  return client;
+}
+
 /** 开一段远程会话需要的最小输入 */
 export interface OpenRemoteSessionInput {
   /**
@@ -204,11 +263,22 @@ export class RemoteChatSession implements ChatSessionLike {
    * 在服务端开出一个不相干的目录。
    */
   private readonly path: string;
-  private readonly client: ServerClient;
-  private readonly sessions: RemoteSessions;
+  /** 当前连接（**可变**：断线后重连会换一条新的，见 {@link reconnect}） */
+  private client: ServerClient;
+  /** 方法门面，永远跟着 {@link client} 一起换 */
+  private sessions: RemoteSessions;
   private readonly notifier: ChatSessionNotifier;
+  /** 重建连接（生产 = `ensureServer` + `connect`；测试注入另一个端口） */
+  private readonly reconnectFn: () => Promise<ServerClient>;
   private readonly rate = new TokenRateMeter();
+  /** 事件订阅的解绑函数（`wire()` 每次都产出一整组，重连时整组换掉） */
   private readonly offs: Array<() => void> = [];
+  /** 「连接断了」的订阅；`dispose()` 先摘掉它，否则主动关闭会被当成断线去重连 */
+  private offClose: (() => void) | null = null;
+  /** 重连进行中（单飞：多个断线信号同时到达只跑一次） */
+  private reconnecting = false;
+  /** 已经 `dispose()`：此后任何断线信号都不该再触发重连 */
+  private disposed = false;
 
   private sessionId: string;
   private workspaceId: string;
@@ -221,8 +291,17 @@ export class RemoteChatSession implements ChatSessionLike {
   private streaming: { message: AgentNS.Message; text: string; reasoning: string } | null = null;
   private currentPhase: PhaseInfo | null = null;
   private lastUsageValue: AgentNS.Usage | undefined;
-  /** 本轮等待中的 `turn.end`（`send()` 的 promise 靠它落地） */
-  private pendingTurn: { turnId: number; resolve: () => void } | null = null;
+  /**
+   * 本轮等待中的 `turn.end`（`send()` 的 promise 靠它落地）。
+   *
+   * `reject` 给重连失败用：连不回来时这一轮只能以**连接错误**失败（语义第 3 条），
+   * 不能让 promise 永远悬着。
+   */
+  private pendingTurn: {
+    turnId: number;
+    resolve: () => void;
+    reject: (error: Error) => void;
+  } | null = null;
   /** 最近一次收到的 `turn.end` 的轮次：挡住「事件比回执先到」那种竞态 */
   private lastEndedTurn = 0;
   /**
@@ -245,15 +324,18 @@ export class RemoteChatSession implements ChatSessionLike {
     sessions: RemoteSessions,
     input: { path: string; agentId: string; sessionId: string; workspaceId: string },
     notifier: ChatSessionNotifier,
+    reconnect: () => Promise<ServerClient>,
   ) {
     this.client = client;
     this.sessions = sessions;
     this.notifier = notifier;
+    this.reconnectFn = reconnect;
     this.path = input.path;
     this.agentId = input.agentId;
     this.sessionId = input.sessionId;
     this.workspaceId = input.workspaceId;
-    this.wire();
+    this.offs.push(...this.wire(client));
+    this.offClose = client.onClose(() => this.handleClose());
   }
 
   /**
@@ -265,9 +347,9 @@ export class RemoteChatSession implements ChatSessionLike {
   static async create(
     input: OpenRemoteSessionInput,
     notifier: ChatSessionNotifier,
+    deps: RemoteChatSessionDeps = {},
   ): Promise<RemoteChatSession> {
-    const { client } = await ensureServer({ aiZenDir: AI_ZEN_DIR, clientInfo: REMOTE_CLIENT_INFO });
-    return await RemoteChatSession.openWith(client, input, notifier);
+    return await RemoteChatSession.openWith(await connectToServer(), input, notifier, deps);
   }
 
   /** 用一条已有连接开会话（测试注入连接用；`create` 是它的「自备连接」版本） */
@@ -275,6 +357,7 @@ export class RemoteChatSession implements ChatSessionLike {
     client: ServerClient,
     input: OpenRemoteSessionInput,
     notifier: ChatSessionNotifier,
+    deps: RemoteChatSessionDeps = {},
   ): Promise<RemoteChatSession> {
     const sessions = new RemoteSessions(client);
     await sessions.watch();
@@ -333,6 +416,7 @@ export class RemoteChatSession implements ChatSessionLike {
         workspaceId: workspace.workspaceId,
       },
       notifier,
+      deps.reconnect ?? connectToServer,
     );
     // 续接时的历史也在这份快照里：服务端 `session.create` 已经把存档消息装进了 Agent，
     // 客户端不搬、不拼，屏幕上的第一条都来自服务端。
@@ -391,6 +475,16 @@ export class RemoteChatSession implements ChatSessionLike {
       if (content === null) return; // 图片全被降级/过滤，且已给过说明
       const { turnId } = await this.sessions.send(this.sessionId, content);
       await this.waitForTurn(turnId);
+    } catch (error: any) {
+      /**
+       * `session.send` 的**同步拒绝**（`turn-busy` / `handoff-in-flight` / 连接已断）
+       * 不走事件通道 —— 没人接住就是未处理的 rejection，Node 默认会因此终止进程，
+       * 界面连「这轮没发出去」都来不及说。
+       *
+       * 出口与进程内实现一致：错误进通知栏，`send()` 正常返回（那边也是 catch 后
+       * `onNotice(error.message)` 再 `finally` 收尾）。不是新文案，也不是兜底。
+       */
+      this.notifier.onNotice(error?.message ?? String(error), "error");
     } finally {
       this.rate.finish();
     }
@@ -484,6 +578,15 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   dispose(): void {
+    /**
+     * 先标记 `disposed` 并摘掉「连接断了」的订阅，再关连接。
+     *
+     * 顺序不能反：`client.close()` 自己也会发一条「断了」，订阅还在就会把**主动退出**
+     * 当成断线去重连 —— 用户按了 Ctrl+C，后台却还在拉连接，还会把会话重新 attach 上去。
+     */
+    this.disposed = true;
+    this.offClose?.();
+    this.offClose = null;
     for (const off of this.offs.splice(0)) off();
     // 挂着的 `send()` 不能永远悬着：连接没了，本轮只能算结束
     this.resolveTurn();
@@ -534,18 +637,24 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   /**
-   * 订阅事件并按 `sessionId` 过滤。
+   * 订阅事件并按 `sessionId` 过滤；**返回这一整组订阅的解绑函数**。
    *
    * 过滤不是可选优化：同一条连接可以先后服务好几段会话（`/load`、`/migrate` 换了 id），
    * 不过滤就会把上一段会话的事件拼进当前这段。
+   *
+   * 之所以**可重复调用、且把解绑函数交回给调用方**：断线后旧连接上的一切订阅都废了，
+   * 重连必须在新连接上重新 `on` 一遍。这里不直接往 `this.offs` 里塞，是为了让重连能
+   * 「先在新连接上订好、整段恢复成功再换上去」（见 {@link commit}）—— 半途失败时不会
+   * 留下一批指向一条已关连接的死订阅。
    */
-  private wire(): void {
+  private wire(client: ServerClient): Array<() => void> {
+    const offs: Array<() => void> = [];
     const mine = <E extends ServerEvent["event"]>(
       event: E,
       handler: (payload: Extract<ServerEvent, { event: E }>) => void,
     ) => {
-      this.offs.push(
-        this.client.on(event, (payload) => {
+      offs.push(
+        client.on(event, (payload) => {
           if ((payload as { sessionId?: string }).sessionId !== this.sessionId) return;
           handler(payload);
         }),
@@ -618,8 +727,8 @@ export class RemoteChatSession implements ChatSessionLike {
      * 不跟着换的后果很硬：自动迁移发生在一轮内部，客户端会在旧 id 上等一个永远不会到的
      * `turn.end`，界面就永久卡在「生成中」。
      */
-    this.offs.push(
-      this.client.on(SESSION_EVENTS.idChanged, (event) => {
+    offs.push(
+      client.on(SESSION_EVENTS.idChanged, (event) => {
         if (event.from !== this.sessionId) return;
         this.sessionId = event.sessionId;
         // 换了会话，Agent 栏目里那些就是上一段会话的东西了（同 `migrate()` 的清空）
@@ -644,11 +753,13 @@ export class RemoteChatSession implements ChatSessionLike {
     });
 
     // 全局通知不属于任何会话：切会话也不该消失，所以不过滤 sessionId
-    this.offs.push(
-      this.client.on(SESSION_EVENTS.globalNotice, (event) => {
+    offs.push(
+      client.on(SESSION_EVENTS.globalNotice, (event) => {
         this.notifier.onNotice(noticeText(event.code, event.params), toneOf(event.level));
       }),
     );
+
+    return offs;
   }
 
   /**
@@ -734,8 +845,15 @@ export class RemoteChatSession implements ChatSessionLike {
    *
    * 为什么不自己把流拼完整：工具调用、思考内容、`omit` 标记、用量都只有服务端有；
    * 客户端拼出来的只是一个「能滚动的近似」，回合结束后必须被真件替换掉。
+   *
+   * `known` = 手上已经有一份**刚刚才拉的**快照（重连后那一份）：再用它一次，不再为了
+   * 收尾多跑一个往返（那个往返还可能拿回“下一轮已经开了”的更新状态，把这里的判定搅乱）。
    */
-  private async finishTurn(turnId: number, failure?: string): Promise<void> {
+  private async finishTurn(
+    turnId: number,
+    failure?: string,
+    known?: SessionSnapshotResult,
+  ): Promise<void> {
     this.lastEndedTurn = Math.max(this.lastEndedTurn, turnId);
     this.streaming = null;
     // 本轮内循环（含全部委派）已结束：子 Agent 只剩历史价值，栏目随之消失 —— 与进程内
@@ -745,7 +863,7 @@ export class RemoteChatSession implements ChatSessionLike {
     this.currentPhase = null;
     this.rate.finish();
     try {
-      this.applySnapshot(await this.sessions.snapshot(this.sessionId));
+      this.applySnapshot(known ?? (await this.sessions.snapshot(this.sessionId)));
     } catch {
       // 拿不到快照（服务端刚重启 / 连接断了）：本地那份仍然可读，下一轮还会再同步
     }
@@ -767,8 +885,8 @@ export class RemoteChatSession implements ChatSessionLike {
   private async waitForTurn(turnId: number): Promise<void> {
     if (this.lastEndedTurn >= turnId) return;
     // 从判断到挂 promise 之间没有 await：中间不会被事件插进来
-    await new Promise<void>((resolve) => {
-      this.pendingTurn = { turnId, resolve };
+    await new Promise<void>((resolve, reject) => {
+      this.pendingTurn = { turnId, resolve, reject };
     });
   }
 
@@ -778,6 +896,179 @@ export class RemoteChatSession implements ChatSessionLike {
     const pending = this.pendingTurn;
     this.pendingTurn = null;
     pending?.resolve();
+  }
+
+  /**
+   * 让等着的 `send()` 以错失败。
+   *
+   * 用于“连不回来”这条路径：那一轮的 `turn.end` 已经不可能到达了，而 `send()` 的 promise
+   * 不能永远悬着（界面靠它恢复输入）。错误走的就是既有的那条渠道 —— 与 socket 断开时
+   * `failAll` 拒掉在飞调用的错误同一口径，不新造一套。
+   *
+   * 只动 `pendingTurn`：本地消息、阶段一概不碰（今天的断线也是这个结果，不额外做“收拾”）。
+   */
+  private failPendingTurn(error: Error): void {
+    const pending = this.pendingTurn;
+    this.pendingTurn = null;
+    pending?.reject(error);
+  }
+
+  // ==================== 断线重连 ====================
+
+  /**
+   * 连接断了的唯一入口。
+   *
+   * 三个不重连的理由：
+   *   · `disposed`：是我们自己关的（`dispose()` 已先摘掉这个订阅，这里是第二道口子）；
+   *   · `reconnecting`：上一次重连还没跑完（单飞）—— 多个信号同时到达不能开出几条连接；
+   *   · 会话已结束（服务端回 `session-missing`）：重试只会一直撞同一堵墙，见 {@link reconnect}。
+   *
+   * 会话换了 id（`/migrate`、自动迁移）**不是**不重连的理由，而是“别接错门”：
+   * `attach` 用的是此刻的 `this.sessionId`（重连后才读），所以接的永远是当前这一段。
+   */
+  private handleClose(): void {
+    if (this.disposed || this.reconnecting) return;
+    void this.reconnect();
+  }
+
+  /**
+   * 重建连接并把会话接回来：最多 {@link MAX_RECONNECT_ATTEMPTS} 次，失败就走既有错误通道。
+   *
+   * 每一次“尝试”都是完整的一段：建连 → `watch()` → `attach()` → 快照（见 {@link restore}）。
+   * 半途失败（连接建不起来、`watch` 被拒）算这次失败，接着试；`session-missing` 不一样，
+   * 那是**服务端说这段会话没了**（存档被删、服务端换了台实例）—— 再试三次也是同一个答案。
+   */
+  private async reconnect(): Promise<void> {
+    if (this.reconnecting || this.disposed) return;
+    this.reconnecting = true;
+    try {
+      for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
+        if (attempt > 1) {
+          await new Promise<void>((resolve) =>
+            setTimeout(resolve, RECONNECT_BACKOFF_MS[attempt - 2] ?? 0),
+          );
+        }
+        // 等待期间用户退出了：不再拉连接，也不再往界面上推任何东西
+        if (this.disposed) return;
+        const outcome = await this.restore();
+        if (outcome.status === "ok") return;
+        if (outcome.status === "gone") {
+          // 会话已经结束：重连没有意义。在飞的那一轮以服务端给的原话失败
+          this.failPendingTurn(outcome.error);
+          return;
+        }
+        // 连上之前用户退出了（`dispose()` 发生在 await 期间）：不再重试
+        if (this.disposed) return;
+      }
+      // 三次都没接上：保持今天的行为 —— 在飞的调用以连接错误失败，之后的调用同样失败
+      // （`this.client` 仍是那条断掉的连接，`call()` 会直接拒）。不无限重试、不静默吞掉。
+      this.failPendingTurn(connectionLostError(this.client));
+    } finally {
+      this.reconnecting = false;
+    }
+  }
+
+  /**
+   * 在新连接上把会话接回来：订阅 → `watch()` → `attach()` → 一次快照对齐屏幕。
+   *
+   * 两处顺序是必须的：
+   *  · **订阅先于 `attach`**：接上之后服务端可能立刻推事件（`phase` 最先），晚一步就会漏掉
+   *    开头那几条 —— 与 `create` 里 `watch()` 先于 `open()` 同一个理由；
+   *  · **整段成功才换上去**（{@link commit}）：半途失败时 `this.client` 仍是那条断掉的
+   *    连接，“断了就用不了”这条语义不被半成品污染。
+   */
+  private async restore(): Promise<RestoreOutcome> {
+    let client: ServerClient;
+    try {
+      client = await this.reconnectFn();
+    } catch {
+      return { status: "retry" };
+    }
+    if (this.disposed) {
+      client.close();
+      return { status: "retry" };
+    }
+
+    const sessions = new RemoteSessions(client);
+    const offs = this.wire(client);
+
+    // 阶段一：只在这条**新**连接上做事。任何一步失败都算这次尝试失败，
+    // 手上的连接原封不动（还是那条断掉的），不会留下半接上的状态。
+    let snapshot: SessionSnapshotResult;
+    try {
+      await sessions.watch();
+      // 接回**同一段**会话：活着就接上（Agent 与 MCP 连接都还在），盘上有就装回来。
+      // 用的 id 是**此刻**的 `this.sessionId` —— 断线期间若它变了（自动迁移），
+      // 接回来的就应该是新的那段，而不是一个已经不在的旧 id。
+      await sessions.attach({
+        workspaceId: this.workspaceId,
+        sessionId: this.sessionId,
+        path: this.path,
+        agentId: this.agentId,
+      });
+      snapshot = await sessions.snapshot(this.sessionId);
+    } catch (error) {
+      for (const off of offs) off();
+      client.close();
+      return isSessionGoneError(error)
+        ? { status: "gone", error: error as Error }
+        : { status: "retry" };
+    }
+
+    // 快照拿到之后、换上去之前它断了（或用户在这期间退出了）：当这次没接上，把新连接关掉。
+    // 换上去的话「断了」的订阅永远等不到通知（`failAll` 已经跑完了），那才是真正的死局。
+    if (client.closed || this.disposed) {
+      for (const off of offs) off();
+      client.close();
+      return { status: "retry" };
+    }
+
+    // 阶段二：换成新连接，然后落定屏幕。能走到这里说明已经接上了 —— 这一段再出错也不该
+    // 把刚接上的连接扔掉重试（那只会把同一件事再错一遍）。
+    this.commit(client, sessions, offs);
+    this.applySnapshot(snapshot);
+    /**
+     * 子 Agent 栏目清空 —— 与 `turn.end` 时同一动作。
+     *
+     * 服务端只保留**当前一轮**的子 Agent，而断线期间那些 `started` / `ended` 全丢在
+     * 断掉的那条 socket 上了：留着它们就是留一份永远不会再更新的残影。
+     */
+    this.clearSubAgents();
+
+    if (snapshot.phase === null) {
+      /**
+       * 服务端已经空闲：那一轮的 `turn.end` 丢在断线里了。
+       *
+       * 用**与真事件完全相同**的那条收尾路径（`finishTurn`：同一套 `lastEndedTurn` /
+       * `resolveTurn` / 清栏目），只是快照用刚拿到的那份 —— 它就是这一轮的结果，
+       * 按成功落定。
+       *
+       * `turnId` 取两者较大值：服务端重启后轮次计数从 0 重来（`snapshot.turnId` 可能
+       * 比我们等的那一轮小），而“服务端已空闲”意味着**我们等的那一轮已经结束** ——
+       * 落定它才是目的，不能让一个重启过的计数器把 `send()` 永远挂着。
+       */
+      const turnId = Math.max(snapshot.turnId, this.pendingTurn?.turnId ?? 0);
+      await this.finishTurn(turnId, undefined, snapshot);
+    } else {
+      // 服务端还在跑这一轮：事件会继续来，接着等（不落定、不猜结果）
+      this.notifier.onChange(true);
+    }
+    return { status: "ok" };
+  }
+
+  /**
+   * 换成新连接：旧连接的解绑函数与“断了”的订阅全部作废，换上新的一套。
+   *
+   * 旧订阅必须在这里解掉：它们指向一条已经 destroy 的 socket，留着不但没用，还会让
+   * `this.offs` 越积越长（每次重连多一组）。
+   */
+  private commit(client: ServerClient, sessions: RemoteSessions, offs: Array<() => void>): void {
+    this.offClose?.();
+    for (const off of this.offs.splice(0)) off();
+    this.client = client;
+    this.sessions = sessions;
+    this.offs.push(...offs);
+    this.offClose = client.onClose(() => this.handleClose());
   }
 
   private applySnapshot(snapshot: SessionSnapshotResult): void {
@@ -795,6 +1086,37 @@ export class RemoteChatSession implements ChatSessionLike {
   private applyMessages(messages: unknown[]): void {
     this.currentMessages = [...(messages as AgentNS.Message[])];
   }
+}
+
+/** 一次重连尝试的结果：接上了 / 会话已经没了（不重试）/ 这次没接上（还能再试） */
+type RestoreOutcome = { status: "ok" } | { status: "gone"; error: Error } | { status: "retry" };
+
+/**
+ * 服务端说「没有这一段会话」。
+ *
+ * 客户端端口只把错误码拼进 `message`（`SocketServerClient` 的 `${code}: ${message}`），
+ * 拿不到结构化的 `code`，所以这里只能认前缀 —— `session-missing` 是 `attach` 的答案，
+ * `unknown-session` 是其它会话方法在会话消失后的答案，两者都意味同一件事：这段会话没了。
+ */
+function isSessionGoneError(error: unknown): boolean {
+  // 优先看结构化 code（`SocketServerClient` 会把服务端的 code 挂到 error 上）；
+  // 拿不到 code 时才退回看 message 前缀 —— 那条只对自造错误成立。
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code === "string") return code === "session-missing" || code === "unknown-session";
+  const message = error instanceof Error ? error.message : String(error);
+  return message.startsWith("session-missing") || message.startsWith("unknown-session");
+}
+
+/**
+ * “连接没了”的错误（沿用 socket 断开时那个形状：主机 + 端口）。
+ *
+ * 重连三次都失败时交给等着的 `send()`：这一轮已经不可能结束了，但界面必须能恢复输入，
+ * 所以只能以错失败 —— 与今天连接断掉时在飞调用被拒是同一个错误通道。
+ */
+function connectionLostError(client: ServerClient): Error {
+  return new Error(
+    `connection closed (${client.address.host}:${client.address.port}), reconnect failed`,
+  );
 }
 
 /** 通知语气：界面只分两档（普通 / 红），`warn` 归到红那一档 */

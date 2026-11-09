@@ -60,7 +60,9 @@ export class SocketServerClient implements ServerClient {
   /** 服务端在握手回执里自报的身份（版本 / pid / 协议号） */
   private serverInfo: HelloResponse["server"];
   private nextId = 1;
-  private closed = false;
+  private closedFlag = false;
+  /** 「连接断了」的订阅者（与事件通道分开：这是传输层说的，不是服务端说的） */
+  private readonly closeListeners = new Set<() => void>();
 
   private constructor(socket: Socket, address: ServerAddress, callTimeoutMs: number) {
     this.socket = socket;
@@ -149,9 +151,20 @@ export class SocketServerClient implements ServerClient {
     return () => set.delete(wrapped);
   }
 
+  /** 连接是否已断（断开后不可再用，要恢复只能新建一条） */
+  get closed(): boolean {
+    return this.closedFlag;
+  }
+
   close(): void {
     this.failAll(new Error("client closed"));
     this.socket.destroy();
+  }
+
+  /** 订阅「连接断了」；返回取消订阅的函数 */
+  onClose(listener: () => void): () => void {
+    this.closeListeners.add(listener);
+    return () => this.closeListeners.delete(listener);
   }
 
   // ==================================================================
@@ -205,7 +218,15 @@ export class SocketServerClient implements ServerClient {
 
       const response = value as ResponseFrame;
       if (response.ok) call.resolve(response.result);
-      else call.reject(new Error(`${response.error.code}: ${response.error.message}`));
+      else {
+        // 把服务端的 `code` 挂到 error 上：调用方靠它判「哪一类失败」
+        // （`session-missing` / `turn-busy` …），不必去截 message 前缀
+        const failure = new Error(
+          `${response.error.code}: ${response.error.message}`,
+        ) as Error & { code?: string };
+        failure.code = response.error.code;
+        call.reject(failure);
+      }
       return;
     }
 
@@ -233,7 +254,9 @@ export class SocketServerClient implements ServerClient {
 
   /** 连接不可用：让所有在飞的调用一起失败，且之后不再接受新调用 */
   private failAll(error: Error): void {
-    this.closed = true;
+    // 只通知一次：socket 的 `error` 之后还会来 `close`，`failAll` 会被调两次
+    const alreadyClosed = this.closedFlag;
+    this.closedFlag = true;
     this.settleHandshake(error);
     for (const [id, call] of this.pending) {
       clearTimeout(call.timer);
@@ -241,5 +264,15 @@ export class SocketServerClient implements ServerClient {
       this.pending.delete(id);
     }
     this.listeners.clear();
+    if (alreadyClosed) return;
+    // 断开通知放在最后：订阅方（重连逻辑）此刻应该看到「这条连接已经彻底没用了」
+    for (const listener of [...this.closeListeners]) {
+      try {
+        listener();
+      } catch {
+        // 一个订阅方抛错不该影响别的订阅方（与 EventHub 同一口径）
+      }
+    }
+    this.closeListeners.clear();
   }
 }

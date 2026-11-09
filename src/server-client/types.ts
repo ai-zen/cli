@@ -44,6 +44,14 @@ export interface CallOptions {
  */
 export interface ServerClient {
   readonly address: ServerAddress;
+  /**
+   * 这条连接是否已经断了。
+   *
+   * 断开之后**不能再用**：`call` 会直接拒绝，事件也不会再来。要恢复只能新建一条
+   * （见 `RemoteChatSession` 的重连）。把“活着没”放在端口上，是因为调用方不该去摸
+   * `SocketServerClient` 的私有字段 —— 那是实现细节。
+   */
+  readonly closed: boolean;
   call<T = unknown>(method: string, params?: unknown, options?: CallOptions): Promise<T>;
   /**
    * 订阅某个事件；返回取消订阅的函数。
@@ -55,4 +63,12 @@ export interface ServerClient {
     listener: (payload: Extract<ServerEvent, { event: E }>) => void,
   ): () => void;
   close(): void;
+  /**
+   * 订阅“连接断了”。返回取消订阅的函数。
+   *
+   * 与 `on(事件名)` 分开：事件是**服务端说的**，断开是**传输层说的** —— 断的那一刻
+   * 已经没有东西能替服务端发言了，而「要不要重连」是客户端的決定。
+   * 主动 `close()` 也会触发它（重连逻辑要能分辨“我自己关的”）。
+   */
+  onClose(listener: () => void): () => void;
 }

@@ -334,5 +334,5 @@ const CONFIG_PORT_CLIENT_INFO: ClientInfo = { name: "@ai-zen/cli", version: CLI_
  * 正确的做法是照常调用，让真错误从 `call()` 里原样冒出来，而不是在这儿先造一个。
  */
 function isClosed(client: ServerClient): boolean {
-  return (client as { closed?: unknown }).closed === true;
+  return client.closed;
 }

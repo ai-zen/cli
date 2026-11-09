@@ -394,6 +394,10 @@ function fakeClient(calls: RecordedCall[]): ServerClient & { closed: boolean } {
     close(): void {
       client.closed = true;
     },
+    onClose(): () => void {
+      // 配置面不用断开通知；给了是为了满足端口（真要重连由会话层负责）
+      return () => {};
+    },
   };
   return client;
 }
