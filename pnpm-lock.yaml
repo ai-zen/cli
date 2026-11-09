@@ -12,8 +12,8 @@ importers:
         specifier: ^4.5.5
         version: 4.5.5(ws@8.22.0)(zod@4.5.4)
       '@ai-zen/agents-sdk':
-        specifier: 1.1.0
-        version: 1.1.0(ws@8.22.0)(zod@4.5.4)
+        specifier: link:../agents/packages/sdk
+        version: link:../agents/packages/sdk
       '@ai-zen/agents-server':
         specifier: link:../agents/packages/server
         version: link:../agents/packages/server
@@ -74,9 +74,6 @@ packages:
 
   '@ai-zen/agents-core@4.5.5':
     resolution: {integrity: sha512-qin7xjeZ5fEHFaBi/R7RcJoWolIjCAlFr4MKUF27kOTI5Fc7pvgljVjIolHDwxq/br6HUD0zq4v7EZQ6Iqng+w==}
-
-  '@ai-zen/agents-sdk@1.1.0':
-    resolution: {integrity: sha512-q21X53u4w9K5Rc2RqiHd7N1fNmieTOJKeh0m7vwOCINUBCM1j49xxl/1Um0R5fdjoi0ZgnFU8/boiVCpdPpFXQ==}
 
   '@ai-zen/event-bus@1.1.0':
     resolution: {integrity: sha512-xjfQEmUMly++dOSrQMJkwrnBVl7bQHtiw8S09AW5jPuqnFV9OwBk0PsGFc/T+4eP4yWThBJo2X3cCdE5DkAr+Q==}
@@ -1247,22 +1244,6 @@ snapshots:
       - '@aws-sdk/credential-provider-node'
       - '@smithy/hash-node'
       - '@smithy/signature-v4'
-      - undici
-      - ws
-      - zod
-
-  '@ai-zen/agents-sdk@1.1.0(ws@8.22.0)(zod@4.5.4)':
-    dependencies:
-      '@ai-zen/agents-core': 4.5.5(ws@8.22.0)(zod@4.5.4)
-      '@modelcontextprotocol/sdk': 1.30.0(zod@4.5.4)
-      dayjs: 1.11.23
-      openai: 7.8.0(ws@8.22.0)(zod@4.5.4)
-    transitivePeerDependencies:
-      - '@aws-sdk/credential-provider-node'
-      - '@cfworker/json-schema'
-      - '@smithy/hash-node'
-      - '@smithy/signature-v4'
-      - supports-color
       - undici
       - ws
       - zod

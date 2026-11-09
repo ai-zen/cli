@@ -26,7 +26,7 @@ import { buildUserContent } from "../user-content.js";
 import type { ClipboardImage } from "../clipboard.js";
 import { CwdTrackerPlugin } from "../cwd-tracker-plugin.js";
 import { SessionPersistPlugin } from "../session-persist-plugin.js";
-import { SubAgentGuardInstallerPlugin } from "../sub-agent-guard-plugin.js";
+import { SubAgentGuardInstallerPlugin } from "@ai-zen/agents-sdk";
 import type { TokenThresholds } from "@ai-zen/agents-sdk";
 import { createAutoMigratePlugin } from "../auto-migrate-confirm.js";
 import { createHandoffService } from "../handoff-service.js";

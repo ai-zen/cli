@@ -20,7 +20,7 @@ import {
 import { createAgent } from "./agent-creator.js";
 import { AGENTS_DIR, readConfig } from "./config.js";
 import { CwdTrackerPlugin } from "./cwd-tracker-plugin.js";
-import { SubAgentGuardInstallerPlugin } from "./sub-agent-guard-plugin.js";
+import { SubAgentGuardInstallerPlugin } from "@ai-zen/agents-sdk";
 import type { TokenThresholds } from "@ai-zen/agents-sdk";
 import { generateSessionId, persistSession } from "./session-store.js";
 
