@@ -647,7 +647,14 @@ export class ChatSession implements ChatSessionLike {
           log: (text) => this.notifier.onNotice(text, "info"),
         }),
       );
-      agent.use(new SubAgentGuardInstallerPlugin({ guardTokens: guard }));
+      // 让行判断与主 Agent 那颗护栏同源：交接回合是上下文最满的时刻，子 Agent 若只带
+      // 阈值就会在交接中照拦（「交接触发拦截 → 拦截又触发交接」的打转会在子级重演）
+      agent.use(
+        new SubAgentGuardInstallerPlugin({
+          guardTokens: guard,
+          isSuspended: () => this.handoffService.busy,
+        }),
+      );
     }
 
     this.wire(agent);
