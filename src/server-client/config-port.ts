@@ -26,7 +26,6 @@
  */
 
 import {
-  AGENT_ADMIN_METHODS,
   AGENT_METHODS,
   CONFIG_METHODS,
   WORKSPACE_METHODS,
@@ -252,17 +251,17 @@ export function createRemoteConfigPort(deps: RemoteConfigPortDeps = {}): ConfigP
      * 之后才发生（用户编辑完才点保存），那时连接可能已经重建过了。
      */
     readAgentStore: async () => {
-      const listed = await call<AgentListResult>(AGENT_ADMIN_METHODS.list);
+      const listed = await call<AgentListResult>(AGENT_METHODS.list);
       return {
         agents: listed.agents as AgentDefinition[],
         subAgents: listed.subAgents as AgentDefinition[],
         save: async (kind: AgentKind, definition: AgentDefinition) => {
           const params: AgentSaveParams = { kind, definition };
-          await call(AGENT_ADMIN_METHODS.save, params);
+          await call(AGENT_METHODS.save, params);
         },
         remove: async (kind: AgentKind, id: string) => {
           const params: AgentRemoveParams = { kind, id };
-          await call(AGENT_ADMIN_METHODS.remove, params);
+          await call(AGENT_METHODS.remove, params);
         },
       };
     },

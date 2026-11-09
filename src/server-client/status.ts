@@ -8,7 +8,7 @@
  * 同一条原则的反向应用：诊断输出保持机器可解析，人读 JSON 也一眼能看懂。
  */
 
-import { readDescriptor } from "@ai-zen/agents-server";
+import { DAEMON_METHODS, readDescriptor, type DaemonStatusResult } from "@ai-zen/agents-server";
 import { SocketServerClient } from "./socket-server-client.js";
 import type { ClientInfo, ServerAddress, ServerClient } from "./types.js";
 
@@ -19,7 +19,7 @@ export interface ServerStatusDeps {
 }
 
 export type ServerStatus =
-  { running: false; pid?: number; reason: string } | ({ running: true } & Record<string, unknown>);
+  { running: false; pid?: number; reason: string } | ({ running: true } & DaemonStatusResult);
 
 export async function readServerStatus(deps: ServerStatusDeps): Promise<ServerStatus> {
   const descriptor = await readDescriptor(deps.aiZenDir);
@@ -38,7 +38,7 @@ export async function readServerStatus(deps: ServerStatusDeps): Promise<ServerSt
   }
 
   try {
-    const status = await client.call<Record<string, unknown>>("status");
+    const status = await client.call<DaemonStatusResult>(DAEMON_METHODS.status);
     return { running: true, ...status };
   } finally {
     client.close();

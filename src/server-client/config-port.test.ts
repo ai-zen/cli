@@ -17,7 +17,6 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  AGENT_ADMIN_METHODS,
   AGENT_METHODS,
   CONFIG_METHODS,
   ConfigService,
@@ -279,7 +278,7 @@ function fakeClient(calls: RecordedCall[]): ServerClient & { closed: boolean } {
           return { ok: true, config: { mcpServers: {} } } as T;
         case WORKSPACE_METHODS.resolve:
           return { workspaceId: "ws_fake", path: "/srv/proj" } as T;
-        case AGENT_ADMIN_METHODS.list:
+        case AGENT_METHODS.list:
           return { agents: [], subAgents: [] } as T;
         default:
           return { saved: true } as T;
@@ -327,7 +326,7 @@ describe("createRemoteConfigPort：连接的懒建与重建（注入假连接）
       CONFIG_METHODS.get,
       CONFIG_METHODS.save,
       AGENT_METHODS.setModel,
-      AGENT_ADMIN_METHODS.list,
+      AGENT_METHODS.list,
     ]);
   });
 

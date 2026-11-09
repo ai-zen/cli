@@ -20,7 +20,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { readDescriptor, type ServerDescriptor } from "@ai-zen/agents-server";
+import { DAEMON_METHODS, readDescriptor, type ServerDescriptor } from "@ai-zen/agents-server";
 import { SocketServerClient } from "./socket-server-client.js";
 import type { ClientInfo, ServerAddress, ServerClient } from "./types.js";
 
@@ -99,7 +99,7 @@ async function probe(
   let client: ServerClient | null = null;
   try {
     client = await connect(addressOf(descriptor));
-    await client.call("ping", undefined, { timeoutMs: PROBE_TIMEOUT_MS });
+    await client.call(DAEMON_METHODS.ping, undefined, { timeoutMs: PROBE_TIMEOUT_MS });
     return client;
   } catch {
     client?.close();
