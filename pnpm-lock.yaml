@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@ai-zen/agents-core':
-        specifier: ^4.5.4
-        version: 4.5.4(ws@8.22.0)(zod@4.5.4)
+        specifier: ^4.5.5
+        version: 4.5.5(ws@8.22.0)(zod@4.5.4)
       '@ai-zen/agents-sdk':
         specifier: 1.1.0
         version: 1.1.0(ws@8.22.0)(zod@4.5.4)
@@ -69,8 +69,8 @@ importers:
 
 packages:
 
-  '@ai-zen/agents-core@4.5.4':
-    resolution: {integrity: sha512-leCOBwzesYkJckWNdVYGW9Xjr/gmbU757MW7n1q7nProPxiyfNvaBW+iUKAp2cHALQ1/I6mkpFtjGA+AeX9sgA==}
+  '@ai-zen/agents-core@4.5.5':
+    resolution: {integrity: sha512-qin7xjeZ5fEHFaBi/R7RcJoWolIjCAlFr4MKUF27kOTI5Fc7pvgljVjIolHDwxq/br6HUD0zq4v7EZQ6Iqng+w==}
 
   '@ai-zen/agents-sdk@1.1.0':
     resolution: {integrity: sha512-q21X53u4w9K5Rc2RqiHd7N1fNmieTOJKeh0m7vwOCINUBCM1j49xxl/1Um0R5fdjoi0ZgnFU8/boiVCpdPpFXQ==}
@@ -1236,7 +1236,7 @@ packages:
 
 snapshots:
 
-  '@ai-zen/agents-core@4.5.4(ws@8.22.0)(zod@4.5.4)':
+  '@ai-zen/agents-core@4.5.5(ws@8.22.0)(zod@4.5.4)':
     dependencies:
       '@ai-zen/event-bus': 1.1.0
       openai: 7.8.0(ws@8.22.0)(zod@4.5.4)
@@ -1250,7 +1250,7 @@ snapshots:
 
   '@ai-zen/agents-sdk@1.1.0(ws@8.22.0)(zod@4.5.4)':
     dependencies:
-      '@ai-zen/agents-core': 4.5.4(ws@8.22.0)(zod@4.5.4)
+      '@ai-zen/agents-core': 4.5.5(ws@8.22.0)(zod@4.5.4)
       '@modelcontextprotocol/sdk': 1.30.0(zod@4.5.4)
       dayjs: 1.11.23
       openai: 7.8.0(ws@8.22.0)(zod@4.5.4)

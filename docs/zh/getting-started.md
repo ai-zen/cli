@@ -14,7 +14,7 @@ outline: deep
 
 - **Node.js**：包以 ESM（`"type": "module"`）发布。`package.json` 未声明 `engines` 字段，实际所需版本以 Node 生态为准（建议使用较新的 LTS）。
 - **运行时依赖**（由 `package.json` 声明）：
-  - `@ai-zen/agents-core` `^4.5.4`
+  - `@ai-zen/agents-core` `^4.5.5`
   - `@ai-zen/agents-sdk` `1.1.0`
   - `@modelcontextprotocol/sdk` `^1.29.0`
   - `dayjs`、`ink`、`react`、`zod`、`highlight.js`、`lowlight`

@@ -14,7 +14,7 @@ outline: deep
 
 - **Node.js**: the package is published as ESM (`"type": "module"`). `package.json` does not declare an `engines` field, so the actual required version follows the Node ecosystem (a recent LTS is recommended).
 - **Runtime dependencies** (declared in `package.json`):
-  - `@ai-zen/agents-core` `^4.5.4`
+  - `@ai-zen/agents-core` `^4.5.5`
   - `@ai-zen/agents-sdk` `1.1.0`
   - `@modelcontextprotocol/sdk` `^1.29.0`
   - `dayjs`, `ink`, `react`, `zod`, `highlight.js`, `lowlight`
