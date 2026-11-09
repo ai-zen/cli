@@ -48,6 +48,13 @@ export interface OpenSessionInput {
   agentId?: string;
   /** 续接已有存档时给出它的 id；不给则由服务端分配新 id */
   sessionId?: string;
+  /**
+   * 每轮收尾是否自动写存档（缺省 `true`）。`false` = 一次性调用：那段会话不属于工作区
+   * 的历史，不进 `sessions/`、也不挪「本工作区上一轮会话」指针。
+   *
+   * 想留档只有一条路：显式 {@link RemoteSessions.save}（CLI 侧 `ai --save`）。
+   */
+  persist?: boolean;
 }
 
 export class RemoteSessions {
@@ -121,6 +128,7 @@ export class RemoteSessions {
       ...(input.path ? { path: input.path } : {}),
       ...(input.agentId ? { agentId: input.agentId } : {}),
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.persist !== undefined ? { persist: input.persist } : {}),
     });
   }
 
@@ -220,9 +228,17 @@ export class RemoteSessions {
     });
   }
 
-  /** 落盘当前会话（并把它设为「上一轮会话」） */
-  async save(sessionId: string): Promise<SessionSaveResult> {
-    return await this.client.call<SessionSaveResult>(SESSION_METHODS.save, { sessionId });
+  /**
+   * 落盘当前会话（缺省同时把它设为「上一轮会话」）。
+   *
+   * `setAsLast: false` 是一次性调用的归档（CLI 的 `ai --save`）：写档但不篡改续接指针
+   * —— 否则连着跑几条 `cat … | ai --save` 之后，下次 `ai` 会续接到最后一条管道结果上。
+   */
+  async save(sessionId: string, options: { setAsLast?: boolean } = {}): Promise<SessionSaveResult> {
+    return await this.client.call<SessionSaveResult>(SESSION_METHODS.save, {
+      sessionId,
+      ...(options.setAsLast !== undefined ? { setAsLast: options.setAsLast } : {}),
+    });
   }
 
   /**
