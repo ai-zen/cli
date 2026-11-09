@@ -33,7 +33,7 @@ function summarizeMultiline(text: string): string {
     : t("common.bodyWithEditor", { text: body });
 }
 
-export interface FieldBuilderContext {
+export interface FieldBuilderDeps {
   config: AppConfig;
   mcp: McpSnapshot;
   store: AgentStore;
@@ -46,8 +46,8 @@ export interface FieldBuilderContext {
   go: (next: WizardStep) => void;
 }
 
-export function createFieldBuilders(context: FieldBuilderContext) {
-  const { config, mcp, store, reasoningPresets, persist, persistMcp, saveAgent, removeAgentQuiet, go } = context;
+export function createFieldBuilders(deps: FieldBuilderDeps) {
+  const { config, mcp, store, reasoningPresets, persist, persistMcp, saveAgent, removeAgentQuiet, go } = deps;
 
   // ---------- 共享字段 ----------
 

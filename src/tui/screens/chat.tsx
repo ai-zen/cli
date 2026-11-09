@@ -20,7 +20,6 @@ import {
 } from "../../conversation-commands/registry.js";
 import { readConfig, readMcpConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "../../config.js";
 import { readAgentStore } from "../../agents-store.js";
-import { resolveCredential } from "../../config-editor.js";
 import { ConfigWizard } from "../config-wizard/index.js";
 import { computeInputCursorPosition, inputWindow } from "./input.js";
 import { AGENT_TABS_LINES, computeChatLayout } from "./layout.js";

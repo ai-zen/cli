@@ -94,8 +94,6 @@ export const en: Record<string, string> = {
   "ui.edit": "Edit",
   "ui.run": "Run",
   "ui.delete": "Delete",
-  "ui.add": "Add",
-  "ui.done": "Done",
   "ui.plainOrMasked": "Plain / masked",
 
   // ---------- Config center home ----------

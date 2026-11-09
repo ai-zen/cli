@@ -114,7 +114,6 @@ export const zh: Record<string, string> = {
   "cmd.new.archived": "旧对话已存档：{id}\n已开始新对话",
   "cmd.new.started": "已开始新对话",
   "cmd.load.none": "还没有已保存的对话",
-  "cmd.load.title": "加载已保存的对话",
   "cmd.load.titleReplacing": "选择要加载的对话（当前会话将被替换）",
   "cmd.load.cancelled": "已取消加载",
   "cmd.handoff.empty": "当前对话还没有可交接的内容",
@@ -229,11 +228,6 @@ export const zh: Record<string, string> = {
   "app.unexpected": "✖ 意外错误: {error}",
   "chat.persistFailed": "⚠️ 会话落盘失败：{error}",
   "migrate.skipped": "⏭️ 已跳过本次任务迁移；可随时输入 /migrate 手动迁移，若继续增长至严重超限对话会被安全护栏中断。",
-  "time.yesterday": "昨天 {time}",
-  "time.pattern.thisYear": "M月D日 HH:mm",
-  "time.pattern.older": "YYYY年M月D日 HH:mm",
-  "time.pattern.full": "YYYY年M月D日 HH:mm:ss",
-  "time.messageCount": "{n} 条消息, {time}",
 
   // ---------- `ai --help`（在 TUI 之外打印，故单独在 help 分支初始化语言） ----------
   "cli.help.title": "ai — AI-Zen CLI v{version}",
@@ -258,5 +252,4 @@ export const zh: Record<string, string> = {
   // ---------- 其他共用 ----------
   "agent.subAgentTaskParam": "完整的任务描述",
   "app.mkdirFailed": "⚠️  无法创建目录: {dir}（{error}）",
-  "time.pattern.short": "YYYY年MM月DD日HH时mm分ss秒",
 };

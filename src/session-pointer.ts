@@ -94,11 +94,3 @@ export async function writeLastSession(cwd: string, id: string): Promise<void> {
   file.sessions[cwd] = { id, updatedAt: new Date().toISOString() };
   await writePointerFile(file);
 }
-
-/** 清除指定工作目录的指针（会话被删除等场景使用） */
-export async function clearLastSession(cwd: string): Promise<void> {
-  const file = await readPointerFile();
-  if (!(cwd in file.sessions)) return;
-  delete file.sessions[cwd];
-  await writePointerFile(file);
-}

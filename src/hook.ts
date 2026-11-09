@@ -88,14 +88,12 @@ function stripHookBlocks(content: string): { content: string; removed: boolean }
   const lines = content.split("\n");
   const kept: string[] = [];
   let skipping = false;
-  let removed = false;
   let matchedAny = false;
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!skipping && blocks.some((b) => b.start === trimmed)) {
       skipping = true;
-      removed = true;
       matchedAny = true;
       continue;
     }

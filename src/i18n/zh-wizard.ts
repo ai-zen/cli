@@ -97,8 +97,6 @@ export const zh: Record<string, string> = {
   "ui.edit": "编辑",
   "ui.run": "执行",
   "ui.delete": "删除",
-  "ui.add": "新增",
-  "ui.done": "完成",
   "ui.plainOrMasked": "明文/掩码",
 
   // ---------- 配置中心首页 ----------

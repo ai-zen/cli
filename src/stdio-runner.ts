@@ -140,7 +140,7 @@ export async function runStdio(options: StdioRunOptions): Promise<number> {
   console.log = (...args: unknown[]) => logStderr(args.map((a) => String(a)).join(" "));
 
   try {
-    const { modelId, agentId, tokenThresholds } = await resolveTarget();
+    const { agentId, tokenThresholds } = await resolveTarget();
 
     const agent = await createAgent({ agentId });
     agent.use(new CwdTrackerPlugin());

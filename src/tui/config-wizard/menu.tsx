@@ -5,7 +5,7 @@ import { theme } from "../theme.js";
 import { SelectList, KeyHints, SelectItem } from "../components.js";
 import { CONFIG_FILE } from "../../config.js";
 import { AgentStore } from "../../agents-store.js";
-import { findModel, summarizeEndpoints } from "../../config-editor.js";
+import { summarizeEndpoints } from "../../config-editor.js";
 import { McpSnapshot } from "./types.js";
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
 import { mcpCount } from "./mcp-helpers.js";

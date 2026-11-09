@@ -111,7 +111,6 @@ export const en: Record<string, string> = {
   "cmd.new.archived": "Previous conversation archived: {id}\nStarted a new conversation",
   "cmd.new.started": "Started a new conversation",
   "cmd.load.none": "No saved conversations yet",
-  "cmd.load.title": "Load a saved conversation",
   "cmd.load.titleReplacing": "Pick a conversation to load (replaces the current session)",
   "cmd.load.cancelled": "Load cancelled",
   "cmd.handoff.empty": "The current conversation has nothing to hand off",
@@ -225,11 +224,6 @@ export const en: Record<string, string> = {
   "app.unexpected": "✖ Unexpected error: {error}",
   "chat.persistFailed": "⚠️ Failed to save the conversation: {error}",
   "migrate.skipped": "⏭️ Task migration skipped this time; run /migrate whenever you like. If the context keeps growing past the hard limit, the safety guard will interrupt the conversation.",
-  "time.yesterday": "Yesterday {time}",
-  "time.pattern.thisYear": "MMM D, HH:mm",
-  "time.pattern.older": "MMM D, YYYY HH:mm",
-  "time.pattern.full": "MMM D, YYYY HH:mm:ss",
-  "time.messageCount": "{n} message(s), {time}",
 
   // ---------- `ai --help` (printed outside the TUI, hence the locale init in the help branch) ----------
   "cli.help.title": "ai — AI-Zen CLI v{version}",
@@ -254,5 +248,4 @@ export const en: Record<string, string> = {
   // ---------- Shared leftovers ----------
   "agent.subAgentTaskParam": "Full task description",
   "app.mkdirFailed": "⚠️  Cannot create the directory: {dir} ({error})",
-  "time.pattern.short": "MMM D, YYYY HH:mm:ss",
 };
