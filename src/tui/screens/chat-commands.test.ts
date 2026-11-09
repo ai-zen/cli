@@ -9,8 +9,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
 import { runCommand, type ChatCommandHost } from "./chat-commands.js";
-import type { ChatSession } from "../chat-session.js";
-import { persistSession } from "../../session-store.js";
+import type { ChatSessionLike } from "../chat-session.js";
+import { persistSession, sessionExists, listSessions } from "../../session-store.js";
 import { useTempAiZenDir } from "../../test-support/temp-dir.js";
 import { setLocale } from "../../i18n/index.js";
 import { workspaceIdFor } from "@ai-zen/agents-server";
@@ -37,10 +37,14 @@ function createHost(overrides: Record<string, unknown> = {}) {
     reset: vi.fn(async () => "chat_archived"),
     save: vi.fn(async () => "chat_saved"),
     saveAs: vi.fn(async (id: string) => id),
+    // 存档查询是**会话**的能力（进程内直接读盘，远程模式问服务端）。
+    // 命令层只认这两个方法，测试就把它们接回真存档 —— “命令看到什么”仍是真实磁盘状态。
+    exists: vi.fn(async (id: string) => await sessionExists(id)),
+    listSaved: vi.fn(async () => await listSessions()),
     ...overrides,
   };
   const host = {
-    session: session as unknown as ChatSession,
+    session: session as unknown as ChatSessionLike,
     notice: (text: string, tone?: "info" | "error") => notices.push({ text, tone }),
     clearTranscript: vi.fn(),
     rows: 24,

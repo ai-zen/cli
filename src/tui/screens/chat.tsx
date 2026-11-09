@@ -12,7 +12,12 @@ import { AgentNS } from "@ai-zen/agents-core";
 import { theme } from "../theme.js";
 import { Spinner, StatusBar, statusBarRows, BottomMenu, PastedImagesBar, type MenuItem, type StatusBarProps } from "../components.js";
 import { graphemes, layoutInput, usableFrameRows } from "../text.js";
-import { ChatSession, type ChatSessionNotifier } from "../chat-session.js";
+import {
+  type ChatSessionLike,
+  type ChatSessionNotifier,
+  type ChatSessionOptions,
+} from "../chat-session.js";
+import { createRemoteChatSession } from "../remote-chat-session.js";
 import {
   CommandHint,
   commandBlocksInput,
@@ -50,6 +55,17 @@ import { handleCtrlDExit, handleScrollKey } from "./common-keys.js";
 // ==================== 对话屏幕 ====================
 
 /**
+ * 造会话的入口：换到服务端之后，屏幕只认它的**返回值**（{@link ChatSessionLike}）。
+ *
+ * 之所以注入成函数而不是在组件里直接调：测试要能塞一个假会话，而 `vi.mock` 在
+ * 进程内共享模块时会波及别的测试文件。
+ */
+export type CreateChatSession = (
+  options: ChatSessionOptions,
+  notifier: ChatSessionNotifier,
+) => Promise<ChatSessionLike>;
+
+/**
  * `Chat` 的外部依赖。
  *
  * 全部可注入是为了让集成测试**不必** `vi.mock` 整模块 —— 模块级 mock 在
@@ -59,7 +75,7 @@ export interface ChatDeps {
   readConfig: typeof readConfig;
   readReasoningPresets: typeof readReasoningPresets;
   readAgentStore: typeof readAgentStore;
-  createSession: typeof ChatSession.create;
+  createSession: CreateChatSession;
   listProjectPaths: typeof listProjectPaths;
   readClipboardImage: typeof readClipboardImage;
   readClipboardText: typeof readClipboardText;
@@ -137,7 +153,7 @@ export function Chat(props: ChatScreenProps) {
     readConfig,
     readReasoningPresets,
     readAgentStore,
-    createSession: ChatSession.create,
+    createSession: createRemoteChatSession,
     listProjectPaths,
     readClipboardImage,
     readClipboardText,
@@ -159,7 +175,7 @@ export function Chat(props: ChatScreenProps) {
   /** 覆盖层（确认框 / 选择器）：弹窗与 resolve 生命周期见 use-overlays.ts */
   const { confirmState, pickerState, setConfirmState, setPickerState, resolveConfirm, resolvePicker } =
     useChatOverlays();
-  const sessionRef = useRef<ChatSession | null>(null);
+  const sessionRef = useRef<ChatSessionLike | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   /** 视口：滚动状态与翻页 / 按行 / 滚轮换算（唯一入口见 use-chat-viewport.ts） */

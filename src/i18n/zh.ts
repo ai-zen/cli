@@ -60,6 +60,11 @@ export const zh: Record<string, string> = {
   "notice.inputCleared": "已清空输入 · 再按一次 Ctrl+C 退出",
   "notice.pressCtrlDAgain": "再按一次 Ctrl+D 退出",
   "notice.languageChanged": "界面语言已切换为中文",
+  "notice.turnAborted": "已中止本轮，会话回到中止前的状态",
+  "notice.toolFailed": "工具执行失败：{error}",
+  "notice.mcpUnavailable": "MCP server 连不上：{name}",
+  "notice.storeUnavailable": "会话存档目录不可用：{error}",
+  "notice.remoteImagesDropped": "远程会话暂时还不能发图片（{n} 张未发送），本次只发了文字",
 
   // ---------- 命令说明（/help 与斜杠菜单） ----------
   "cmd.save.desc": "保存对话",

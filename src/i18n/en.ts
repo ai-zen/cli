@@ -57,6 +57,11 @@ export const en: Record<string, string> = {
   "notice.inputCleared": "Input cleared · press Ctrl+C again to exit",
   "notice.pressCtrlDAgain": "Press Ctrl+D again to exit",
   "notice.languageChanged": "Language switched to English",
+  "notice.turnAborted": "Turn aborted — the session is back to where it was",
+  "notice.toolFailed": "Tool failed: {error}",
+  "notice.mcpUnavailable": "MCP server unreachable: {name}",
+  "notice.storeUnavailable": "The session store is unavailable: {error}",
+  "notice.remoteImagesDropped": "Remote sessions cannot send images yet ({n} dropped) — only the text was sent",
 
   // ---------- Command descriptions (/help & slash menu) ----------
   "cmd.save.desc": "Save the conversation",

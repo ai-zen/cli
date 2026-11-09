@@ -12,7 +12,6 @@
 import { AgentNS, sumUsage } from "@ai-zen/agents-core";
 import type { AgentPlugin, SubAgentContext, Agent as CoreAgent } from "@ai-zen/agents-core";
 import { t } from "../i18n/index.js";
-
 import {
   AutoRefreshToolsPlugin,
   ContextGuardPlugin,
@@ -35,6 +34,8 @@ import {
   generateSessionId,
   sessionStore,
   persistSession,
+  sessionExists,
+  listSessions,
 } from "../session-store.js";
 import type { SessionContext } from "../types.js";
 import { stripCwdNote } from "./text.js";
@@ -53,6 +54,62 @@ class PhasePlugin implements AgentPlugin {
   onInnerLoopStart(): void {
     this.tracker.connecting();
   }
+}
+
+/**
+ * 对话会话的对外面 —— 「能渲染、能发话、能存档的一段会话」。
+ *
+ * 两个实现：{@link ChatSession}（在本进程里跑 Agent）与 `RemoteChatSession`（连服务端，
+ * 自己是纯客户端）。UI 只认这一面，换源时屏幕上的东西一行不动 —— 这是「传输自由」
+ * 在界面层的落点：屏幕不知道 Agent 跑在哪。
+ *
+ * 只列 UI 与命令层真用到的东西：SDK 的 `agent`、插件、TokenTracker 这些实现细节
+ * 不属于这份契约。
+ */
+export interface ChatSessionLike {
+  /** 用哪个 Agent（会话的父级是工作区，Agent 决定能力与模型） */
+  readonly agentId: string;
+  /** 当前模型 id（真相源是 `AgentDefinition.modelId`；空串 = 定义里没绑模型） */
+  readonly modelId: string;
+  /** 当前会话 id / 名称（`/save`、状态栏与「上一轮会话」指针用） */
+  readonly currentId: string;
+  readonly currentName: string;
+  /** 对话消息（屏幕的唯一数据源） */
+  readonly messages: AgentNS.Message[];
+  /** 本次会话出现过的子 Agent（远程模式暂时没有） */
+  readonly subAgents: readonly SubAgentView[];
+  /** 最近一轮用量；未知时 `undefined`（客户端别自己编一个） */
+  readonly lastUsage?: AgentNS.Usage;
+  /** 本次会话累计用量 */
+  readonly totalUsage: AgentNS.Usage;
+  /** 生成阶段；空闲 `null` */
+  readonly phase: PhaseInfo | null;
+  /** 生成速率快照（状态栏与 spinner 用） */
+  readonly rateSample: RateSample;
+
+  send(input: string, images?: readonly ClipboardImage[]): Promise<void>;
+  /** 中止本轮（Ctrl+C）：只取消这一轮，不退出 */
+  abort(): void;
+  /** `/new`：先归档当前对话（有内容才存），再开一段新的；返回被归档的 id */
+  reset(): Promise<string | null>;
+  /** 按磁盘上的新配置重建（保留消息） */
+  reload(): Promise<void>;
+  /** `/migrate`：交接 + 开新会话；返回交接文档路径 */
+  migrate(mode?: HandoffMode): Promise<string>;
+  /** `/handoff`：只产出交接文档，不动会话；返回文档路径 */
+  handoff(mode?: HandoffMode): Promise<string>;
+  /** `/back`：从 index 起删掉，返回被删首条用户消息的原文（预填输入框） */
+  rollbackTo(index: number): Promise<string>;
+  /** 落盘当前会话（并更新「上一轮会话」指针） */
+  save(): Promise<string>;
+  /** 另存为指定 id；返回实际生效的 id */
+  saveAs(id: string): Promise<string>;
+  /** 本工作区已存档的会话（`/load` 的列表；不解析内容） */
+  listSaved(): Promise<Array<{ id: string }>>;
+  /** 某个 id 是否已有存档（`/save <名字>` 的重名判断） */
+  exists(id: string): Promise<boolean>;
+  /** 释放资源（卸监听 / 断连接） */
+  dispose(): void;
 }
 
 /** 会话 → UI 的对外信号 */
@@ -118,7 +175,7 @@ export interface ChatSessionOptions {
 /** 去掉 CwdTrackerPlugin 追加在用户消息末尾的工作目录提示（转发自 ./text.js） */
 export { stripCwdNote };
 
-export class ChatSession {
+export class ChatSession implements ChatSessionLike {
   /**
    * 当前模型 id —— 从 Agent 定义读，**不再单独存一份**。
    *
@@ -417,12 +474,22 @@ export class ChatSession {
   }
 
   /** 撤回：删除索引 index 起的消息，返回被撤回的首条用户消息文本（用于预填输入） */
-  rollbackTo(index: number): string {
+  async rollbackTo(index: number): Promise<string> {
     if (index < 0 || index >= this.agent.messages.length) return "";
     const removed = this.agent.messages.splice(index);
     const firstUser = removed.find((m) => m.role === AgentNS.Role.User);
     if (typeof firstUser?.content !== "string") return "";
     return stripCwdNote(firstUser.content);
+  }
+
+  /** 本工作区已存档的会话（`/load` 的列表）；进程内模式直接读盘 */
+  async listSaved(): Promise<Array<{ id: string }>> {
+    return await listSessions();
+  }
+
+  /** 某个 id 是否已有存档（`/save <名字>` 的重名判断） */
+  async exists(id: string): Promise<boolean> {
+    return await sessionExists(id);
   }
 
   /** 保存当前对话到存档 */

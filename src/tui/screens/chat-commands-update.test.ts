@@ -26,7 +26,7 @@ const NEXT_VERSION = `${Number(CLI_VERSION.split(".")[0]) + 1}.0.0-alpha.99`;
 /** 比当前版本旧的版本（1.x 之后一直成立） */
 const OLDER_VERSION = "0.9.0";
 import { runCommand, type ChatCommandHost } from "./chat-commands.js";
-import type { ChatSession } from "../chat-session.js";
+import type { ChatSessionLike } from "../chat-session.js";
 
 const state = vi.hoisted(() => ({
   /** `npm view <pkg> dist-tags --json` 的 stdout */
@@ -96,7 +96,7 @@ function createHost(options: { confirmAnswer?: boolean; withHistory?: boolean } 
         saves.count += 1;
         return "conv-id";
       },
-    } as unknown as ChatSession,
+    } as unknown as ChatSessionLike,
     notice: (text: string, tone?: "info" | "error") => notices.push({ text, tone }),
     clearTranscript: vi.fn(),
     rows: 24,

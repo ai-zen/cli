@@ -21,6 +21,7 @@ import {
   type SessionListSavedResult,
   type SessionMigrateResult,
   type SessionRollbackResult,
+  type SessionSaveAsResult,
   type SessionSaveResult,
   type SessionSendResult,
   type SessionSnapshotResult,
@@ -108,6 +109,15 @@ export class RemoteSessions {
   /** 落盘当前会话（并把它设为「上一轮会话」） */
   async save(sessionId: string): Promise<SessionSaveResult> {
     return await this.client.call<SessionSaveResult>(SESSION_METHODS.save, { sessionId });
+  }
+
+  /**
+   * 另存为指定 id（`/save <名字>`）：服务端写新档、删旧档，并**换掉活会话的键**。
+   *
+   * 返回值里的 `sessionId` 才是当前有效的那个 —— 与 `migrate` 同一个规矩。
+   */
+  async saveAs(sessionId: string, id: string): Promise<SessionSaveAsResult> {
+    return await this.client.call<SessionSaveAsResult>(SESSION_METHODS.saveAs, { sessionId, id });
   }
 
   /**

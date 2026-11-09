@@ -16,14 +16,13 @@ import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SelectItem } from "../components.js";
-import { ChatSession, stripCwdNote } from "../chat-session.js";
+import { type ChatSessionLike, stripCwdNote } from "../chat-session.js";
 import {
   canonicalCommandName,
   matchCommandHints,
   parseCommandArgs,
   type CommandName,
 } from "../../session-commands/registry.js";
-import { sessionExists, sessionStore, listSessions } from "../../session-store.js";
 import { mcpConfigOrEmpty, readConfig, readMcpConfig, readReasoningPresets, saveConfig } from "../../config.js";
 import { resetScope } from "../../agent-creator.js";
 import { switchModel } from "../../model-switch.js";
@@ -49,7 +48,7 @@ import { usableFrameRows } from "../text.js";
 import { chooseHandoffMode } from "./handoff-choice.js";
 
 export interface ChatCommandHost {
-  session: ChatSession;
+  session: ChatSessionLike;
   /**
    * 起子进程的实现（`/update` 用）。缺省用 `node:child_process` 的 `spawn`。
    *
@@ -165,7 +164,7 @@ const cmdSave: CommandHandler = async ({ session, push, args, confirm }) => {
       push(t("cmd.save.done", { id }));
       return;
     }
-    if (name !== session.currentId && (await sessionExists(name))) {
+    if (name !== session.currentId && (await session.exists(name))) {
       if (!(await confirm(t("cmd.save.overwrite", { id: name })))) {
         push(t("cmd.save.cancelled"));
         return;
@@ -178,12 +177,12 @@ const cmdSave: CommandHandler = async ({ session, push, args, confirm }) => {
   }
 };
 
-const cmdLoad: CommandHandler = async ({ push, rows, exit, pick }) => {
+const cmdLoad: CommandHandler = async ({ session, push, rows, exit, pick }) => {
   // 条数上限：用布局自己的公式算，不留魔数 —— 命令层拿到的是**原始终端行数**，而
   // 覆盖层能用的是 `usableFrameRows(rows) = rows - 1`；picker 自身占
   // `pickerLines(n) + STATUS_BAR_LINES`。
   const maxItems = Math.max(1, usableFrameRows(rows ?? 24) - (pickerLines(0) + STATUS_BAR_LINES));
-  const list = await listSessions();
+  const list = await session.listSaved();
   if (list.length === 0) {
     push(t("cmd.load.none"), "error");
     return;
@@ -199,20 +198,9 @@ const cmdLoad: CommandHandler = async ({ push, rows, exit, pick }) => {
     push(t("cmd.load.cancelled"));
     return;
   }
-  const record = await (await sessionStore()).read(choice);
-  if (!record) {
-    push(t("cmd.load.readFailed", { id: choice }), "error");
-    return;
-  }
-  // 整体切换会话（含模型 / Agent）——交由上层重挂载对话屏
-  exit({
-    load: {
-      agentId: record.agentId,
-      messages: record.messages,
-      sessionId: record.id,
-      sessionName: record.id,
-    },
-  });
+  // 整体切换会话（含模型 / Agent）——交由上层重挂载对话屏。
+  // 只给 id：服务端从存档里自己装消息、自己认 Agent（列表不解析存档内容）。
+  exit({ load: { sessionId: choice, sessionName: choice } });
 };
 
 const cmdNew: CommandHandler = async ({ session, clearTranscript, push }) => {
@@ -242,9 +230,10 @@ const cmdBack: CommandHandler = async ({ session, push, rows, exit, pick }) => {
     push(t("cmd.back.cancelled"));
     return;
   }
-  const text = session.rollbackTo(Number(choice));
+  const text = await session.rollbackTo(Number(choice));
   // 撤回也要落盘：否则存档里仍留着被撤回的消息，下次 `/load` 或重启就「复活」。
   // `save()` 会顺带更新 last-session 指针 —— 刚撤回的会话就是本目录的上一轮，符合预期。
+  // （服务端实现的 `rollbackTo` 自己已经写过一次，多这一次无害；进程内实现靠的就是这里）
   await session.save();
   exit({ restart: true, messages: session.messages, initialInput: text });
 };
