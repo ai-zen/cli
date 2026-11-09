@@ -23,9 +23,13 @@ import {
   parseCommandArgs,
   type CommandName,
 } from "../../session-commands/registry.js";
-import { mcpConfigOrEmpty, readConfig, readMcpConfig, readReasoningPresets, saveConfig } from "../../config.js";
+// 配置的读与写统一走**配置面**（`ConfigPort`）：进程内模式下它是本地函数的包装，
+// 客户端模式下它走服务端。命令层不再自己吃盘 —— 否则「界面说改好了」和「服务端
+// Agent 实际用的那份配置」会各说各话（客户端搬到另一台机器上时错得很安静）。
+import type { ConfigPort } from "../../server-client/config-port.js";
+// 留下的是**纯数据整形**：把读取结果转成配置 / 列表，不吃盘，故不经端口
+import { mcpConfigOrEmpty } from "../../config.js";
 import { resetScope } from "../../agent-creator.js";
-import { switchModel } from "../../model-switch.js";
 import { listAgentChoices, switchAgent } from "../../agent-switch.js";
 import { parseMcpScope, pickStartScope } from "../../mcp-command.js";
 import {
@@ -38,7 +42,6 @@ import {
 import { matchLevel, presetFor } from "../../reasoning-presets.js";
 import { getLocale, t } from "../../i18n/index.js";
 import { persistLocale } from "../../i18n/preferences.js";
-import { readAgentStore } from "../../agents-store.js";
 import { CLI_VERSION } from "../../version.js";
 import { compareVersions, pickNewest } from "../../version-compare.js";
 import { WizardStep } from "../config-wizard/index.js";
@@ -49,6 +52,13 @@ import { chooseHandoffMode } from "./handoff-choice.js";
 
 export interface ChatCommandHost {
   session: ChatSessionLike;
+  /**
+   * 配置面：读配置 / 读思考策略表 / 读写 MCP 配置 / 读 Agent 定义 / 换模型。
+   *
+   * 命令层只认这一处「配置从哪来」，由宿主决定是本地实现还是远端实现；
+   * 于是命令代码一份，两种部署下是同一种读写。
+   */
+  config: ConfigPort;
   /**
    * 起子进程的实现（`/update` 用）。缺省用 `node:child_process` 的 `spawn`。
    *
@@ -270,9 +280,9 @@ const cmdConfig: CommandHandler = async ({ openWizard }) => {
   await openWizard({ kind: "menu" });
 };
 
-const cmdModel: CommandHandler = async ({ session, push, args, exit, pick }) => {
-  const config = await readConfig();
-  const models = config.models ?? [];
+const cmdModel: CommandHandler = async ({ session, push, args, pick, config }) => {
+  const appConfig = await config.readConfig();
+  const models = appConfig.models ?? [];
   if (models.length === 0) {
     push(t("cmd.model.noModels"), "error");
     return;
@@ -303,10 +313,12 @@ const cmdModel: CommandHandler = async ({ session, push, args, exit, pick }) => 
     return;
   }
 
-  // 先确认目标模型可用：重挂载走的是 ChatSession.create → createModel，
-  // 端点缺 Key 会直接抛错落到启动错误屏，用户连 /key 都进不去
+  // 先确认目标模型可用：端点缺 Key 时切过去根本跑不起来，这里只是给用户的可读提示
+  // （不是校验层 —— 真正的拒绝由服务端的 `agent.model.set` / reload 给出）
   const targetModel = models.find((model) => model.id === chosen)!;
-  const targetEndpoint = (config.endpoints ?? []).find((endpoint) => endpoint.id === targetModel.endpointId);
+  const targetEndpoint = (appConfig.endpoints ?? []).find(
+    (endpoint) => endpoint.id === targetModel.endpointId,
+  );
   if (!targetEndpoint) {
     push(t("cmd.model.endpointMissing", { id: chosen, endpoint: targetModel.endpointId }), "error");
     return;
@@ -317,21 +329,36 @@ const cmdModel: CommandHandler = async ({ session, push, args, exit, pick }) => 
   }
 
   try {
-    // 只写 Agent 定义（模型唯一真相源）
-    const result = await switchModel({ config, agentId: session.agentId, modelId: chosen });
-    // Scope 持有配置快照：不重建的话 getScope() 会把旧模型又交给新 Agent
-    await resetScope();
-    // 重挂载对话屏：模型变了要重算上下文阈值、重建 Agent；消息与上下文保留
-    exit({ restart: true, agentId: session.agentId, messages: session.messages, notice: result.summary });
+    // 写发生在服务端：`agent.model.set` 只改 `AgentDefinition.modelId`，并把思考参数
+    // 清空 —— 档位是模型相关的（GLM-5.3 不接受 `thinking.disabled` 这类），这条规则
+    // 只该有一份实现，命令层不再自己读定义 → 改字段 → 写回。
+    await config.setModel(session.agentId, chosen);
+    // 生效靠「按磁盘上的新配置重建 Agent、消息保留」，`session.reload()` 就是这件事
+    // （`/reload` 走同一条路）。
+    //
+    // 这里**刻意不再 `exit({ restart: true })`**：模型变了不需要重挂载整个对话屏 ——
+    // 重启会把整屏刷一遍，还会丢掉用户正在写的输入草稿；而「Scope 里是旧配置快照」
+    // 这件旧理由也已经不成立（reload 内部自己重置 Scope）。
+    await session.reload();
+    // `setModel` 无条件清空思考参数，所以这句提示总是成立；不为此多读一次 Agent 定义
+    // （远程模式下那就是多一次往返，只为渲染一个后缀）。
+    push(
+      t("modelSwitch.summary", {
+        name: targetModel.name,
+        id: chosen,
+        agent: session.agentId,
+        hint: t("modelSwitch.resetHint"),
+      }),
+    );
   } catch (error: any) {
     push(t("cmd.model.failed", { error: error?.message ?? error }), "error");
   }
 };
 
-const cmdAgent: CommandHandler = async ({ session, push, args, exit, pick }) => {
-  const config = await readConfig();
-  const store = await readAgentStore();
-  const choices = listAgentChoices(config, store.agents);
+const cmdAgent: CommandHandler = async ({ session, push, args, exit, pick, config }) => {
+  const appConfig = await config.readConfig();
+  const store = await config.readAgentStore();
+  const choices = listAgentChoices(appConfig, store.agents);
   if (choices.length === 0) {
     push(t("cmd.agent.noAgents"), "error");
     return;
@@ -373,8 +400,8 @@ const cmdAgent: CommandHandler = async ({ session, push, args, exit, pick }) => 
   }
 
   try {
-    const result = switchAgent({ config, agents: store.agents, targetAgentId: chosen });
-    await saveConfig(result.config);
+    const result = switchAgent({ config: appConfig, agents: store.agents, targetAgentId: chosen });
+    await config.saveConfig(result.config);
     if (chosen === session.agentId) {
       // 会话已经在这个 Agent 上：只需把「默认 Agent」记号写对，不必重建
       push(t("cmd.agent.alreadyOn", { summary: result.summary ?? "" }));
@@ -382,7 +409,9 @@ const cmdAgent: CommandHandler = async ({ session, push, args, exit, pick }) => 
     }
     // Scope 持有 Agent / 配置快照：不重建的话下一轮请求还是旧 Agent
     await resetScope();
-    // 重挂载对话屏：提示词、工具集、模型都跟着 Agent 变；消息与上下文保留
+    // 保留重挂载：换的是**会话的 agentId**，不是「同一 Agent 换个模型」，
+    // `session.reload()` 重的是同一个 Agent，换不了身份 —— 所以这条命令仍靠宿主
+    // 重新挂载对话屏（提示词、工具集、模型全跟着 Agent 变；消息与上下文保留）
     exit({ restart: true, agentId: chosen, messages: session.messages, notice: result.summary });
   } catch (error: any) {
     push(t("cmd.agent.failed", { error: error?.message ?? error }), "error");
@@ -603,7 +632,7 @@ const cmdUpdate: CommandHandler = async ({
   await restartProcess();
 };
 
-const cmdMcp: CommandHandler = async ({ push, args, openWizard }) => {
+const cmdMcp: CommandHandler = async ({ push, args, openWizard, config }) => {
   // 不另建一套 MCP 编辑界面：直接打开配置中心里已有的 MCP 屏。
   // 增 / 删 / 改 / 启停 / 切换作用域都在那一屏里；关闭后宿主会因 `mcpChanged`
   // 自动 `session.reload()`，新服务器当场生效（与 /config 走同一条路径）。
@@ -618,8 +647,10 @@ const cmdMcp: CommandHandler = async ({ push, args, openWizard }) => {
     pickStartScope({
       // 这里读只是为了「默认进哪个作用域」：坏文件按空配置算即可，
       // 「已损坏」的提示由编辑屏负责（宿主那一轮会重新读并带上原因）
-      global: mcpConfigOrEmpty(await readMcpConfig("global")),
-      project: mcpConfigOrEmpty(await readMcpConfig("project")),
+      global: mcpConfigOrEmpty(await config.readMcpConfig("global")),
+      // 项目作用域不传路径：`<工作区>/.ai-zen/mcp.json` 里的「工作区」是服务端的事实，
+      // 由端口自己解析；客户端再传一份路径过去，就又多了一份会漂的真相
+      project: mcpConfigOrEmpty(await config.readMcpConfig("project")),
     });
   await openWizard({ kind: "mcp", scope });
 };
@@ -639,17 +670,17 @@ const cmdLang: CommandHandler = async ({ push, args, refreshLocale }) => {
   push(t("notice.languageChanged"));
 };
 
-const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pick }) => {
-  const config = await readConfig();
-  const presets = await readReasoningPresets();
-  const store = await readAgentStore();
+const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pick, config }) => {
+  const appConfig = await config.readConfig();
+  const presets = await config.readReasoningPresets();
+  const store = await config.readAgentStore();
   const definition = store.agents.find((item) => item.id === session.agentId) ?? null;
   const modelId = definition?.modelId;
   if (!modelId) {
     push(t("cmd.think.noModel", { id: session.agentId }), "error");
     return;
   }
-  const model = (config.models ?? []).find((item) => item.id === modelId);
+  const model = (appConfig.models ?? []).find((item) => item.id === modelId);
   if (!model) {
     push(t("cmd.think.modelMissing", { id: modelId }), "error");
     return;
@@ -700,12 +731,17 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
 
   try {
     const result = await setAgentEffort({
-      config,
+      config: appConfig,
       presets,
       agentId: session.agentId,
       effort,
       // 已读过定义，避免命令层与写入层各读一次盘
       readAgent: async () => definition,
+      // 写也必须回到**配置面的那一侧**：`setAgentEffort` 的缺省写入是本地
+      // `AgentRepository(AGENTS_DIR).write()`，远程模式下那是客户端本机的文件 ——
+      // 服务端看不到，于是「界面说改成功了，Agent 实际档位没变」。用刚才那份快照的
+      // `save`（远程即 `agent.save`）才是同一份真相。
+      writeAgent: (next) => store.save("agent", next),
     });
     // 状态栏先跟上；档位要通过重建 Agent 才会进请求参数
     setEffortView(describeEffortView(result.model, presets, result.definition));

@@ -10,9 +10,9 @@
  */
 
 import { render, useApp, type Instance } from "ink";
-import { AgentRepository } from "@ai-zen/agents-sdk";
 import type { AppConfig } from "@ai-zen/agents-sdk";
-import { AGENTS_DIR, ensureConfigDir, readConfig, saveConfig } from "../config.js";
+import { ensureConfigDir } from "../config.js";
+import { createRemoteConfigPort } from "../server-client/config-port.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
 import { Chat } from "./screens/index.js";
@@ -25,6 +25,17 @@ import type { AgentNS } from "@ai-zen/agents-core";
 
 /** ANSI：清屏 + 光标归位 + 显示光标（屏幕间切换时从头绘制，避免行偏移） */
 const CLEAR_SCREEN = "\x1b[2J\x1b[H\x1b[?25h";
+
+/**
+ * 进程级配置面（**全文件复用这一个**）。
+ *
+ * 为什么全局一个而不是每次调用新建：远程端口是懒连接的，一次 `modelOf` / `resolveTarget`
+ * / 凭据预检各建一个，启动阶段就会为同一件事重复握手；而它本来就是进程级共享的资源。
+ *
+ * 为什么是远程实现：启动预检读的是「**服务端**用哪份配置、Agent 绑的哪个模型」。
+ * 读本机磁盘在两端不同机时必然错误 —— 预检通过、实际请求仍然缺 Key（或反之）。
+ */
+const configPort = createRemoteConfigPort();
 
 /**
  * 告别并终止进程。
@@ -109,7 +120,7 @@ function CredentialGate({ config, endpointId }: { config: AppConfig; endpointId:
       onboarding
       closeOnSave
       initialStep={{ kind: "edit", field: "apiKey", endpointId }}
-      onSave={saveConfig}
+      onSave={(config) => configPort.saveConfig(config)}
       onClose={(result) => exit(result)}
     />
   );
@@ -122,7 +133,8 @@ function CredentialGate({ config, endpointId }: { config: AppConfig; endpointId:
  * 那里可按 `k` 打开配置中心自行修配置。
  */
 async function ensureCredential(modelId: string): Promise<boolean> {
-  const config = await readConfig();
+  // 凭据要从**实际会用它的那一份配置**里取：远程模式下就在服务端，不是本机磁盘
+  const config = await configPort.readConfig();
   const credential = resolveCredential(config, modelId);
   if (!credential || credential.configured) return true;
 
@@ -157,11 +169,11 @@ interface ChatTarget {
  */
 async function modelOf(agentId: string | undefined): Promise<string> {
   const id = agentId || "default";
-  // 先跑一次配置初始化：bootstrap 会为缺 modelId 的历史 Agent 补上并落盘。
-  // 不做这一步就会读到“未绑定模型”的旧定义，把一次正常的升级变成启动错误。
-  const config = await readConfig();
-  const agent = await new AgentRepository(AGENTS_DIR).read(id);
-  const modelId = agent?.modelId;
+  // 历史 Agent 缺 `modelId` 的补齐（迁移 / bootstrap）发生在**持有定义的那一侧**：
+  // 远程时是服务端，进程内时是本地初始化。客户端只负责读快照，不自己重做一遍迁移
+  // （在这里补写会让「谁改的配置」变得说不清）；读到的定义若仍无 modelId，就是真缺。
+  const [config, store] = await Promise.all([configPort.readConfig(), configPort.readAgentStore()]);
+  const modelId = store.agents.find((agent) => agent.id === id)?.modelId;
   if (!modelId) {
     throw new Error(t("app.agentNoModel", { id }));
   }
@@ -172,9 +184,10 @@ async function modelOf(agentId: string | undefined): Promise<string> {
 }
 
 async function resolveTarget(): Promise<ChatTarget> {
-  const config = await readConfig();
-  const repository = new AgentRepository(AGENTS_DIR);
-  const agents = await repository.list();
+  // 默认 Agent 与可用 Agent 列表都在配置面里（远程时以服务端为准），
+  // 「本机有没有装 Agent」与「服务端能不能跑」是两回事。
+  const [config, store] = await Promise.all([configPort.readConfig(), configPort.readAgentStore()]);
+  const agents = store.agents;
 
   const agentId = config.defaultAgent ?? agents[0]?.id;
   if (!agentId) throw new Error(t("app.noAgents"));
@@ -229,6 +242,9 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
         sessionId={current.sessionId}
         sessionName={current.sessionName}
         resume={resume}
+        // 把**同一个**配置面实例交给对话屏：端口是懒连接的，不传的话对话屏会自己再建一个，
+        // 一个 TUI 进程就变成两条到服务端的连接（启动预检一条、对话屏一条）。
+        deps={{ config: configPort }}
         initialInput={initialInput}
         initialNotice={initialNotice}
         initialPrompt={initialPrompt}
@@ -315,14 +331,16 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
   keyDebugStart();
 
   try {
-    // 配置初始化必须早于任何 Agent 读取：
-    //   - 目录 / config.json / 默认 Agent / 出厂策略表都在这里释放；
-    //   - 历史 Agent 缺 `modelId` 的补齐也在这里（`ensureDefaultAgent`）。
-    // 启动目标（`resolveTarget`）与凭据预检（`modelOf`）都要读配置，少了这一步，
-    // 升级后第一次启动会直接报「Agent 未绑定模型」。
+    // 本地目录初始化（`~/.ai-zen`：config.json / 默认 Agent / 出厂策略表 / `cli/` 运行时目录）。
+    //
+    // 远程模式下 TUI 的配置读写已经全部走服务端，这次调用**不再是**「为了让屏幕读到配置」；
+    // 保留在原位是因为它仍是 stdio / 进程内模式那条路径的初始化入口（`readConfig()` 内部
+    // 也会调本函数），`config.ts` 的模块级路径常量被别处（hook 安装、SDK 日志落盘）继续使用。
+    // 它幂等（进程内只真正执行一次），留着的代价是一次调用；要彻底移除需连那些路径一起改，
+    // 不在本次接线的范围内。
     await ensureConfigDir();
 
-    // 直达对话：Agent 身份仍来自本地定义（换成远端源是下一轮的事）；
+    // 直达对话：Agent 身份与它绑的模型都由配置面给（远程时以服务端为准）；
     // 「接不接上次」只在这里定 —— 不带 `--new` 就带上 resume 意图，带上就一定是新会话。
     let target: ChatTarget | null = null;
     try {
@@ -338,7 +356,7 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
     if (!options.newSession) target = { ...target, ...resumeLastSession() };
 
     // 端点凭据预检：未配置 API Key 时先弹出输入屏，而不是「报错即退出」
-    // 模型从 Agent 定义读 —— 与 SDK 实发请求用的是同一个值
+    // 模型从 Agent 定义读 —— 与实发请求用的是同一个值
     let modelId: string | null = null;
     try {
       modelId = await modelOf(target.agentId);

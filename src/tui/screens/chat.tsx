@@ -24,8 +24,7 @@ import {
   matchCommandHints,
   parseCommandInput,
 } from "../../session-commands/registry.js";
-import { readConfig, readMcpConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "../../config.js";
-import { readAgentStore } from "../../agents-store.js";
+import { createRemoteConfigPort, type ConfigPort } from "../../server-client/config-port.js";
 import { ConfigWizard } from "../config-wizard/index.js";
 import { computeInputCursorPosition, inputWindow } from "./input.js";
 import { AGENT_TABS_LINES, computeChatLayout } from "./layout.js";
@@ -71,17 +70,37 @@ export type CreateChatSession = (
  * 进程内共享模块（`isolate: false`）时是全局生效的，会把别的测试文件也带偏。
  */
 export interface ChatDeps {
-  readConfig: typeof readConfig;
-  readReasoningPresets: typeof readReasoningPresets;
-  readAgentStore: typeof readAgentStore;
+  /** 配置面的唯一入口：远程模式走服务端，进程内模式走本地 */
+  config: ConfigPort;
   createSession: CreateChatSession;
   readClipboardImage: typeof readClipboardImage;
   readClipboardText: typeof readClipboardText;
-  /** 配置向导读快照的四个读取器（`/config`、`/key` 路径） */
+  /**
+   * 配置向导读快照的四个读取器（`/config`、`/key` 路径）。
+   *
+   * 仍单列而不是直接吃 `config`：向导要的 `readMcpConfig` 带必填作用域、且它的
+   * `readers` 是可缺省参数（`use-wizard-host.ts` 有自己的默认值）。缺省值见下方
+   * 「默认依赖」——它由 `config` 派生，于是远程模式下向导读的也是服务端。
+   */
   wizardReaders: NonNullable<WizardHostDeps["readers"]>;
-  /** 向导落盘（不注入就会写真实配置目录） */
-  saveConfig: typeof saveConfig;
-  writeMcpConfig: typeof writeMcpConfig;
+}
+
+/**
+ * 默认配置面：**远程**实现。
+ *
+ * 为什么默认不是本地：TUI 已经是纯客户端，配置与 Agent 定义的真相在服务端。
+ * 默认本地会让「界面上改的」和「Agent 实际跑的」变成两份互不相干的真相 ——
+ * 界面显示成功、跑起来还是旧模型，错得很安静。
+ * 进程内模式（服务端同进程 / 单机调试）由调用方注入 `createLocalConfigPort()`。
+ *
+ * 为什么做成模块级单例而不是每次渲染新建：远程端口是懒连接的，每个组件实例各建一个
+ * 就等于各连一条；而它一旦连上就是进程级共享的资源，本来也没有「每个屏幕一份」的理由。
+ */
+let defaultConfigPort: ConfigPort | undefined;
+
+function remoteConfigPort(): ConfigPort {
+  defaultConfigPort ??= createRemoteConfigPort();
+  return defaultConfigPort;
 }
 
 export interface ChatScreenProps {
@@ -155,21 +174,22 @@ export function busySpinnerLabel(phase: PhaseInfo | null, command: string | null
 }
 
 export function Chat(props: ChatScreenProps) {
+  // 调用方注入了配置面就不去建远程端口：测试塞的是假端口，不该顺手连一次真服务端。
+  // `??` 的短路是有意为之，不是省事。
+  const configPort = props.deps?.config ?? remoteConfigPort();
   const deps: ChatDeps = {
-    readConfig,
-    readReasoningPresets,
-    readAgentStore,
+    config: configPort,
     createSession: createRemoteChatSession,
     readClipboardImage,
     readClipboardText,
+    // 向导的快照读取也走配置面：否则远程模式下向导读的是本机磁盘，与 `/model`
+    // 写入的目标（服务端）不是同一份配置，改完当屏「成功」、重启即失效。
     wizardReaders: {
-      readConfig,
-      readMcpConfig,
-      readReasoningPresets,
-      readAgentStore,
+      readConfig: () => configPort.readConfig(),
+      readMcpConfig: (scope) => configPort.readMcpConfig(scope),
+      readReasoningPresets: () => configPort.readReasoningPresets(),
+      readAgentStore: () => configPort.readAgentStore(),
     },
-    saveConfig,
-    writeMcpConfig,
     ...props.deps,
   };
   const { exit, suspendTerminal } = useApp();
@@ -332,7 +352,11 @@ export function Chat(props: ChatScreenProps) {
     if (!modelId) return;
     let alive = true;
     // 档位存在 Agent 定义上（`modelParams`），可选档位在策略表里（`reasoningPreset` 指向），两者都要读
-    Promise.all([deps.readConfig(), deps.readAgentStore(), deps.readReasoningPresets()])
+    Promise.all([
+      deps.config.readConfig(),
+      deps.config.readAgentStore(),
+      deps.config.readReasoningPresets(),
+    ])
       .then(([config, store, presets]) => {
         const model = config.models?.find((item) => item.id === modelId);
         const agentId = props.agentId ?? "default";
@@ -630,6 +654,9 @@ export function Chat(props: ChatScreenProps) {
       try {
         await runCommand(name, trimmed, {
           session: sessionRef.current!,
+          // 命令层的配置读写（`/model`、`/agent`、`/think` …）一律走配置面：
+          // 屏幕只负责把口子递下去，不替它判断本地还是远程
+          config: deps.config,
           notice: (text, tone) => noticeChannel.push(text, tone),
           clearTranscript,
           rows: rows ?? 24,
@@ -1007,10 +1034,9 @@ export function Chat(props: ChatScreenProps) {
         agents={wizardAgents}
         mcp={wizardMcp ?? undefined}
         agentStore={wizardAgentStore ?? undefined}
-        onSave={deps.saveConfig}
-        onSaveMcp={async (scope, cfg) => {
-          await deps.writeMcpConfig(cfg, scope);
-        }}
+        // 落盘由配置面决定去处：远程模式写服务端，进程内模式写本地
+        onSave={(config) => deps.config.saveConfig(config)}
+        onSaveMcp={(scope, cfg) => deps.config.writeMcpConfig(cfg, scope)}
         onClose={closeWizard}
       />
     );

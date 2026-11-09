@@ -8,11 +8,14 @@ import { describe, expect, it, vi, beforeEach, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
+import type { AgentDefinition, AppConfig, Model, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { runCommand, type ChatCommandHost } from "./chat-commands.js";
 import type { ChatSessionLike } from "../chat-session.js";
+import type { AgentStore } from "../../agents-store.js";
+import type { ConfigPort } from "../../server-client/config-port.js";
 import { persistSession, sessionExists, listSessions } from "../../session-store.js";
 import { useTempAiZenDir } from "../../test-support/temp-dir.js";
-import { setLocale } from "../../i18n/index.js";
+import { setLocale, t } from "../../i18n/index.js";
 import { workspaceIdFor } from "@ai-zen/agents-server";
 import { computeChatLayout } from "./layout.js";
 import { usableFrameRows } from "../text.js";
@@ -27,7 +30,7 @@ beforeEach(() => {
 afterAll(() => zen.cleanup());
 
 /** 只造 runCommand 实际会碰到的字段，其余用 noop 顶住 */
-function createHost(overrides: Record<string, unknown> = {}) {
+function createHost(overrides: Record<string, unknown> = {}, portOverrides: Partial<ConfigPort> = {}) {
   const notices: Array<{ text: string; tone?: "info" | "error" }> = [];
   const session = {
     messages: [{ role: AgentNS.Role.User, content: "hi" }],
@@ -35,6 +38,7 @@ function createHost(overrides: Record<string, unknown> = {}) {
     modelId: "m1",
     migrate: vi.fn(async () => "/tmp/handoff.md"),
     reset: vi.fn(async () => "chat_archived"),
+    reload: vi.fn(async () => {}),
     save: vi.fn(async () => "chat_saved"),
     saveAs: vi.fn(async (id: string) => id),
     // 存档查询是**会话**的能力（进程内直接读盘，远程模式问服务端）。
@@ -43,8 +47,10 @@ function createHost(overrides: Record<string, unknown> = {}) {
     listSaved: vi.fn(async () => await listSessions()),
     ...overrides,
   };
+  const config = fakeConfigPort(portOverrides);
   const host = {
     session: session as unknown as ChatSessionLike,
+    config,
     notice: (text: string, tone?: "info" | "error") => notices.push({ text, tone }),
     clearTranscript: vi.fn(),
     rows: 24,
@@ -61,7 +67,80 @@ function createHost(overrides: Record<string, unknown> = {}) {
     setEffortView: vi.fn(),
     refreshLocale: vi.fn(),
   } as unknown as ChatCommandHost;
-  return { host, notices, session };
+  return { host, notices, session, config };
+}
+
+// ==================== 假配置面 ====================
+//
+// 命令层的配置读写全走注入的 `ConfigPort`，于是给一个**假端口**就够：不读盘、
+// 不 `vi.mock`（模块级 mock 是全局注册的，会波及同进程里别的用例），只记录
+// 「被调用了什么、返回了什么」—— 既能钉住「数据来自端口」，也能钉住「不该写的没写」。
+
+/** 一个模型（`tokenThresholds` 是类型必填，用例不关心具体数值） */
+function model(id: string, name: string, endpointId: string): Model {
+  return {
+    id,
+    name,
+    endpointId,
+    tokenThresholds: { handoff: 1000, guard: 2000 },
+    // 指向下面那张策略表，`/think` 才有档位可选
+    reasoningPreset: "effort",
+  };
+}
+
+/** `/think` 用的策略表：两档，够判断「可选项是从端口来的」 */
+const PRESETS: ReasoningPresets = {
+  effort: { levels: { low: { reasoning_effort: "low" }, high: { reasoning_effort: "high" } } },
+};
+
+const BASE_CONFIG: AppConfig = {
+  endpoints: [
+    { id: "ep-main", name: "主端点", baseUrl: "https://example.test/v1", apiKey: "sk-test" },
+    // 故意不带 Key：`/model` 的预检要在这里拦住
+    { id: "ep-nokey", name: "没配 Key 的端点", baseUrl: "https://example.test/v1", apiKey: "" },
+  ],
+  // 会话当前在 m1 上（见 createHost）；m2 与它同端点，m3 落在缺 Key 的端点上
+  models: [
+    model("m1", "模型一", "ep-main"),
+    model("m2", "模型二", "ep-main"),
+    model("m3", "模型三", "ep-nokey"),
+  ],
+};
+
+/** 一个 Agent 定义（`/think` 靠 `modelParams` 反查当前档位） */
+function agentDefinition(
+  id: string,
+  modelId: string,
+  modelParams?: Record<string, unknown>,
+): AgentDefinition {
+  return {
+    id,
+    name: id,
+    messages: [],
+    modelId,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+    ...(modelParams ? { modelParams } : {}),
+  };
+}
+
+function fakeAgentStore(agents: AgentDefinition[], subAgents: AgentDefinition[] = []): AgentStore {
+  return { agents, subAgents, save: async () => {}, remove: async () => {} };
+}
+
+/** 假配置端口：每个方法都是 `vi.fn`，用例可断言调用与入参 */
+function fakeConfigPort(overrides: Partial<ConfigPort> = {}): ConfigPort {
+  return {
+    readConfig: vi.fn(async () => BASE_CONFIG),
+    saveConfig: vi.fn(async () => {}),
+    readReasoningPresets: vi.fn(async () => PRESETS),
+    // 空 MCP 配置：`/mcp` 无参时的默认作用域落在 global
+    readMcpConfig: vi.fn(async () => ({ ok: true as const, config: { mcpServers: {} } })),
+    writeMcpConfig: vi.fn(async () => {}),
+    readAgentStore: vi.fn(async () => fakeAgentStore([agentDefinition("default", "m1")])),
+    setModel: vi.fn(async () => {}),
+    ...overrides,
+  };
 }
 
 describe("/migrate：prune 后必须重置转录显示起点", () => {
@@ -305,5 +384,110 @@ describe("picker 条数上限（不超出一帧）", () => {
 
     expect(seen.count).toBe(ROWS - 10);
     expect(fits(seen.count)).toBe(true);
+  });
+});
+
+/**
+ * 配置读写搬到服务端（`ConfigPort`）：命令层不再吃盘。
+ *
+ * `/model` 的关键回归是**生效方式**：写配置之后靠 `session.reload()`（服务端按磁盘上
+ * 的新配置重建 Agent、保留消息），不再是 `exit({ restart: true })` 重挂载整个对话屏 ——
+ * 重挂载会把整屏刷一遍、还会丢掉用户正在写的输入草稿。
+ */
+describe("/model：服务端写 + 会话重载（不再重启屏幕）", () => {
+  const texts = (notices: Array<{ text: string }>) => notices.map((n) => n.text).join("\n");
+
+  it("成功：setModel(agentId, 目标) → reload，且不 exit({restart:true})", async () => {
+    const reload = vi.fn(async () => {});
+    const setModel = vi.fn(async () => {});
+    const { host, notices } = createHost({ reload }, { setModel });
+
+    await runCommand("model", "/model m2", host);
+
+    // 会话当前在 m1 上（见 createHost），目标是 m2
+    expect(setModel).toHaveBeenCalledWith("default", "m2");
+    expect(reload).toHaveBeenCalledTimes(1);
+    // 不再重挂载屏幕：模型变了不需要重建整个界面
+    expect(host.exit).not.toHaveBeenCalled();
+    // 先写配置、再让服务端按它重建 Agent（顺序反了就是重建出旧模型）
+    expect(setModel.mock.invocationCallOrder[0]!).toBeLessThan(reload.mock.invocationCallOrder[0]!);
+    // 成功提示复用已有的 modelSwitch.summary，不新造 i18n 键
+    expect(notices.at(-1)).toEqual({
+      text: t("modelSwitch.summary", {
+        name: "模型二",
+        id: "m2",
+        agent: "default",
+        hint: t("modelSwitch.resetHint"),
+      }),
+      tone: "info",
+    });
+  });
+
+  it("目标端点缺 Key：不写配置、不 reload，只报错", async () => {
+    const reload = vi.fn(async () => {});
+    const setModel = vi.fn(async () => {});
+    const { host, notices } = createHost({ reload }, { setModel });
+
+    // m3 挂在没配 Key 的端点上
+    await runCommand("model", "/model m3", host);
+
+    expect(setModel).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+    expect(host.exit).not.toHaveBeenCalled();
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.tone).toBe("error");
+    expect(texts(notices)).toContain("没配 Key 的端点");
+  });
+});
+
+/**
+ * `/think` `/mcp` 的数据来源：全部经 `deps.config`，不再调本地读盘函数。
+ *
+ * 断言方式是「假端口记录了调用 + 结果被端口给的内容左右」——只看调用次数会漏掉
+ * 「读了端口、用的却是本地数据」这种半吊子改造。
+ */
+describe("配置来源是 deps.config（假端口），不是本地读盘", () => {
+  const texts = (notices: Array<{ text: string }>) => notices.map((n) => n.text).join("\n");
+
+  it("/think：模型 / 策略表 / Agent 定义都从端口读", async () => {
+    const { host, config, notices } = createHost();
+
+    // 「未知强度」分支把三样都读一遍就返回，**不写盘**（用例不碰 ~/.ai-zen）
+    await runCommand("think", "/think turbo", host);
+
+    expect(config.readConfig).toHaveBeenCalled();
+    expect(config.readReasoningPresets).toHaveBeenCalled();
+    expect(config.readAgentStore).toHaveBeenCalled();
+    // 报错里列出的可选档位来自端口给的策略表（low / high），而不是内置表
+    expect(texts(notices)).toBe(t("cmd.think.unknown", { level: "turbo", options: "low / high" }));
+  });
+
+  it("/think：端口给的 Agent 定义已在目标档位 → 判「未变化」，不写", async () => {
+    const { host, notices } = createHost(
+      {},
+      {
+        readAgentStore: vi.fn(async () =>
+          fakeAgentStore([agentDefinition("default", "m1", { reasoning_effort: "high" })]),
+        ),
+      },
+    );
+
+    await runCommand("think", "/think high", host);
+
+    expect(texts(notices)).toBe(t("cmd.think.unchanged"));
+  });
+
+  it("/mcp：默认作用域读的是端口的两个作用域（项目作用域不传路径）", async () => {
+    const { host, config } = createHost();
+
+    await runCommand("mcp", "/mcp", host);
+
+    // 两个作用域都经端口读，且**不带路径**：工作区是服务端的事实，由端口自己解析
+    expect(vi.mocked(config.readMcpConfig).mock.calls.map((call) => call[0])).toEqual([
+      "global",
+      "project",
+    ]);
+    // 两份都为空 → 默认进 global
+    expect(host.openWizard).toHaveBeenCalledWith({ kind: "mcp", scope: "global" });
   });
 });

@@ -27,6 +27,7 @@ const NEXT_VERSION = `${Number(CLI_VERSION.split(".")[0]) + 1}.0.0-alpha.99`;
 const OLDER_VERSION = "0.9.0";
 import { runCommand, type ChatCommandHost } from "./chat-commands.js";
 import type { ChatSessionLike } from "../chat-session.js";
+import type { ConfigPort } from "../../server-client/config-port.js";
 
 const state = vi.hoisted(() => ({
   /** `npm view <pkg> dist-tags --json` 的 stdout */
@@ -97,6 +98,8 @@ function createHost(options: { confirmAnswer?: boolean; withHistory?: boolean } 
         return "conv-id";
       },
     } as unknown as ChatSessionLike,
+    // `/update` 与配置面无关：给个空壳，真被调用会因缺方法当场报错（而不是悄悄读盘）
+    config: {} as ConfigPort,
     notice: (text: string, tone?: "info" | "error") => notices.push({ text, tone }),
     clearTranscript: vi.fn(),
     rows: 24,

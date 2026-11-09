@@ -84,12 +84,27 @@ const fakeAgentStore = () => ({ agents: [], subAgents: [], save: async () => {},
 
 /** 空配置 + 空 Agent 仓储：向导与思考档位读取都走它 */
 const fakeConfig = () => ({ models: [], endpoints: [], imageModels: [] }) as any;
-const fakeReaders = {
-  readConfig: async () => fakeConfig(),
-  readMcpConfig: async () => ({ mcpServers: {} }) as any,
-  readReasoningPresets: async () => ({}),
-  readAgentStore: async () => fakeAgentStore(),
-};
+
+/**
+ * 假配置面（`ConfigPort`）—— 本轮接线的核心：屏幕上的每处配置读写都该落在这里。
+ *
+ * 用注入的假端口而不是 `vi.mock("../../config.js")`：模块级 mock 是全局注册的，
+ * 进程内共享模块时会把这个假配置泄漏给别的测试文件。
+ *
+ * `satisfies ConfigPort` 是故意的：端口长出新方法时，这里会先红，提醒测试同步。
+ */
+const fakePort = (config: any = fakeConfig()) =>
+  ({
+    readConfig: vi.fn(async () => config),
+    saveConfig: vi.fn(async (_next: any) => {}),
+    readReasoningPresets: vi.fn(async () => ({}) as any),
+    readMcpConfig: vi.fn(async (_scope?: any) => ({ ok: true, config: { mcpServers: {} } }) as any),
+    writeMcpConfig: vi.fn(async (_config: any, _scope?: any) => {}),
+    readAgentStore: vi.fn(async () => fakeAgentStore()),
+    setModel: vi.fn(async (_agentId: string, _modelId: string) => {}),
+  }) satisfies ConfigPort;
+
+type FakePort = ReturnType<typeof fakePort>;
 
 /** 剪贴板桩：不打桩就会真去 spawn `pbpaste` / `wl-paste` */
 const clipboardMock = vi.hoisted(() => ({
@@ -98,6 +113,7 @@ const clipboardMock = vi.hoisted(() => ({
 }));
 
 import { Chat } from "./chat.js";
+import type { ConfigPort } from "../../server-client/config-port.js";
 import { getCommandHints } from "../../session-commands/registry.js";
 import type { ClipboardTextResult } from "../../clipboard.js";
 
@@ -152,16 +168,16 @@ const waitUntilEditable = async (
   }
 };
 
-const mount = (options: { initialInput?: string; resume?: boolean } = {}) =>
-  render(
+const mount = (options: { initialInput?: string; resume?: boolean; port?: FakePort } = {}) => {
+  const port = options.port ?? fakePort();
+  return render(
     <Chat
       agentId="default"
       initialInput={options.initialInput}
       resume={options.resume}
       deps={{
-        readConfig: async () => fakeConfig(),
-        readReasoningPresets: async () => ({}),
-        readAgentStore: async () => fakeAgentStore(),
+        // 配置面是唯一入口，向导快照读取也由它派生（不再单独注入 wizardReaders）
+        config: port,
         createSession: (async (sessionOptions: unknown, notifier: any) => {
           const session = createFakeSession(notifier);
           created.notifier = notifier;
@@ -172,13 +188,10 @@ const mount = (options: { initialInput?: string; resume?: boolean } = {}) =>
         }) as any,
         readClipboardImage: async () => clipboardMock.image as any,
         readClipboardText: async () => clipboardMock.text,
-        // 向导路径（`/config`、`/key`）也要注入，否则会读写真实配置目录
-        wizardReaders: fakeReaders,
-        saveConfig: async () => {},
-        writeMcpConfig: async () => {},
       }}
     />,
   );
+};
 
 describe("Chat 集成（拆分前的护栏）", () => {
   beforeEach(() => {
@@ -253,6 +266,87 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await flush();
     const frame = lastFrame() ?? "";
     expect(frame).toContain("配置已更新：模型名");
+    unmount();
+  });
+
+  it("向导落盘走配置面：`/key` 保存时调用假端口的 saveConfig", async () => {
+    // 有模型 + 端点的配置，`/key` 才能定位到「当前模型用的那个端点」
+    const port = fakePort({
+      models: [{ id: "gpt-6-astra", name: "Astra", endpointId: "ep1" }],
+      endpoints: [{ id: "ep1", name: "EP", baseUrl: "https://api.example.com/v1", apiKey: "" }],
+      imageModels: [],
+    });
+    const { stdin, lastFrame, unmount } = mount({ port });
+    await waitUntilEditable(stdin, lastFrame);
+
+    stdin.write("/key");
+    await flush();
+    stdin.write("\r");
+    // 向导整屏接管（标题含「设置 API Key」）—— 快照也是从配置面读出来的
+    await waitFor(() => (lastFrame() ?? "").includes("设置 API Key"), 4000);
+    // 帧先出现、向导自己的 useInput 监听稍后（mount 后的 effect）才就位：
+    // 不等这一步就敲字，按键会落在一个还没人收的窗口里（实测丢字）。
+    await flush(40);
+
+    stdin.write("sk-test-123");
+    // 看到掩码回显再回车：状态与渲染就绪后，Enter 拿到的才是刚输入的值
+    await waitFor(() => (lastFrame() ?? "").includes("••"), 2000);
+    stdin.write("\r");
+    await flush(20);
+    await waitFor(() => port.saveConfig.mock.calls.length > 0, 2000);
+
+    // 写的是**配置面**，不是某个本地函数：远程模式下这一跳才是「写到服务端」
+    expect(port.saveConfig).toHaveBeenCalledTimes(1);
+    expect((port.saveConfig.mock.calls[0][0] as any).endpoints[0].apiKey).toBe("sk-test-123");
+    unmount();
+  });
+
+  it("向导 MCP 落盘走配置面：切换启用状态调用假端口的 writeMcpConfig", async () => {
+    const port = fakePort();
+    // 全局作用域里放一个服务器：`/config` 的 MCP 列表才有条目可进
+    port.readMcpConfig.mockImplementation(async (scope?: any) =>
+      scope === "global"
+        ? ({ ok: true, config: { mcpServers: { fs: { type: "stdio", command: "npx" } } } } as any)
+        : ({ ok: true, config: { mcpServers: {} } } as any),
+    );
+    const { stdin, lastFrame, unmount } = mount({ port });
+    await waitUntilEditable(stdin, lastFrame);
+
+    stdin.write("/config");
+    await flush();
+    stdin.write("\r");
+    await waitFor(() => (lastFrame() ?? "").includes("配置中心"), 4000);
+    await flush(40); // 等向导自己的按键监听就位（同上一条用例）
+
+    // 菜单：端点 → 模型 → 图片模型 → MCP 服务器
+    for (let i = 0; i < 3; i += 1) {
+      stdin.write("\u001B[B");
+      await flush(16);
+    }
+    stdin.write("\r");
+    await waitFor(() => (lastFrame() ?? "").includes("MCP 服务器 · 全局"), 2000);
+    await flush(40);
+
+    // 列表：首项是「切换作用域」，第二项是「新建」，之后才是已有服务器
+    for (let i = 0; i < 2; i += 1) {
+      stdin.write("\u001B[B");
+      await flush(16);
+    }
+    stdin.write("\r");
+    await waitFor(() => (lastFrame() ?? "").includes("MCP · fs"), 2000);
+    await flush(40);
+
+    // 详情：名称 → 传输方式 → 「启用」（bool，回车即写盘）
+    for (let i = 0; i < 2; i += 1) {
+      stdin.write("\u001B[B");
+      await flush(16);
+    }
+    stdin.write("\r");
+    await waitFor(() => port.writeMcpConfig.mock.calls.length > 0, 2000);
+
+    // 作用域也要原样透传：屏幕把 `(scope, cfg)` 翻成 `writeMcpConfig(cfg, scope)`
+    expect(port.writeMcpConfig).toHaveBeenCalledTimes(1);
+    expect(port.writeMcpConfig.mock.calls[0]![1]).toBe("global");
     unmount();
   });
 
