@@ -22,7 +22,6 @@ import {
   type SessionHandoffResult,
   type SessionKeepAliveSetResult,
   type SessionListResult,
-  type SessionListSavedResult,
   type SessionLastResult,
   type SessionMigrateResult,
   type SessionRollbackResult,
@@ -162,16 +161,15 @@ export class RemoteSessions {
     return await this.client.call<SessionCancelResult>(SESSION_METHODS.cancel, { sessionId });
   }
 
-  /** 某个工作区下活着的会话 */
+  /**
+   * 某个工作区的会话清单（盘上的存档 ∪ 内存里的活会话，一条不重，按 `updatedAt` 倒序）。
+   *
+   * 以前这里是两条（`list` 活会话 / `listSaved` 只有 id）：TUI 只关心“能不能续接”，
+   * 所以两条都够用；GUI 的侧栏不行（得自己拼、还会拼出同一段两条）。服务端合成一条后，
+   * 这里也只剩一条 —— 清单里的 `title` / `messageCount` / `live` TUI 暂时不用。
+   */
   async list(workspaceId: string): Promise<SessionListResult> {
     return await this.client.call<SessionListResult>(SESSION_METHODS.list, { workspaceId });
-  }
-
-  /** 某个工作区下已存档的会话（`/load` 的选择器用，按写入时间倒序） */
-  async listSaved(workspaceId: string): Promise<SessionListSavedResult> {
-    return await this.client.call<SessionListSavedResult>(SESSION_METHODS.listSaved, {
-      workspaceId,
-    });
   }
 
   /** 撤回：从 `index` 起删掉并落盘；返回剩下的消息与被删的首条用户消息 */

@@ -263,12 +263,14 @@ describe("RemoteSessions", () => {
     expect(migrated.messages).toEqual(agent.messages);
 
     const workspace = await sessions.resolveWorkspace(join(dir, "proj"));
+    // 活会话只剩新的那段（`live` 才是“在内存里”的判据，`sessionId` 只是 id）
     const listed = await sessions.list(workspace.workspaceId);
-    expect(listed.sessions.map((session) => session.sessionId)).toEqual([migrated.sessionId]);
+    expect(listed.sessions.filter((entry) => entry.live).map((entry) => entry.sessionId)).toEqual([
+      migrated.sessionId,
+    ]);
 
     // 旧会话与新会话都在存档里（旧的那份是交接前的完整历史）
-    const saved = await sessions.listSaved(workspace.workspaceId);
-    expect(saved.sessions.map((ref) => ref.id).sort()).toEqual(
+    expect(listed.sessions.map((entry) => entry.sessionId).sort()).toEqual(
       [sessionId, migrated.sessionId].sort(),
     );
   });
@@ -300,16 +302,20 @@ describe("RemoteSessions", () => {
 });
 
 describe("RemoteSessions：存档列表与撤回", () => {
-  it("listSaved：只列盘上的存档，随 save 增加", async () => {
+  it("list 是合并视图：刚开的新会话也在里面（`live`），`save` 之后落盘", async () => {
     await start();
     const { sessionId } = await sessions.open({ path: join(dir, "proj") });
     const workspace = await sessions.resolveWorkspace(join(dir, "proj"));
 
-    expect((await sessions.listSaved(workspace.workspaceId)).sessions).toEqual([]);
+    // 新会话没落盘，但它活在内存里：列表里有一条 `live:true`
+    const fresh = (await sessions.list(workspace.workspaceId)).sessions;
+    expect(fresh.map((entry) => entry.sessionId)).toEqual([sessionId]);
+    expect(fresh[0]!.live).toBe(true);
+
+    // `save` 之后盘上有了存档：同一段会话仍然只有一条（不会变成两条）
     await sessions.save(sessionId);
-    expect((await sessions.listSaved(workspace.workspaceId)).sessions.map((ref) => ref.id)).toEqual(
-      [sessionId],
-    );
+    const saved = (await sessions.list(workspace.workspaceId)).sessions;
+    expect(saved.map((entry) => entry.sessionId)).toEqual([sessionId]);
   });
 
   it("rollback：删掉之后的现场消息随结果返回，且已经落盘", async () => {
@@ -434,9 +440,9 @@ describe("RemoteSessions：续接只靠 id（客户端不搬消息）", () => {
     await sessions.save(opened.sessionId);
 
     // 盘上确实只有客户端给的那个 id：续接不是「开新的再拷消息」
-    expect((await sessions.listSaved(workspace.workspaceId)).sessions.map((ref) => ref.id)).toEqual(
-      [wanted],
-    );
+    expect(
+      (await sessions.list(workspace.workspaceId)).sessions.map((entry) => entry.sessionId),
+    ).toEqual([wanted]);
     expect((await storeFor(workspace.workspaceId).read(wanted))?.id).toBe(wanted);
     expect(await storeFor(workspace.workspaceId).read("chat_test")).toBeNull();
   });

@@ -1168,8 +1168,12 @@ describe("RemoteChatSession：换 Agent 与保活区", () => {
     await opened.reset();
 
     expect(opened.currentId).not.toBe(previous);
-    const live = await new RemoteSessions(await startServer()).list(workspaceId);
-    expect(live.sessions.map((item) => item.sessionId)).not.toContain(previous);
+    const listed = await new RemoteSessions(await startServer()).list(workspaceId);
+    // 旧那段不再是活会话（它作为存档仍在列表里，那是它“装得回来”的依凭）
+    expect(listed.sessions.filter((item) => item.live).map((item) => item.sessionId)).not.toContain(
+      previous,
+    );
+    expect(listed.sessions.map((item) => item.sessionId)).toContain(previous);
     // 存档在：`reset()` 先归档再放手，所以「旧的那段」随时装得回来
     const store = new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) });
     expect(await store.read(previous)).not.toBeNull();
@@ -1186,10 +1190,12 @@ describe("RemoteChatSession：换 Agent 与保活区", () => {
     const sessions = new RemoteSessions(await startServer());
     expect(await sessions.keepAliveSet(id, false)).toEqual({ sessionId: id, keepAlive: false });
 
-    // 活会话没了……
-    expect((await sessions.list(workspaceId)).sessions.map((item) => item.sessionId)).not.toContain(
-      id,
-    );
+    // 活会话没了（存档还在，所以只看活会话）……
+    expect(
+      (await sessions.list(workspaceId)).sessions
+        .filter((item) => item.live)
+        .map((item) => item.sessionId),
+    ).not.toContain(id);
     // ……但点回来能接上（rehydrate 走存档：这就是「回收不丢内容」的依据）
     const again = await sessions.attach({ workspaceId, sessionId: id, path: workspaceDir });
     expect(again.sessionId).toBe(id);

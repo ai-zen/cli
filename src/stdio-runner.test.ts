@@ -212,13 +212,18 @@ async function run(options: {
   return { code, stdout, stderr };
 }
 
-/** 存档目录（`<aiZenDir>/workspaces/<workspaceId>`）—— 用完才知道 id，现查 */
+/**
+ * 存档目录（`<aiZenDir>/workspaces/<workspaceId>/sessions`）—— 用完才知道 id，现查。
+ *
+ * 去掉 `.meta.json`（列表清单）：每段会话在盘上是两个文件，用例关心的是“有几段会话”。
+ */
 function savedSessions(): string[] {
   const workspaces = join(dir, "workspaces");
   if (!existsSync(workspaces)) return [];
   return readdirSync(workspaces).flatMap((id) => {
     const sessions = join(workspaces, id, "sessions");
-    return existsSync(sessions) ? readdirSync(sessions) : [];
+    if (!existsSync(sessions)) return [];
+    return readdirSync(sessions).filter((file) => !file.endsWith(".meta.json"));
   });
 }
 
@@ -283,7 +288,8 @@ describe("runStdio：一次性调用（真 socket + 真存档）", () => {
     await waitFor(() => closed.length === 1);
     expect(closed).toEqual(["chat_stdio"]);
     expect(workspaceId).not.toBe("");
-    expect(manager!.list(workspaceId)).toEqual([]);
+    // 活在内存里的一段不剩（列表是合并视图：盘上的存档仍会列出来，所以只看活会话）
+    expect(await manager!.list(workspaceId, { includeSaved: false })).toEqual([]);
   });
 
   it("无输入：不连服务端也能判定（退出码 2，stdout 为空）", async () => {

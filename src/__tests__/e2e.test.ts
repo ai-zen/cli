@@ -331,7 +331,12 @@ describe("E2E: 真跑一轮（假 LLM 端点，不需要 key）", () => {
     expect(result.stderr).toContain("Saved conversation:");
     const root = join(aizDir, "workspaces", workspaceIdFor(process.cwd()));
     const { readdirSync } = await import("node:fs");
-    expect(readdirSync(join(root, "sessions")).length).toBe(1);
+    // 一段会话在盘上是两个文件（存档 + 列表清单 `<id>.meta.json`）：
+    // 用例关心的是"有几段会话"，所以数存档那一个
+    const archived = readdirSync(join(root, "sessions")).filter(
+      (file) => !file.endsWith(".meta.json"),
+    );
+    expect(archived.length).toBe(1);
     // 归档 ≠ 变成「上次聊过的那段」：下次 `ai` 不该续接到一条管道结果上
     expect(existsSync(join(root, "last-session.json"))).toBe(false);
   }, 20000);

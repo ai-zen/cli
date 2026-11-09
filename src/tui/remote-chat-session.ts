@@ -643,8 +643,17 @@ export class RemoteChatSession implements ChatSessionLike {
     return this.sessionId;
   }
 
+  /**
+   * 本工作区可续接的会话（`/load` 选择器与 `exists` 用）。
+   *
+   * 服务端回的是合并清单（存档 ∪ 活会话，带 title/条数/活否）：TUI 只拿 id——
+   * 选择器按 id 命名、判断“这段在不在”也只看 id。标题要等 TUI 真正展示它才有意义，
+   * 那一步没做之前不要在这里先造一个没用上的字段。
+   */
   async listSaved(): Promise<Array<{ id: string }>> {
-    return (await this.sessions.listSaved(this.workspaceId)).sessions;
+    return (await this.sessions.list(this.workspaceId)).sessions.map((entry) => ({
+      id: entry.sessionId,
+    }));
   }
 
   async exists(id: string): Promise<boolean> {
