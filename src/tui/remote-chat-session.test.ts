@@ -1184,15 +1184,24 @@ describe("RemoteChatSession：只带用量的增量", () => {
 
     agent.fire("open");
     agent.fire("chunk-parsed", { choices: [{ delta: { content: "答案" } }] });
+    // 增量上屏那一刻就能看出有没有多造消息（这一条与下面的收尾快照无关）
+    await waitUntil(() => opened.messages.some((message) => message.role === AgentNS.Role.Assistant));
+    expect(opened.messages.filter((message) => message.role === AgentNS.Role.Assistant)).toHaveLength(1);
+
     // 流末 chunk：正文为空、只带用量（客户端拿它校准速率，见 `addExact`）
     agent.fire("chunk-parsed", {
       choices: [{ delta: {}, finish_reason: "stop" }],
       usage: { completion_tokens: 40 },
     });
+    // 服务端那份消息就是真相（真实的 SDK 在跑完时已经有这条 assistant）
+    agent.messages = [
+      { role: "user", content: "问一句" },
+      { role: "assistant", content: "答案" },
+    ] as never;
     agent.fire("finally");
     await waitUntil(() => done.settled);
 
-    // 一条 assistant（「答案」），没有多出来的空消息
+    // 收尾后转录换成服务端那份：一条 assistant（「答案」），没有多出来的空消息
     const assistants = opened.messages.filter((message) => message.role === AgentNS.Role.Assistant);
     expect(assistants).toHaveLength(1);
     expect(assistants[0]!.content).toBe("答案");

@@ -247,8 +247,11 @@ export interface RemoteChatSessionDeps {
  *
  * `create()` 与默认的重连走**同一个函数**：重连要接的是同一个服务端，两处各写一份
  * 「怎么建连」，迟早会漂（一处带了 clientInfo、另一处忘了）。
+ *
+ * 纯 stdio 模式也走这一条（`stdio-runner.ts`）：一次性调用与 TUI 用的是同一条链路，
+ * 不存在「另一种建连方式」。
  */
-async function connectToServer(): Promise<ServerClient> {
+export async function connectToServer(): Promise<ServerClient> {
   const { client } = await ensureServer({ aiZenDir: AI_ZEN_DIR, clientInfo: REMOTE_CLIENT_INFO });
   return client;
 }
@@ -275,6 +278,13 @@ export interface OpenRemoteSessionInput {
    * 给了明确的 `sessionId` 时以它为准（用户已经指名道姓了）。
    */
   resume?: boolean;
+  /**
+   * 这段会话要不要进工作区存档（缺省 `true`）。
+   *
+   * 只有 stdio 的一次性调用传 `false`：`ai "…"` 那一轮不属于工作区的历史，不该在
+   * `sessions/` 里留痕、也不该把续接指针挪过去。TUI / `/new` 都不传（默认落盘）。
+   */
+  persist?: boolean;
   /**
    * 自动迁移时的执行者选择 —— `ChatSessionOptions.requestMode` 的透传。
    *
@@ -466,6 +476,7 @@ export class RemoteChatSession implements ChatSessionLike {
       : await sessions.open({
           path: workspace.path,
           ...(input.agentId ? { agentId: input.agentId } : {}),
+          ...(input.persist !== undefined ? { persist: input.persist } : {}),
         });
 
     const session = new RemoteChatSession(
@@ -1022,13 +1033,19 @@ export class RemoteChatSession implements ChatSessionLike {
    *
    * `known` = 手上已经有一份**刚刚才拉的**快照（重连后那一份）：再用它一次，不再为了
    * 收尾多跑一个往返（那个往返还可能拿回“下一轮已经开了”的更新状态，把这里的判定搅乱）。
+   *
+   * ## `lastEndedTurn` 为什么在末尾才置位
+   *
+   * 它是 `send()` 那个 `await` 的"已收尾"判据，所以只有**消息真的换成快照之后**才算数：
+   * 开头就置位的话，一轮非常短时（`turn.end` 比 `session.send` 的**回执**先到）`send()`
+   * 会立刻返回，而这里那份快照还在路上 —— 调用方紧接着读 `messages` 拿到的是空数组
+   * （实测：stdio 会因此打印「模型没回答」，TUI 的那条用量用例也会间歇红）。
    */
   private async finishTurn(
     turnId: number,
     failure?: string,
     known?: SessionSnapshotResult,
   ): Promise<void> {
-    this.lastEndedTurn = Math.max(this.lastEndedTurn, turnId);
     this.streaming = null;
     // 本轮内循环（含全部委派）已结束：子 Agent 只剩历史价值，栏目随之消失 —— 与进程内
     // 实现 `send()` 的 `finally` 等价（中止 / 出错也走到这里，不留残影）。
@@ -1042,6 +1059,8 @@ export class RemoteChatSession implements ChatSessionLike {
       // 拿不到快照（服务端刚重启 / 连接断了）：本地那份仍然可读，下一轮还会再同步
     }
     if (failure) this.notifier.onNotice(failure, "error");
+    // 消息已经是服务端那份了：此刻起「这一轮已收尾」才对 `send()` 成立
+    this.lastEndedTurn = Math.max(this.lastEndedTurn, turnId);
     this.resolveTurn(turnId);
     this.notifier.onChange(true);
   }
