@@ -6,13 +6,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   Daemon,
+  createAgentHandlers,
   createSessionHandlers,
   FileSessionStore,
+  SessionAgentFactory,
   SessionManager,
   SESSION_EVENTS,
   type AgentLike,
@@ -76,12 +78,44 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/** 造一份最小配置与 Agent 定义（`agent.model.set` 要读写它们） */
+function seedAgentDefinition(): void {
+  mkdirSync(join(dir, "agents"), { recursive: true });
+  writeFileSync(
+    join(dir, "config.json"),
+    JSON.stringify({
+      endpoints: [{ id: "e", name: "E", baseUrl: "http://127.0.0.1:9/v1", apiKey: "k" }],
+      models: [
+        { id: "test-model", name: "Test", endpointId: "e", tokenThresholds: { handoff: 1, guard: 2 }, custom: true },
+      ],
+      defaultAgent: "default",
+      version: 4,
+    }),
+  );
+  writeFileSync(
+    join(dir, "agents", "default.json"),
+    JSON.stringify({
+      id: "default",
+      name: "默认",
+      modelId: "test-model",
+      messages: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  );
+}
+
 async function start(): Promise<void> {
+  seedAgentDefinition();
+  const factory = new SessionAgentFactory({ aiZenDir: dir, homeDir: dir });
   daemon = new Daemon({
     aiZenDir: dir,
     port: 0,
     version: "0.0.0-test",
-    handlers: createSessionHandlers({ manager: manager!, workspacesRoot: join(dir, "workspaces") }),
+    handlers: {
+      ...createSessionHandlers({ manager: manager!, workspacesRoot: join(dir, "workspaces") }),
+      ...createAgentHandlers({ factory }),
+    },
   });
   await daemon.start();
   connection = await SocketServerClient.connect({
@@ -215,5 +249,22 @@ describe("RemoteSessions：存档列表与撤回", () => {
     agent.messages = [{ role: "user", content: "只有一条" }];
 
     await expect(sessions.rollback(sessionId, 9)).rejects.toThrow(/bad-index/);
+  });
+});
+
+describe("RemoteSessions：换模型与重建", () => {
+  it("setModel 写的是 Agent 定义（不是会话），reload 保留消息", async () => {
+    await start();
+    const { sessionId } = await sessions.open({ path: join(dir, "proj") });
+    agent.messages = [{ role: "user", content: "上下文留住" }];
+
+    expect(await sessions.setModel("default", "test-model")).toEqual({
+      agentId: "default",
+      modelId: "test-model",
+    });
+
+    const snapshot = await sessions.reload(sessionId);
+    expect(snapshot.messages).toEqual([{ role: "user", content: "上下文留住" }]);
+    expect(snapshot.sessionId).toBe(sessionId);
   });
 });
