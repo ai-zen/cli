@@ -42,6 +42,9 @@ import type { ClientInfo, ServerClient } from "./types.js";
 const zen = useTempAiZenDir("aiz-config-port-");
 const localDir = zen.dir;
 
+// 收尾（之前只 import 了 `afterAll` 没用上，于是每跑一次就往 /tmp 漏一个目录）
+afterAll(() => zen.cleanup());
+
 const NOW = "2026-01-01T00:00:00.000Z";
 
 function definitionOf(id: string, extra: Partial<AgentDefinition> = {}): AgentDefinition {

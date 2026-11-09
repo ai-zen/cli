@@ -269,6 +269,14 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
+  /**
+   * 这条要连走两屏（`/key` → 输入 → 保存），用例自己的等待上限合计 8000ms —— 比 vitest
+   * 默认的 `testTimeout`（5000ms，本仓没有改过）还长。所以显式放宽这一条的时限。
+   *
+   * 为什么不把那些 2000/4000 调小：它们是「慢机器上最多等多久」，调小了就在慢机器上误伤；
+   * 而**预算合计 > 时限**这个结构问题，只能从时限这一侧修（逻辑写错时仍然会在第一个
+   * 等不到的 `waitFor` 上以清晰的断言失败报出来，不会因为时限放宽而变成挂死）。
+   */
   it("向导落盘走配置面：`/key` 保存时调用假端口的 saveConfig", async () => {
     // 有模型 + 端点的配置，`/key` 才能定位到「当前模型用的那个端点」
     const port = fakePort({
@@ -299,8 +307,13 @@ describe("Chat 集成（拆分前的护栏）", () => {
     expect(port.saveConfig).toHaveBeenCalledTimes(1);
     expect((port.saveConfig.mock.calls[0][0] as any).endpoints[0].apiKey).toBe("sk-test-123");
     unmount();
-  });
+  }, 15_000);
 
+  /**
+   * 同上一类：连走三屏（MCP 服务器 → 列表 → 详情）再切「启用」，用例自己的等待上限合计
+   * 10232ms，而 vitest 默认 `testTimeout` 是 5000ms。**这就是那次「机器一慢就 1 failed」的
+   * 真凶**（实测：全量第一遍 `5007ms` 红、第二遍全绿、单跑 413ms）。所以显式放宽时限。
+   */
   it("向导 MCP 落盘走配置面：切换启用状态调用假端口的 writeMcpConfig", async () => {
     const port = fakePort();
     // 全局作用域里放一个服务器：`/config` 的 MCP 列表才有条目可进
@@ -348,7 +361,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     expect(port.writeMcpConfig).toHaveBeenCalledTimes(1);
     expect(port.writeMcpConfig.mock.calls[0]![1]).toBe("global");
     unmount();
-  });
+  }, 20_000);
 
   it("忙碌时 Ctrl+C 触发中止（不退出）", async () => {
     const { stdin, unmount } = mount();

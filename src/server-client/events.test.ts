@@ -25,13 +25,13 @@ import type { ClientInfo } from "./types.js";
 
 class FakeAgent implements AgentLike {
   messages: unknown[] = [];
-  private readonly handlers = new Map<string, Set<(payload: any) => void>>();
+  private readonly handlers = new Map<string, Set<(...args: any[]) => void>>();
   readonly events = {
-    on: (event: string, handler: (payload: any) => void) => {
+    on: (event: string, handler: (...args: any[]) => void) => {
       if (!this.handlers.has(event)) this.handlers.set(event, new Set());
       this.handlers.get(event)!.add(handler);
     },
-    off: (event: string, handler: (payload: any) => void) => {
+    off: (event: string, handler: (...args: any[]) => void) => {
       this.handlers.get(event)?.delete(handler);
     },
   };
@@ -39,8 +39,8 @@ class FakeAgent implements AgentLike {
     return Promise.resolve();
   }
   abort(): void {}
-  fire(event: string, payload?: unknown): void {
-    for (const handler of this.handlers.get(event) ?? []) handler(payload);
+  fire(event: string, ...args: unknown[]): void {
+    for (const handler of this.handlers.get(event) ?? []) handler(...args);
   }
 }
 
@@ -118,7 +118,8 @@ describe("SocketServerClient.on（服务端推的事件）", () => {
     await client.call(SESSION_METHODS.send, { sessionId: created.sessionId, content: "你好" });
 
     agent.fire("open");
-    agent.fire("chunk-parsed", { choices: [{ delta: { content: "答" } }] });
+    // `chunk-parsed` 是两参：`(receiver, chunk)`，第二个才是原始 chunk
+    agent.fire("chunk-parsed", {}, { choices: [{ delta: { content: "答" } }] });
     agent.fire("finally");
     await waitFor(received, SESSION_EVENTS.turnEnd);
 

@@ -55,13 +55,13 @@ class FakeAgent implements AgentLike {
   sent: string[] = [];
   aborted = 0;
 
-  private readonly handlers = new Map<string, Set<(payload: any) => void>>();
+  private readonly handlers = new Map<string, Set<(...args: any[]) => void>>();
   readonly events = {
-    on: (event: string, handler: (payload: any) => void) => {
+    on: (event: string, handler: (...args: any[]) => void) => {
       if (!this.handlers.has(event)) this.handlers.set(event, new Set());
       this.handlers.get(event)!.add(handler);
     },
-    off: (event: string, handler: (payload: any) => void) => {
+    off: (event: string, handler: (...args: any[]) => void) => {
       this.handlers.get(event)?.delete(handler);
     },
   };
@@ -74,8 +74,8 @@ class FakeAgent implements AgentLike {
     this.aborted++;
   }
   /** 手动驱动 SDK 时序：测试就是服务端那一侧的「模型」 */
-  fire(event: string, payload?: unknown): void {
-    for (const handler of this.handlers.get(event) ?? []) handler(payload);
+  fire(event: string, ...args: unknown[]): void {
+    for (const handler of this.handlers.get(event) ?? []) handler(...args);
   }
 }
 
@@ -501,7 +501,7 @@ describe("RemoteChatSession：send 的语义与进程内一致", () => {
 
     // 服务端这一侧：追加用户消息 → 流式两片 → 收尾
     agent.messages.push({ role: "user", content: "你好" });
-    agent.fire("chunk-parsed", { choices: [{ delta: { content: "答" } }] });
+    agent.fire("chunk-parsed", {}, { choices: [{ delta: { content: "答" } }] });
     // 生成中就能读到临时拼出来的正文（屏幕要能滚起来）
     await waitUntil(() => JSON.stringify(opened.messages).includes("答"));
     expect(opened.phase).not.toBeNull();
@@ -811,19 +811,19 @@ describe("子 Agent：快照与增量的合并（竞态）", () => {
  * 形状跟 `FakeAgent` 同一个思路 —— 测试就是服务端那侧的「SDK」，手动驱动时序。
  */
 function makeSubAgent() {
-  const handlers = new Map<string, Set<(payload: any) => void>>();
+  const handlers = new Map<string, Set<(...args: any[]) => void>>();
   return {
     messages: [] as any[],
     events: {
-      on: (event: string, handler: (payload: any) => void) => {
+      on: (event: string, handler: (...args: any[]) => void) => {
         if (!handlers.has(event)) handlers.set(event, new Set());
         handlers.get(event)!.add(handler);
       },
-      off: (event: string, handler: (payload: any) => void) => {
+      off: (event: string, handler: (...args: any[]) => void) => {
         handlers.get(event)?.delete(handler);
       },
-      fire: (event: string, payload?: unknown) => {
-        for (const handler of handlers.get(event) ?? []) handler(payload);
+      fire: (event: string, ...args: unknown[]) => {
+        for (const handler of handlers.get(event) ?? []) handler(...args);
       },
     },
   };
@@ -864,7 +864,7 @@ describe("RemoteChatSession：子 Agent 栏目（等服务端协议）", () => {
     agent.fire("sub-agent-start", { subAgent });
     await waitUntil(() => opened.subAgents.length === 1);
 
-    subAgent.events.fire("chunk-parsed", { choices: [{ delta: { content: "数到 3 个" } }] });
+    subAgent.events.fire("chunk-parsed", {}, { choices: [{ delta: { content: "数到 3 个" } }] });
 
     const view = opened.subAgents[0]!;
     await waitUntil(() => JSON.stringify(view.messages).includes("数到 3 个"));
@@ -881,7 +881,7 @@ describe("RemoteChatSession：子 Agent 栏目（等服务端协议）", () => {
 
     const subAgent = makeSubAgent();
     agent.fire("sub-agent-start", { subAgent });
-    subAgent.events.fire("chunk-parsed", { choices: [{ delta: { content: "子任务输出" } }] });
+    subAgent.events.fire("chunk-parsed", {}, { choices: [{ delta: { content: "子任务输出" } }] });
     await waitUntil(() => JSON.stringify(opened.subAgents).includes("子任务输出"));
 
     // 阶段仍停在「等待 sub_agent_default 返回」
@@ -1183,13 +1183,13 @@ describe("RemoteChatSession：只带用量的增量", () => {
     await waitUntil(() => agent.sent.length === 1);
 
     agent.fire("open");
-    agent.fire("chunk-parsed", { choices: [{ delta: { content: "答案" } }] });
+    agent.fire("chunk-parsed", {}, { choices: [{ delta: { content: "答案" } }] });
     // 增量上屏那一刻就能看出有没有多造消息（这一条与下面的收尾快照无关）
     await waitUntil(() => opened.messages.some((message) => message.role === AgentNS.Role.Assistant));
     expect(opened.messages.filter((message) => message.role === AgentNS.Role.Assistant)).toHaveLength(1);
 
     // 流末 chunk：正文为空、只带用量（客户端拿它校准速率，见 `addExact`）
-    agent.fire("chunk-parsed", {
+    agent.fire("chunk-parsed", {}, {
       choices: [{ delta: {}, finish_reason: "stop" }],
       usage: { completion_tokens: 40 },
     });

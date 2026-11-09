@@ -5,11 +5,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readDescriptor, workspaceIdFor } from "@ai-zen/agents-server";
 import { SocketServerClient } from "../server-client/socket-server-client.js";
+import { startFakeLlm, type FakeLlm } from "@ai-zen/agents-testing";
 
 // ==================== Helpers ====================
 
 const CLI = join(process.cwd(), "dist", "index.js");
 const ANSI_RE = /\x1b\[[0-9;]*m/;
+/** 假模型的固定答复（断言 stdout 用等号，不用「非空」） */
+const CLI_REPLY = "这是假模型给出的答复。";
 
 interface CliResult {
   stdout: string;
@@ -269,8 +272,99 @@ describe("E2E: 纯 stdio 模式", () => {
   }, 20000);
 });
 
-describe("E2E: 真实 API 对话（纯 stdio）", () => {
-  it("ai <消息> 结果写入 stdout、无 ANSI、退出码 0", async (ctx) => {
+describe("E2E: 真跑一轮（假 LLM 端点，不需要 key）", () => {
+  /**
+   * 这一组是「进程级」的冒烟：真 `node dist/index.js` → 真守护进程 → 真 SDK → 真 HTTP 流
+   * → 真 stdout/退出码。模型换成一个本地的 OpenAI 兼容端点（`test-support/fake-llm.ts`），
+   * 于是答复、分片、用量都确定，断言能写等号，CI 里也跑得起来。
+   *
+   * 真正连外网的用例留在下一组，有 key 才跑。
+   */
+  let llm: FakeLlm | null = null;
+
+  afterEach(async () => {
+    await llm?.close();
+    llm = null;
+  });
+
+  it("ai <消息>：答案写 stdout、退出码 0、默认不落盘", async () => {
+    llm = await startFakeLlm({ reply: CLI_REPLY });
+    const aizDir = makeTestDir();
+    setupConfigDir(aizDir, { baseUrl: llm.baseUrl, apiKey: "sk-fake" });
+
+    const result = await runCli(["你好"], undefined, { AI_ZEN_DIR: aizDir });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(`${CLI_REPLY}\n`);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).not.toMatch(ANSI_RE);
+
+    // 一次性调用（`persist:false`）：工作区里既没存档、也没「上一轮会话」指针
+    const workspace = join(aizDir, "workspaces", workspaceIdFor(process.cwd()));
+    expect(existsSync(join(workspace, "last-session.json"))).toBe(false);
+    expect(existsSync(join(workspace, "sessions"))).toBe(false);
+  }, 20000);
+
+  it("管道内容 + 指令：合并后的 prompt 真的发给了模型", async () => {
+    llm = await startFakeLlm({ reply: CLI_REPLY });
+    const aizDir = makeTestDir();
+    setupConfigDir(aizDir, { baseUrl: llm.baseUrl, apiKey: "sk-fake" });
+
+    const result = await runCli(["用一句话总结"], "苹果是一种水果。\n", { AI_ZEN_DIR: aizDir });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(`${CLI_REPLY}\n`);
+    // 「stdin 当内容、参数当指令」只能从模型侧看到的请求里验：`指令\n\n内容`
+    const sent = JSON.stringify(llm.requests.at(-1)!.body.messages);
+    expect(sent).toContain("用一句话总结");
+    expect(sent).toContain("苹果是一种水果。");
+  }, 20000);
+
+  it("--save：写存档但不挪续接指针", async () => {
+    llm = await startFakeLlm({ reply: CLI_REPLY });
+    const aizDir = makeTestDir();
+    setupConfigDir(aizDir, { baseUrl: llm.baseUrl, apiKey: "sk-fake" });
+
+    const result = await runCli(["--save", "留一份"], undefined, { AI_ZEN_DIR: aizDir });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("Saved conversation:");
+    const root = join(aizDir, "workspaces", workspaceIdFor(process.cwd()));
+    const { readdirSync } = await import("node:fs");
+    expect(readdirSync(join(root, "sessions")).length).toBe(1);
+    // 归档 ≠ 变成「上次聊过的那段」：下次 `ai` 不该续接到一条管道结果上
+    expect(existsSync(join(root, "last-session.json"))).toBe(false);
+  }, 20000);
+
+  it("连跑两次：第二次的请求里没有上一轮的对话（一次性会话不带历史）", async () => {
+    llm = await startFakeLlm({ reply: CLI_REPLY });
+    const aizDir = makeTestDir();
+    setupConfigDir(aizDir, { baseUrl: llm.baseUrl, apiKey: "sk-fake" });
+
+    await runCli(["第一句"], undefined, { AI_ZEN_DIR: aizDir });
+    const second = await runCli(["第二句"], undefined, { AI_ZEN_DIR: aizDir });
+
+    expect(second.exitCode).toBe(0);
+    const sent = JSON.stringify(llm.requests.at(-1)!.body.messages);
+    expect(sent).toContain("第二句");
+    expect(sent).not.toContain("第一句");
+  }, 30000);
+
+  it("服务端报错：stdout 为空、错误走 stderr、退出码非 0", async () => {
+    llm = await startFakeLlm({ failWith: { status: 500, message: "fake upstream exploded" } });
+    const aizDir = makeTestDir();
+    setupConfigDir(aizDir, { baseUrl: llm.baseUrl, apiKey: "sk-fake" });
+
+    const result = await runCli(["你好"], undefined, { AI_ZEN_DIR: aizDir });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr.length).toBeGreaterThan(0);
+  }, 20000);
+});
+
+describe("E2E: 真实 API 对话（有 key 才跑）", () => {
+  it("ai <消息> 结果写入 stdout、退出码 0、默认不落盘", async (ctx) => {
     if (!API_KEY) ctx.skip();
 
     const aizDir = makeTestDir();
@@ -281,45 +375,9 @@ describe("E2E: 真实 API 对话（纯 stdio）", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout.trim().length).toBeGreaterThan(0);
     expect(result.stdout).not.toMatch(ANSI_RE);
-    // 无 TUI 装饰：不应出现 ✅ 横幅 / emoji 前缀
-    expect(result.stdout).not.toContain("对话已开始");
-    // 默认不落盘（`persist:false`）：工作区里既没存档、也没「上一轮会话」指针
+    expect(result.stderr).toBe("");
     const workspace = join(aizDir, "workspaces", workspaceIdFor(process.cwd()));
     expect(existsSync(join(workspace, "last-session.json"))).toBe(false);
     expect(existsSync(join(workspace, "sessions"))).toBe(false);
-  }, 60000);
-
-  it("管道内容 + 指令（cat | ai '总结'）走 stdout", async (ctx) => {
-    if (!API_KEY) ctx.skip();
-
-    const aizDir = makeTestDir();
-    setupConfigDir(aizDir, { apiKey: API_KEY });
-
-    const result = await runCli(["用一句话总结"], "苹果是一种水果。\n", {
-      AI_ZEN_DIR: aizDir,
-    });
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout.trim().length).toBeGreaterThan(0);
-    expect(result.stdout).not.toMatch(ANSI_RE);
-  }, 60000);
-
-  it("--save 时写对话存档", async (ctx) => {
-    if (!API_KEY) ctx.skip();
-
-    const aizDir = makeTestDir();
-    setupConfigDir(aizDir, { apiKey: API_KEY });
-
-    const result = await runCli(["--save", "说'好'就行"], undefined, { AI_ZEN_DIR: aizDir });
-    expect(result.exitCode).toBe(0);
-
-    // 断言至少有一个对话存档文件（会话落在**当前工作区**的目录下）
-    const convDir = join(aizDir, "workspaces", workspaceIdFor(process.cwd()), "sessions");
-    const { readdirSync } = await import("node:fs");
-    expect(readdirSync(convDir).length).toBeGreaterThan(0);
-    // `--save` 只归档、**不动**续接指针：下次 `ai` 不该续接到一条管道结果上
-    expect(
-      existsSync(join(aizDir, "workspaces", workspaceIdFor(process.cwd()), "last-session.json")),
-    ).toBe(false);
   }, 60000);
 });
