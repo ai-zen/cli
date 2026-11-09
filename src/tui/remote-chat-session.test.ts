@@ -19,11 +19,13 @@ import {
   FileSessionStore,
   SessionManager,
   type AgentLike,
+  type CreateAgentInput,
 } from "@ai-zen/agents-server";
 import { AgentNS } from "@ai-zen/agents-core";
 import { RemoteSessions } from "../server-client/sessions.js";
 import { SocketServerClient } from "../server-client/socket-server-client.js";
 import type { ServerClient } from "../server-client/types.js";
+import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 import { setLocale } from "../i18n/index.js";
 import { useTempAiZenDir } from "../test-support/temp-dir.js";
 import {
@@ -194,10 +196,16 @@ function portSignal(): PortSignal {
  * 重连用例要“换一台服务端”：新实例的内存里没有那段会话，只能从盘上把它装回来 ——
  * 这正是 `session.attach` 的「盘上有就装回来」那条路。
  */
+/** `createAgent` 最近一次收到的入参：用例要靠它拿服务端注入的 `resolveMode` */
+let lastAgentInput: CreateAgentInput | undefined;
+
 function newManager(): SessionManager {
   let counter = 0;
   return new SessionManager({
-    createAgent: async () => agent,
+    createAgent: async (input) => {
+      lastAgentInput = input;
+      return agent;
+    },
     nextSessionId: () => `chat_${++counter}`,
     storeFor: (workspaceId) =>
       new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) }),
@@ -299,7 +307,13 @@ async function startServer(): Promise<SocketServerClient> {
 
 /** 起服务端并开一段远程会话 —— **不传 path**：工作区归属服务端 */
 async function open(
-  input: { agentId?: string; sessionId?: string; resume?: boolean } = {},
+  input: {
+    agentId?: string;
+    sessionId?: string;
+    resume?: boolean;
+    /** 自动迁移的选择器（`ChatSessionOptions.requestMode` 的同一个回调） */
+    requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
+  } = {},
   deps: RemoteChatSessionDeps = { reconnect: reconnectToNextServer },
 ): Promise<RemoteChatSession> {
   const connected = await startServer();
@@ -604,12 +618,70 @@ describe("RemoteChatSession：服务端在一轮内部换 id（自动迁移）",
   });
 });
 
-// ==================== 子 Agent 栏目 ====================
+// ==================== 自动迁移：交接方式由用户选 ====================
 //
-// 这里分两块：
-//   · 快照与增量的合并是纯逻辑，直接测（那种竞态无法用真 socket 稳定复现）；
-//   · 其余走**真 Daemon + 假 Agent**：假 Agent 手动 `fire("sub-agent-start", { subAgent })`，
-//     于是「SDK 何时委派」在测试里是可编程的，不依赖真模型与工具。
+// 这条往返（`session.question` → 选择器 → `session.answer`）的**客户端一半已经接好**：
+// `RemoteChatSession.answerQuestion` 收到问题后会弹 `requestMode` 并把结果送回去，没有
+// `requestMode` 则立刻回 `self`（见那里的注释）。
+//
+// 但**服务端那一半还没就绪**：`SessionAgentFactory` 现在不给 `AutoMigratePlugin` 传
+// `resolveMode`（那里的注释写的就是「远程模式暂时不问‘用哪种方式’：协议里还没有
+// ‘向客户端提问’的往返」），所以服务端永远走默认执行者、一条 `session.question` 都不发；
+// `SESSION_EVENTS.question` / `SESSION_METHODS.answer` 也还没从 `@ai-zen/agents-server`
+// 导出。**没有问题可答，用例无法真跑**，所以三条都是 `it.skip`。
+//
+// 为什么不用 `vi.mock` 硬凑：要断言的是「真 socket 上的一问一答，然后迁移照用户选的方式
+// 执行」。凭空塞一条事件只能证明自己会写 handler，证明不了服务端真的停在那里等答复。
+//
+// 等服务端补上 `resolveMode` + `session.question` / `session.answer` 后，把三个 `it.skip`
+// 改回 `it` 即可 —— 驱动方式用的是服务端**已有**的那个入口（`SessionManager.autoMigrate`，
+// 上一个 describe 已经在用）；若服务端改成别的注入点，这里跟着换。
+
+describe("RemoteChatSession：自动迁移的交接方式由用户选", () => {
+  /**
+   * 自动迁移的提问发生在**服务端注入给 Agent 的 `resolveMode`** 里（SDK 的
+   * `AutoMigratePlugin` 在触发时调它），不在 `autoMigrate` 里 —— 所以用例从这一头驱动，
+   * 与真链路同构：`resolveMode(info)` → 服务端发 `session.question` → 客户端答 →
+   * 服务端拿到 mode 后才 `autoMigrate(mode)`。
+   */
+  const trigger = () => {
+    const resolveMode = lastAgentInput?.resolveMode;
+    if (!resolveMode) throw new Error("服务端没有给 Agent 注入 resolveMode");
+    return resolveMode({ promptTokens: 999, handoffTokens: 100 });
+  };
+
+  it("有 requestMode：选择器拿到触发时的用量，用户选的方式被送回服务端", async () => {
+    const seen: AutoMigrateTriggerInfo[] = [];
+    await open({
+      requestMode: async (info) => {
+        seen.push(info);
+        return "summary";
+      },
+    });
+
+    // 客户端拿到了选择器给的两个数（文案要显示「已用 999 / 上限 100」）
+    expect(await trigger()).toBe("summary");
+    expect(seen).toEqual([{ promptTokens: 999, handoffTokens: 100 }]);
+  });
+
+  it("用户选「不交接」：回答 mode: null，服务端据此跳过本次迁移", async () => {
+    await open({ requestMode: async () => null });
+
+    // `null` 原样回到服务端 —— 跳过与否由服务端的迁移逻辑决定，客户端不替它判断
+    expect(await trigger()).toBeNull();
+  });
+
+  it("没有 requestMode：立刻回默认执行者 self，不让服务端干等超时", async () => {
+    await open();
+
+    // 服务端超时是 5 分钟：这里 2 秒内落定，就证明客户端自己答了（不是等超时）
+    const mode = await Promise.race([
+      trigger(),
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 2000)),
+    ]);
+    expect(mode).toBe("self");
+  });
+});
 
 describe("子 Agent：快照与增量的合并（竞态）", () => {
   const assistant = (content: string) =>
@@ -973,5 +1045,35 @@ describe("RemoteChatSession：send 的同步拒绝（不走事件通道的那一
     await expect(session.send("有人吗")).resolves.toBeUndefined();
     expect(notices.at(-1)?.tone).toBe("error");
     expect(notices.at(-1)?.text).toContain("closed");
+  });
+});
+
+describe("RemoteChatSession：用量口径", () => {
+  it("totalUsage 会把工具消息上的 subAgentUsage 一起累加（子 Agent 的消耗不漏算）", async () => {
+    const opened = await open();
+    // 服务端快照发的是**原始** messages：工具消息上带着 `subAgentUsage`（core 的
+    // `AgentTool` 在委派结束时钉上去的）。求和用 core 的 `sumUsage`，它同时累加
+    // `usage`（本条响应）与 `subAgentUsage`（内部委派）—— 这条用例把口径钉住，
+    // 免得以后有人换成「只加 usage」的求和，把子 Agent 的消耗静默漏掉。
+    agent.messages = [
+      {
+        role: AgentNS.Role.Assistant,
+        content: "主 Agent 的一句话",
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      },
+      {
+        role: AgentNS.Role.Tool,
+        tool_call_id: "t1",
+        content: "委派结果",
+        subAgentUsage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
+      },
+    ] as never;
+    await opened.reload();
+
+    expect(opened.totalUsage).toEqual({
+      prompt_tokens: 110,
+      completion_tokens: 25,
+      total_tokens: 135,
+    });
   });
 });

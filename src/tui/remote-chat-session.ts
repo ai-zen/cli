@@ -61,14 +61,25 @@
  * 以及拉一次 `session.subAgent.snapshot` 把已有内容补齐 —— 合并规则见
  * {@link mergeSubAgentSnapshot}（那里也是唯一需要处理竞态的地方）。
  *
- * ## 现在还没有的两样（协议里就没有，不是 bug）
+ * ## 按阈值自动迁移：服务端提问、客户端选择（`session.question` / `session.answer`）
  *
- * 图片粘贴、按阈值自动迁移。前者在界面上是「说清楚」而不是静默丢弃：带图提交会
- * 明确提示本次只发了文字。
+ * 迁移**何时**发生由服务端判（阈值挂在模型上，`AutoMigratePlugin` 在一轮内部触发），
+ * 但「用哪种方式交接」是**用户**的决定 —— 这件事搬不到服务端去，那边没有界面。所以
+ * 协议里是一问一答：服务端发 `session.question`（带上触发时的用量），客户端弹与手动
+ * `/migrate`、`/handoff` **同一个**选择器（`requestMode`），再用 `session.answer` 把
+ * `self` / `summary` / `null`（不交接）送回去。
+ *
+ * 关键约束：**每条问题都必须有人回答**，没有「不回答」这个选项。服务端等不到答复会一直
+ * 等到超时（分钟级），而那一轮正卡在迁移里 —— 用户看到的是「卡住了」。所以有
+ * `requestMode` 就走选择器；没有（无头 / 测试）立刻回默认执行者 `self`。
+ *
+ * ## 现在还没有的一样（协议里就没有，不是 bug）
+ *
+ * 图片粘贴。界面上是「说清楚」而不是静默丢弃：带图提交会明确提示本次只发了文字。
  */
 
 import { AgentNS, sumUsage } from "@ai-zen/agents-core";
-import type { HandoffMode } from "@ai-zen/agents-sdk";
+import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 import {
   MAX_FRAME_BYTES,
   SESSION_EVENTS,
@@ -252,6 +263,14 @@ export interface OpenRemoteSessionInput {
    * 给了明确的 `sessionId` 时以它为准（用户已经指名道姓了）。
    */
   resume?: boolean;
+  /**
+   * 自动迁移时的执行者选择 —— `ChatSessionOptions.requestMode` 的透传。
+   *
+   * 透传而不是另起一套：这条回调就是屏幕层那个「交接方式三选一」选择器（与手动
+   * `/migrate`、`/handoff` 共用），自动迁移只是**换了个触发者来问同一句话**。
+   * 不给 = 没有人能问用户（无头 / 测试），见 {@link RemoteChatSession.answerQuestion}。
+   */
+  requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
 }
 
 export class RemoteChatSession implements ChatSessionLike {
@@ -268,6 +287,13 @@ export class RemoteChatSession implements ChatSessionLike {
   /** 方法门面，永远跟着 {@link client} 一起换 */
   private sessions: RemoteSessions;
   private readonly notifier: ChatSessionNotifier;
+  /**
+   * 自动迁移时「问用户用哪种方式交接」的回调（缺省 = 没人能问）。
+   *
+   * 与 `ChatSessionOptions.requestMode` 是**同一个**回调对象：TUI 传的就是那个与手动
+   * `/migrate`、`/handoff` 共用的选择器，所以自动这条路径上不存在第二套文案。
+   */
+  private readonly requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
   /** 重建连接（生产 = `ensureServer` + `connect`；测试注入另一个端口） */
   private readonly reconnectFn: () => Promise<ServerClient>;
   private readonly rate = new TokenRateMeter();
@@ -322,7 +348,13 @@ export class RemoteChatSession implements ChatSessionLike {
   private constructor(
     client: ServerClient,
     sessions: RemoteSessions,
-    input: { path: string; agentId: string; sessionId: string; workspaceId: string },
+    input: {
+      path: string;
+      agentId: string;
+      sessionId: string;
+      workspaceId: string;
+      requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
+    },
     notifier: ChatSessionNotifier,
     reconnect: () => Promise<ServerClient>,
   ) {
@@ -334,6 +366,8 @@ export class RemoteChatSession implements ChatSessionLike {
     this.agentId = input.agentId;
     this.sessionId = input.sessionId;
     this.workspaceId = input.workspaceId;
+    // 必须在 `wire()` 之前定下：订阅 `session.question` 的那一刻就要知道「谁来回答」
+    this.requestMode = input.requestMode;
     this.offs.push(...this.wire(client));
     this.offClose = client.onClose(() => this.handleClose());
   }
@@ -414,6 +448,7 @@ export class RemoteChatSession implements ChatSessionLike {
         agentId: opened.agentId,
         sessionId: opened.sessionId,
         workspaceId: workspace.workspaceId,
+        requestMode: input.requestMode,
       },
       notifier,
       deps.reconnect ?? connectToServer,
@@ -720,6 +755,19 @@ export class RemoteChatSession implements ChatSessionLike {
     });
 
     /**
+     * 服务端提问（自动迁移的「交接方式三选一」）。
+     *
+     * 这里只**发起**回答、不等结果：这条事件在一轮内部到达，服务端此刻正停在迁移上等
+     * 答复，把界面卡在这个 await 里毫无好处。`answerQuestion` 负责所有分支，这里不判断。
+     *
+     * 回答失败不升级成通知：这一问只是「迁移用哪种方式」的优化，服务端有超时兜底，
+     * 而弹一条错误只会让用户以为迁移坏了 —— 这条路径上不新增任何文案。
+     */
+    mine(SESSION_EVENTS.question, (event) => {
+      void this.answerQuestion(event).catch(() => {});
+    });
+
+    /**
      * 服务端换 id（迁移 / 另存为 / **一轮进行中的自动迁移**）。
      *
      * 这里没有 `mine()` 那层 `sessionId` 过滤：这条事件的载荷说的是「`from` 那段会话
@@ -760,6 +808,40 @@ export class RemoteChatSession implements ChatSessionLike {
     );
 
     return offs;
+  }
+
+  /**
+   * 回答服务端的「用哪种方式交接」：把 `self` / `summary` / `null`（不交接）送回去。
+   *
+   * 三条规矩：
+   *
+   * 1. **有 `requestMode` 就问用户**。传进去的就是触发时的两个数（`AutoMigrateTriggerInfo`
+   *    的形状），选择器的文案要用它们说「用了多少 / 阈值多少」。
+   * 2. **没有 `requestMode` 就立刻回 `self`**（默认执行者）。无头 / 测试里没有人能回答，
+   *    而**沉默的代价不是「等一会儿」**：服务端要等满超时才降级，那一轮就一直卡在迁移里。
+   *    所以这条支路必须主动答，不能什么都不做。
+   * 3. **不抛、不提示**。连接断了或服务端回 `answered: false`，都由调用方的 `.catch` 吞掉：
+   *    服务端有超时兜底，客户端这边没有任何需要用户知道的事。
+   *
+   * 选择器自己抛错时按「没人能回答」处理（回 `self`）：面板被别的交互拆掉、渲染异常都会
+   * 走到这里，而它同样不该让这一轮干等 —— 与第 2 条是同一条降级，不是另造一种行为。
+   */
+  private async answerQuestion(
+    question: AutoMigrateTriggerInfo & { questionId: string },
+  ): Promise<void> {
+    let mode: HandoffMode | null = "self";
+    if (this.requestMode) {
+      try {
+        mode = await this.requestMode({
+          promptTokens: question.promptTokens,
+          handoffTokens: question.handoffTokens,
+        });
+      } catch {
+        mode = "self";
+      }
+    }
+
+    await this.sessions.answer(this.sessionId, question.questionId, mode);
   }
 
   /**
@@ -1134,13 +1216,22 @@ function toneOf(level: "info" | "warn" | "error"): "info" | "error" {
  *
  * `resume` / `sessionId` 原样透传：一个说「接着上次」，一个说「就这一段」，
  * 两者的优先级由 `openWith` 处理（明确的 id 优先）。
+ *
+ * `requestMode` 同样原样透传，但它透传的是**一个能力**而不是数据：屏幕层给了这个回调，
+ * 说明「有人能回答自动迁移的那一问」；不给就别装作能问（走默认执行者，见 `answerQuestion`）。
+ * 漏掉它 = 自动迁移的选择器在远程模式下永不出现 —— 这正是这条交互曾经丢失的原因。
  */
 export async function createRemoteChatSession(
   options: ChatSessionOptions,
   notifier: ChatSessionNotifier,
 ): Promise<ChatSessionLike> {
   return await RemoteChatSession.create(
-    { agentId: options.agentId, sessionId: options.sessionId, resume: options.resume },
+    {
+      agentId: options.agentId,
+      sessionId: options.sessionId,
+      resume: options.resume,
+      requestMode: options.requestMode,
+    },
     notifier,
   );
 }

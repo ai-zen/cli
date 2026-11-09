@@ -16,6 +16,7 @@ import {
   type AgentSetModelResult,
   type HandoffMode,
   type MessageContent,
+  type SessionAnswerResult,
   type SessionAttachResult,
   type SessionCancelResult,
   type SessionCreateResult,
@@ -76,6 +77,24 @@ export class RemoteSessions {
   /** 某个工作区「上一轮会话」的指针（续接用；没有则 null） */
   async last(workspaceId: string): Promise<SessionLastResult> {
     return await this.client.call<SessionLastResult>(SESSION_METHODS.last, { workspaceId });
+  }
+
+  /**
+   * 回答服务端提出的问题（目前只有自动迁移的「交接方式三选一」）。
+   *
+   * `mode: null` = 用户选「不交接」（跳过本次迁移）。返回 `answered: false` 表示**来晚了**
+   * （超时 / 已答过 / 会话已收）—— 那不是错误，客户端把选择器收掉即可。
+   */
+  async answer(
+    sessionId: string,
+    questionId: string,
+    mode: HandoffMode | null,
+  ): Promise<SessionAnswerResult> {
+    return await this.client.call<SessionAnswerResult>(SESSION_METHODS.answer, {
+      sessionId,
+      questionId,
+      mode,
+    });
   }
 
   /**
