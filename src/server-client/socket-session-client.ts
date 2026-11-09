@@ -20,6 +20,7 @@ import {
   PROTOCOL_VERSION,
   type HelloResponse,
   type ResponseFrame,
+  type SessionEvent,
 } from "@ai-zen/agents-server";
 import type { CallOptions, ClientInfo, ServerAddress, SessionClient } from "./types.js";
 
@@ -47,6 +48,7 @@ export class SocketSessionClient implements SessionClient {
   private readonly socket: Socket;
   private readonly decoder = new FrameDecoder();
   private readonly pending = new Map<number, PendingCall>();
+  private readonly listeners = new Map<string, Set<(payload: SessionEvent) => void>>();
   private readonly callTimeoutMs: number;
 
   /** 握手期间的非空槽位：握手帧到时由它落定 `connect()` 的 promise */
@@ -132,6 +134,17 @@ export class SocketSessionClient implements SessionClient {
     });
   }
 
+  on<E extends SessionEvent["event"]>(
+    event: E,
+    listener: (payload: Extract<SessionEvent, { event: E }>) => void,
+  ): () => void {
+    if (!this.listeners.has(event)) this.listeners.set(event, new Set());
+    const set = this.listeners.get(event)!;
+    const wrapped = listener as (payload: SessionEvent) => void;
+    set.add(wrapped);
+    return () => set.delete(wrapped);
+  }
+
   close(): void {
     this.failAll(new Error("client closed"));
     this.socket.destroy();
@@ -192,7 +205,18 @@ export class SocketSessionClient implements SessionClient {
       return;
     }
 
-    // 事件帧（服务端主动推）——v1 没有事件，等第一个真实事件出现时再加订阅口
+    // 事件帧（服务端主动推）：无 id、有 event
+    if (typeof value?.event === "string") {
+      const set = this.listeners.get(value.event);
+      if (!set) return;
+      for (const listener of set) {
+        try {
+          listener(value as SessionEvent);
+        } catch {
+          // 一个监听器抛错不该连累同事件的其它监听器（更不该弄坏连接）
+        }
+      }
+    }
   }
 
   private settleHandshake(error?: Error): void {
@@ -212,5 +236,6 @@ export class SocketSessionClient implements SessionClient {
       call.reject(error);
       this.pending.delete(id);
     }
+    this.listeners.clear();
   }
 }

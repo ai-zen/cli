@@ -6,6 +6,8 @@
  * ssh 隧道）只换实现类，调用点一行不改 —— 这是「传输自由」在类型上的落点。
  */
 
+import type { SessionEvent } from "@ai-zen/agents-server";
+
 /**
  * 服务端在哪。
  *
@@ -31,11 +33,20 @@ export interface CallOptions {
 /**
  * 会话能力端口。
  *
- * v1 只有 `call` / `close`：事件推送（阶段进度、工具输出）等**第一个真实事件**出现时
- * 再加 `on()`，不提前预留一个没人调用的订阅口。
+ * `call` 是请求/响应，`on` 是服务端主动推的事件（阶段、增量、轮次收尾）—— 两者
+ * 共用一条连接，事件的载荷形状由 `protocol/sessions.ts` 定义。
  */
 export interface SessionClient {
   readonly address: ServerAddress;
   call<T = unknown>(method: string, params?: unknown, options?: CallOptions): Promise<T>;
+  /**
+   * 订阅某个事件；返回取消订阅的函数。
+   *
+   * 事件名绑到 `SessionEvent` 上：写错事件名是编译错误，而不是"订阅了但永远收不到"。
+   */
+  on<E extends SessionEvent["event"]>(
+    event: E,
+    listener: (payload: Extract<SessionEvent, { event: E }>) => void,
+  ): () => void;
   close(): void;
 }
