@@ -1,3 +1,40 @@
+## [1.0.1] - 2026-11-09
+
+> Interrupting a handoff now puts you back where you were. Before this release `Ctrl+C` only
+> stopped the work — and on the auto-migration path it did not even stop it: the aborted round
+> was read as "the model never wrote the document", so it retried, degraded to a standalone
+> summary, and migrated anyway (two extra full-context rounds for a keypress that was supposed
+> to cancel). On the manual path the handoff turn stayed behind in the conversation: a multi-KB
+> skill instruction, its tool results and the acknowledgement, visible in the transcript,
+> reachable with `↑`, and resent as history on the next turn.
+>
+> Ships on `@ai-zen/agents-sdk@1.1.0` (exact), which is where the cancellation switch and the
+> rollback live.
+
+### 🐛 Fixed
+
+- **`Ctrl+C` during a handoff returns to the pre-handoff state** — the handoff turn is truncated
+  from the conversation, a document created by this run is deleted, nothing is migrated, and no
+  retry / degradation happens. The "how should the document be written" step can be cancelled
+  too: `Ctrl+C` now works in that picker (it accepted `Esc` only, while both main input handlers
+  are inactive during a picker — so the key did nothing at all).
+- **Cancellation now works on the auto-migration path** (context overflow). The cancel handle
+  lives in `HandoffService` (`handoffService.abort()`), so all three paths (`/handoff`,
+  `/migrate`, auto-migration) share one switch; `ChatSession.abort()` is just
+  `handoffService.abort()` + `agent.abort()`.
+- **A cancelled migration no longer leaves the "already migrated" illusion** — history is not
+  pruned and the old conversation is not archived.
+- **Commit point**: once the document passes validation the run is committed, so `Ctrl+C` during
+  the final save / prune / persist step no longer reacts — you never end up with "cancelled,
+  but the old conversation is archived and history is pruned".
+
+### 🧪 Tests
+
+- 811 unit cases in 59 files — 5 new: interrupting a handoff rolls `session.messages` back to
+  the pre-handoff state, `abort()` is forwarded to the service, and the picker's
+  `Ctrl+C` / `Esc` / `Enter` keys. Plus 9 e2e cases (3 skipped — they need a real API key).
+  `tsc` and the build are clean.
+
 ## [1.0.0] - 2026-11-03
 
 > First stable release. Everything from the `1.0.0-alpha.x` line — `alpha.1` through
