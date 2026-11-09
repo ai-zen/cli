@@ -34,6 +34,7 @@
   "dependencies": {
     "@ai-zen/agents-core": "^4.5.5",
     "@ai-zen/agents-sdk": "1.1.0",
+    "@ai-zen/agents-server": "link:../agents/packages/server",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dayjs": "^1.11.21",
     "highlight.js": "^11.12.0",

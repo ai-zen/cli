@@ -40,7 +40,7 @@ import {
 import type { ConversationContext } from "../types.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, deltaText, type RateSample } from "./token-rate.js";
-import { PhaseTracker, pendingToolCalls, type PhaseInfo } from "./phase.js";
+import { PhaseTracker, pendingToolCalls, type PhaseInfo } from "@ai-zen/agents-server";
 
 /**
  * 把「请求即将发出」报给阶段跟踪器。
