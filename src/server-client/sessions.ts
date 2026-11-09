@@ -9,11 +9,9 @@
  */
 
 import {
-  AGENT_METHODS,
   EVENT_METHODS,
   SESSION_METHODS,
   WORKSPACE_METHODS,
-  type AgentSetModelResult,
   type HandoffMode,
   type MessageContent,
   type SessionAnswerResult,
@@ -187,19 +185,6 @@ export class RemoteSessions {
   /** 整份快照：消息 / 阶段 / 轮次 / 用量 */
   async snapshot(sessionId: string): Promise<SessionSnapshotResult> {
     return await this.client.call<SessionSnapshotResult>(SESSION_METHODS.snapshot, { sessionId });
-  }
-
-  /**
-   * 换模型：写的是 **Agent 定义**（`agent.model.set`），影响所有用这个 Agent 的会话。
-   *
-   * 所以它不在 `session.*` 里 —— 名字得让人一眼看出作用范围。换完要让会话
-   * {@link reload}，Agent 才会按新模型重建。
-   */
-  async setModel(agentId: string, modelId: string): Promise<AgentSetModelResult> {
-    return await this.client.call<AgentSetModelResult>(AGENT_METHODS.setModel, {
-      agentId,
-      modelId,
-    });
   }
 
   /** 按磁盘上的新配置/定义重建 Agent（保留消息），返回重建后的快照 */

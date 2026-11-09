@@ -150,7 +150,6 @@ interface ChatTarget {
   agentId?: string;
   messages?: AgentNS.Message[];
   sessionId?: string;
-  sessionName?: string;
   /**
    * 「接着该工作区的上一轮会话」—— 只是**意图**，不带任何数据。
    *
@@ -240,7 +239,6 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
         agentId={current.agentId}
         messages={messages}
         sessionId={current.sessionId}
-        sessionName={current.sessionName}
         resume={resume}
         // 把**同一个**配置面实例交给对话屏：端口是懒连接的，不传的话对话屏会自己再建一个，
         // 一个 TUI 进程就变成两条到服务端的连接（启动预检一条、对话屏一条）。
@@ -260,12 +258,10 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
           agentId?: string;
           messages?: AgentNS.Message[];
           sessionId?: string;
-          sessionName?: string;
         };
         messages?: AgentNS.Message[];
         initialInput?: string;
         sessionId?: string;
-        sessionName?: string;
         /** 重挂载后展示一次的系统提示 */
         notice?: string;
       };
@@ -274,7 +270,6 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
         current = {
           agentId: value.load.agentId,
           sessionId: value.load.sessionId,
-          sessionName: value.load.sessionName,
         };
         messages = value.load.messages;
         initialInput = undefined;
@@ -294,7 +289,6 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
           current = {
             ...current,
             sessionId: value.sessionId,
-            sessionName: value.sessionName ?? value.sessionId,
           };
         }
         continue;

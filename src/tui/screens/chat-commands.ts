@@ -216,7 +216,7 @@ const cmdLoad: CommandHandler = async ({ session, push, rows, exit, pick }) => {
   }
   // 整体切换会话（含模型 / Agent）——交由上层重挂载对话屏。
   // 只给 id：服务端从存档里自己装消息、自己认 Agent（列表不解析存档内容）。
-  exit({ load: { sessionId: choice, sessionName: choice } });
+  exit({ load: { sessionId: choice } });
 };
 
 const cmdNew: CommandHandler = async ({ session, clearTranscript, push }) => {

@@ -510,10 +510,6 @@ export class RemoteChatSession implements ChatSessionLike {
     return this.sessionId;
   }
 
-  get currentName(): string {
-    return this.sessionId;
-  }
-
   get messages(): AgentNS.Message[] {
     return this.currentMessages;
   }

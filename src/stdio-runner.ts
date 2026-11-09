@@ -23,8 +23,8 @@
  *
  *   1. **不落盘**：`persist:false` → 这一轮不进 `workspaces/<id>/sessions/`，也不挪「本工作区
  *      上一轮会话」指针。一次性管道调用不该篡改用户的对话列表，更不该让下次 `ai` 续接到它；
- *   2. **`--save` 只归档、不动指针**：`session.save { setAsLast:false }`，语义与旧版
- *      `persistSession({ setAsLast:false })` 逐字相同；
+ *   2. **`--save` 只归档、不动指针**：`session.save { setAsLast:false }` —— 写档，但不把
+ *      「本工作区上一轮会话」挪过去；
  *   3. **stdout 只有答案**：其余一切（含服务端推来的通知）走 stderr。
  *
  * ## 一个不能碰的时序

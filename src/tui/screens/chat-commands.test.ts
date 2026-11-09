@@ -5,22 +5,23 @@
 // 上下文里有内容，但屏幕一片空白。这类「状态与显示起点脱节」的 bug 只有真机才看得见，
 // 所以在这里用最小 host 假件把它钉住。
 import { describe, expect, it, vi, beforeEach, afterAll } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AgentDefinition, AppConfig, Model, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { runCommand, type ChatCommandHost } from "./chat-commands.js";
 import type { ChatSessionLike } from "../chat-session.js";
 import type { AgentStore } from "../../agents-store.js";
 import type { ConfigPort } from "../../server-client/config-port.js";
-import { persistSession, sessionExists, listSessions } from "../../session-store.js";
 import { useTempAiZenDir } from "../../test-support/temp-dir.js";
 import { setLocale, t } from "../../i18n/index.js";
-import { workspaceIdFor } from "@ai-zen/agents-server";
 import { computeChatLayout } from "./layout.js";
 import { usableFrameRows } from "../text.js";
 
-/** 会话落盘要真写文件（`/back` 的修复点就是「有没有落盘」），故需要独立的临时根 */
+/**
+ * 独立的临时 `AI_ZEN_DIR`。
+ *
+ * 命令层自己不碰存档了（存档在服务端），但部分命令会走到配置面的写入路径（假件的 `save`
+ * 之类），而 `AI_ZEN_DIR` 是进程级的 —— 不隔离就会摸到开发机上的真实配置根。
+ */
 const zen = useTempAiZenDir("aiz-cmd-test-");
 beforeEach(() => {
   zen.pin();
@@ -35,6 +36,8 @@ function createHost(
   portOverrides: Partial<ConfigPort> = {},
 ) {
   const notices: Array<{ text: string; tone?: "info" | "error" }> = [];
+  /** 「盘上已有哪几段」—— 内存假件，见下方 `exists` / `listSaved` 的注释 */
+  const saved = new Set<string>();
   const session = {
     messages: [{ role: AgentNS.Role.User, content: "hi" }],
     agentId: "default",
@@ -44,10 +47,11 @@ function createHost(
     reload: vi.fn(async () => {}),
     save: vi.fn(async () => "chat_saved"),
     saveAs: vi.fn(async (id: string) => id),
-    // 存档查询是**会话**的能力（进程内直接读盘，远程模式问服务端）。
-    // 命令层只认这两个方法，测试就把它们接回真存档 —— “命令看到什么”仍是真实磁盘状态。
-    exists: vi.fn(async (id: string) => await sessionExists(id)),
-    listSaved: vi.fn(async () => await listSessions()),
+    // 存档查询是**会话**的能力（真相在服务端）。命令层只用这两个方法的返回值，
+    // 所以这里给一个内存假件 —— `saved` 就是「盘上已有哪几段」。
+    // 真存档的行为（写入 / `list` 按 mtime 倒序 / 老存档搬迁）由服务端用例覆盖，客户端不重复覆盖。
+    exists: vi.fn(async (id: string) => saved.has(id)),
+    listSaved: vi.fn(async () => [...saved].map((id) => ({ id }))),
     ...overrides,
   };
   const config = fakeConfigPort(portOverrides);
@@ -70,7 +74,7 @@ function createHost(
     setEffortView: vi.fn(),
     refreshLocale: vi.fn(),
   } as unknown as ChatCommandHost;
-  return { host, notices, session, config };
+  return { host, notices, session, config, arrangeSaved: (id: string) => saved.add(id) };
 }
 
 // ==================== 假配置面 ====================
@@ -191,8 +195,8 @@ describe("/back：撤回后必须落盘", () => {
       { role: AgentNS.Role.Assistant, content: "答一" },
       { role: AgentNS.Role.User, content: "第二条" },
     ];
-    // 先落一份「完整的」存档，模拟撤回前已自动保存
-    await persistSession({ id: "chat_back", messages });
+    // 记下「被写回去的那份」：撤回之后写回的内容必须不含被撤的那条
+    let savedMessages: any[] | null = null;
 
     const session = {
       messages,
@@ -203,7 +207,10 @@ describe("/back：撤回后必须落盘", () => {
         const removed = messages.splice(index);
         return removed.find((m) => m.role === AgentNS.Role.User)?.content ?? "";
       }),
-      save: vi.fn(async () => persistSession({ id: "chat_back", messages })),
+      save: vi.fn(async () => {
+        savedMessages = messages.map((message) => ({ ...message }));
+        return "chat_back";
+      }),
     };
     const { host } = createHost({ ...session });
     // 选择器直接作答：选「第二条」（它的 messages 下标为 2，列表里是最近在前，但 value 就是下标）
@@ -223,13 +230,7 @@ describe("/back：撤回后必须落盘", () => {
       session.save.mock.invocationCallOrder[0]!,
     );
 
-    const saved = JSON.parse(
-      readFileSync(
-        join(zen.dir, "workspaces", workspaceIdFor(process.cwd()), "sessions", "chat_back.json"),
-        "utf-8",
-      ),
-    );
-    expect(saved.messages.map((m: any) => m.content)).toEqual(["第一条", "答一"]);
+    expect(savedMessages!.map((m: any) => m.content)).toEqual(["第一条", "答一"]);
   });
 });
 
@@ -268,11 +269,11 @@ describe("/save：支持指定名字 + 重名二次确认", () => {
   });
 
   it("名字已存在且不是当前 id：先问一遍；取消则完全不写", async () => {
-    await persistSession({ id: "旧对话", messages: [], setAsLastSession: false });
-    const { host, session, notices } = createHost({
+    const { host, session, notices, arrangeSaved } = createHost({
       currentId: "chat_now",
       saveAs: vi.fn(async (id: string) => id),
     });
+    arrangeSaved("旧对话");
     const asked = captureConfirm(host, false);
 
     await runCommand("save", "/save 旧对话", host);
@@ -283,11 +284,11 @@ describe("/save：支持指定名字 + 重名二次确认", () => {
   });
 
   it("确认之后才覆盖", async () => {
-    await persistSession({ id: "旧对话", messages: [], setAsLastSession: false });
-    const { host, session } = createHost({
+    const { host, session, arrangeSaved } = createHost({
       currentId: "chat_now",
       saveAs: vi.fn(async (id: string) => id),
     });
+    arrangeSaved("旧对话");
     captureConfirm(host, true);
 
     await runCommand("save", "/save 旧对话", host);
@@ -311,11 +312,11 @@ describe("/save：支持指定名字 + 重名二次确认", () => {
   });
 
   it("目标名就是当前 id：自己盖自己，不弹确认", async () => {
-    const { host, session } = createHost({
+    const { host, session, arrangeSaved } = createHost({
       currentId: "chat_now",
       saveAs: vi.fn(async (id: string) => id),
     });
-    await persistSession({ id: "chat_now", messages: [], setAsLastSession: false });
+    arrangeSaved("chat_now");
 
     await runCommand("save", "/save chat_now", host);
 
@@ -359,13 +360,10 @@ describe("picker 条数上限（不超出一帧）", () => {
   };
 
   it("/load：条数上限正好装进一帧（rows − 10）", async () => {
+    const { host, arrangeSaved } = createHost();
     for (let i = 0; i < 20; i += 1) {
-      await persistSession({
-        id: `chat_${String(i).padStart(2, "0")}`,
-        messages: [{ role: AgentNS.Role.User, content: `第 ${i} 条` }] as any,
-      });
+      arrangeSaved(`chat_${String(i).padStart(2, "0")}`);
     }
-    const { host } = createHost();
     (host as any).rows = ROWS;
     const seen = capturePick(host, null);
 

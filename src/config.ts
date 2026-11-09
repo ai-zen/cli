@@ -76,7 +76,7 @@ function resolveRoot(): string {
  *
  * **会失效的是快照**：在模块顶层把路径塞进常量或实例（`const POINTER_FILE = join(CLI_DIR, …)`、
  * `new Repo(CONVERSATIONS_DIR)`、`new ConfigManager(CONFIG_FILE)`）—— 那个值在模块求值那一刻就定死了。
- * 这类地方一律改成函数（`pointerFile()` / `sessionStore()` / `configManager()`），
+ * 这类地方一律改成函数（`pointerFile()` / `configManager()`），
  * 由调用时机决定读哪个目录。
  */
 export let AI_ZEN_DIR = resolveRoot();
@@ -84,8 +84,8 @@ export let AI_ZEN_DIR = resolveRoot();
 // ==================== CLI 运行时目录 ====================
 
 /**
- * CLI 自己的目录。会话已搬到 `workspaces/`，这里**只剩旧存档**的位置：
- * 启动时由 `session-store.ts` 的迁移把里面的东西搬走，之后就能删。
+ * CLI 自己的目录。会话已搬到服务端的 `workspaces/`，这里**只剩旧存档**的位置：
+ * 老布局搬迁已在服务端的 `legacyMigration` 里做过（迁移源就指向它），之后就能删。
  */
 export let CLI_DIR = join(AI_ZEN_DIR, "cli");
 export let CONFIG_FILE = join(AI_ZEN_DIR, "config.json");

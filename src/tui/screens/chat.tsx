@@ -122,7 +122,6 @@ export interface ChatScreenProps {
   deps?: Partial<ChatDeps>;
   messages?: AgentNS.Message[];
   sessionId?: string;
-  sessionName?: string;
   /**
    * 「接着该工作区的上一轮会话」—— 只表达**意图**，不带数据。
    *
@@ -420,7 +419,6 @@ export function Chat(props: ChatScreenProps) {
           // 消息**不在这里传**：远程实现只持有一个会话 id，内容由服务端快照给
           // （`props.messages` 仍用于本屏首帧渲染与 `/back` 的显示起点）
           sessionId: props.sessionId,
-          sessionName: props.sessionName,
           // 配置面复用屏幕这一个：图片链路的端点能力要读服务端那份（见 `ChatSessionOptions.config`）
           config: deps.config,
           // 「接着上次」只是意图：接哪一段由会话实现去问（服务端存档 / 本地指针），屏幕不判断
@@ -463,7 +461,7 @@ export function Chat(props: ChatScreenProps) {
       frameBufferRef.current?.dispose();
       sessionRef.current?.dispose();
     };
-  }, [props.agentId, props.messages, props.sessionId, props.sessionName, props.resume]);
+  }, [props.agentId, props.messages, props.sessionId, props.resume]);
 
   // 速率采样：Spinner 的重渲染只影响它自己，不会带着状态栏一起刷，所以生成中要自己定时读快照。
   // 生成结束（busy → false）时再读一次，拿本轮平均速率并留在状态栏上。

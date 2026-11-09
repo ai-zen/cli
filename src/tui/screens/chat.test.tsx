@@ -38,7 +38,6 @@ const { created, createFakeSession, fakeIndex } = vi.hoisted(() => {
       agentId: "default",
       modelId: "gpt-6-astra",
       currentId: "chat_test",
-      currentName: "chat_test",
       messages,
       subAgents,
       lastUsage: undefined,

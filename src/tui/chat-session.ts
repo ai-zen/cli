@@ -30,9 +30,8 @@ export interface ChatSessionLike {
   readonly agentId: string;
   /** 当前模型 id（真相源是 `AgentDefinition.modelId`；空串 = 定义里没绑模型） */
   readonly modelId: string;
-  /** 当前会话 id / 名称（`/save`、状态栏与「上一轮会话」指针用） */
+  /** 当前会话 id（`/save`、状态栏与「上一轮会话」指针用；会话只有 id，没有第二个名字） */
   readonly currentId: string;
-  readonly currentName: string;
   /** 对话消息（屏幕的唯一数据源） */
   readonly messages: AgentNS.Message[];
   /** 本轮内出现过的子 Agent（只活当前一轮） */
@@ -141,7 +140,6 @@ export interface ChatSessionOptions {
    * 屏幕层已经持有一个（懒连接的远程端口），递下来省一条连接；不给则实现自己建一个。
    */
   config?: ConfigPort;
-  sessionName?: string;
   /**
    * 续接该工作区的「上一轮会话」（有就接着，没有就开新的）。
    *

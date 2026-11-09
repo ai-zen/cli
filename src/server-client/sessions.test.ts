@@ -339,16 +339,11 @@ describe("RemoteSessions：存档列表与撤回", () => {
   });
 });
 
-describe("RemoteSessions：换模型与重建", () => {
-  it("setModel 写的是 Agent 定义（不是会话），reload 保留消息", async () => {
+describe("RemoteSessions：重建", () => {
+  it("reload 保留消息（Agent 按新配置重建）", async () => {
     await start();
     const { sessionId } = await sessions.open({ path: join(dir, "proj") });
     agent.messages = [{ role: "user", content: "上下文留住" }];
-
-    expect(await sessions.setModel("default", "test-model")).toEqual({
-      agentId: "default",
-      modelId: "test-model",
-    });
 
     const snapshot = await sessions.reload(sessionId);
     expect(snapshot.messages).toEqual([{ role: "user", content: "上下文留住" }]);
