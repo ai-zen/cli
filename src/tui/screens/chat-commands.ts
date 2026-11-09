@@ -28,7 +28,7 @@ import {
 import type { ConfigPort } from "../../server-client/config-port.js";
 // 留下的是**纯数据整形**：把读取结果转成配置 / 列表，不吃盘，故不经端口
 import { mcpConfigOrEmpty } from "../../config.js";
-import { listAgentChoices, switchAgent } from "../../agent-switch.js";
+import { checkAgentSwitch, listAgentChoices } from "../../agent-switch.js";
 import { parseMcpScope, pickStartScope } from "../../mcp-command.js";
 import {
   effortChoices,
@@ -426,11 +426,16 @@ const cmdAgent: CommandHandler = async ({ session, push, args, pick, config }) =
   }
 
   try {
-    const result = switchAgent({ config: appConfig, agents: store.agents, targetAgentId: chosen });
-    await config.saveConfig(result.config);
+    const result = checkAgentSwitch({
+      config: appConfig,
+      agents: store.agents,
+      targetAgentId: chosen,
+    });
+    // 「默认 Agent」是配置里的**一个字段**，走窄方法（整份写回会把并发修改抹掉）
+    await config.setDefaultAgent(chosen);
     if (chosen === session.agentId) {
       // 会话已经在这个 Agent 上：只需把「默认 Agent」记号写对，不必重建
-      push(t("cmd.agent.alreadyOn", { summary: result.summary ?? "" }));
+      push(t("cmd.agent.alreadyOn", { summary: result.summary }));
       return;
     }
     // 换 Agent 是**会话层**的事：服务端按新定义重建、保留消息、更新会话的 `agentId`。
@@ -442,7 +447,7 @@ const cmdAgent: CommandHandler = async ({ session, push, args, pick, config }) =
     // `resetScope()` 也不再有意义：它重置的是客户端进程内的那个 Scope 单例。
     await session.setAgent(chosen);
     // 与旧版一致：`summary` 有就说一句（重挂载那条路上它曾是 `initialNotice`）
-    if (result.summary) push(result.summary);
+    push(result.summary);
   } catch (error: any) {
     push(t("cmd.agent.failed", { error: error?.message ?? error }), "error");
   }

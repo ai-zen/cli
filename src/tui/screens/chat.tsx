@@ -51,7 +51,7 @@ import { NoticeBar } from "./notice-bar.js";
 import { AgentTabs, type AgentTab } from "./agent-tabs.js";
 import { useChatViewport } from "./use-chat-viewport.js";
 import { useChatOverlays } from "./use-overlays.js";
-import { useWizardHost, type WizardHostDeps } from "./use-wizard-host.js";
+import { useWizardHost } from "./use-wizard-host.js";
 import { useInputEditing } from "./use-input-editing.js";
 import { extractMention, mentionInsertText, rankPaths, type PathEntry } from "../mention.js";
 import { userDrafts } from "../chat-history.js";
@@ -88,14 +88,6 @@ export interface ChatDeps {
   createSession: CreateChatSession;
   readClipboardImage: typeof readClipboardImage;
   readClipboardText: typeof readClipboardText;
-  /**
-   * 配置向导读快照的四个读取器（`/config`、`/key` 路径）。
-   *
-   * 仍单列而不是直接吃 `config`：向导要的 `readMcpConfig` 带必填作用域、且它的
-   * `readers` 是可缺省参数（`use-wizard-host.ts` 有自己的默认值）。缺省值见下方
-   * 「默认依赖」——它由 `config` 派生，于是远程模式下向导读的也是服务端。
-   */
-  wizardReaders: NonNullable<WizardHostDeps["readers"]>;
 }
 
 /**
@@ -194,14 +186,6 @@ export function Chat(props: ChatScreenProps) {
     createSession: createRemoteChatSession,
     readClipboardImage,
     readClipboardText,
-    // 向导的快照读取也走配置面：否则远程模式下向导读的是本机磁盘，与 `/model`
-    // 写入的目标（服务端）不是同一份配置，改完当屏「成功」、重启即失效。
-    wizardReaders: {
-      readConfig: () => configPort.readConfig(),
-      readMcpConfig: (scope) => configPort.readMcpConfig(scope),
-      readReasoningPresets: () => configPort.readReasoningPresets(),
-      readAgentStore: () => configPort.readAgentStore(),
-    },
     ...props.deps,
   };
   const { exit, suspendTerminal } = useApp();
@@ -328,6 +312,8 @@ export function Chat(props: ChatScreenProps) {
     openKeyEditor,
     closeWizard,
   } = useWizardHost({
+    // 向导要读的四个快照全从这一个口子来：配置面永远开向服务端
+    config: configPort,
     modelId,
     notify: (text, tone) => noticeChannel.push(text, tone),
     hasSession: () => sessionRef.current != null,
@@ -350,8 +336,6 @@ export function Chat(props: ChatScreenProps) {
           ),
         );
     },
-    // 向导读快照 / 落盘也走注入：集成测试不该碰真实配置目录
-    readers: deps.wizardReaders,
   });
 
   /**

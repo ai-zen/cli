@@ -53,12 +53,17 @@ function Probe({ hasSession }: { hasSession: boolean }) {
     reloadSession: () => {
       calls.reloaded += 1;
     },
-    readers: {
+    // 假配置面：向导读快照要走的那四个方法接上本文件的两个旋钮，其余给空实现
+    config: {
       readConfig: () => readConfigImpl(),
-      readMcpConfig: (scope) => readMcpImpl(scope),
+      readMcpConfig: (scope?: "global" | "project") => readMcpImpl(scope ?? "global"),
       readReasoningPresets: async () => ({}),
       readAgentStore: async () => createAgentStore(fakeAgents().agents as any, []),
-    },
+      saveConfig: async () => {},
+      writeMcpConfig: async () => {},
+      setModel: async () => {},
+      setDefaultAgent: async () => {},
+    } as never,
   });
   const damaged = w.wizardMcp
     ? Object.entries(w.wizardMcp.errors ?? {})

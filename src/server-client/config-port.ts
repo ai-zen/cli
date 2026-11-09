@@ -37,6 +37,7 @@ import {
   type ConfigMcpSaveParams,
   type ConfigReasoningPresetsResult,
   type ConfigSaveParams,
+  type ConfigSetDefaultAgentParams,
   type WorkspaceResolveResult,
 } from "@ai-zen/agents-server";
 import type { AgentDefinition, AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
@@ -52,7 +53,7 @@ import {
   type McpReadResult,
   type McpScope,
 } from "../config.js";
-import { CLI_VERSION } from "../version.js";
+import { CLIENT_INFO } from "./client-info.js";
 import { ensureServer } from "./ensure-server.js";
 import { clientWorkspacePath } from "./local-host.js";
 import type { ClientInfo, ServerClient } from "./types.js";
@@ -64,6 +65,13 @@ export interface ConfigPort {
   saveConfig(config: AppConfig): Promise<void>;
   /** 读思考策略表（文件缺失/损坏时回落出厂种子） */
   readReasoningPresets(): Promise<ReasoningPresets>;
+  /**
+   * 换「默认 Agent」：**只写**配置里的 `defaultAgent` 一个字段。
+   *
+   * 不走「读出整份 → 改一个字段 → 整份写回」：终端与桌面端并存时，整份写回会把对方
+   * 刚改的字段抹掉（`agent.model.set` 早就按这个理由做成了窄方法）。
+   */
+  setDefaultAgent(agentId: string): Promise<void>;
   /** 读某个作用域的 MCP 配置；坏文件是「可展示的状态」而不是抛错 */
   readMcpConfig(scope?: McpScope): Promise<McpReadResult>;
   /** 写某个作用域的 MCP 配置 */
@@ -216,6 +224,12 @@ export function createRemoteConfigPort(deps: RemoteConfigPortDeps = {}): ConfigP
       return result.presets as ReasoningPresets;
     },
 
+    /** 换默认 Agent：一条窄方法，**不**读整份再写回（见接口上的注释） */
+    setDefaultAgent: async (agentId) => {
+      const params: ConfigSetDefaultAgentParams = { agentId };
+      await call(CONFIG_METHODS.defaultAgentSet, params);
+    },
+
     /**
      * 读 MCP 配置。
      *
@@ -285,19 +299,10 @@ export function createRemoteConfigPort(deps: RemoteConfigPortDeps = {}): ConfigP
 async function connectToDefaultServer(): Promise<ServerClient> {
   const { client } = await ensureServer({
     aiZenDir: AI_ZEN_DIR,
-    clientInfo: CONFIG_PORT_CLIENT_INFO,
+    clientInfo: CLIENT_INFO,
   });
   return client;
 }
-
-/**
- * 握手里的客户端身份。
- *
- * 与 `REMOTE_CLIENT_INFO`（TUI 那份）是同一个身份，但**不 import 它**：
- * `tui/` 是上层，传输层反过来依赖上层会绕出一个环（TUI 迟早要 import 本文件）。
- * 身份只进日志与握手回执、不参与鉴权，版本号仍以 `CLI_VERSION` 为唯一来源。
- */
-const CONFIG_PORT_CLIENT_INFO: ClientInfo = { name: "@ai-zen/cli", version: CLI_VERSION };
 
 /**
  * 连接是否已经死了。

@@ -108,6 +108,7 @@ const fakePort = (config: any = fakeConfig()) =>
     writeMcpConfig: vi.fn(async (_config: any, _scope?: any) => {}),
     readAgentStore: vi.fn(async () => fakeAgentStore()),
     setModel: vi.fn(async (_agentId: string, _modelId: string) => {}),
+    setDefaultAgent: vi.fn(async (_agentId: string) => {}),
   }) satisfies ConfigPort;
 
 type FakePort = ReturnType<typeof fakePort>;

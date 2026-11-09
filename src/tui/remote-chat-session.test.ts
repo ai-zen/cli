@@ -128,6 +128,7 @@ const testConfigPort: ConfigPort = {
   readAgentStore: async () =>
     ({ agents: [], subAgents: [], save: async () => {}, remove: async () => {} }) as never,
   setModel: async () => {},
+  setDefaultAgent: async () => {},
 };
 
 const notifier: ChatSessionNotifier = {

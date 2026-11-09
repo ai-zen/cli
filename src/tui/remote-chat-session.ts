@@ -94,6 +94,7 @@ import {
 import type { ClipboardImage } from "../clipboard.js";
 import { AI_ZEN_DIR, readConfig } from "../config.js";
 import { t } from "../i18n/index.js";
+import { CLIENT_INFO } from "../server-client/client-info.js";
 import { ensureServer } from "../server-client/ensure-server.js";
 import { clientWorkspacePath } from "../server-client/local-host.js";
 import { createRemoteConfigPort, type ConfigPort } from "../server-client/config-port.js";
@@ -111,9 +112,6 @@ import type { PathEntry } from "./mention.js";
 import { noticeText } from "./notice-text.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, type RateSample } from "./token-rate.js";
-
-/** 客户端的身份：只进握手首帧与服务端日志，不参与鉴权 */
-export const REMOTE_CLIENT_INFO = { name: "@ai-zen/cli", version: CLI_VERSION };
 
 /**
  * 子 Agent 的本地拼接状态（一个子 Agent 一条）。
@@ -253,7 +251,7 @@ export interface RemoteChatSessionDeps {
  * 不存在「另一种建连方式」。
  */
 export async function connectToServer(): Promise<ServerClient> {
-  const { client } = await ensureServer({ aiZenDir: AI_ZEN_DIR, clientInfo: REMOTE_CLIENT_INFO });
+  const { client } = await ensureServer({ aiZenDir: AI_ZEN_DIR, clientInfo: CLIENT_INFO });
   return client;
 }
 

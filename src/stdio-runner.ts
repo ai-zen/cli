@@ -222,19 +222,16 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
     return 1;
   } finally {
     /**
-     * 收干净，顺序不能反：先让服务端**关掉**这段会话，再断连接。
+     * 收干净只有一步：`dispose()`。
      *
-     * `dispose()` 自己会关连接，之后 `session.close` 就发不出去了 —— 那段会话会一直挂在
-     * 守护进程里（每个 `ai "…"` 泄漏一段活会话）。一次性会话没有存档可丢，`close` 只是
-     * 让 Agent 与 Scope 引用立刻退场，不等保活区判定。
+     * 它先给服务端发一帧「这段我不要了」（`session.keepAlive.set { on:false }`）再关连接。
+     * 此刻本轮已收尾、会话空闲，服务端收到就**当场回收**（`keepAliveSet` 内部直接调
+     * `close()`）—— 所以不需要再单独发一次 `session.close`：那是同一条路径，多一帧、
+     * 多一次往返，而且它紧跟的那次 `client.close()` 会让它基本落不了地。
      *
-     * 两者都失败也不抛：进程马上就要退出，能说的事都已经说过（旧版同样是「不 flush 任何
+     * 发不出去也不抛：进程马上就要退出，能说的事都已经说过（旧版同样是「不 flush 任何
      * 东西」——写不进去就是没人要）。
      */
-    if (session && client) {
-      const sessions = new RemoteSessions(client);
-      await sessions.close(session.currentId).catch(() => {});
-    }
     session?.dispose();
     /**
      * 连接**一定要**断。

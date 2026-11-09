@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
-import { listAgentChoices, switchAgent } from "./agent-switch.js";
+import { checkAgentSwitch, listAgentChoices } from "./agent-switch.js";
 import { setLocale } from "./i18n/index.js";
 
 // 切换结果与不可用原因已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
@@ -62,52 +62,48 @@ const agents = [
   }),
 ];
 
-describe("switchAgent：只写 defaultAgent", () => {
-  it("写入目标 Agent，其它配置字段原样保留", () => {
+describe("checkAgentSwitch：只校验、不写配置", () => {
+  it("回一句能给用户看的结果，且不改入参（纯函数）", () => {
     const config = makeConfig();
-    const result = switchAgent({ config, agents, targetAgentId: "coder" });
+    const result = checkAgentSwitch({ config, agents, targetAgentId: "coder" });
 
-    expect(result.config.defaultAgent).toBe("coder");
-    // 端点 / 模型一个字都不能动
-    expect(result.config.endpoints).toEqual(config.endpoints);
-    expect(result.config.models).toEqual(config.models);
-    // 不改入参（纯函数）
+    // 不返回、也不改动配置：写 `defaultAgent` 是服务端那条窄方法的事
     expect(config.defaultAgent).toBe("default");
-    expect(result.summary).toContain("编程 Agent");
+    expect(result).toEqual({ summary: expect.stringContaining("编程 Agent") });
     expect(result.summary).toContain("DeepSeek-V4.1-Flash");
   });
 
   it("不改 Agent 定义本身（切的是「用哪个」，不是「它长什么样」）", () => {
     const coder = agents[1]!;
     const before = JSON.parse(JSON.stringify(coder));
-    switchAgent({ config: makeConfig(), agents, targetAgentId: "coder" });
+    checkAgentSwitch({ config: makeConfig(), agents, targetAgentId: "coder" });
     expect(coder).toEqual(before);
   });
 
   it("Agent 不存在时抛错", () => {
-    expect(() => switchAgent({ config: makeConfig(), agents, targetAgentId: "ghost" })).toThrow(
-      /不存在/,
-    );
+    expect(() =>
+      checkAgentSwitch({ config: makeConfig(), agents, targetAgentId: "ghost" }),
+    ).toThrow(/不存在/);
   });
 
   it("未绑定模型的 Agent 不给切（切过去就是启动错误屏）", () => {
     const broken = [...agents, makeAgent({ id: "bare", name: "裸 Agent", modelId: undefined })];
     expect(() =>
-      switchAgent({ config: makeConfig(), agents: broken, targetAgentId: "bare" }),
+      checkAgentSwitch({ config: makeConfig(), agents: broken, targetAgentId: "bare" }),
     ).toThrow(/未绑定模型/);
   });
 
   it("绑定的模型已从配置里删掉时抛错", () => {
     const orphan = [...agents, makeAgent({ id: "orphan", name: "孤儿", modelId: "gone" })];
     expect(() =>
-      switchAgent({ config: makeConfig(), agents: orphan, targetAgentId: "orphan" }),
+      checkAgentSwitch({ config: makeConfig(), agents: orphan, targetAgentId: "orphan" }),
     ).toThrow(/已不在配置中/);
   });
 
   it("端点缺 API Key 时抛错（不让人切完才发现发不出请求）", () => {
     const noKey = [...agents, makeAgent({ id: "nokey", name: "缺 Key", modelId: "glm-5.3" })];
     expect(() =>
-      switchAgent({ config: makeConfig(), agents: noKey, targetAgentId: "nokey" }),
+      checkAgentSwitch({ config: makeConfig(), agents: noKey, targetAgentId: "nokey" }),
     ).toThrow(/API Key/);
   });
 
@@ -117,7 +113,9 @@ describe("switchAgent：只写 defaultAgent", () => {
         { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com", apiKey: "   " },
       ],
     } as Partial<AppConfig>);
-    expect(() => switchAgent({ config: blank, agents, targetAgentId: "coder" })).toThrow(/API Key/);
+    expect(() => checkAgentSwitch({ config: blank, agents, targetAgentId: "coder" })).toThrow(
+      /API Key/,
+    );
   });
 });
 

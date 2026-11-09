@@ -146,6 +146,7 @@ function fakeConfigPort(overrides: Partial<ConfigPort> = {}): ConfigPort {
     writeMcpConfig: vi.fn(async () => {}),
     readAgentStore: vi.fn(async () => fakeAgentStore([agentDefinition("default", "m1")])),
     setModel: vi.fn(async () => {}),
+    setDefaultAgent: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -506,13 +507,13 @@ describe("配置来源是 deps.config（假端口），不是本地读盘", () =
  * 会话直接返回、忽略 `agentId` —— 界面提示「已切换」，实际下一轮仍由旧 Agent 跑。
  */
 describe("/agent：走 session.setAgent，不重挂载", () => {
-  it("调 setAgent(chosen) 且不 exit；会话已经在这个 Agent 上时不重建", async () => {
+  it("调 setAgent(chosen) 且不 exit；「默认 Agent」走窄方法而不是整份写回", async () => {
     const setAgent = vi.fn(async () => {});
     const store = fakeAgentStore([
       agentDefinition("default", "m1"),
       agentDefinition("coder", "m1"),
     ]);
-    const { host } = createHost(
+    const { host, config } = createHost(
       { agentId: "default", setAgent },
       { readAgentStore: vi.fn(async () => store) },
     );
@@ -520,23 +521,28 @@ describe("/agent：走 session.setAgent，不重挂载", () => {
     await runCommand("agent", "/agent coder", host);
 
     expect(setAgent).toHaveBeenCalledWith("coder");
+    // 只改配置里的一个字段：整份 `config.save` 会把并发修改抹掉
+    expect(config.setDefaultAgent).toHaveBeenCalledWith("coder");
+    expect(config.saveConfig).not.toHaveBeenCalled();
     // 换 Agent 不换屏：重挂载会把整屏刷一遍、丢掉正在写的草稿，而这次不需要
     expect(host.exit).not.toHaveBeenCalled();
   });
 
   it("会话已经在这个 Agent 上：只写「默认 Agent」记号，不重建", async () => {
     const setAgent = vi.fn(async () => {});
+    const setDefaultAgent = vi.fn(async () => {});
     const store = fakeAgentStore([
       agentDefinition("default", "m1"),
       agentDefinition("coder", "m1"),
     ]);
     const { host } = createHost(
       { agentId: "coder", setAgent },
-      { readAgentStore: vi.fn(async () => store) },
+      { readAgentStore: vi.fn(async () => store), setDefaultAgent },
     );
 
     await runCommand("agent", "/agent coder", host);
 
+    expect(setDefaultAgent).toHaveBeenCalledWith("coder");
     expect(setAgent).not.toHaveBeenCalled();
     expect(host.exit).not.toHaveBeenCalled();
   });

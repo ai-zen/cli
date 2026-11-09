@@ -1,5 +1,5 @@
 /**
- * 主 Agent 切换 —— `/agent` 的校验与写配置策略（纯逻辑，可单测）
+ * 主 Agent 切换 —— `/agent` 的校验与文案（纯逻辑，可单测）
  *
  * ## 「主 Agent」是哪一个
  *
@@ -11,13 +11,18 @@
  *
  * Agent 定义里的 `modelId` 是运行期唯一真相源（`createAgent` 只认它）。所以切换
  * 前先做完整链路校验：Agent 存在 → 绑定了模型 → 模型还在配置里 → 端点在 → 端点有 Key。
- * 少任何一环都直接抛错并把原因说清楚，绝不「先切过去再看它崩不崩」——切完是要
- * 重挂载对话屏的，崩了用户连 `/model` 都敲不进去。
+ * 少任何一环都直接抛错并把原因说清楚，绝不「先切过去再看它崩不崩」——
+ * 切错 Agent 的代价是下一轮由一个未配置好的 Agent 来跑，而用户手上已经没有可用的 `/model`。
  *
  * ## 不动 Agent 定义本身
  *
  * 切 Agent 只改「用哪个」，不改「那个 Agent 长什么样」：不写 `modelParams`、
  * 不碰提示词、不碰权限。要改这些走 `/model`、`/think`、`/config`。
+ *
+ * ## 也不写配置
+ *
+ * 本模块只回答「能不能切」与「切了该说哪句话」；写 `defaultAgent` 走服务端的窄方法
+ * `config.defaultAgent.set`（整份写回会把并发修改抹掉）。
  */
 
 import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
@@ -74,7 +79,7 @@ export function listAgentChoices(
   });
 }
 
-export interface SwitchAgentOptions {
+export interface CheckAgentSwitchOptions {
   config: AppConfig;
   /** 可选的主 Agent 列表（`~/.ai-zen/agents/*.json` 快照） */
   agents: readonly AgentDefinition[];
@@ -82,19 +87,21 @@ export interface SwitchAgentOptions {
   targetAgentId: string;
 }
 
-export interface SwitchAgentResult {
-  /** 已写入 `defaultAgent` 的新配置（调用方负责落盘） */
-  config: AppConfig;
+export interface CheckAgentSwitchResult {
   /** 面向用户的一句话结果 */
   summary: string;
 }
 
 /**
- * 校验目标 Agent 能否切换，并返回「写好 `defaultAgent` 的新配置」。
+ * 校验目标 Agent 能否切换，并返回「跟用户说一句」的内容。
+ *
+ * **不改配置**：写 `defaultAgent` 是服务端的一条窄方法（`config.defaultAgent.set`）。
+ * 这里曾经把「改好的整份配置」回给调用方、由它 `saveConfig` 整份写回 —— 多客户端并存时
+ * 那等于把一个字段的修改变成整份覆盖。
  *
  * 抛错场景：Agent 不存在、未绑定模型、模型不在配置里、端点不存在、端点缺 Key。
  */
-export function switchAgent(options: SwitchAgentOptions): SwitchAgentResult {
+export function checkAgentSwitch(options: CheckAgentSwitchOptions): CheckAgentSwitchResult {
   const { config, agents, targetAgentId } = options;
 
   const agent = agents.find((item) => item.id === targetAgentId);
@@ -114,7 +121,6 @@ export function switchAgent(options: SwitchAgentOptions): SwitchAgentResult {
   }
 
   return {
-    config: { ...config, defaultAgent: agent.id },
     summary: t("agentSwitch.summary", {
       name,
       id: agent.id,

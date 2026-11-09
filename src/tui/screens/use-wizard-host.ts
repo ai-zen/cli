@@ -9,15 +9,9 @@
 // `WizardHostDeps` 传进来，于是 hook 可以在测试里用假依赖跑完整生命周期。
 import { useRef, useState } from "react";
 import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import {
-  mcpConfigOrEmpty,
-  readConfig,
-  readMcpConfig,
-  readReasoningPresets,
-  type McpReadResult,
-  type McpScope,
-} from "../../config.js";
-import { readAgentStore, type AgentStore } from "../../agents-store.js";
+import { mcpConfigOrEmpty, type McpConfig, type McpScope } from "../../config.js";
+import type { AgentStore } from "../../agents-store.js";
+import type { ConfigPort } from "../../server-client/config-port.js";
 import { resolveCredential } from "../../config-editor.js";
 import type { McpSnapshot, WizardCloseResult, WizardStep } from "../config-wizard/index.js";
 import { t } from "../../i18n/index.js";
@@ -35,15 +29,15 @@ export interface WizardHostDeps {
   /** 改了当前端点 / MCP / Agent 定义 / 中断策略 → 重载会话（消息保留） */
   reloadSession: () => void;
   /**
-   * 快照读取器。缺省用真实实现；测试注入假实现即可，**不必** `vi.mock` 整个 config 模块
-   * ——模块级替换在进程内共享模块时会泄漏到其他测试文件。
+   * 配置面（快照的唯一来源）。
+   *
+   * **必填**：向导要读的全部东西（配置 / 策略表 / MCP / Agent 定义）都只在服务端那一份
+   * 真相里。曾经它有个「缺省读本地磁盘」的默认值 —— 忘了注入就会静默读到客户端本机的
+   * `~/.ai-zen`，写却写到服务端（「界面说改好了、跑起来还是旧的」）。
+   * 测试注入假端口即可，**不必** `vi.mock` 整个 config 模块（模块级替换在进程内共享
+   * 模块时会泄漏到其他测试文件）。
    */
-  readers?: {
-    readConfig: () => Promise<AppConfig>;
-    readMcpConfig: (scope: McpScope) => Promise<McpReadResult>;
-    readReasoningPresets: () => Promise<ReasoningPresets>;
-    readAgentStore: () => Promise<AgentStore>;
-  };
+  config: ConfigPort;
 }
 
 export interface WizardHost {
@@ -67,15 +61,8 @@ export function useWizardHost({
   hasSession,
   restart,
   reloadSession,
-  readers: injected,
+  config: configPort,
 }: WizardHostDeps): WizardHost {
-  const readers = {
-    readConfig,
-    readMcpConfig,
-    readReasoningPresets,
-    readAgentStore,
-    ...injected,
-  };
   const [wizardStep, setWizardStep] = useState<WizardStep | null>(null);
   const [wizardConfig, setWizardConfig] = useState<AppConfig | null>(null);
   const [wizardPresets, setWizardPresets] = useState<ReasoningPresets>({});
@@ -92,18 +79,18 @@ export function useWizardHost({
 
   const openWizard = async (step: WizardStep) => {
     try {
-      const config = await readers.readConfig();
+      const config = await configPort.readConfig();
       currentEndpointRef.current = resolveCredential(config, modelId)?.endpointId ?? null;
-      const agentStore = await readers.readAgentStore();
+      const agentStore = await configPort.readAgentStore();
       setWizardConfig(config);
-      setWizardPresets(await readers.readReasoningPresets());
+      setWizardPresets(await configPort.readReasoningPresets());
       setWizardAgents(
         agentStore.agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id })),
       );
       setWizardAgentStore(agentStore);
       // 坏文件照样进屏（屏上写明），只把失败原因随之带过去
-      const globalMcp = await readers.readMcpConfig("global");
-      const projectMcp = await readers.readMcpConfig("project");
+      const globalMcp = await configPort.readMcpConfig("global");
+      const projectMcp = await configPort.readMcpConfig("project");
       const errors: Partial<Record<McpScope, string>> = {};
       if (!globalMcp.ok) errors.global = globalMcp.error;
       if (!projectMcp.ok) errors.project = projectMcp.error;
@@ -120,7 +107,7 @@ export function useWizardHost({
 
   const openKeyEditor = async () => {
     try {
-      const config = await readers.readConfig();
+      const config = await configPort.readConfig();
       const credential = resolveCredential(config, modelId);
       if (!credential) {
         notify(t("chat.modelNoEndpoint", { id: modelId }), "error");
