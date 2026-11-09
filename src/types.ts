@@ -29,16 +29,11 @@ export type {
 
 export type { SessionRecord } from "./session-store.js";
 
-import type { SdkAgent, HandoffService } from "@ai-zen/agents-sdk";
+import type { SdkAgent } from "@ai-zen/agents-sdk";
 
 export interface SessionContext {
   agent: SdkAgent;
   currentName: string;
   currentId: string;
   agentId: string | undefined;
-  /**
-   * 交接服务实例：自动迁移、`/migrate`、`/handoff` 共用同一实例。
-   * 先建 ctx 再回填（交接前必已赋值）。
-   */
-  handoffService?: HandoffService;
 }

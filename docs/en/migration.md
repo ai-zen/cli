@@ -106,7 +106,7 @@ Non-interactive environments (pipes, redirects, e2e scripts) have no picker: the
 
 The old conversation is always saved before pruning, so a failed handoff never costs you history: you can retry or keep chatting.
 
-> **The conversation id has exactly one source of truth.** The new id written by `onMigrated` must be visible to the persistence layer immediately (in the CLI, `ChatSession.currentId` proxies `ConversationContext.currentId` instead of holding its own copy). Otherwise the next auto-persist still uses the **old** id and writes the post-`prune` shell (system prompt + breakpoint) **over the old conversation file** — from the user's side, "after the handoff my history was gone and only the handoff doc was left".
+> **The conversation id has exactly one source of truth.** The new id written by `onMigrated` must be visible to the persistence layer immediately (the layer that owns the session proxies `ConversationContext.currentId` instead of holding its own copy; after the session layer moved to the server, that is the server-side `SessionContext`). Otherwise the next auto-persist still uses the **old** id and writes the post-`prune` shell (system prompt + breakpoint) **over the old conversation file** — from the user's side, "after the handoff my history was gone and only the handoff doc was left".
 
 ## Cancellation
 
@@ -116,7 +116,7 @@ Handoff / migration can be interrupted at any point: `Ctrl+C` in the TUI (`Esc` 
 - a handoff document created by this run is deleted (a half-written one even more so);
 - no degradation, no retry, no migration: no "already migrated" illusion.
 
-The cancel handle lives in `HandoffService` (`handoffService.abort()`) rather than in a caller-supplied `signal`: **auto-migration** (the context-overflow path) is driven directly by an SDK plugin, so the CLI never gets a chance to pass a signal in — honouring only an external `signal` means "Ctrl+C during auto-migration is read as 'the model never wrote the document', so it retries once, degrades to `summary` for another round, and migrates anyway". The CLI's `ChatSession.abort()` does exactly two things: `handoffService.abort()` (stop and roll back) plus `agent.abort()` (cut off the round that is currently streaming).
+The cancel handle lives in `HandoffService` (`handoffService.abort()`) rather than in a caller-supplied `signal`: **auto-migration** (the context-overflow path) is driven directly by an SDK plugin, so the CLI never gets a chance to pass a signal in — honouring only an external `signal` means "Ctrl+C during auto-migration is read as 'the model never wrote the document', so it retries once, degrades to `summary` for another round, and migrates anyway". The client's `RemoteChatSession.abort()` does exactly one thing — `session.cancel`; the server then does both: `handoff.abort()` (stop and roll back) plus `agent.abort()` (cut off the round that is currently streaming).
 
 Boundary: once the handoff document **passes validation** (saving the old conversation, pruning history, persisting the new session) it is the **commit point**; a later `Ctrl+C` no longer undoes the migration — that would leave the third state: "old conversation already archived, history already pruned".
 

@@ -107,7 +107,7 @@ outline: deep
 
 旧会话一定在剔除前保存，因此即使交接失败也不会丢历史：可以重试，也可以继续当前对话。
 
-> **会话 id 只有一个真相源。** `onMigrated` 写入的新 id 必须立刻对会话层的落盘逻辑可见（CLI 中 `ChatSession.currentId` 直接代理 `ConversationContext.currentId`，而不是各存一份）。否则下一轮自动落盘仍按旧 id 写盘，会把 `prune` 后的空壳（系统提示 + 断点）覆盖到**旧会话文件**上，表现为「交接之后历史全没了，只剩交接文档」。
+> **会话 id 只有一个真相源。** `onMigrated` 写入的新 id 必须立刻对会话层的落盘逻辑可见（会话层持有的 `currentId` 直接代理 `ConversationContext.currentId`，而不是各存一份；会话执行搬到服务端后这一层是服务端的 `SessionContext`）。否则下一轮自动落盘仍按旧 id 写盘，会把 `prune` 后的空壳（系统提示 + 断点）覆盖到**旧会话文件**上，表现为「交接之后历史全没了，只剩交接文档」。
 
 ## 取消
 
@@ -117,7 +117,7 @@ outline: deep
 - 本次新建的交接文档删掉（写了一半的更不留）；
 - 不降级、不重试、不迁移：不会留下「已迁移」的假象。
 
-取消句柄由 `HandoffService` 自己持有（`handoffService.abort()`），而不是由调用方传 `signal`：**自动迁移**（上下文超限触发的那种）由 SDK 插件直接驱动，CLI 根本没机会把信号递进去 —— 只认外部 `signal` 的后果就是「自动迁移期间按 Ctrl+C 被当成『文档没写出来』，于是重试一轮、再降级 `summary` 一轮，最后照样迁移」。CLI 的 `ChatSession.abort()` 只把两件事一起做：`handoffService.abort()`（停下并回退）+ `agent.abort()`（立刻掐断正在流的这一轮）。
+取消句柄由 `HandoffService` 自己持有（`handoffService.abort()`），而不是由调用方传 `signal`：**自动迁移**（上下文超限触发的那种）由 SDK 插件直接驱动，CLI 根本没机会把信号递进去 —— 只认外部 `signal` 的后果就是「自动迁移期间按 Ctrl+C 被当成『文档没写出来』，于是重试一轮、再降级 `summary` 一轮，最后照样迁移」。客户端的 `RemoteChatSession.abort()` 只做一件事 —— `session.cancel`，由服务端把两件事一起做：`handoff.abort()`（停下并回退）+ `agent.abort()`（立刻掐断正在流的这一轮）。
 
 边界：交接文档**通过校验之后**（存旧会话、剔除历史、落新会话）属于「提交点」，此后的 `Ctrl+C` 不再撤销迁移 —— 那会留下「旧会话已存档、历史却已剔除」的第三种状态。
 

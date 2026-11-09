@@ -11,9 +11,10 @@
  *
  * 所以把「配置面」收成一个接口，两个实现：
  *
- *   · `createLocalConfigPort()` —— 进程内模式：包一层现有的本地函数，行为一字不改；
- *   · `createRemoteConfigPort()` —— 客户端模式：走服务端的 `config.*` / `agent.*`，
- *     落盘发生在服务端。
+ *   · `createRemoteConfigPort()` —— 走服务端的 `config.*` / `agent.*`，落盘发生在服务端。
+ *
+ * 曾经还有一个 `createLocalConfigPort()`（包一层本地函数给进程内模式用）。会话执行搬到
+ * 服务端之后进程内模式没有了，它也就没有调用方 —— 一起删掉，需要时看 git 历史。
  *
  * 签名刻意与本地函数**逐字对齐**（`readConfig` 之类），这样调用点只换注入值，
  * 不换写法：`deps.config.readConfig()` 在两种模式下是同一种读法。
@@ -88,39 +89,6 @@ export interface ConfigPort {
 // ==================================================================
 // 进程内模式
 // ==================================================================
-
-/**
- * 进程内模式：薄薄一层转发。
- *
- * **行为必须与改造前一字不差** —— 这一层只是让调用点有一个统一的注入点，不修任何
- * 语义、不补任何校验：读配置仍是「读到即迁移」，写仍是原子换名，Agent 定义仍是一实体
- * 一 JSON。所以每个方法都直接调到原来那个函数上，**一件事只在原来那处实现一次**；
- * 这里多写一行判断，进程内模式就多出一条与服务端实现不同的行为。
- */
-export function createLocalConfigPort(): ConfigPort {
-  return {
-    readConfig: () => readConfig(),
-
-    saveConfig: (config) => saveConfig(config),
-
-    readReasoningPresets: () => readReasoningPresets(),
-
-    readMcpConfig: (scope = "global") => readMcpConfig(scope),
-
-    writeMcpConfig: (config, scope = "global") => writeMcpConfig(config, scope),
-
-    readAgentStore: () => readAgentStore(),
-
-    /**
-     * 换模型走 `switchModel`，**不自己拼「读定义 → 改 modelId → 写回」**：
-     * 「换模型即重置思考强度」这条规则（旧模型的 `modelParams` 对新模型可能非法）
-     * 只在它里面实现一次，外面再拼一遍就是第二份会漂的规则。
-     */
-    setModel: async (agentId, modelId) => {
-      await switchModel({ config: await readConfig(), agentId, modelId });
-    },
-  };
-}
 
 // ==================================================================
 // 客户端模式

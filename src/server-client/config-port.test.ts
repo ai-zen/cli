@@ -34,7 +34,7 @@ import {
 } from "@ai-zen/agents-server";
 import type { AgentDefinition } from "@ai-zen/agents-sdk";
 import { useTempAiZenDir } from "../test-support/temp-dir.js";
-import { createLocalConfigPort, createRemoteConfigPort } from "./config-port.js";
+import { createRemoteConfigPort } from "./config-port.js";
 import { SocketServerClient } from "./socket-server-client.js";
 import type { ClientInfo, ServerClient } from "./types.js";
 
@@ -55,110 +55,6 @@ function definitionOf(id: string, extra: Partial<AgentDefinition> = {}): AgentDe
     ...extra,
   };
 }
-
-describe("createLocalConfigPort：进程内模式（包一层本地函数）", () => {
-  beforeEach(async () => {
-    // 进程内共享模块：别的文件会改 `AI_ZEN_DIR`，每个用例前钉回本文件的临时根
-    zen.pin();
-    // 每例从空目录开始：上个用例写下的配置 / 定义不能漏进来
-    await fs.rm(localDir, { recursive: true, force: true });
-  });
-
-  afterAll(() => {
-    zen.cleanup();
-  });
-
-  it("readConfig / saveConfig：改一个字段写回，再读得到（真的落盘）", async () => {
-    const port = createLocalConfigPort();
-
-    // 空目录下第一次读会初始化出厂配置（端点 / 模型 / 目录），这是本地模式原有的行为
-    const before = await port.readConfig();
-    expect(Array.isArray(before.endpoints)).toBe(true);
-    expect(before.maxToolOutput).not.toBe(4242);
-
-    await port.saveConfig({ ...before, maxToolOutput: 4242 });
-
-    expect((await port.readConfig()).maxToolOutput).toBe(4242);
-    // 不只是内存里对：盘上那份也得是它
-    const onDisk = JSON.parse(readFileSync(join(localDir, "config.json"), "utf-8")) as {
-      maxToolOutput?: number;
-    };
-    expect(onDisk.maxToolOutput).toBe(4242);
-  });
-
-  it("readMcpConfig：文件不存在是空配置，坏文件是「可展示的状态」而不是空配置", async () => {
-    const port = createLocalConfigPort();
-
-    // 不存在：正常的空配置（`ok: true`）
-    expect(await port.readMcpConfig("global")).toEqual({ ok: true, config: { mcpServers: {} } });
-
-    // 写一份再读回来：作用域参数真的转给了本地函数（落点是 `<AI_ZEN_DIR>/mcp.json`）
-    const mcpConfig = { mcpServers: { demo: { command: "echo", args: ["hi"] } } };
-    await port.writeMcpConfig(mcpConfig, "global");
-    expect(await port.readMcpConfig("global")).toEqual({ ok: true, config: mcpConfig });
-
-    // 坏文件：`ok: false` + 有 error 原文，且**不冒充**「没有服务器」——
-    // 编辑屏要能显示「这个文件坏了」，用户才不会一保存就把原内容覆盖掉
-    await fs.writeFile(join(localDir, "mcp.json"), "{ bad json", "utf-8");
-    const broken = await port.readMcpConfig("global");
-    expect(broken.ok).toBe(false);
-    if (broken.ok) throw new Error("unreachable: 坏文件不该被当成可用的配置");
-    expect(broken.error).toMatch(/JSON/i);
-    expect(broken).not.toHaveProperty("config");
-  });
-
-  it("readAgentStore：能列出 agents / subAgents，save / remove 都落到对应目录", async () => {
-    const port = createLocalConfigPort();
-    // 先读一次配置：出厂初始化会把 agents / sub-agents 目录与出厂定义一起放出来
-    await port.readConfig();
-
-    const initial = await port.readAgentStore();
-    expect(initial.agents.map((def) => def.id)).toContain("default");
-    expect(initial.subAgents.length).toBeGreaterThan(0);
-
-    await initial.save("agent", definitionOf("port-agent"));
-    await initial.save("subagent", definitionOf("port-sub"));
-
-    // 重新读一次快照：列表来自磁盘，不是上面那次 list 的缓存
-    const listed = await port.readAgentStore();
-    expect(listed.agents.map((def) => def.id)).toContain("port-agent");
-    expect(listed.subAgents.map((def) => def.id)).toContain("port-sub");
-    expect(existsSync(join(localDir, "agents", "port-agent.json"))).toBe(true);
-    expect(existsSync(join(localDir, "sub-agents", "port-sub.json"))).toBe(true);
-
-    await listed.remove("agent", "port-agent");
-    expect((await port.readAgentStore()).agents.map((def) => def.id)).not.toContain("port-agent");
-  });
-
-  it("setModel：写 definition.modelId 并清空 modelParams（换模型即重置思考强度）", async () => {
-    const port = createLocalConfigPort();
-    // 出厂配置里已经有模型；换到一个**存在**的模型上（不存在是另一条错误路径）
-    const config = await port.readConfig();
-    const targetModelId = config.models[0].id;
-
-    const definition = definitionOf("port-agent", {
-      name: "Port Agent",
-      modelParams: { thinking: { type: "disabled" } },
-    });
-    await fs.mkdir(join(localDir, "agents"), { recursive: true });
-    await fs.writeFile(
-      join(localDir, "agents", "port-agent.json"),
-      JSON.stringify(definition, null, 2),
-      "utf-8",
-    );
-
-    await port.setModel("port-agent", targetModelId);
-
-    const onDisk = JSON.parse(
-      await fs.readFile(join(localDir, "agents", "port-agent.json"), "utf-8"),
-    ) as AgentDefinition;
-    expect(onDisk.modelId).toBe(targetModelId);
-    // 旧模型的思考参数对新模型可能非法，所以是**清掉**（不是留空对象）
-    expect(onDisk).not.toHaveProperty("modelParams");
-    // 其它字段一个都不能丢：写入是「读 → 改字段 → 写回」
-    expect(onDisk.name).toBe("Port Agent");
-  });
-});
 
 // ==================================================================
 // 客户端模式：真 Daemon + 真 socket + 服务端自己的临时目录
