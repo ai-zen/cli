@@ -35,7 +35,7 @@ export interface ChatSessionLike {
   readonly currentName: string;
   /** 对话消息（屏幕的唯一数据源） */
   readonly messages: AgentNS.Message[];
-  /** 本轮内出现过的子 Agent（只活当前一轮；两个实现都给） */
+  /** 本轮内出现过的子 Agent（只活当前一轮） */
   readonly subAgents: readonly SubAgentView[];
   /** 最近一轮用量；未知时 `undefined`（客户端别自己编一个） */
   readonly lastUsage?: AgentNS.Usage;
@@ -78,8 +78,8 @@ export interface ChatSessionLike {
   /**
    * 本工作区的文件清单（`@` 补全用）。
    *
-   * 为什么它在会话契约里：清单必须来自**会话真正跑在哪个目录**——那目录属于服务端。
-   * 远程实现问服务端（`workspace.files`），进程内实现扫本机；屏幕只负责过滤与插入。
+   * 为什么它在会话契约里：清单必须来自**会话真正跑在哪个目录**——那目录属于服务端，
+   * `workspace.files` 扫的就是那边的磁盘。屏幕只负责过滤与插入。
    */
   listWorkspaceFiles(): Promise<PathEntry[]>;
   /** 释放资源（卸监听 / 断连接） */
@@ -124,8 +124,8 @@ export interface SubAgentView {
    * 这个子 Agent 到目前为止的完整对话。
    *
    * 这里**刻意不是子 Agent 实例**：实例只存在于「Agent 跑在这个进程里」那种形态
-   * （`CoreAgent.messages`）。远程时对话在服务端，客户端能拿到的是数据而不是对象。
-   * 契约写成数据，进程内 / 远程两个实现才共用同一份接口，屏幕也只需要「读消息」。
+   * （`CoreAgent.messages`），而现在 Agent 跑在服务端，客户端能拿到的是数据而不是对象。
+   * 契约写成数据，屏幕也只需要「读消息」。
    */
   messages: AgentNS.Message[];
   /** 执行状态（渲染期读，故设为可变字段） */
@@ -145,9 +145,8 @@ export interface ChatSessionOptions {
   /**
    * 续接该工作区的「上一轮会话」（有就接着，没有就开新的）。
    *
-   * 为什么是**意图**而不是数据：这件事的答案（哪一段是上一轮）原本只存在于本地存档里，
-   * 客户端自己去读就是又一份会漂的真相。远程实现问服务端（`session.last`），进程内实现
-   * 读本地指针；屏幕层只说「我要接着上次」，不说接哪一段。
+   * 为什么是**意图**而不是数据：这件事的答案（哪一段是上一轮）只在服务端（指针 + 存档），
+   * 客户端自己去读就是又一份会漂的真相。屏幕层只说「我要接着上次」，不说接哪一段。
    *
    * 给了明确的 `sessionId` 时以它为准（`/load` 选中的那段）。
    */

@@ -22,9 +22,9 @@ import {
   parseCommandArgs,
   type CommandName,
 } from "../../session-commands/registry.js";
-// 配置的读与写统一走**配置面**（`ConfigPort`）：进程内模式下它是本地函数的包装，
-// 客户端模式下它走服务端。命令层不再自己吃盘 —— 否则「界面说改好了」和「服务端
-// Agent 实际用的那份配置」会各说各话（客户端搬到另一台机器上时错得很安静）。
+// 配置的读与写统一走**配置面**（`ConfigPort`），它永远开向服务端。命令层不再自己吃盘 ——
+// 否则「界面说改好了」和「服务端 Agent 实际用的那份配置」会各说各话（客户端搬到另一台
+// 机器上时错得很安静）。
 import type { ConfigPort } from "../../server-client/config-port.js";
 // 留下的是**纯数据整形**：把读取结果转成配置 / 列表，不吃盘，故不经端口
 import { mcpConfigOrEmpty } from "../../config.js";
@@ -450,7 +450,7 @@ const cmdAgent: CommandHandler = async ({ session, push, args, pick, config }) =
 
 const cmdReload: CommandHandler = async ({ session, push }) => {
   // 手改配置文件（mcp.json / skills / tools / config.json）后不用重启 CLI：
-  // `session.reload()` 内含 resetScope()（断开旧 MCP 连接）→ 重建 Agent → 重新发现。
+  // `session.reload()` 在服务端重建 Agent（Scope 失效 → 旧 MCP 连接断开 → 重新发现）。
   // 消息与上下文保留，所以「刷新一下就看到新东西」不需要新开对话。
   try {
     await session.reload();

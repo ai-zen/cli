@@ -154,9 +154,9 @@ interface ChatTarget {
   /**
    * 「接着该工作区的上一轮会话」—— 只是**意图**，不带任何数据。
    *
-   * 为什么不再由这里读盘：会话执行已经搬到服务端，远程时那段对话根本不在本机磁盘上，
-   * 读本地存档只会得出「永远没有上次」。哪一段算上一轮，交给会话实现去问（远程问
-   * 服务端的 `session.last`，进程内读本地指针）。
+   * 为什么不再由这里读盘：会话执行已经搬到服务端，那段对话根本不在本机磁盘上，
+   * 读本地存档只会得出「永远没有上次」。哪一段算上一轮，交给会话实现去问
+   * （`session.last`）。
    */
   resume?: boolean;
 }
@@ -169,8 +169,8 @@ interface ChatTarget {
  */
 async function modelOf(agentId: string | undefined): Promise<string> {
   const id = agentId || "default";
-  // 历史 Agent 缺 `modelId` 的补齐（迁移 / bootstrap）发生在**持有定义的那一侧**：
-  // 远程时是服务端，进程内时是本地初始化。客户端只负责读快照，不自己重做一遍迁移
+  // 历史 Agent 缺 `modelId` 的补齐（迁移 / bootstrap）发生在**持有定义的那一侧**
+  // （服务端）。客户端只负责读快照，不自己重做一遍迁移
   // （在这里补写会让「谁改的配置」变得说不清）；读到的定义若仍无 modelId，就是真缺。
   const [config, store] = await Promise.all([configPort.readConfig(), configPort.readAgentStore()]);
   const modelId = store.agents.find((agent) => agent.id === id)?.modelId;

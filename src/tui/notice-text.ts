@@ -46,13 +46,17 @@ const NOTICE_KEYS: Record<NoticeCode, string> = {
  * 其余原样代入 —— 服务端只放事实，不放句子。
  */
 export function noticeText(code: NoticeCode, params: Record<string, unknown> = {}): string {
-  return t(NOTICE_KEYS[code] ?? `notice.${code}`, localizeParams(code, params));
+  return t(NOTICE_KEYS[code] ?? `notice.${code}`, localizeParams(params));
 }
 
-function localizeParams(
-  code: NoticeCode,
-  params: Record<string, unknown>,
-): Record<string, string | number> {
+/**
+ * 把 `params` 里的值变成可直接代入模板的字符串/数字。
+ *
+ * 曾经它还兼任一件事：把 `handoffArchived` 的 `sessionId` 补成模板要的 `{name}`。
+ * 那是「会话名」与「会话 id」两套词汇共存时的过渡物 —— 现在模板就用协议里的字段名，
+ * 补丁随之消失（服务端给什么，这里就代什么）。
+ */
+function localizeParams(params: Record<string, unknown>): Record<string, string | number> {
   const localized: Record<string, string | number> = {};
   for (const [name, value] of Object.entries(params)) {
     if ((name === "mode" || name === "requested") && typeof value === "string") {
@@ -62,14 +66,6 @@ function localizeParams(
     } else if (value != null) {
       localized[name] = String(value);
     }
-  }
-  // 存档那条模板用的是 `{name}`（会话名），而服务端只给 `sessionId`
-  if (
-    code === "handoffArchived" &&
-    localized.name === undefined &&
-    localized.sessionId !== undefined
-  ) {
-    localized.name = localized.sessionId;
   }
   return localized;
 }

@@ -83,7 +83,7 @@ export type CreateChatSession = (
  * 进程内共享模块（`isolate: false`）时是全局生效的，会把别的测试文件也带偏。
  */
 export interface ChatDeps {
-  /** 配置面的唯一入口：远程模式走服务端，进程内模式走本地 */
+  /** 配置面的唯一入口：真相在服务端，客户端只是问它 */
   config: ConfigPort;
   createSession: CreateChatSession;
   readClipboardImage: typeof readClipboardImage;
@@ -126,9 +126,9 @@ export interface ChatScreenProps {
   /**
    * 「接着该工作区的上一轮会话」—— 只表达**意图**，不带数据。
    *
-   * 为什么屏幕层不自己判断「有没有上一轮」：哪一段算上一轮，真相在会话实现的那一侧
-   * （远程时是服务端存档，进程内时是本地指针）。屏幕去读一遍就是第二份会漂的真相，
-   * 远程时更会永远得出「没有上次」——所以这里只把意图透传给会话层。
+   * 为什么屏幕层不自己判断「有没有上一轮」：哪一段算上一轮，真相在服务端（指针 + 存档）。
+   * 屏幕去读一遍就是第二份会漂的真相，而且永远得出「没有上次」——所以这里只把意图
+   * 透传给会话层。
    */
   resume?: boolean;
   /** 重挂载时的初始输入（/back 撤回后用于预填） */
@@ -565,8 +565,8 @@ export function Chat(props: ChatScreenProps) {
    *
    * 为什么问会话而不是自己扫盘：`@` 补全给出的路径必须对**跑会话的那台机器**成立。
    * 会话现在跑在服务端，屏幕这边扫本机磁盘列出的是客户端机器的文件 —— 模型拿到那些
-   * 路径一律 not found。`listWorkspaceFiles()` 由会话实现决定问谁（远程问服务端，
-   * 进程内扫本机），屏幕只负责过滤与插入。
+   * 路径一律 not found。`listWorkspaceFiles()` 问的就是服务端（扫的是它的 `FileIndex`），
+   * 屏幕只负责过滤与插入。
    *
    * 为什么这里不再叠一层缓存：15s TTL 已经在真正持有清单的那一侧（服务端的 `FileIndex`）。
    * 屏幕再存一份就是两份 TTL、两个真相——两边过期时间不同时，用户看到的是「刚建的
@@ -1064,7 +1064,7 @@ export function Chat(props: ChatScreenProps) {
         agents={wizardAgents}
         mcp={wizardMcp ?? undefined}
         agentStore={wizardAgentStore ?? undefined}
-        // 落盘由配置面决定去处：远程模式写服务端，进程内模式写本地
+        // 落盘由配置面决定去处：写的是服务端那份
         onSave={(config) => deps.config.saveConfig(config)}
         onSaveMcp={(scope, cfg) => deps.config.writeMcpConfig(cfg, scope)}
         onClose={closeWizard}

@@ -9,15 +9,14 @@
  * 「我在笔记本上改的配置」和「服务端 Agent 实际用的配置」就是两份互不相干的事实 ——
  * 界面上显示成功，跑起来还是旧模型（错得很安静）。
  *
- * 所以把「配置面」收成一个接口，两个实现：
+ * 所以把「配置面」收成一个接口，**只有一个实现**：`createRemoteConfigPort()` —— 走服务端的
+ * `config.*` / `agent.*`，落盘发生在服务端。
  *
- *   · `createRemoteConfigPort()` —— 走服务端的 `config.*` / `agent.*`，落盘发生在服务端。
+ * 曾经还有第二个实现（`createLocalConfigPort()`，包一层本地函数给进程内模式用）。会话执行
+ * 搬到服务端之后进程内模式没有了，它也就没有调用方 —— 一起删掉，需要时看 git 历史。
  *
- * 曾经还有一个 `createLocalConfigPort()`（包一层本地函数给进程内模式用）。会话执行搬到
- * 服务端之后进程内模式没有了，它也就没有调用方 —— 一起删掉，需要时看 git 历史。
- *
- * 签名刻意与本地函数**逐字对齐**（`readConfig` 之类），这样调用点只换注入值，
- * 不换写法：`deps.config.readConfig()` 在两种模式下是同一种读法。
+ * 方法签名刻意与那些本地函数**逐字对齐**（`readConfig` 之类），这样调用点只换注入值，
+ * 不换写法：`deps.config.readConfig()` 读的就是同一件事（只是问在服务端）。
  *
  * ## MCP 的「项目作用域」为什么不传路径
  *
@@ -304,10 +303,8 @@ const CONFIG_PORT_CLIENT_INFO: ClientInfo = { name: "@ai-zen/cli", version: CLI_
 /**
  * 连接是否已经死了。
  *
- * `ServerClient` 接口上没有存活标志（它只需要 `call` / `on` / `close`），但
- * `SocketServerClient` 在连接断开时会置内部的 `closed`。这里做一次**结构化探测**：
- * 探得到就用，探不到（将来换传输、或测试里的假 client）就当它活着 —— 探测不出来时
- * 正确的做法是照常调用，让真错误从 `call()` 里原样冒出来，而不是在这儿先造一个。
+ * 直接读端口上的 `closed`（见 `types.ts` 的 `ServerClient`）—— **不做结构化探测**：
+ * 存活标志就在契约里，这是为了不让调用方去摸 `SocketServerClient` 的私有字段才放上去的。
  */
 function isClosed(client: ServerClient): boolean {
   return client.closed;
