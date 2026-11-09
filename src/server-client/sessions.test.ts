@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -25,8 +26,18 @@ import { RemoteSessions } from "./sessions.js";
 import type { ClientInfo } from "./types.js";
 
 class FakeAgent implements AgentLike {
-  messages: unknown[] = [];
+  messages: any[] = [];
   lastUsage: unknown = undefined;
+  /** 交接要用的那几面（真件是 SDK 的 `SdkAgent`）：无 write 工具 → 走摘要模式 */
+  definition = { messages: [] as any[] };
+  tools: Array<{ function?: { name?: string } }> = [];
+  model = "m";
+  modelConfig: Record<string, unknown> = {};
+  client: unknown = {
+    chat: { completions: { create: async () => ({ choices: [{ message: { content: DOC } }] }) } },
+  };
+  scope = { cwd: "/work/proj" };
+  use(_plugin: unknown): void {}
   private readonly handlers = new Map<string, Set<(payload: any) => void>>();
   readonly events = {
     on: (event: string, handler: (payload: any) => void) => {
@@ -47,6 +58,9 @@ class FakeAgent implements AgentLike {
 }
 
 const clientInfo: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
+
+/** 交接文档正文：SDK 有 400 字节的有效性阈值 */
+const DOC = `# 交接\n\n${"- 桩\n".repeat(80)}`;
 
 let dir: string;
 let daemon: Daemon | null = null;
@@ -188,6 +202,43 @@ describe("RemoteSessions", () => {
     });
     expect((await store.read(sessionId))?.messages).toEqual([{ role: "user", content: "留档" }]);
     expect((await store.lastSession())?.id).toBe(sessionId);
+  });
+
+  it("handoff / migrate：客户端只给 sessionId，文档落盘与换 id 都在服务端完成", async () => {
+    // 换一个能递增 id 的 manager：migrate 要新 id，固定 id 会撞 session-exists
+    let counter = 0;
+    manager = new SessionManager({
+      createAgent: async () => agent,
+      nextSessionId: () => `chat_${++counter}`,
+      storeFor: (workspaceId) =>
+        new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) }),
+      handoff: { aiZenDir: join(dir, "ai-zen"), homeDir: dir },
+    });
+    await start();
+
+    const { sessionId } = await sessions.open({ path: join(dir, "proj") });
+    agent.messages = [{ role: "user", content: "任务" }];
+
+    // /handoff：只写文档，会话不变
+    const handed = await sessions.handoff(sessionId);
+    expect(handed.sessionId).toBe(sessionId);
+    expect(handed.mode).toBe("summary");
+    expect(existsSync(handed.handoffPath)).toBe(true);
+
+    // /migrate：换 id，旧 id 在服务端退场
+    const migrated = await sessions.migrate(sessionId);
+    expect(migrated.sessionId).not.toBe(sessionId);
+    expect(migrated.messages).toEqual(agent.messages);
+
+    const workspace = await sessions.resolveWorkspace(join(dir, "proj"));
+    const listed = await sessions.list(workspace.workspaceId);
+    expect(listed.sessions.map((session) => session.sessionId)).toEqual([migrated.sessionId]);
+
+    // 旧会话与新会话都在存档里（旧的那份是交接前的完整历史）
+    const saved = await sessions.listSaved(workspace.workspaceId);
+    expect(saved.sessions.map((ref) => ref.id).sort()).toEqual(
+      [sessionId, migrated.sessionId].sort(),
+    );
   });
 
   it("事件线：send 之后阶段与收尾都推到客户端", async () => {

@@ -13,10 +13,13 @@ import {
   EVENT_METHODS,
   SESSION_METHODS,
   type AgentSetModelResult,
+  type HandoffMode,
   type SessionCancelResult,
   type SessionCreateResult,
+  type SessionHandoffResult,
   type SessionListResult,
   type SessionListSavedResult,
+  type SessionMigrateResult,
   type SessionRollbackResult,
   type SessionSaveResult,
   type SessionSendResult,
@@ -105,5 +108,30 @@ export class RemoteSessions {
   /** 落盘当前会话（并把它设为「上一轮会话」） */
   async save(sessionId: string): Promise<SessionSaveResult> {
     return await this.client.call<SessionSaveResult>(SESSION_METHODS.save, { sessionId });
+  }
+
+  /**
+   * 只产出交接文档（`/handoff`）：会话 id 不变、历史不动。
+   *
+   * 进度（`handoffWriting` / `handoffPath` / 降级）走 `session.notice`，流式正文走
+   * `message.delta` —— 这个方法可能要跑一两分钟，等回执期间界面靠事件渲染。
+   */
+  async handoff(sessionId: string, mode?: HandoffMode): Promise<SessionHandoffResult> {
+    return await this.client.call<SessionHandoffResult>(SESSION_METHODS.handoff, {
+      sessionId,
+      ...(mode ? { mode } : {}),
+    });
+  }
+
+  /**
+   * 交接 + 开新会话（`/migrate`）：**返回的 `sessionId` 是新的**。
+   *
+   * 调用方必须把之后所有请求都换到新 id 上，旧 id 在服务端已经退场（`unknown-session`）。
+   */
+  async migrate(sessionId: string, mode?: HandoffMode): Promise<SessionMigrateResult> {
+    return await this.client.call<SessionMigrateResult>(SESSION_METHODS.migrate, {
+      sessionId,
+      ...(mode ? { mode } : {}),
+    });
   }
 }
