@@ -212,6 +212,8 @@ describe("/back：撤回后必须落盘", () => {
 
     expect(session.rollbackTo).toHaveBeenCalledWith(2);
     expect(session.save).toHaveBeenCalledTimes(1);
+    // 重挂载必须带上**此刻**的会话 id：宿主手上那个是首次挂载时的，过期后会接回另一段对话
+    expect(host.exit).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "chat_back" }));
     // 先撤回、再落盘（顺序反了就会把完整对话又写回去）
     expect(session.rollbackTo.mock.invocationCallOrder[0]!).toBeLessThan(
       session.save.mock.invocationCallOrder[0]!,
@@ -489,5 +491,42 @@ describe("配置来源是 deps.config（假端口），不是本地读盘", () =
     ]);
     // 两份都为空 → 默认进 global
     expect(host.openWizard).toHaveBeenCalledWith({ kind: "mcp", scope: "global" });
+  });
+});
+
+/**
+ * `/agent`：换 Agent 是**会话层**的事（`session.setAgent`），不再重挂载对话屏。
+ *
+ * 回归点：这条命令曾经走 `exit({ restart: true, agentId })`，而远程模式下服务端对活着的
+ * 会话直接返回、忽略 `agentId` —— 界面提示「已切换」，实际下一轮仍由旧 Agent 跑。
+ */
+describe("/agent：走 session.setAgent，不重挂载", () => {
+  it("调 setAgent(chosen) 且不 exit；会话已经在这个 Agent 上时不重建", async () => {
+    const setAgent = vi.fn(async () => {});
+    const store = fakeAgentStore([agentDefinition("default", "m1"), agentDefinition("coder", "m1")]);
+    const { host } = createHost(
+      { agentId: "default", setAgent },
+      { readAgentStore: vi.fn(async () => store) },
+    );
+
+    await runCommand("agent", "/agent coder", host);
+
+    expect(setAgent).toHaveBeenCalledWith("coder");
+    // 换 Agent 不换屏：重挂载会把整屏刷一遍、丢掉正在写的草稿，而这次不需要
+    expect(host.exit).not.toHaveBeenCalled();
+  });
+
+  it("会话已经在这个 Agent 上：只写「默认 Agent」记号，不重建", async () => {
+    const setAgent = vi.fn(async () => {});
+    const store = fakeAgentStore([agentDefinition("default", "m1"), agentDefinition("coder", "m1")]);
+    const { host } = createHost(
+      { agentId: "coder", setAgent },
+      { readAgentStore: vi.fn(async () => store) },
+    );
+
+    await runCommand("agent", "/agent coder", host);
+
+    expect(setAgent).not.toHaveBeenCalled();
+    expect(host.exit).not.toHaveBeenCalled();
   });
 });

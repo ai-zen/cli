@@ -29,7 +29,6 @@ import {
 import type { ConfigPort } from "../../server-client/config-port.js";
 // 留下的是**纯数据整形**：把读取结果转成配置 / 列表，不吃盘，故不经端口
 import { mcpConfigOrEmpty } from "../../config.js";
-import { resetScope } from "../../agent-creator.js";
 import { listAgentChoices, switchAgent } from "../../agent-switch.js";
 import { parseMcpScope, pickStartScope } from "../../mcp-command.js";
 import {
@@ -243,9 +242,17 @@ const cmdBack: CommandHandler = async ({ session, push, rows, exit, pick }) => {
   const text = await session.rollbackTo(Number(choice));
   // 撤回也要落盘：否则存档里仍留着被撤回的消息，下次 `/load` 或重启就「复活」。
   // `save()` 会顺带更新 last-session 指针 —— 刚撤回的会话就是本目录的上一轮，符合预期。
-  // （服务端实现的 `rollbackTo` 自己已经写过一次，多这一次无害；进程内实现靠的就是这里）
+  // （服务端实现的 `rollbackTo` 自己已经写过一次，多这一次无害）
   await session.save();
-  exit({ restart: true, messages: session.messages, initialInput: text });
+  // 重挂载要保持原来的交互（清屏、滚动归零、预填输入），但**必须带上此刻的会话 id**：
+  // 宿主手上那个 id 是首次挂载时的，`/new`、自动迁移、`/save <名字>` 都会让它过期 ——
+  // 带旧 id 重挂载会接回另一段对话（撤回白撤），或直接撞 `session-missing`。
+  exit({
+    restart: true,
+    sessionId: session.currentId,
+    messages: session.messages,
+    initialInput: text,
+  });
 };
 
 const cmdEditor: CommandHandler = async ({ push, suspendTerminal, setInputText }) => {
@@ -355,7 +362,7 @@ const cmdModel: CommandHandler = async ({ session, push, args, pick, config }) =
   }
 };
 
-const cmdAgent: CommandHandler = async ({ session, push, args, exit, pick, config }) => {
+const cmdAgent: CommandHandler = async ({ session, push, args, pick, config }) => {
   const appConfig = await config.readConfig();
   const store = await config.readAgentStore();
   const choices = listAgentChoices(appConfig, store.agents);
@@ -407,12 +414,16 @@ const cmdAgent: CommandHandler = async ({ session, push, args, exit, pick, confi
       push(t("cmd.agent.alreadyOn", { summary: result.summary ?? "" }));
       return;
     }
-    // Scope 持有 Agent / 配置快照：不重建的话下一轮请求还是旧 Agent
-    await resetScope();
-    // 保留重挂载：换的是**会话的 agentId**，不是「同一 Agent 换个模型」，
-    // `session.reload()` 重的是同一个 Agent，换不了身份 —— 所以这条命令仍靠宿主
-    // 重新挂载对话屏（提示词、工具集、模型全跟着 Agent 变；消息与上下文保留）
-    exit({ restart: true, agentId: chosen, messages: session.messages, notice: result.summary });
+    // 换 Agent 是**会话层**的事：服务端按新定义重建、保留消息、更新会话的 `agentId`。
+    //
+    // 这里曾经是 `resetScope()` + `exit({ restart: true, agentId })`（重挂载对话屏）。
+    // 远程模式下那条路是错的：重挂载只能换个参数，而服务端对**活着的**会话直接返回、
+    // 忽略 `agentId`（`attach` 的语义就是「接上」）—— 于是界面提示「已切换」，实际下一轮
+    // 仍由旧 Agent 跑；会话不活且没存档时反而撞 `session-missing` 掉进启动错误屏。
+    // `resetScope()` 也不再有意义：它重置的是客户端进程内的那个 Scope 单例。
+    await session.setAgent(chosen);
+    // 与旧版一致：`summary` 有就说一句（重挂载那条路上它曾是 `initialNotice`）
+    if (result.summary) push(result.summary);
   } catch (error: any) {
     push(t("cmd.agent.failed", { error: error?.message ?? error }), "error");
   }

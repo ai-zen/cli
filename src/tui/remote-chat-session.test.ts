@@ -1105,3 +1105,56 @@ describe("RemoteChatSession：用量口径", () => {
     });
   });
 });
+
+describe("RemoteChatSession：换 Agent 与保活区", () => {
+  it("setAgent：换 Agent、消息一条不丢、会话的 agentId 跟着变", async () => {
+    const opened = await open();
+    agent.messages = [{ role: "user", content: "在聊" }] as never;
+    await opened.reload(); // 把消息同步进客户端（快照是唯一真相源）
+    const workspaceId = observed<string>(opened, "workspaceId");
+
+    await opened.setAgent("coder");
+
+    expect(opened.agentId).toBe("coder");
+    expect(opened.messages).toHaveLength(1);
+    // 服务端那侧的会话身份也换了（`session.list` 的 keepAlive 之外就看这个）
+    const live = await new RemoteSessions(await startServer()).list(workspaceId);
+    expect(live.sessions.find((item) => item.sessionId === opened.currentId)!.agentId).toBe("coder");
+  });
+
+  it("/new（reset）之后旧会话移出保活区：服务端当场回收，存档还在", async () => {
+    const opened = await open();
+    agent.messages = [{ role: "user", content: "第一段" }] as never;
+    await opened.reload();
+    const workspaceId = observed<string>(opened, "workspaceId");
+    const previous = opened.currentId;
+
+    await opened.reset();
+
+    expect(opened.currentId).not.toBe(previous);
+    const live = await new RemoteSessions(await startServer()).list(workspaceId);
+    expect(live.sessions.map((item) => item.sessionId)).not.toContain(previous);
+    // 存档在：`reset()` 先归档再放手，所以「旧的那段」随时装得回来
+    const store = new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) });
+    expect(await store.read(previous)).not.toBeNull();
+  });
+
+  it("keepAlive.set off + 空闲 → 当场回收；`attach` 能从存档把它装回来", async () => {
+    const opened = await open();
+    agent.messages = [{ role: "user", content: "聊过一句" }] as never;
+    await opened.reload();
+    const workspaceId = observed<string>(opened, "workspaceId");
+    const id = opened.currentId;
+    await opened.save(); // 落盘（每轮收尾也会写，这里让用例自足）
+
+    const sessions = new RemoteSessions(await startServer());
+    expect(await sessions.keepAliveSet(id, false)).toEqual({ sessionId: id, keepAlive: false });
+
+    // 活会话没了……
+    expect((await sessions.list(workspaceId)).sessions.map((item) => item.sessionId)).not.toContain(id);
+    // ……但点回来能接上（rehydrate 走存档：这就是「回收不丢内容」的依据）
+    const again = await sessions.attach({ workspaceId, sessionId: id, path: workspaceDir });
+    expect(again.sessionId).toBe(id);
+    expect((await sessions.snapshot(id)).messages).toHaveLength(1);
+  });
+});

@@ -19,8 +19,10 @@ import {
   type SessionAnswerResult,
   type SessionAttachResult,
   type SessionCancelResult,
+  type SessionCloseResult,
   type SessionCreateResult,
   type SessionHandoffResult,
+  type SessionKeepAliveSetResult,
   type SessionListResult,
   type SessionListSavedResult,
   type SessionLastResult,
@@ -187,6 +189,35 @@ export class RemoteSessions {
   /** 按磁盘上的新配置/定义重建 Agent（保留消息），返回重建后的快照 */
   async reload(sessionId: string): Promise<SessionSnapshotResult> {
     return await this.client.call<SessionSnapshotResult>(SESSION_METHODS.reload, { sessionId });
+  }
+
+  /**
+   * 换 Agent：同一段对话换个 Agent 继续（服务端保留消息、更新 `agentId`）。
+   *
+   * 返回快照：模型、消息与阈值都跟着变了，客户端拿它一次对齐屏幕。
+   */
+  async setAgent(sessionId: string, agentId: string): Promise<SessionSnapshotResult> {
+    return await this.client.call<SessionSnapshotResult>(SESSION_METHODS.setAgent, {
+      sessionId,
+      agentId,
+    });
+  }
+
+  /** 明确关闭一段会话（幂等：不在跑时回 `closed:false`，不当错误） */
+  async close(sessionId: string): Promise<SessionCloseResult> {
+    return await this.client.call<SessionCloseResult>(SESSION_METHODS.close, { sessionId });
+  }
+
+  /**
+   * 保活区开关：`on:false` 且会话空闲时服务端**当场**回收它（存档留着，下次 `attach` 装回来）。
+   *
+   * 新会话缺省在保活区里（服务端默认），所以客户端只需要在「不看了」时发 `false`。
+   */
+  async keepAliveSet(sessionId: string, on: boolean): Promise<SessionKeepAliveSetResult> {
+    return await this.client.call<SessionKeepAliveSetResult>(SESSION_METHODS.keepAliveSet, {
+      sessionId,
+      on,
+    });
   }
 
   /** 落盘当前会话（并把它设为「上一轮会话」） */

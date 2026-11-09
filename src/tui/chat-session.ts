@@ -52,6 +52,14 @@ export interface ChatSessionLike {
   reset(): Promise<string | null>;
   /** 按磁盘上的新配置重建（保留消息） */
   reload(): Promise<void>;
+  /**
+   * 换 Agent：同一段对话换个 Agent 继续（**保留消息**）。
+   *
+   * 为什么不走「重挂载对话屏」：会话与 Agent 身份都在服务端手里，客户端只持有一个 id。
+   * 重挂载只能换个 `agentId` 参数，而服务端对活着的会话是无视这个参数的（`attach` 只接上）
+   * —— 于是界面说「已切换」，实际跑的仍是旧 Agent。
+   */
+  setAgent(agentId: string): Promise<void>;
   /** `/migrate`：交接 + 开新会话；返回交接文档路径 */
   migrate(mode?: HandoffMode): Promise<string>;
   /** `/handoff`：只产出交接文档，不动会话；返回文档路径 */

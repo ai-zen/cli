@@ -277,7 +277,10 @@ export interface OpenRemoteSessionInput {
 }
 
 export class RemoteChatSession implements ChatSessionLike {
-  readonly agentId: string;
+  /**
+   * 当前 Agent —— **可变**：`setAgent` 会让它变（契约里仍只声明只读，对屏幕而言它就是只读的）。
+   */
+  agentId: string;
   /**
    * 工作区路径 —— **服务端规范化后**的那个（`workspace.resolve` 的返回值）。
    *
@@ -544,6 +547,8 @@ export class RemoteChatSession implements ChatSessionLike {
     // 用 `this.path`（服务端规范化后的工作区路径）而不是客户端 cwd：`/new` 是「同一个
     // 工作区里换一段会话」，换到客户端进程的目录就等于替服务端换了地方
     const opened = await this.sessions.open({ path: this.path, agentId: this.agentId });
+    // 旧的这段：我不再看着它了（它已经落过盘，服务端会当场或跑完就收）
+    await this.releaseKeepAlive(this.sessionId);
     this.sessionId = opened.sessionId;
     this.clearSubAgents();
     this.currentMessages = [];
@@ -558,6 +563,22 @@ export class RemoteChatSession implements ChatSessionLike {
     // 重建 Agent 之后旧的子 Agent 已经不属于它了（与进程内实现 `reload()` 同步）
     this.clearSubAgents();
     this.applySnapshot(await this.sessions.reload(this.sessionId));
+    this.notifier.onChange(true);
+  }
+
+  /**
+   * 换 Agent：服务端按新定义重建、保留消息、**更新会话的 `agentId` 并落盘**。
+   *
+   * 拿到快照后整屏对齐（模型变了、阈值也变了），与 `reload()` 同一个形状；差别只在于
+   * `agentId` 跟着换 —— 而 `agentId` 是这个类自己的字段，必须同步（状态栏、`/think`、
+   * `/model` 都读它）。
+   */
+  async setAgent(agentId: string): Promise<void> {
+    const snapshot = await this.sessions.setAgent(this.sessionId, agentId);
+    this.agentId = snapshot.agentId;
+    // 换了 Agent：子 Agent 属于旧底座（与服务端 `setAgent` 里的清空对应）
+    this.clearSubAgents();
+    this.applySnapshot(snapshot);
     this.notifier.onChange(true);
   }
 
@@ -632,7 +653,29 @@ export class RemoteChatSession implements ChatSessionLike {
     for (const off of this.offs.splice(0)) off();
     // 挂着的 `send()` 不能永远悬着：连接没了，本轮只能算结束
     this.resolveTurn();
+    /**
+     * 我走了 → 这段会话移出保活区（服务端会「跑完就收」或当场收）。
+     *
+     * 不等回执：这是退出路径，卡在这里就是「按了 Ctrl+C 却退不出去」。帧已经写出去，
+     * 落不到也就是**多留一段会话在内存里**（存档早在每轮收尾时写好了）；下一轮守护进程
+     * 重启即回收。而正常切换（`/new`、`/load`）走的是 `reset()` / 新的实例，那两处是 await 的。
+     */
+    void this.releaseKeepAlive(this.sessionId);
     this.client.close();
+  }
+
+  /**
+   * 把一段会话移出保活区（幂等，吞掉所有失败）。
+   *
+   * 失败不报：这只关系「服务端要不要回收它」。会话已经被别的路径回收掉（`unknown-session`）
+   * 是常态 —— 那时目的已经达成了。
+   */
+  private async releaseKeepAlive(sessionId: string): Promise<void> {
+    try {
+      await this.sessions.keepAliveSet(sessionId, false);
+    } catch {
+      // 见上：不在就不在，没什么要说的
+    }
   }
 
   // ==================== 内部 ====================
@@ -1234,7 +1277,12 @@ export async function createRemoteChatSession(
 ): Promise<ChatSessionLike> {
   return await RemoteChatSession.create(
     {
-      agentId: options.agentId,
+      /**
+       * 有明确的会话 id 时**不递 agentId**：那段会话是哪个 Agent 的，存档里写着
+       * （服务端 `attach` → `create` 取 `record.agentId`）。宿主手上的 `agentId` 是
+       * 首次挂载时的快照，`/agent` 换过之后它就旧了 —— 递上去只会把存档里的真值顶掉。
+       */
+      agentId: options.sessionId ? undefined : options.agentId,
       sessionId: options.sessionId,
       resume: options.resume,
       requestMode: options.requestMode,

@@ -313,7 +313,14 @@ export function Chat(props: ChatScreenProps) {
     modelId,
     notify: (text, tone) => noticeChannel.push(text, tone),
     hasSession: () => sessionRef.current != null,
-    restart: () => exit({ restart: true, messages: props.messages }),
+    // 向导改完某些配置后要重挂载（同一进程、新 Ink 实例）。会话 id 必须带**此刻**的：
+    // 宿主手上的那个是首次挂载时的，`/new`、自动迁移、`/save <名字>` 都会让它过期。
+    restart: () =>
+      exit({
+        restart: true,
+        sessionId: sessionRef.current?.currentId,
+        messages: props.messages,
+      }),
     reloadSession: () => {
       void sessionRef.current
         ?.reload()

@@ -266,8 +266,6 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
         initialInput?: string;
         sessionId?: string;
         sessionName?: string;
-        /** `/model` 切换后重挂载：Agent 变了（模型由 Agent 定义承载） */
-        agentId?: string;
         /** 重挂载后展示一次的系统提示 */
         notice?: string;
       };
@@ -287,9 +285,13 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
         messages = value.messages ?? messages;
         initialInput = value.initialInput;
         initialNotice = value.notice;
-        // `/model` 换模型：Agent 定义里的 modelId 已变，需重建会话（阈值、工具集跟着变）
-        if (value.agentId) {
-          current = { ...current, agentId: value.agentId };
+        /**
+         * 会话 id 跟着一起换：会话侧可能已经换过 id（`/new` 开了新的、自动迁移搬了家、
+         * `/save <名字>` 改了名字），而这里手上那个还是首次挂载时的。带旧 id 重挂载会
+         * 接回另一段对话，或撞 `session-missing`。
+         */
+        if (value.sessionId) {
+          current = { ...current, sessionId: value.sessionId, sessionName: value.sessionName ?? value.sessionId };
         }
         continue;
       }
