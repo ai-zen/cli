@@ -51,9 +51,11 @@ export const en: Record<string, string> = {
   "notice.imageLimit": "At most {n} images per message",
   "notice.imageTooLarge": "Image too large ({size}MB), over the 20MB limit",
   "notice.imagesCleared": "Attached images cleared",
-  "notice.textTooLarge": "Clipboard text is {size}KB, over the {limit}KB limit — nothing was pasted; save long content to a file and reference it with @",
+  "notice.textTooLarge":
+    "Clipboard text is {size}KB, over the {limit}KB limit — nothing was pasted; save long content to a file and reference it with @",
   "notice.clipboardEmpty": "The clipboard is empty",
-  "notice.clipboardUnavailable": "No clipboard tool available (pbpaste on macOS, wl-paste or xclip on Linux)",
+  "notice.clipboardUnavailable":
+    "No clipboard tool available (pbpaste on macOS, wl-paste or xclip on Linux)",
   "notice.inputCleared": "Input cleared · press Ctrl+C again to exit",
   "notice.pressCtrlDAgain": "Press Ctrl+D again to exit",
   "notice.languageChanged": "Language switched to English",
@@ -63,7 +65,8 @@ export const en: Record<string, string> = {
   "notice.subAgentFailed": "{message}",
   "notice.mcpUnavailable": "MCP server unreachable: {name}",
   "notice.storeUnavailable": "The session store is unavailable: {error}",
-  "notice.remoteImagesTooLarge": "Images are too large ({size}MB) for a single frame — only the text was sent",
+  "notice.remoteImagesTooLarge":
+    "Images are too large ({size}MB) for a single frame — only the text was sent",
 
   // ---------- Command descriptions (/help & slash menu) ----------
   "cmd.save.desc": "Save the conversation",
@@ -98,17 +101,22 @@ export const en: Record<string, string> = {
   "cmd.agent.unavailable": " · unavailable",
   "cmd.agent.title": "Switch primary agent (writes the default agent)",
   "cmd.agent.cancelled": "Agent switch cancelled",
-  "cmd.reload.done": "Runtime refreshed: config / tools / skills / MCP rediscovered (messages and context kept)",
+  "cmd.reload.done":
+    "Runtime refreshed: config / tools / skills / MCP rediscovered (messages and context kept)",
   "cmd.update.done": "✅ Installed {spec}: v{current} → v{version}",
   "cmd.update.checking": "Checking the latest version of {pkg}…",
   "cmd.update.found": "Found v{target} (current v{current}) — installing…",
-  "cmd.update.installHeader": "\n📦 Installing {spec} (current v{current})\n   Location  {root}\n   Command   npm install -g {spec} --prefer-online --no-fund",
+  "cmd.update.installHeader":
+    "\n📦 Installing {spec} (current v{current})\n   Location  {root}\n   Command   npm install -g {spec} --prefer-online --no-fund",
   "cmd.update.rootUnknown": "unknown",
-  "cmd.update.confirmRestart": "Installed v{version}; it takes effect after a restart (this process still runs v{current}). Restart now? The current conversation is saved.",
+  "cmd.update.confirmRestart":
+    "Installed v{version}; it takes effect after a restart (this process still runs v{current}). Restart now? The current conversation is saved.",
   "cmd.update.same": "✅ Already on the newest version v{version} — no restart needed",
-  "cmd.update.restart": "Restart ai to take effect (this process still runs the old v{current} code)",
+  "cmd.update.restart":
+    "Restart ai to take effect (this process still runs the old v{current} code)",
   "cmd.update.failed": "❌ Failed to install {spec}: {error}",
-  "cmd.update.tagsFailed": "❌ Failed to read the published versions of {pkg} (npm missing or network down)",
+  "cmd.update.tagsFailed":
+    "❌ Failed to read the published versions of {pkg} (npm missing or network down)",
   "cmd.update.noVersion": "❌ {pkg} has no installable version on the registry",
   "cmd.think.followDefault": "Follow model default",
   "cmd.think.clearHint": "Remove the agent's reasoning params",
@@ -131,19 +139,22 @@ export const en: Record<string, string> = {
   "cmd.back.cancelled": "Retract cancelled",
   "cmd.model.unknown": "Unknown model: {id} (available: {options})",
   "cmd.model.already": "Already on model {id}",
-  "cmd.model.endpointMissing": "Model {id} references endpoint {endpoint}, which does not exist — check /config",
-  "cmd.model.noApiKey": "Endpoint \"{name}\" has no API key yet — set it up in /config before switching",
+  "cmd.model.endpointMissing":
+    "Model {id} references endpoint {endpoint}, which does not exist — check /config",
+  "cmd.model.noApiKey":
+    'Endpoint "{name}" has no API key yet — set it up in /config before switching',
   "cmd.model.failed": "Model switch failed: {error}",
   "cmd.agent.unknown": "Unknown agent: {id} (available: {options})",
-  "cmd.agent.unavailableReason": "Agent \"{name}\" is unavailable: {reason}",
+  "cmd.agent.unavailableReason": 'Agent "{name}" is unavailable: {reason}',
   "cmd.agent.alreadyOn": "{summary} (this session is already on that agent)",
   "cmd.agent.failed": "Agent switch failed: {error}",
   "cmd.mcp.unknownScope": "Unknown scope: {scope} (use global / project, or no argument)",
   "cmd.lang.unknown": "Unknown language: {lang} (use zh / en, or no argument to toggle)",
   "cmd.reload.failed": "Refresh failed: {error}",
-  "cmd.think.noModel": "Agent \"{id}\" has no model bound — pick one in /config",
+  "cmd.think.noModel": 'Agent "{id}" has no model bound — pick one in /config',
   "cmd.think.modelMissing": "Model {id} does not exist — check with /model or /config",
-  "cmd.think.notAdjustable": "Model {id} has no usable reasoning preset (missing reasoningPreset, or the level is absent from the preset table), so it cannot be adjusted",
+  "cmd.think.notAdjustable":
+    "Model {id} has no usable reasoning preset (missing reasoningPreset, or the level is absent from the preset table), so it cannot be adjusted",
   "cmd.think.unknown": "Unknown effort: {level} (available: {options} / default)",
   "cmd.think.title": "Reasoning effort (current: {level})",
   "cmd.think.failed": "Reasoning effort change failed: {error}",
@@ -163,7 +174,8 @@ export const en: Record<string, string> = {
   "cmd.unknown": "Unknown command: {cmd} (type /help for available commands)",
 
   // ---------- Handoff picker / sub-task notices / welcome block / message placeholders ----------
-  "handoff.pickTitle": "Context is about to overflow ({used}/{limit} tokens) · choose how to hand off",
+  "handoff.pickTitle":
+    "Context is about to overflow ({used}/{limit} tokens) · choose how to hand off",
   "handoff.modeSelf": "The current session writes the handoff itself",
   "handoff.modeSelfHint": "faithful · verifies the real state",
   "handoff.modeSummary": "A separate agent writes the handoff",
@@ -178,7 +190,8 @@ export const en: Record<string, string> = {
   "chat.configUpdatedMulti": "Config updated:\n{lines}",
   "chat.sessionReloadFailed": "Failed to rebuild the session: {error}",
   "chat.bootFailed": "✖ Cannot start the conversation: {error}",
-  "chat.bootHint": "Press k to open the configuration center (set the API key / endpoint URL) · Enter to go back",
+  "chat.bootHint":
+    "Press k to open the configuration center (set the API key / endpoint URL) · Enter to go back",
   "welcome.tagline": "The AI collaboration desk in your terminal",
   "msg.image": "[Image: {url}]",
   "msg.imageInline": "[image]",
@@ -189,29 +202,33 @@ export const en: Record<string, string> = {
   "confirm.hint": "← → select · y/n · Enter confirm",
 
   // ---------- Summaries / errors returned by business modules ----------
-  "effort.err.agentMissing": "Agent \"{id}\" does not exist",
-  "effort.err.noModel": "Agent \"{id}\" has no model bound — pick one for it first",
-  "effort.err.modelMissing": "Model \"{id}\" does not exist — check with /model or /config",
-  "effort.err.noPreset": "Model \"{id}\" has no usable reasoning preset (reasoningPreset), so the effort cannot be set",
-  "effort.err.unknownLevel": "Preset \"{preset}\" has no level \"{level}\" (available: {options})",
+  "effort.err.agentMissing": 'Agent "{id}" does not exist',
+  "effort.err.noModel": 'Agent "{id}" has no model bound — pick one for it first',
+  "effort.err.modelMissing": 'Model "{id}" does not exist — check with /model or /config',
+  "effort.err.noPreset":
+    'Model "{id}" has no usable reasoning preset (reasoningPreset), so the effort cannot be set',
+  "effort.err.unknownLevel": 'Preset "{preset}" has no level "{level}" (available: {options})',
   "effort.followDefault": "follow the model default",
-  "effort.quoted": "\"{label}\"",
-  "effort.summary": "Reasoning effort set to {label} · written to agent \"{id}\" (model {model})",
-  "modelSwitch.err.modelMissing": "Model \"{id}\" does not exist",
-  "modelSwitch.err.agentMissing": "Agent \"{id}\" does not exist",
+  "effort.quoted": '"{label}"',
+  "effort.summary": 'Reasoning effort set to {label} · written to agent "{id}" (model {model})',
+  "modelSwitch.err.modelMissing": 'Model "{id}" does not exist',
+  "modelSwitch.err.agentMissing": 'Agent "{id}" does not exist',
   "modelSwitch.resetHint": " · reasoning effort reset to the model default",
-  "modelSwitch.summary": "Switched model: {name} ({id}) · written to agent \"{agent}\"{hint}",
+  "modelSwitch.summary": 'Switched model: {name} ({id}) · written to agent "{agent}"{hint}',
   "agentSwitch.err.noModel": "no model bound",
   "agentSwitch.err.modelMissing": "model {id} does not exist",
-  "agentSwitch.err.missingKey": "endpoint \"{endpoint}\" has no API key",
-  "agentSwitch.err.agentMissing": "Agent \"{id}\" does not exist",
-  "agentSwitch.err.agentNoModel": "Agent \"{name}\" has no model bound — pick one with /config first",
-  "agentSwitch.err.modelGone": "The model \"{id}\" bound to agent \"{name}\" is no longer in the config — pick another with /model or /config",
-  "agentSwitch.err.noKey": "Endpoint \"{endpoint}\" has no API key yet — configure it with /config before switching",
+  "agentSwitch.err.missingKey": 'endpoint "{endpoint}" has no API key',
+  "agentSwitch.err.agentMissing": 'Agent "{id}" does not exist',
+  "agentSwitch.err.agentNoModel": 'Agent "{name}" has no model bound — pick one with /config first',
+  "agentSwitch.err.modelGone":
+    'The model "{id}" bound to agent "{name}" is no longer in the config — pick another with /model or /config',
+  "agentSwitch.err.noKey":
+    'Endpoint "{endpoint}" has no API key yet — configure it with /config before switching',
   "agentSwitch.summary": "Switched main agent: {name} ({id}) · model {model} ({modelId})",
   "handoff.mode.self": "original agent writes it",
   "handoff.mode.summary": "independent summary",
-  "handoff.autoDetected": "📋 Context is about to overflow ({used}/{limit} tokens) — handing off ({mode})…",
+  "handoff.autoDetected":
+    "📋 Context is about to overflow ({used}/{limit} tokens) — handing off ({mode})…",
   "handoff.writing": "📋 Writing the handoff document ({mode})…",
   "handoff.degraded": "⚠️ {requested} produced no document; fell back to {mode}",
   "handoff.path": "📄 Handoff document: {path}",
@@ -222,18 +239,23 @@ export const en: Record<string, string> = {
 
   // ---------- Entry / exit / time formats ----------
   "app.goodbye": "\nBye 👋\n",
-  "app.agentNoModel": "Agent \"{id}\" has no model bound — pick one with /config",
-  "app.agentModelGone": "The model \"{model}\" bound to agent \"{id}\" is no longer in the config — pick another with /config",
+  "app.agentNoModel": 'Agent "{id}" has no model bound — pick one with /config',
+  "app.agentModelGone":
+    'The model "{model}" bound to agent "{id}" is no longer in the config — pick another with /config',
   "app.noAgents": "No usable agent — create one in the config first (config.json)",
   "app.bootFailed": "✖ Cannot start the conversation: {error}",
   "app.unexpected": "✖ Unexpected error: {error}",
-  "migrate.skipped": "⏭️ Task migration skipped this time; run /migrate whenever you like. If the context keeps growing past the hard limit, the safety guard will interrupt the conversation.",
+  "migrate.skipped":
+    "⏭️ Task migration skipped this time; run /migrate whenever you like. If the context keeps growing past the hard limit, the safety guard will interrupt the conversation.",
 
   // ---------- `ai --help` (printed outside the TUI, hence the locale init in the help branch) ----------
   "cli.help.title": "ai — AI-Zen CLI v{version}",
-  "cli.help.usage": "\nUsage:\n  ai                              Start the interactive UI (TUI; stdin/stdout must be a TTY)\n  ai <prompt>                     Ask in pure stdio mode; the result goes to stdout\n  cat file | ai \"summarize it\"   Pipe content in; the argument is the instruction\n  ai hook install                 Install the shell fallback hook (route unknown commands to the AI)\n  ai hook uninstall               Uninstall the shell fallback hook",
-  "cli.help.options": "\nOptions:\n  --save                          Save this conversation to the archive (off by default)\n  --tui [prompt…]                 Force the interactive UI; the prompt is auto-sent as the first message (used by the shell hook)\n  --new                           Start a new conversation instead of resuming the last one\n  -h, --help                      Show this help\n  -v, --version                   Show the version\n  --server-status                 Print the resident server status (JSON; exit code 1 when not running)",
-  "cli.help.notes": "\nNotes:\n  stdio mode is non-interactive: the result goes to stdout, logs to stderr, exit code 0 on success.",
+  "cli.help.usage":
+    '\nUsage:\n  ai                              Start the interactive UI (TUI; stdin/stdout must be a TTY)\n  ai <prompt>                     Ask in pure stdio mode; the result goes to stdout\n  cat file | ai "summarize it"   Pipe content in; the argument is the instruction\n  ai hook install                 Install the shell fallback hook (route unknown commands to the AI)\n  ai hook uninstall               Uninstall the shell fallback hook',
+  "cli.help.options":
+    "\nOptions:\n  --save                          Save this conversation to the archive (off by default)\n  --tui [prompt…]                 Force the interactive UI; the prompt is auto-sent as the first message (used by the shell hook)\n  --new                           Start a new conversation instead of resuming the last one\n  -h, --help                      Show this help\n  -v, --version                   Show the version\n  --server-status                 Print the resident server status (JSON; exit code 1 when not running)",
+  "cli.help.notes":
+    "\nNotes:\n  stdio mode is non-interactive: the result goes to stdout, logs to stderr, exit code 0 on success.",
 
   // ---------- `ai hook install / uninstall` (outside the TUI, locale initialised in that branch) ----------
   "cli.hookUsage": "Usage: ai hook install|uninstall",

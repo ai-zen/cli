@@ -9,7 +9,14 @@
 // `WizardHostDeps` 传进来，于是 hook 可以在测试里用假依赖跑完整生命周期。
 import { useRef, useState } from "react";
 import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { mcpConfigOrEmpty, readConfig, readMcpConfig, readReasoningPresets, type McpReadResult, type McpScope } from "../../config.js";
+import {
+  mcpConfigOrEmpty,
+  readConfig,
+  readMcpConfig,
+  readReasoningPresets,
+  type McpReadResult,
+  type McpScope,
+} from "../../config.js";
 import { readAgentStore, type AgentStore } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
 import type { McpSnapshot, WizardCloseResult, WizardStep } from "../config-wizard/index.js";
@@ -90,7 +97,9 @@ export function useWizardHost({
       const agentStore = await readers.readAgentStore();
       setWizardConfig(config);
       setWizardPresets(await readers.readReasoningPresets());
-      setWizardAgents(agentStore.agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id })));
+      setWizardAgents(
+        agentStore.agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id })),
+      );
       setWizardAgentStore(agentStore);
       // 坏文件照样进屏（屏上写明），只把失败原因随之带过去
       const globalMcp = await readers.readMcpConfig("global");
@@ -153,8 +162,14 @@ export function useWizardHost({
     // 只有「当前端点 / MCP / Agent 定义 / 建 Agent 时才读的配置（中断策略）」变了
     // 才需要重建会话；改的是别的模型、别的端点的参数，当前会话不受影响，不该白重连一次。
     const endpointChanged =
-      !!currentEndpointRef.current && result.changedEndpointIds.includes(currentEndpointRef.current);
-    if (endpointChanged || result.mcpChanged || result.agentsChanged || result.sessionOptionsChanged) {
+      !!currentEndpointRef.current &&
+      result.changedEndpointIds.includes(currentEndpointRef.current);
+    if (
+      endpointChanged ||
+      result.mcpChanged ||
+      result.agentsChanged ||
+      result.sessionOptionsChanged
+    ) {
       reloadSession();
     }
   };

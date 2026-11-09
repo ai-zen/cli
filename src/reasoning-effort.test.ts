@@ -164,9 +164,17 @@ describe("effortDimmed / describeEffortView（置灰不靠文案判断）", () =
   });
 
   it("切到英文后置灰结果不变（证明判断依据是档位而非文案）", () => {
-    const before = effortDimmed(DEEPSEEK, PRESETS, makeDefinition({ modelParams: { thinking: { type: "disabled" } } }));
+    const before = effortDimmed(
+      DEEPSEEK,
+      PRESETS,
+      makeDefinition({ modelParams: { thinking: { type: "disabled" } } }),
+    );
     setLocale("en");
-    const after = effortDimmed(DEEPSEEK, PRESETS, makeDefinition({ modelParams: { thinking: { type: "disabled" } } }));
+    const after = effortDimmed(
+      DEEPSEEK,
+      PRESETS,
+      makeDefinition({ modelParams: { thinking: { type: "disabled" } } }),
+    );
     setLocale("zh");
     expect(after).toBe(before);
   });
@@ -352,10 +360,7 @@ describe("setAgentEffort 写入 Agent 定义", () => {
 describe("写入后再读回：往返一致", () => {
   it("每个合法档位写入后都能被反查回来", async () => {
     for (const modelId of ["glm-5.3", "deepseek-flash"]) {
-      for (const level of effortChoices(
-        modelId === "glm-5.3" ? GLM53 : DEEPSEEK,
-        PRESETS,
-      )) {
+      for (const level of effortChoices(modelId === "glm-5.3" ? GLM53 : DEEPSEEK, PRESETS)) {
         let written: AgentDefinition | undefined;
         await setAgentEffort({
           config: makeConfig(),
@@ -367,9 +372,9 @@ describe("写入后再读回：往返一致", () => {
           },
         });
         const model = makeConfig().models.find((m) => m.id === modelId);
-        expect(matchLevel(presetFor(modelId, model!.reasoningPreset, PRESETS), written!.modelParams)).toBe(
-          level,
-        );
+        expect(
+          matchLevel(presetFor(modelId, model!.reasoningPreset, PRESETS), written!.modelParams),
+        ).toBe(level);
       }
     }
   });

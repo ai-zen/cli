@@ -107,7 +107,9 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
   const transcript = input.transcript;
 
   // 输入区限高：多出来的折行由窗口滚动，而不是把对话区挤空（窗口跟随光标）
-  const inputHeight = input.busy ? 1 : Math.min(inputLines(input.input, input.columns).length, INPUT_MAX_ROWS);
+  const inputHeight = input.busy
+    ? 1
+    : Math.min(inputLines(input.input, input.columns).length, INPUT_MAX_ROWS);
   const overlayHeight =
     input.overlay === "confirm"
       ? CONFIRM_LINES
@@ -148,9 +150,17 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
   const padTop = input.anchor === "center" ? Math.floor(slack / 2) : slack;
   const padBottom = slack - padTop;
   const lines: RLine[] = [
-    ...Array.from({ length: padTop }, (_, i) => ({ key: `pad-${i}`, kind: "gap" as const, text: " " })),
+    ...Array.from({ length: padTop }, (_, i) => ({
+      key: `pad-${i}`,
+      kind: "gap" as const,
+      text: " ",
+    })),
     ...viewLines,
-    ...Array.from({ length: padBottom }, (_, i) => ({ key: `tail-${i}`, kind: "gap" as const, text: " " })),
+    ...Array.from({ length: padBottom }, (_, i) => ({
+      key: `tail-${i}`,
+      kind: "gap" as const,
+      text: " ",
+    })),
   ];
   return { lines, bottomLines, totalLines, budget, viewTop: top, scrolled: top < maxTop, hintRows };
 }

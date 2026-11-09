@@ -2,7 +2,13 @@
 import { ReactNode } from "react";
 import { SelectItem } from "../components.js";
 import { mcpConfigPath, McpScope, McpServerEntry } from "../../config.js";
-import { addMcpServer, findMcpServer, mcpServerIdTaken, removeMcpServer, updateMcpServer } from "../../config-editor.js";
+import {
+  addMcpServer,
+  findMcpServer,
+  mcpServerIdTaken,
+  removeMcpServer,
+  updateMcpServer,
+} from "../../config-editor.js";
 import { SWITCH_SCOPE, NEW_MCP_SERVER } from "./types.js";
 import { WizardContext } from "./engine.js";
 import { ListStep } from "./list.js";
@@ -13,7 +19,8 @@ import { scopeLabel, mcpCount, mcpServerHint } from "./mcp-helpers.js";
 import { t } from "../../i18n/index.js";
 
 export function renderMcpStep(ctx: WizardContext): ReactNode {
-  const { mcp, error, notice, activeStep, go, persistMcp, setError, mcpServerFields, cols, rows } = ctx;
+  const { mcp, error, notice, activeStep, go, persistMcp, setError, mcpServerFields, cols, rows } =
+    ctx;
   // ---------- MCP 服务器列表（含作用域切换）----------
   if (activeStep.kind === "mcp") {
     const scope = activeStep.scope;
@@ -37,7 +44,10 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
         columns={cols}
         rows={rows}
         title={t("wiz.mcp.listTitle", { scope: scopeLabel(scope) })}
-        subtitle={t("wiz.mcp.listSubtitle", { n: mcpCount(mcp, scope), path: mcpConfigPath(scope) })}
+        subtitle={t("wiz.mcp.listSubtitle", {
+          n: mcpCount(mcp, scope),
+          path: mcpConfigPath(scope),
+        })}
         // 文件坏了照常进屏编辑：保存产出的是一份格式正确的新文件，那就是修复
         warning={damaged ? t("wiz.mcp.damaged", { error: damaged }) : undefined}
         items={items}
@@ -50,7 +60,6 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
       />
     );
   }
-
 
   // ---------- MCP 服务器详情 ----------
   if (activeStep.kind === "mcp-server") {
@@ -87,7 +96,6 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
     );
   }
 
-
   // ---------- MCP 键值编辑（env / headers）----------
   if (activeStep.kind === "mcp-kv") {
     const { scope, serverId, field } = activeStep;
@@ -99,7 +107,10 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
         columns={cols}
         rows={rows}
         title={t("wiz.mcp.kvTitle", { id: serverId, label })}
-        subtitle={t("wiz.mcp.kvSubtitle", { scope: scopeLabel(scope), n: Object.keys(current).length })}
+        subtitle={t("wiz.mcp.kvSubtitle", {
+          scope: scopeLabel(scope),
+          n: Object.keys(current).length,
+        })}
         map={current}
         notice={notice}
         onCommit={(next) => {
@@ -118,7 +129,6 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
     );
   }
 
-
   // ---------- 新建 MCP 服务器 ----------
   if (activeStep.kind === "mcp-new") {
     const scope = activeStep.scope;
@@ -130,7 +140,10 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
         title={t("wiz.mcp.newTitle", { scope: scopeLabel(scope) })}
         details={[t("wiz.mcp.newDescKey"), t("wiz.mcp.newDescDefault")]}
         error={error}
-        hints={[["Enter", t("wiz.createAndEdit")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("wiz.createAndEdit")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const name = value.trim();
           if (!name) {
@@ -143,7 +156,11 @@ export function renderMcpStep(ctx: WizardContext): ReactNode {
           }
           const { mcp: next, id } = addMcpServer(mcp[scope], name);
           void (async () => {
-            const failure = await persistMcp(scope, next, t("wiz.mcp.created", { id, scope: scopeLabel(scope) }));
+            const failure = await persistMcp(
+              scope,
+              next,
+              t("wiz.mcp.created", { id, scope: scopeLabel(scope) }),
+            );
             if (failure) {
               setError(failure);
               return;

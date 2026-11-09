@@ -22,8 +22,18 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       { id: "bigmodelcn", name: "BigModel", baseUrl: "https://open.bigmodel.cn", apiKey: "" },
     ],
     models: [
-      { id: "deepseek-flash", name: "DeepSeek-V4.1-Flash", endpointId: "deepseek", tokenThresholds: { handoff: 250_000, guard: 375_000 } },
-      { id: "glm-5.3", name: "GLM-5.3", endpointId: "bigmodelcn", tokenThresholds: { handoff: 250_000, guard: 375_000 } },
+      {
+        id: "deepseek-flash",
+        name: "DeepSeek-V4.1-Flash",
+        endpointId: "deepseek",
+        tokenThresholds: { handoff: 250_000, guard: 375_000 },
+      },
+      {
+        id: "glm-5.3",
+        name: "GLM-5.3",
+        endpointId: "bigmodelcn",
+        tokenThresholds: { handoff: 250_000, guard: 375_000 },
+      },
     ],
     defaultAgent: "default",
     ...overrides,
@@ -44,7 +54,12 @@ function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
 
 const agents = [
   makeAgent(),
-  makeAgent({ id: "coder", name: "编程 Agent", modelId: "deepseek-flash", modelParams: { temperature: 0.2 } }),
+  makeAgent({
+    id: "coder",
+    name: "编程 Agent",
+    modelId: "deepseek-flash",
+    modelParams: { temperature: 0.2 },
+  }),
 ];
 
 describe("switchAgent：只写 defaultAgent", () => {
@@ -77,23 +92,23 @@ describe("switchAgent：只写 defaultAgent", () => {
 
   it("未绑定模型的 Agent 不给切（切过去就是启动错误屏）", () => {
     const broken = [...agents, makeAgent({ id: "bare", name: "裸 Agent", modelId: undefined })];
-    expect(() => switchAgent({ config: makeConfig(), agents: broken, targetAgentId: "bare" })).toThrow(
-      /未绑定模型/,
-    );
+    expect(() =>
+      switchAgent({ config: makeConfig(), agents: broken, targetAgentId: "bare" }),
+    ).toThrow(/未绑定模型/);
   });
 
   it("绑定的模型已从配置里删掉时抛错", () => {
     const orphan = [...agents, makeAgent({ id: "orphan", name: "孤儿", modelId: "gone" })];
-    expect(() => switchAgent({ config: makeConfig(), agents: orphan, targetAgentId: "orphan" })).toThrow(
-      /已不在配置中/,
-    );
+    expect(() =>
+      switchAgent({ config: makeConfig(), agents: orphan, targetAgentId: "orphan" }),
+    ).toThrow(/已不在配置中/);
   });
 
   it("端点缺 API Key 时抛错（不让人切完才发现发不出请求）", () => {
     const noKey = [...agents, makeAgent({ id: "nokey", name: "缺 Key", modelId: "glm-5.3" })];
-    expect(() => switchAgent({ config: makeConfig(), agents: noKey, targetAgentId: "nokey" })).toThrow(
-      /API Key/,
-    );
+    expect(() =>
+      switchAgent({ config: makeConfig(), agents: noKey, targetAgentId: "nokey" }),
+    ).toThrow(/API Key/);
   });
 
   it("只有空白的 Key 仍算未设置", () => {
@@ -110,7 +125,11 @@ describe("listAgentChoices：选择器的行与可用性", () => {
   it("列出全部主 Agent，可用的带上模型名", () => {
     const choices = listAgentChoices(makeConfig(), agents);
     expect(choices.map((choice) => choice.id)).toEqual(["default", "coder"]);
-    expect(choices[0]).toMatchObject({ name: "默认 Agent", modelName: "DeepSeek-V4.1-Flash", selectable: true });
+    expect(choices[0]).toMatchObject({
+      name: "默认 Agent",
+      modelName: "DeepSeek-V4.1-Flash",
+      selectable: true,
+    });
     expect(choices[0]!.reason).toBeUndefined();
   });
 

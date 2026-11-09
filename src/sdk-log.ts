@@ -172,9 +172,7 @@ export function createSilentLogger(): Logger {
  *
  * 返回实际安装的日志器，便于测试断言 / 上层复用。
  */
-export function installSdkLogger(
-  options: { enabled?: boolean; file?: string } = {},
-): Logger {
+export function installSdkLogger(options: { enabled?: boolean; file?: string } = {}): Logger {
   const enabled = options.enabled ?? sdkLogEnabled();
   const file = options.file ?? sdkLogFile();
   const logger = enabled ? createFileLogger(file) : createSilentLogger();

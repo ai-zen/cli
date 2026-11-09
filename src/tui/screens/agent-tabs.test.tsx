@@ -8,7 +8,13 @@
 // 整帧高度跳一下，这正是本设计要避免的。
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
-import { AgentTabs, agentTabStyle, agentStatusColor, AGENT_STATUS_DOT, type AgentTab } from "./agent-tabs.js";
+import {
+  AgentTabs,
+  agentTabStyle,
+  agentStatusColor,
+  AGENT_STATUS_DOT,
+  type AgentTab,
+} from "./agent-tabs.js";
 import { theme } from "../theme.js";
 
 const tabs: AgentTab[] = [

@@ -1,7 +1,12 @@
 // 由 src/tui/config-wizard.tsx 拆分而来 —— 端点列表 / 端点详情
 import { ReactNode } from "react";
 import { SelectItem } from "../components.js";
-import { findEndpoint, maskApiKey, modelsUsingEndpoint, removeEndpoint } from "../../config-editor.js";
+import {
+  findEndpoint,
+  maskApiKey,
+  modelsUsingEndpoint,
+  removeEndpoint,
+} from "../../config-editor.js";
 import { NEW_ENDPOINT } from "./types.js";
 import { WizardContext } from "./engine.js";
 import { ListStep } from "./list.js";
@@ -13,7 +18,11 @@ export function renderEndpointsStep(ctx: WizardContext): ReactNode {
   // ---------- 端点管理（[新建端点] + 端点列表）----------
   if (activeStep.kind === "endpoints") {
     const items: SelectItem<string>[] = [
-      { label: t("wiz.endpoints.newItem"), value: NEW_ENDPOINT, hint: t("wiz.endpoints.newItemHint") },
+      {
+        label: t("wiz.endpoints.newItem"),
+        value: NEW_ENDPOINT,
+        hint: t("wiz.endpoints.newItemHint"),
+      },
       ...config.endpoints.map((endpoint) => ({
         label: endpoint.name || endpoint.id,
         value: endpoint.id,
@@ -36,7 +45,6 @@ export function renderEndpointsStep(ctx: WizardContext): ReactNode {
       />
     );
   }
-
 
   // ---------- 端点详情（就地编辑名称 / Base URL / API Key / 描述）----------
   if (activeStep.kind === "endpoint") {
@@ -69,7 +77,10 @@ export function renderEndpointsStep(ctx: WizardContext): ReactNode {
                   models: refs.map((m) => m.name || m.id).join(t("common.listSep")),
                 });
               }
-              const failure = await persist(removeEndpoint(config, endpoint.id), t("wiz.endpoints.deleted", { name }));
+              const failure = await persist(
+                removeEndpoint(config, endpoint.id),
+                t("wiz.endpoints.deleted", { name }),
+              );
               if (!failure) go({ kind: "endpoints" });
               return failure;
             },

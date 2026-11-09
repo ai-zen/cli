@@ -2,9 +2,22 @@
 import { useRef, useState, Dispatch, SetStateAction } from "react";
 import { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
 import { mcpConfigPath, McpConfig, McpScope, writeMcpConfigAt } from "../../config.js";
-import { agentKindLabel, agentList, AgentStore, AgentKind, findAgentDefinition, createAgentStore } from "../../agents-store.js";
+import {
+  agentKindLabel,
+  agentList,
+  AgentStore,
+  AgentKind,
+  findAgentDefinition,
+  createAgentStore,
+} from "../../agents-store.js";
 import { findEndpoint, findMcpServer, findModel } from "../../config-editor.js";
-import { WizardStep, NewEndpointDraft, WizardCloseResult, McpSnapshot, ConfigWizardProps } from "./types.js";
+import {
+  WizardStep,
+  NewEndpointDraft,
+  WizardCloseResult,
+  McpSnapshot,
+  ConfigWizardProps,
+} from "./types.js";
 import { createFieldBuilders } from "./fields.js";
 import { t } from "../../i18n/index.js";
 
@@ -20,8 +33,20 @@ export interface WizardEngine extends ReturnType<typeof createFieldBuilders> {
   activeStep: WizardStep;
   snapshot: () => WizardCloseResult;
   go: (next: WizardStep) => void;
-  commit: (next: AppConfig, message: string, changedEndpointIds?: string[], after?: WizardStep | "stay", sessionOptions?: boolean) => Promise<void>;
-  persist: (next: AppConfig, message: string, changedEndpointIds?: string[], sessionOptions?: boolean, agentsChanged?: boolean) => Promise<string | null>;
+  commit: (
+    next: AppConfig,
+    message: string,
+    changedEndpointIds?: string[],
+    after?: WizardStep | "stay",
+    sessionOptions?: boolean,
+  ) => Promise<void>;
+  persist: (
+    next: AppConfig,
+    message: string,
+    changedEndpointIds?: string[],
+    sessionOptions?: boolean,
+    agentsChanged?: boolean,
+  ) => Promise<string | null>;
   persistMcp: (scope: McpScope, next: McpConfig, message: string) => Promise<string | null>;
   saveAgent: (kind: AgentKind, def: AgentDefinition, message: string) => Promise<string | null>;
   deleteAgent: (kind: AgentKind, id: string) => Promise<string | null>;
@@ -43,7 +68,9 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   const [mcp, setMcp] = useState<McpSnapshot>(
     props.mcp ?? { global: { mcpServers: {} }, project: { mcpServers: {} } },
   );
-  const [store, setStore] = useState<AgentStore>(() => props.agentStore ?? createAgentStore([], []));
+  const [store, setStore] = useState<AgentStore>(
+    () => props.agentStore ?? createAgentStore([], []),
+  );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -76,7 +103,12 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
    */
   const markDirty = (
     message: string,
-    flags: { changedEndpointIds?: string[]; mcp?: boolean; agents?: boolean; sessionOptions?: boolean } = {},
+    flags: {
+      changedEndpointIds?: string[];
+      mcp?: boolean;
+      agents?: boolean;
+      sessionOptions?: boolean;
+    } = {},
   ) => {
     acc.current.dirty = true;
     acc.current.summary.push(message);
@@ -119,7 +151,11 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   /** 写盘 MCP 配置 + 记录变更，**原地停留**；返回错误信息或 `null` */
-  const persistMcp = async (scope: McpScope, next: McpConfig, message: string): Promise<string | null> => {
+  const persistMcp = async (
+    scope: McpScope,
+    next: McpConfig,
+    message: string,
+  ): Promise<string | null> => {
     try {
       if (props.onSaveMcp) await props.onSaveMcp(scope, next);
       else await writeMcpConfigAt(mcpConfigPath(scope), next);
@@ -137,7 +173,11 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   /** 写盘某个 Agent / Sub-agent 定义（创建或更新），刷新本地快照并记录变更 */
-  const saveAgent = async (kind: AgentKind, def: AgentDefinition, message: string): Promise<string | null> => {
+  const saveAgent = async (
+    kind: AgentKind,
+    def: AgentDefinition,
+    message: string,
+  ): Promise<string | null> => {
     const next: AgentDefinition = { ...def, updatedAt: new Date().toISOString() };
     try {
       await store.save(kind, next);
@@ -204,7 +244,10 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
 
   // 条目可能在向导打开期间被外部删除：渲染前收敛回其列表，避免空指针
   const normalize = (current: WizardStep): WizardStep => {
-    if ((current.kind === "edit" || current.kind === "endpoint") && !findEndpoint(config, current.endpointId)) {
+    if (
+      (current.kind === "edit" || current.kind === "endpoint") &&
+      !findEndpoint(config, current.endpointId)
+    ) {
       return { kind: "endpoints" };
     }
     if (current.kind === "model" && !findModel(config, current.modelId)) return { kind: "models" };
@@ -221,7 +264,9 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
       return { kind: "mcp", scope: current.scope };
     }
     if (
-      (current.kind === "agent" || current.kind === "agent-perms" || current.kind === "agent-text") &&
+      (current.kind === "agent" ||
+        current.kind === "agent-perms" ||
+        current.kind === "agent-text") &&
       !findAgentDefinition(store, current.agentKind, current.agentId)
     ) {
       return { kind: "agents" };
@@ -231,8 +276,24 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   const activeStep = normalize(step);
 
   // 字段构造器已抽到 ./fields.js
-  const { endpointFields, modelFields, imageModelFields, mcpServerFields, agentFields, agentPermFields } =
-    createFieldBuilders({ config, mcp, store, reasoningPresets: props.reasoningPresets ?? {}, persist, persistMcp, saveAgent, removeAgentQuiet, go });
+  const {
+    endpointFields,
+    modelFields,
+    imageModelFields,
+    mcpServerFields,
+    agentFields,
+    agentPermFields,
+  } = createFieldBuilders({
+    config,
+    mcp,
+    store,
+    reasoningPresets: props.reasoningPresets ?? {},
+    persist,
+    persistMcp,
+    saveAgent,
+    removeAgentQuiet,
+    go,
+  });
 
   return {
     config,

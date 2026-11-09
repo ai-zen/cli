@@ -6,7 +6,8 @@ import { PromptScreen } from "./prompt.js";
 import { t } from "../../i18n/index.js";
 
 export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
-  const { config, error, draft, activeStep, go, commit, setDraft, setError, setStep, cols, rows } = ctx;
+  const { config, error, draft, activeStep, go, commit, setDraft, setError, setStep, cols, rows } =
+    ctx;
   if (activeStep.kind !== "new-endpoint") return null;
   // ---------- 新建端点（名称 → Base URL → API Key）----------
   const field = activeStep.field;
@@ -21,7 +22,10 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
         details={[t("wiz.newEndpoint.nameDesc", { example: "My Gateway" })]}
         initialValue={draft.name}
         error={error}
-        hints={[["Enter", t("ui.next")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("ui.next")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const name = value.trim();
           if (!name) {
@@ -48,7 +52,10 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
         details={[t("wiz.newEndpoint.baseUrlDesc")]}
         initialValue={draft.baseUrl}
         error={error}
-        hints={[["Enter", t("ui.next")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("ui.next")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const baseUrl = value.trim();
           if (!/^https?:\/\//i.test(baseUrl)) {
@@ -82,7 +89,11 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
       ].filter((line): line is string => Boolean(line))}
       mask
       error={error}
-      hints={[["Enter", t("wiz.newEndpoint.save")], ["Tab", t("ui.plainOrMasked")], ["Esc", t("ui.back")]]}
+      hints={[
+        ["Enter", t("wiz.newEndpoint.save")],
+        ["Tab", t("ui.plainOrMasked")],
+        ["Esc", t("ui.back")],
+      ]}
       onSubmit={(value) => {
         const apiKey = value.trim();
         const { config: next, endpoint } = addEndpoint(config, { ...draft, apiKey });

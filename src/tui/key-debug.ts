@@ -45,7 +45,15 @@ export interface KeyFlags {
 
 /** 终端环境摘要：排查「只在某终端失灵」时先看这一行 */
 export function terminalSummary(env: NodeJS.ProcessEnv = process.env): string {
-  const keys = ["TERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "COLORTERM", "LANG", "COLUMNS", "LINES"];
+  const keys = [
+    "TERM",
+    "TERM_PROGRAM",
+    "TERM_PROGRAM_VERSION",
+    "COLORTERM",
+    "LANG",
+    "COLUMNS",
+    "LINES",
+  ];
   const parts = keys.map((k) => `${k}=${env[k] ?? "-"}`);
   parts.push(`platform=${process.platform}`, `node=${process.version}`);
   return parts.join(" ");

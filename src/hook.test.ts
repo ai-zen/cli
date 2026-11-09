@@ -39,11 +39,10 @@ afterEach(async () => {
 });
 
 const read = () => fs.readFile(rcFile, "utf-8");
-const countBlocks = (content: string) =>
-  content.split(MARKER_START).length - 1;
+const countBlocks = (content: string) => content.split(MARKER_START).length - 1;
 
 describe("installHook", () => {
-  it("写入 bash 钩子，函数体为 `ai --tui --new \"$@\"`", async () => {
+  it('写入 bash 钩子，函数体为 `ai --tui --new "$@"`', async () => {
     await installHook();
     const content = await read();
     expect(content).toContain(MARKER_START);
@@ -71,7 +70,7 @@ describe("installHook", () => {
     expect(countBlocks(second)).toBe(1);
   });
 
-  it("已装旧函数体（`ai --tui \"$@\"`）时原地升级到最新版本", async () => {
+  it('已装旧函数体（`ai --tui "$@"`）时原地升级到最新版本', async () => {
     // 模拟上一个版本装下的钩子（MARKER 未变，函数体是旧写法）
     await fs.writeFile(
       rcFile,
@@ -126,7 +125,15 @@ describe("installHook", () => {
     await fs.writeFile(
       rcFile,
       // 第二个块用**当前**标记但函数体是老版本（老版本与新版本共用同一对标记）
-      [installed.replace(/\n+$/, ""), MARKER_START, "command_not_found_handle() {", '  aiz "$@"', "}", MARKER_END, ""].join("\n"),
+      [
+        installed.replace(/\n+$/, ""),
+        MARKER_START,
+        "command_not_found_handle() {",
+        '  aiz "$@"',
+        "}",
+        MARKER_END,
+        "",
+      ].join("\n"),
       "utf-8",
     );
     expect(countBlocks(await read())).toBe(2);

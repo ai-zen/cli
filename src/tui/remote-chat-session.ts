@@ -184,14 +184,15 @@ export function mergeSubAgentSnapshot(
   // 规则 3：对齐「服务端已知的 assistant 正文」，只接上多出来的那截
   const confirmed = base
     .filter(
-      (message) =>
-        message.role === AgentNS.Role.Assistant && typeof message.content === "string",
+      (message) => message.role === AgentNS.Role.Assistant && typeof message.content === "string",
     )
     .map((message) => message.content as string)
     .join("");
   if (confirmed.endsWith(stream.text)) return { messages: base, stream: null };
 
-  const rest = stream.text.startsWith(confirmed) ? stream.text.slice(confirmed.length) : stream.text;
+  const rest = stream.text.startsWith(confirmed)
+    ? stream.text.slice(confirmed.length)
+    : stream.text;
   const appended = withAssistantText(
     { role: AgentNS.Role.Assistant, content: "" } as AgentNS.Message,
     rest,
@@ -945,7 +946,6 @@ export class RemoteChatSession implements ChatSessionLike {
         return event.fallback;
     }
   }
-
 
   /**
    * 清空 Agent 栏目。

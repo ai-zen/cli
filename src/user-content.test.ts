@@ -12,7 +12,12 @@ function fakeConvert(results: ({ section: any; warning?: string } | Error)[]) {
     const next = results.shift();
     if (next instanceof Error) throw next;
     if (!next) throw new Error("unexpected call");
-    return { section: next.section, transport: "inline", bytes: input.source.base64.length, warning: next.warning };
+    return {
+      section: next.section,
+      transport: "inline",
+      bytes: input.source.base64.length,
+      warning: next.warning,
+    };
   }) as any;
 }
 
@@ -39,7 +44,12 @@ describe("buildUserContent", () => {
 
   it("jpeg 文件名后缀跟着 mime 走", async () => {
     const convert = fakeConvert([{ section: imageSection }]);
-    await buildUserContent({ text: "x", images: [{ ...image, mime: "image/jpeg" }], config, convert });
+    await buildUserContent({
+      text: "x",
+      images: [{ ...image, mime: "image/jpeg" }],
+      config,
+      convert,
+    });
     expect(convert.mock.calls[0]![0].source.filename).toBe("pasted-1.jpeg");
   });
 
@@ -63,7 +73,9 @@ describe("buildUserContent", () => {
   });
 
   it("SDK 的降级说明（上传失败转内联 / 不支持视觉）原样透传", async () => {
-    const convert = fakeConvert([{ section: imageSection, warning: "模型不支持视觉，已改为路径提示" }]);
+    const convert = fakeConvert([
+      { section: imageSection, warning: "模型不支持视觉，已改为路径提示" },
+    ]);
     const result = await buildUserContent({ text: "x", images: [image], config, convert });
     expect(result.warnings).toEqual(["模型不支持视觉，已改为路径提示"]);
   });

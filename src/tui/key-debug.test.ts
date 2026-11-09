@@ -1,11 +1,19 @@
 import { existsSync, statSync } from "node:fs";
 import { describe, it, expect } from "vitest";
-import { formatKeyEvent, terminalSummary, keyDebug, KEY_DEBUG_ENABLED, KEY_DEBUG_FILE } from "./key-debug.js";
+import {
+  formatKeyEvent,
+  terminalSummary,
+  keyDebug,
+  KEY_DEBUG_ENABLED,
+  KEY_DEBUG_FILE,
+} from "./key-debug.js";
 
 describe("按键诊断日志", () => {
   it("formatKeyEvent 记录 input、置位的修饰键与 raw 状态", () => {
     expect(formatKeyEvent("d", { meta: true }, true)).toBe('key input="d" flags=[meta] raw=true');
-    expect(formatKeyEvent("", { pageUp: true }, false)).toBe('key input="" flags=[pageUp] raw=false');
+    expect(formatKeyEvent("", { pageUp: true }, false)).toBe(
+      'key input="" flags=[pageUp] raw=false',
+    );
   });
 
   it("formatKeyEvent 转义控制字符（ESC 等），保证日志单行可读", () => {
@@ -16,7 +24,10 @@ describe("按键诊断日志", () => {
   });
 
   it("terminalSummary 汇总终端环境（缺项显示 -）", () => {
-    const line = terminalSummary({ TERM: "xterm-256color", TERM_PROGRAM: "iTerm.app" } as NodeJS.ProcessEnv);
+    const line = terminalSummary({
+      TERM: "xterm-256color",
+      TERM_PROGRAM: "iTerm.app",
+    } as NodeJS.ProcessEnv);
     expect(line).toContain("TERM=xterm-256color");
     expect(line).toContain("TERM_PROGRAM=iTerm.app");
     expect(line).toContain("TERM_PROGRAM_VERSION=-");

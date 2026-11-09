@@ -30,7 +30,10 @@ beforeEach(() => {
 afterAll(() => zen.cleanup());
 
 /** 只造 runCommand 实际会碰到的字段，其余用 noop 顶住 */
-function createHost(overrides: Record<string, unknown> = {}, portOverrides: Partial<ConfigPort> = {}) {
+function createHost(
+  overrides: Record<string, unknown> = {},
+  portOverrides: Partial<ConfigPort> = {},
+) {
   const notices: Array<{ text: string; tone?: "info" | "error" }> = [];
   const session = {
     messages: [{ role: AgentNS.Role.User, content: "hi" }],
@@ -169,7 +172,8 @@ describe("/migrate：prune 后必须重置转录显示起点", () => {
   });
 });
 
-describe("/new：归档后重置转录显示起点", () => {  it("session.reset 之后调用 clearTranscript", async () => {
+describe("/new：归档后重置转录显示起点", () => {
+  it("session.reset 之后调用 clearTranscript", async () => {
     const { host } = createHost();
     await runCommand("new", "/new", host);
     expect(host.clearTranscript).toHaveBeenCalledTimes(1);
@@ -377,7 +381,10 @@ describe("picker 条数上限（不超出一帧）", () => {
   });
 
   it("/back：条数上限同/load", async () => {
-    const messages = Array.from({ length: 20 }, (_v, i) => ({ role: AgentNS.Role.User, content: `第 ${i} 条` }));
+    const messages = Array.from({ length: 20 }, (_v, i) => ({
+      role: AgentNS.Role.User,
+      content: `第 ${i} 条`,
+    }));
     const { host } = createHost({ messages, rollbackTo: vi.fn(() => "") });
     (host as any).rows = ROWS;
     const seen = capturePick(host, null);
@@ -503,7 +510,10 @@ describe("配置来源是 deps.config（假端口），不是本地读盘", () =
 describe("/agent：走 session.setAgent，不重挂载", () => {
   it("调 setAgent(chosen) 且不 exit；会话已经在这个 Agent 上时不重建", async () => {
     const setAgent = vi.fn(async () => {});
-    const store = fakeAgentStore([agentDefinition("default", "m1"), agentDefinition("coder", "m1")]);
+    const store = fakeAgentStore([
+      agentDefinition("default", "m1"),
+      agentDefinition("coder", "m1"),
+    ]);
     const { host } = createHost(
       { agentId: "default", setAgent },
       { readAgentStore: vi.fn(async () => store) },
@@ -518,7 +528,10 @@ describe("/agent：走 session.setAgent，不重挂载", () => {
 
   it("会话已经在这个 Agent 上：只写「默认 Agent」记号，不重建", async () => {
     const setAgent = vi.fn(async () => {});
-    const store = fakeAgentStore([agentDefinition("default", "m1"), agentDefinition("coder", "m1")]);
+    const store = fakeAgentStore([
+      agentDefinition("default", "m1"),
+      agentDefinition("coder", "m1"),
+    ]);
     const { host } = createHost(
       { agentId: "coder", setAgent },
       { readAgentStore: vi.fn(async () => store) },

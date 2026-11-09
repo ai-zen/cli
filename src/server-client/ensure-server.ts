@@ -52,8 +52,12 @@ const DEFAULT_RETRY_INTERVAL_MS = 100;
 const PROBE_TIMEOUT_MS = 1000;
 
 export async function ensureServer(deps: EnsureServerDeps): Promise<EnsureServerResult> {
-  const connect = deps.connect ?? ((address: ServerAddress) => SocketServerClient.connect({ address, client: deps.clientInfo }));
-  const waitBeforeRetry = deps.waitBeforeRetry ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const connect =
+    deps.connect ??
+    ((address: ServerAddress) => SocketServerClient.connect({ address, client: deps.clientInfo }));
+  const waitBeforeRetry =
+    deps.waitBeforeRetry ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const retryIntervalMs = deps.retryIntervalMs ?? DEFAULT_RETRY_INTERVAL_MS;
 
@@ -134,7 +138,9 @@ async function spawnServerProcess({ aiZenDir }: { aiZenDir: string }): Promise<v
 function serverEntryPath(): string {
   const require = createRequire(import.meta.url);
   const packageJsonPath = require.resolve("@ai-zen/agents-server/package.json");
-  const pkg = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { bin?: Record<string, string> };
+  const pkg = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
+    bin?: Record<string, string>;
+  };
   const bin = pkg.bin?.["agents-server"];
   if (!bin) throw new Error("@ai-zen/agents-server 的 package.json 里没有 bin.agents-server");
   return join(dirname(packageJsonPath), bin);

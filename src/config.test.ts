@@ -85,7 +85,7 @@ describe("MCP 作用域化读写", () => {
     expect(read.ok && read.config.mcpServers.a!.command).toBe("x");
   });
 
-  it("readMcpConfig(\"global\") 等价于默认作用域", async () => {
+  it('readMcpConfig("global") 等价于默认作用域', async () => {
     await config.writeMcpConfig({ mcpServers: { g: { type: "http", url: "https://g" } } });
     expect(await config.readMcpConfig("global")).toEqual({
       ok: true,

@@ -24,7 +24,10 @@ function fakeRun(table: Record<string, Buffer | string | null>) {
 }
 
 const darwin = (run: ClipboardDeps["run"]): ClipboardDeps => ({ platform: "darwin", env: {}, run });
-const linux = (run: ClipboardDeps["run"], env: NodeJS.ProcessEnv = { XDG_SESSION_TYPE: "x11" }): ClipboardDeps => ({
+const linux = (
+  run: ClipboardDeps["run"],
+  env: NodeJS.ProcessEnv = { XDG_SESSION_TYPE: "x11" },
+): ClipboardDeps => ({
   platform: "linux",
   env,
   run,

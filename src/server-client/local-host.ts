@@ -22,7 +22,10 @@
 
 /** 这条连接的另一头是不是这台机器（见文件头） */
 export function isLocalHost(host: string): boolean {
-  const value = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  const value = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
   return value === "localhost" || value === "::1" || /^127\./.test(value);
 }
 

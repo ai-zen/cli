@@ -76,7 +76,9 @@ export function PromptEditorScreen({
       writeFileSync(file, before, "utf-8");
       await suspendTerminal(() => {
         const editor =
-          process.env.EDITOR || process.env.VISUAL || (process.platform === "win32" ? "notepad" : "vi");
+          process.env.EDITOR ||
+          process.env.VISUAL ||
+          (process.platform === "win32" ? "notepad" : "vi");
         (openEditor ?? defaultOpenEditor)(editor, file);
       });
       const edited = readFileSync(file, "utf-8").replace(/\r\n/g, "\n").trimEnd();
@@ -115,7 +117,9 @@ export function PromptEditorScreen({
     ...(error ? textRows(`✖ ${error}`, columns, theme.error) : []),
   ];
   const previewBudget = Math.max(3, usableFrameRows(rows) - headerRows.length - 3);
-  const preview = current ? wrapText(current, Math.max(8, columns - 4)).slice(0, previewBudget) : [t("common.empty")];
+  const preview = current
+    ? wrapText(current, Math.max(8, columns - 4)).slice(0, previewBudget)
+    : [t("common.empty")];
   const contentLines = headerRows.length + 1 + preview.length + 1;
 
   return (
@@ -128,7 +132,12 @@ export function PromptEditorScreen({
           </Text>
         ))}
       </Box>
-      <KeyHints hints={[["Enter", busy ? t("wiz.editorBusy") : t("wiz.openSystemEditor")], ["Esc", t("ui.back")]]} />
+      <KeyHints
+        hints={[
+          ["Enter", busy ? t("wiz.editorBusy") : t("wiz.openSystemEditor")],
+          ["Esc", t("ui.back")],
+        ]}
+      />
     </WizardFrame>
   );
 }

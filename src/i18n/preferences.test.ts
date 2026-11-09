@@ -3,12 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_LOCALE, getLocale, setLocale } from "./index.js";
-import {
-  initLocale,
-  persistLocale,
-  readPreferences,
-  writePreferences,
-} from "./preferences.js";
+import { initLocale, persistLocale, readPreferences, writePreferences } from "./preferences.js";
 
 /** 本文件创建过的临时目录，`afterAll` 统一删除（否则每跑一次测试就在 /tmp 留一堆） */
 const tempDirs: string[] = [];

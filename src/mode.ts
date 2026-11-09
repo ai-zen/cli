@@ -127,7 +127,8 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
   // 子命令短路（与运行模式无关的管理动作）
   if (positional[0] === "hook") {
     const action = positional[1];
-    if (action && HOOK_ACTIONS.has(action)) return { kind: "hook", action: action as "install" | "uninstall" };
+    if (action && HOOK_ACTIONS.has(action))
+      return { kind: "hook", action: action as "install" | "uninstall" };
     // 没给子动作（含 `ai hook --help`，`--help` 已被当选项吃掉）：只是要看用法
     if (action === undefined) return { kind: "hook", action: "usage" };
     return { kind: "hook", action: "usage", invalidAction: action };
@@ -147,7 +148,11 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
   // 非 TTY 时宁可报错，也不能默默降级成 stdio—— 否则界面内容会写进管道。
   if (wantTui) {
     if (!tty.stdinIsTTY || !tty.stdoutIsTTY) return { kind: "tui-rejected" };
-    return { kind: "tui", initialPrompt: instruction || undefined, newSession: wantNew || undefined };
+    return {
+      kind: "tui",
+      initialPrompt: instruction || undefined,
+      newSession: wantNew || undefined,
+    };
   }
 
   const mode = decideMode(tty, positional.length > 0);

@@ -34,13 +34,30 @@ function makeConfig(): AppConfig {
   return {
     endpoints: [
       { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", apiKey: "" },
-      { id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", apiKey: "sk-old-key-123456" },
+      {
+        id: "openai",
+        name: "OpenAI",
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: "sk-old-key-123456",
+      },
     ],
     models: [
-      { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash", endpointId: "deepseek", tokenThresholds: { handoff: 250_000, guard: 375000 } },
-      { id: "gpt-5.5", name: "GPT-5.5", endpointId: "openai", tokenThresholds: { handoff: 250_000, guard: 375000 } },
+      {
+        id: "deepseek-v4-flash",
+        name: "DeepSeek-V4-Flash",
+        endpointId: "deepseek",
+        tokenThresholds: { handoff: 250_000, guard: 375000 },
+      },
+      {
+        id: "gpt-5.5",
+        name: "GPT-5.5",
+        endpointId: "openai",
+        tokenThresholds: { handoff: 250_000, guard: 375000 },
+      },
     ],
-    imageModels: [{ id: "cogview-4", name: "CogView-4", endpointId: "openai", modelName: "cogview-4" }],
+    imageModels: [
+      { id: "cogview-4", name: "CogView-4", endpointId: "openai", modelName: "cogview-4" },
+    ],
     defaultImageModel: "cogview-4",
   };
 }
@@ -71,7 +88,11 @@ const makeOnSave = () => vi.fn<(config: AppConfig) => Promise<void>>(async () =>
 const makeMcp = () => ({
   global: {
     mcpServers: {
-      "socket-pty": { type: "stdio" as const, command: "npx", args: ["-y", "@ai-zen/socket-pty", "mcp"] },
+      "socket-pty": {
+        type: "stdio" as const,
+        command: "npx",
+        args: ["-y", "@ai-zen/socket-pty", "mcp"],
+      },
       slack: { type: "http" as const, url: "https://slack.example.com" },
     },
   },
@@ -238,7 +259,12 @@ describe("promptLayout（吸底留白 + IME 光标）", () => {
 describe("ConfigWizard（吸底布局）", () => {
   it("整帧高度 = 终端行数 − 1，内容贴底（顶部为空白，不会飘到视口外）", async () => {
     const { lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} terminalSize={SIZE} onSave={makeOnSave()} onClose={noop} />,
+      <ConfigWizard
+        config={makeConfig()}
+        terminalSize={SIZE}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
     );
     await tick();
     const lines = (lastFrame() ?? "").split("\n");
@@ -418,7 +444,11 @@ describe("ConfigWizard（配置中心）", () => {
     const { stdin, lastFrame, unmount } = render(
       <ConfigWizard
         config={makeConfig()}
-        initialStep={{ kind: "new-endpoint", field: "name", draft: { name: "", baseUrl: "", apiKey: "" } }}
+        initialStep={{
+          kind: "new-endpoint",
+          field: "name",
+          draft: { name: "", baseUrl: "", apiKey: "" },
+        }}
         onSave={onSave}
         onClose={onClose}
       />,
@@ -982,7 +1012,12 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
   it("默认项：中断的工具轮次可切（fill → drop），两档都不提供「不设置」", async () => {
     const onSave = makeOnSave();
     const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} initialStep={{ kind: "pick-default", target: "abortedToolRoundStrategy" }} onSave={onSave} onClose={noop} />,
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "pick-default", target: "abortedToolRoundStrategy" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
     );
     await tick();
     expect(lastFrame()).not.toContain("未设置");
@@ -995,9 +1030,15 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     unmount();
   });
 
-  it("工具输出上限：写入正整数", async () => {    const onSave = makeOnSave();
+  it("工具输出上限：写入正整数", async () => {
+    const onSave = makeOnSave();
     const { stdin, unmount } = render(
-      <ConfigWizard config={makeConfig()} initialStep={{ kind: "max-tool-output" }} onSave={onSave} onClose={noop} />,
+      <ConfigWizard
+        config={makeConfig()}
+        initialStep={{ kind: "max-tool-output" }}
+        onSave={onSave}
+        onClose={noop}
+      />,
     );
     await tick();
     stdin.write("\u0015"); // Ctrl+U 清空
@@ -1110,7 +1151,10 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     await tick();
     expect(onSaveMcp).toHaveBeenCalledTimes(1);
     expect(onSaveMcp.mock.calls[0]![0]).toBe("global");
-    expect(onSaveMcp.mock.calls[0]![1].mcpServers["my-server"]).toEqual({ type: "stdio", disabled: false });
+    expect(onSaveMcp.mock.calls[0]![1].mcpServers["my-server"]).toEqual({
+      type: "stdio",
+      disabled: false,
+    });
     expect(lastFrame()).toContain("◆ MCP · my-server");
     unmount();
   });
@@ -1141,7 +1185,12 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     stdin.write(ENTER);
     await tick();
     await tick();
-    expect(onSaveMcp.mock.calls[0]![1].mcpServers["socket-pty"]!.args).toEqual(["-y", "new-pkg", "chcp", "65001"]);
+    expect(onSaveMcp.mock.calls[0]![1].mcpServers["socket-pty"]!.args).toEqual([
+      "-y",
+      "new-pkg",
+      "chcp",
+      "65001",
+    ]);
     unmount();
   });
 
@@ -1345,7 +1394,9 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
     await tickEsc();
     stdin.write(ESC); // 关闭
     await tickEsc();
-    expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ dirty: true, mcpChanged: true }));
+    expect(onClose).toHaveBeenCalledWith(
+      expect.objectContaining({ dirty: true, mcpChanged: true }),
+    );
     unmount();
   });
 });
@@ -1370,7 +1421,9 @@ const makeAgentDef = (over: Partial<AgentDefinition> = {}): AgentDefinition => (
 });
 
 const makeAgentStore = (agents: AgentDefinition[] = [], subAgents: AgentDefinition[] = []) => {
-  const save = vi.fn<(kind: AgentKind, def: AgentDefinition) => Promise<void>>(async () => undefined);
+  const save = vi.fn<(kind: AgentKind, def: AgentDefinition) => Promise<void>>(
+    async () => undefined,
+  );
   const remove = vi.fn<(kind: AgentKind, id: string) => Promise<void>>(async () => undefined);
   const store: AgentStore = { agents, subAgents, save, remove };
   return { store, save, remove };
@@ -1380,10 +1433,21 @@ describe("ConfigWizard（Agent 定义管理）", () => {
   it("菜单 → Agent 定义：列出 Agent / Sub-agent 与两个新建项", async () => {
     const { store } = makeAgentStore(
       [makeAgentDef()],
-      [makeAgentDef({ id: "general", name: "通用助手", function: { name: "sub_agent_general", description: "d", parameters: {} } })],
+      [
+        makeAgentDef({
+          id: "general",
+          name: "通用助手",
+          function: { name: "sub_agent_general", description: "d", parameters: {} },
+        }),
+      ],
     );
     const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} agentStore={store} onSave={makeOnSave()} onClose={noop} />,
+      <ConfigWizard
+        config={makeConfig()}
+        agentStore={store}
+        onSave={makeOnSave()}
+        onClose={noop}
+      />,
     );
     await tick();
     expect(lastFrame()).toContain("Agent 1 · Sub-agent 1");
@@ -1648,9 +1712,16 @@ describe("ConfigWizard（Agent 定义管理）", () => {
   });
 
   it("Sub-agent 详情：进入参数 schema 多行编辑屏，非法 JSON 被拒", async () => {
-    const { store, save } = makeAgentStore([], [
-      makeAgentDef({ id: "helper", name: "Helper", function: { name: "sub_agent_helper", description: "d", parameters: { type: "object" } } }),
-    ]);
+    const { store, save } = makeAgentStore(
+      [],
+      [
+        makeAgentDef({
+          id: "helper",
+          name: "Helper",
+          function: { name: "sub_agent_helper", description: "d", parameters: { type: "object" } },
+        }),
+      ],
+    );
     // 编辑器注入，不依赖 vi.mock("child_process")
     const openEditor = vi.fn((_editor: string, file: string) => {
       writeFileSync(file, "{ not json", "utf-8");
@@ -1686,9 +1757,16 @@ describe("ConfigWizard（Agent 定义管理）", () => {
   });
 
   it("Sub-agent 参数 schema：外部编辑器保存合法 JSON 后写盘", async () => {
-    const { store, save } = makeAgentStore([], [
-      makeAgentDef({ id: "helper2", name: "Helper2", function: { name: "sub_agent_helper2", description: "d", parameters: { type: "object" } } }),
-    ]);
+    const { store, save } = makeAgentStore(
+      [],
+      [
+        makeAgentDef({
+          id: "helper2",
+          name: "Helper2",
+          function: { name: "sub_agent_helper2", description: "d", parameters: { type: "object" } },
+        }),
+      ],
+    );
     const openEditor = vi.fn((_editor: string, file: string) => {
       writeFileSync(file, '{"type":"object","properties":{"q":{"type":"string"}}}', "utf-8");
     });
@@ -1716,7 +1794,10 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     await tick();
     expect(save).toHaveBeenCalledTimes(1);
     const def = save.mock.calls[0]![1];
-    expect(def.function!.parameters).toEqual({ type: "object", properties: { q: { type: "string" } } });
+    expect(def.function!.parameters).toEqual({
+      type: "object",
+      properties: { q: { type: "string" } },
+    });
     unmount();
   });
 
@@ -1772,7 +1853,9 @@ describe("ConfigWizard（Agent 定义管理）", () => {
     await tickEsc();
     stdin.write(ESC); // 关闭
     await tickEsc();
-    expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ dirty: true, agentsChanged: true }));
+    expect(onClose).toHaveBeenCalledWith(
+      expect.objectContaining({ dirty: true, agentsChanged: true }),
+    );
     unmount();
   });
 

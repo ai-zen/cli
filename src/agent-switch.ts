@@ -54,7 +54,12 @@ export function listAgentChoices(
     }
     const credential = resolveCredential(config, agent.modelId);
     if (!credential) {
-      return { id: agent.id, name, selectable: false, reason: t("agentSwitch.err.modelMissing", { id: agent.modelId }) };
+      return {
+        id: agent.id,
+        name,
+        selectable: false,
+        reason: t("agentSwitch.err.modelMissing", { id: agent.modelId }),
+      };
     }
     if (!credential.configured) {
       return {

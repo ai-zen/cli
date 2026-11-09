@@ -25,13 +25,27 @@ export function PickerOverlay({
     if (key.escape || (key.ctrl && input === "c")) onPick(null);
   });
   return (
-    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.border} paddingX={2}>
-      <Text color={theme.warn} wrap="truncate">? {title}</Text>
+    <Box
+      flexDirection="column"
+      marginTop={1}
+      borderStyle="round"
+      borderColor={theme.border}
+      paddingX={2}
+    >
+      <Text color={theme.warn} wrap="truncate">
+        ? {title}
+      </Text>
       <Box marginTop={1}>
         <SelectList items={items} columns={columns} onSelect={(v) => onPick(v)} />
       </Box>
       <Box marginTop={1}>
-        <KeyHints hints={[["↑ ↓", t("ui.select")], ["Enter", t("ui.confirm")], ["Esc", t("ui.cancel")]]} />
+        <KeyHints
+          hints={[
+            ["↑ ↓", t("ui.select")],
+            ["Enter", t("ui.confirm")],
+            ["Esc", t("ui.cancel")],
+          ]}
+        />
       </Box>
     </Box>
   );
@@ -57,8 +71,16 @@ export function Confirm({
   });
 
   return (
-    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.border} paddingX={2}>
-      <Text color={theme.warn} wrap="truncate">? {question}</Text>
+    <Box
+      flexDirection="column"
+      marginTop={1}
+      borderStyle="round"
+      borderColor={theme.border}
+      paddingX={2}
+    >
+      <Text color={theme.warn} wrap="truncate">
+        ? {question}
+      </Text>
       <Box marginTop={1} gap={2}>
         <Text inverse={yes} color={yes ? theme.ok : theme.dim}>
           {` ${t("common.yes")} `}
@@ -66,9 +88,10 @@ export function Confirm({
         <Text inverse={!yes} color={!yes ? theme.error : theme.dim}>
           {` ${t("common.no")} `}
         </Text>
-        <Text color={theme.faint} wrap="truncate">{t("confirm.hint")}</Text>
+        <Text color={theme.faint} wrap="truncate">
+          {t("confirm.hint")}
+        </Text>
       </Box>
     </Box>
   );
 }
-

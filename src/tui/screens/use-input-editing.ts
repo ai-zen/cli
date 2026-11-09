@@ -101,7 +101,12 @@ export interface InputEditing {
   clearDraft: () => void;
 }
 
-export function useInputEditing({ initialText, notify, historySource, restoreImages }: InputEditingDeps): InputEditing {
+export function useInputEditing({
+  initialText,
+  notify,
+  historySource,
+  restoreImages,
+}: InputEditingDeps): InputEditing {
   const [input, setInput] = useState(initialText ?? "");
   const [cursor, setCursor] = useState(graphemes(initialText ?? "").length);
   /** 历史游标：-1 = 不在浏览历史（当前是草稿）；具体内容每次现取 `historySource()` */

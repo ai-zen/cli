@@ -10,7 +10,15 @@ import { phaseLabel } from "../phase-label.js";
 import type { PhaseInfo } from "@ai-zen/agents-server";
 import { AgentNS } from "@ai-zen/agents-core";
 import { theme } from "../theme.js";
-import { Spinner, StatusBar, statusBarRows, BottomMenu, PastedImagesBar, type MenuItem, type StatusBarProps } from "../components.js";
+import {
+  Spinner,
+  StatusBar,
+  statusBarRows,
+  BottomMenu,
+  PastedImagesBar,
+  type MenuItem,
+  type StatusBarProps,
+} from "../components.js";
 import { graphemes, layoutInput, usableFrameRows } from "../text.js";
 import {
   type ChatSessionLike,
@@ -47,7 +55,12 @@ import { useWizardHost, type WizardHostDeps } from "./use-wizard-host.js";
 import { useInputEditing } from "./use-input-editing.js";
 import { extractMention, mentionInsertText, rankPaths, type PathEntry } from "../mention.js";
 import { userDrafts } from "../chat-history.js";
-import { MAX_CLIPBOARD_TEXT_BYTES, readClipboardImage, readClipboardText, type ClipboardImage } from "../../clipboard.js";
+import {
+  MAX_CLIPBOARD_TEXT_BYTES,
+  readClipboardImage,
+  readClipboardText,
+  type ClipboardImage,
+} from "../../clipboard.js";
 import { handleCtrlDExit, handleScrollKey } from "./common-keys.js";
 
 // ==================== 对话屏幕 ====================
@@ -196,15 +209,21 @@ export function Chat(props: ChatScreenProps) {
   const { setCursorPosition } = useCursor();
   const { columns, rows } = useWindowSize();
 
-
   /** 覆盖层（确认框 / 选择器）：弹窗与 resolve 生命周期见 use-overlays.ts */
-  const { confirmState, pickerState, setConfirmState, setPickerState, resolveConfirm, resolvePicker } =
-    useChatOverlays();
+  const {
+    confirmState,
+    pickerState,
+    setConfirmState,
+    setPickerState,
+    resolveConfirm,
+    resolvePicker,
+  } = useChatOverlays();
   const sessionRef = useRef<ChatSessionLike | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   /** 视口：滚动状态与翻页 / 按行 / 滚轮换算（唯一入口见 use-chat-viewport.ts） */
-  const { viewTop, layoutRef, scrollByPage, scrollByLine, scrollByWheel, scrollToBottom } = useChatViewport();
+  const { viewTop, layoutRef, scrollByPage, scrollByLine, scrollByWheel, scrollToBottom } =
+    useChatViewport();
 
   /** 本轮是否在生成中（spinner / 输入禁用） */
   const [busy, setBusy] = useState(false);
@@ -326,7 +345,10 @@ export function Chat(props: ChatScreenProps) {
         ?.reload()
         .then(() => noticeChannel.push(t("notice.reloaded")))
         .catch((error: any) =>
-          noticeChannel.push(t("chat.sessionReloadFailed", { error: error?.message ?? error }), "error"),
+          noticeChannel.push(
+            t("chat.sessionReloadFailed", { error: error?.message ?? error }),
+            "error",
+          ),
         );
     },
     // 向导读快照 / 落盘也走注入：集成测试不该碰真实配置目录
@@ -391,26 +413,27 @@ export function Chat(props: ChatScreenProps) {
         if (!disposed) noticeChannel.push(text, tone);
       },
     };
-    deps.createSession(
-      {
-        agentId: props.agentId,
-        // 消息**不在这里传**：远程实现只持有一个会话 id，内容由服务端快照给
-        // （`props.messages` 仍用于本屏首帧渲染与 `/back` 的显示起点）
-        sessionId: props.sessionId,
-        sessionName: props.sessionName,
-        // 配置面复用屏幕这一个：图片链路的端点能力要读服务端那份（见 `ChatSessionOptions.config`）
-        config: deps.config,
-        // 「接着上次」只是意图：接哪一段由会话实现去问（服务端存档 / 本地指针），屏幕不判断
-        resume: props.resume,
-        // 自动迁移：与手动 /migrate、/handoff 共用同一套「交接方式三选一」选择器
-        requestMode: (info) =>
-          chooseHandoffMode(
-            setPickerState,
-            t("handoff.pickTitle", { used: info.promptTokens, limit: info.handoffTokens }),
-          ),
-      },
-      notifier,
-    )
+    deps
+      .createSession(
+        {
+          agentId: props.agentId,
+          // 消息**不在这里传**：远程实现只持有一个会话 id，内容由服务端快照给
+          // （`props.messages` 仍用于本屏首帧渲染与 `/back` 的显示起点）
+          sessionId: props.sessionId,
+          sessionName: props.sessionName,
+          // 配置面复用屏幕这一个：图片链路的端点能力要读服务端那份（见 `ChatSessionOptions.config`）
+          config: deps.config,
+          // 「接着上次」只是意图：接哪一段由会话实现去问（服务端存档 / 本地指针），屏幕不判断
+          resume: props.resume,
+          // 自动迁移：与手动 /migrate、/handoff 共用同一套「交接方式三选一」选择器
+          requestMode: (info) =>
+            chooseHandoffMode(
+              setPickerState,
+              t("handoff.pickTitle", { used: info.promptTokens, limit: info.handoffTokens }),
+            ),
+        },
+        notifier,
+      )
       .then((session) => {
         if (disposed) {
           session.dispose();
@@ -440,13 +463,7 @@ export function Chat(props: ChatScreenProps) {
       frameBufferRef.current?.dispose();
       sessionRef.current?.dispose();
     };
-  }, [
-    props.agentId,
-    props.messages,
-    props.sessionId,
-    props.sessionName,
-    props.resume,
-  ]);
+  }, [props.agentId, props.messages, props.sessionId, props.sessionName, props.resume]);
 
   // 速率采样：Spinner 的重渲染只影响它自己，不会带着状态栏一起刷，所以生成中要自己定时读快照。
   // 生成结束（busy → false）时再读一次，拿本轮平均速率并留在状态栏上。
@@ -615,7 +632,10 @@ export function Chat(props: ChatScreenProps) {
       return;
     }
     if (result.kind === "too-large") {
-      noticeChannel.push(t("notice.imageTooLarge", { size: formatMegabytes(result.bytes) }), "error");
+      noticeChannel.push(
+        t("notice.imageTooLarge", { size: formatMegabytes(result.bytes) }),
+        "error",
+      );
       return;
     }
 
@@ -1240,7 +1260,12 @@ export function Chat(props: ChatScreenProps) {
       {confirmState ? (
         <Confirm question={confirmState.question} onAnswer={resolveConfirm} />
       ) : pickerState ? (
-        <PickerOverlay title={pickerState.title} items={pickerState.items} columns={cols} onPick={resolvePicker} />
+        <PickerOverlay
+          title={pickerState.title}
+          items={pickerState.items}
+          columns={cols}
+          onPick={resolvePicker}
+        />
       ) : (
         <Box flexDirection="column">
           {agentTabs.length > 0 ? <AgentTabs tabs={agentTabs} activeId={activeTabId} /> : null}

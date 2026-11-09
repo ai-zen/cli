@@ -23,7 +23,10 @@ describe("NoticeChannel（通知旁路通道）", () => {
     channel.push("已保存");
     channel.push("读取出错", "error");
 
-    expect(seen.map((queue) => queue.map((n) => n.text))).toEqual([["已保存"], ["已保存", "读取出错"]]);
+    expect(seen.map((queue) => queue.map((n) => n.text))).toEqual([
+      ["已保存"],
+      ["已保存", "读取出错"],
+    ]);
     expect(seen.map((queue) => queue.map((n) => n.tone))).toEqual([["info"], ["info", "error"]]);
     const last = seen.at(-1)!;
     expect(last[0]!.seq).toBeLessThan(last[1]!.seq);

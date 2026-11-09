@@ -374,10 +374,12 @@ describe("createRemoteConfigPort：连接的懒建与重建（注入假连接）
       scope: "project",
       workspaceId: "ws_fake",
     });
-    expect(calls.filter((call) => call.method === CONFIG_METHODS.mcpSave)[0]!.params).toMatchObject({
-      scope: "project",
-      workspaceId: "ws_fake",
-    });
+    expect(calls.filter((call) => call.method === CONFIG_METHODS.mcpSave)[0]!.params).toMatchObject(
+      {
+        scope: "project",
+        workspaceId: "ws_fake",
+      },
+    );
   });
 
   it("global 作用域不问工作区（多一次往返，也多一个会漂的答案）", async () => {

@@ -197,7 +197,11 @@ describe("两个通知通道", () => {
       level: "error",
       code: "persistFailed",
     });
-    expect(notices[1]).toMatchObject({ event: "global.notice", level: "warn", code: "mcpUnavailable" });
+    expect(notices[1]).toMatchObject({
+      event: "global.notice",
+      level: "warn",
+      code: "mcpUnavailable",
+    });
     expect(notices[1]).not.toHaveProperty("sessionId");
   });
 });

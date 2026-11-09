@@ -99,7 +99,9 @@ async function main(): Promise<void> {
       else if (invocation.action === "uninstall") await uninstallHook();
       else if (invocation.invalidAction) {
         // 认不出的子动作：报错 + 非零退出码（脚本可据此判断），同时给出正确用法
-        process.stderr.write(`${t("cli.hookUnknownAction", { action: invocation.invalidAction })}\n`);
+        process.stderr.write(
+          `${t("cli.hookUnknownAction", { action: invocation.invalidAction })}\n`,
+        );
         process.stderr.write(`${t("cli.hookUsage")}\n`);
         process.exitCode = 1;
       } else {
@@ -135,7 +137,9 @@ async function main(): Promise<void> {
     case "tui-rejected":
       // `--tui` 明确要求交互界面，但 stdin/stdout 不是 TTY（如被写进脚本或管道）：
       // 不悄悄降级成管道模式（那会把整屏界面内容写进管道），直接报错。
-      process.stderr.write("ai: --tui requires an interactive terminal (stdin and stdout must be TTYs)\n");
+      process.stderr.write(
+        "ai: --tui requires an interactive terminal (stdin and stdout must be TTYs)\n",
+      );
       process.exitCode = 2;
       return;
   }

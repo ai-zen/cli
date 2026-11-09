@@ -59,10 +59,7 @@ export function presetOf(
 }
 
 /** 模型可选档位（空数组 = 不可调档） */
-export function effortChoices(
-  model?: Model | null,
-  presets?: ReasoningPresets | null,
-): string[] {
+export function effortChoices(model?: Model | null, presets?: ReasoningPresets | null): string[] {
   if (!presets) return [];
   return levelsOf(presetOf(model, presets));
 }
@@ -178,8 +175,7 @@ export async function setAgentEffort(
   const agentId = options.agentId || "default";
   const now = options.now ?? new Date();
 
-  const readAgent =
-    options.readAgent ?? ((id: string) => new AgentRepository(AGENTS_DIR).read(id));
+  const readAgent = options.readAgent ?? ((id: string) => new AgentRepository(AGENTS_DIR).read(id));
   const writeAgent =
     options.writeAgent ??
     ((definition: AgentDefinition) => new AgentRepository(AGENTS_DIR).write(definition));
@@ -203,7 +199,11 @@ export async function setAgentEffort(
   const patch = effort === null ? undefined : patchOf(preset, effort);
   if (effort !== null && !patch) {
     throw new Error(
-      t("effort.err.unknownLevel", { preset: model.reasoningPreset ?? "", level: effort, options: allowed.join(" / ") }),
+      t("effort.err.unknownLevel", {
+        preset: model.reasoningPreset ?? "",
+        level: effort,
+        options: allowed.join(" / "),
+      }),
     );
   }
 
@@ -221,7 +221,10 @@ export async function setAgentEffort(
 
   await writeAgent(next);
 
-  const label = effort === null ? t("effort.followDefault") : t("effort.quoted", { label: effortLabel(effort) });
+  const label =
+    effort === null
+      ? t("effort.followDefault")
+      : t("effort.quoted", { label: effortLabel(effort) });
   return {
     definition: next,
     model,

@@ -1,7 +1,36 @@
-import { AgentDefinition, AppConfig, Endpoint, ImageModel, Model, ReasoningPresets } from "@ai-zen/agents-sdk";
+import {
+  AgentDefinition,
+  AppConfig,
+  Endpoint,
+  ImageModel,
+  Model,
+  ReasoningPresets,
+} from "@ai-zen/agents-sdk";
 import { McpConfig, McpScope, McpServerEntry } from "../../config.js";
 import { agentKindLabel, agentList, AgentKind, AgentStore } from "../../agents-store.js";
-import { findEndpoint, findModel, formatAgentPermission, formatArgs, getAgentPrompt, kvSummary, maskApiKey, mcpServerIdTaken, mergeTokenThresholds, parseArgs, parsePermission, PERMISSION_DIMENSIONS, renameMcpServer, setAgentPermission, summarizePermissions, updateAgentDefinition, updateAgentFunction, updateEndpoint, updateImageModel, updateMcpServer, updateModel } from "../../config-editor.js";
+import {
+  findEndpoint,
+  findModel,
+  formatAgentPermission,
+  formatArgs,
+  getAgentPrompt,
+  kvSummary,
+  maskApiKey,
+  mcpServerIdTaken,
+  mergeTokenThresholds,
+  parseArgs,
+  parsePermission,
+  PERMISSION_DIMENSIONS,
+  renameMcpServer,
+  setAgentPermission,
+  summarizePermissions,
+  updateAgentDefinition,
+  updateAgentFunction,
+  updateEndpoint,
+  updateImageModel,
+  updateMcpServer,
+  updateModel,
+} from "../../config-editor.js";
 import { WizardStep, McpSnapshot } from "./types.js";
 import { t } from "../../i18n/index.js";
 import { DetailField } from "./detail.js";
@@ -39,7 +68,11 @@ export interface FieldBuilderDeps {
   store: AgentStore;
   /** 思考策略表（模型详情页校验策略名用） */
   reasoningPresets: ReasoningPresets;
-  persist: (next: AppConfig, message: string, changedEndpointIds?: string[]) => Promise<string | null>;
+  persist: (
+    next: AppConfig,
+    message: string,
+    changedEndpointIds?: string[],
+  ) => Promise<string | null>;
   persistMcp: (scope: McpScope, next: McpConfig, message: string) => Promise<string | null>;
   saveAgent: (kind: AgentKind, def: AgentDefinition, message: string) => Promise<string | null>;
   removeAgentQuiet: (kind: AgentKind, id: string) => Promise<string | null>;
@@ -47,7 +80,17 @@ export interface FieldBuilderDeps {
 }
 
 export function createFieldBuilders(deps: FieldBuilderDeps) {
-  const { config, mcp, store, reasoningPresets, persist, persistMcp, saveAgent, removeAgentQuiet, go } = deps;
+  const {
+    config,
+    mcp,
+    store,
+    reasoningPresets,
+    persist,
+    persistMcp,
+    saveAgent,
+    removeAgentQuiet,
+    go,
+  } = deps;
 
   // ---------- 共享字段 ----------
 
@@ -64,7 +107,8 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
     kind: "text",
     value: current.name || current.id,
     initial: current.name,
-    commit: (raw) => (raw.trim() ? save({ name: raw.trim() }, t("field.name")) : t("err.nameRequired")),
+    commit: (raw) =>
+      raw.trim() ? save({ name: raw.trim() }, t("field.name")) : t("err.nameRequired"),
   });
 
   /** 「绑定端点」字段：模型 / 图片模型共用，选项是全局端点表 */
@@ -76,9 +120,13 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
     label: t("field.endpoint"),
     kind: "enum",
     value: findEndpoint(config, currentEndpointId)?.name ?? currentEndpointId,
-    options: config.endpoints.map((endpoint) => ({ label: endpoint.name || endpoint.id, value: endpoint.id })),
+    options: config.endpoints.map((endpoint) => ({
+      label: endpoint.name || endpoint.id,
+      value: endpoint.id,
+    })),
     // 选回原端点不算改动：否则会白白写盘一次
-    commit: (raw) => (raw === currentEndpointId ? null : save({ endpointId: raw }, t("field.endpoint"))),
+    commit: (raw) =>
+      raw === currentEndpointId ? null : save({ endpointId: raw }, t("field.endpoint")),
   });
 
   /**
@@ -98,7 +146,11 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
   const endpointFields = (endpoint: Endpoint): DetailField[] => {
     const name = endpoint.name || endpoint.id;
     const save = (patch: Partial<Endpoint>, label: string) =>
-      persist(updateEndpoint(config, endpoint.id, patch), t("wiz.endpointUpdated", { name, label }), [endpoint.id]);
+      persist(
+        updateEndpoint(config, endpoint.id, patch),
+        t("wiz.endpointUpdated", { name, label }),
+        [endpoint.id],
+      );
     return [
       nameField(endpoint, save),
       {
@@ -193,7 +245,11 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
           // 软线不得越过硬线，否则一启动就被阻断
           if (guard > 0 && Math.floor(n) >= guard) return t("err.handoffLessThanGuard");
           return save(
-            { tokenThresholds: mergeTokenThresholds(model.tokenThresholds, { handoff: Math.floor(n) }) },
+            {
+              tokenThresholds: mergeTokenThresholds(model.tokenThresholds, {
+                handoff: Math.floor(n),
+              }),
+            },
             t("field.handoffThreshold"),
           );
         },
@@ -210,7 +266,11 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
           const handoff = model.tokenThresholds?.handoff ?? 0;
           if (Math.floor(n) <= handoff) return t("err.guardGreaterThanHandoff");
           return save(
-            { tokenThresholds: mergeTokenThresholds(model.tokenThresholds, { guard: Math.floor(n) }) },
+            {
+              tokenThresholds: mergeTokenThresholds(model.tokenThresholds, {
+                guard: Math.floor(n),
+              }),
+            },
             t("field.guardThreshold"),
           );
         },
@@ -239,7 +299,11 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
     const save = (patch: Partial<ImageModel>, label: string) =>
       persist(
         updateImageModel(config, model.id, customPatch(model, patch)),
-        t("wiz.imageModelUpdated", { name: model.name || model.id, label, suffix: customNote(managed) }),
+        t("wiz.imageModelUpdated", {
+          name: model.name || model.id,
+          label,
+          suffix: customNote(managed),
+        }),
         [model.endpointId],
       );
     return [
@@ -251,7 +315,10 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
         kind: "text",
         value: model.modelName,
         initial: model.modelName,
-        commit: (raw) => (raw.trim() ? save({ modelName: raw.trim() }, t("field.modelName")) : t("err.modelNameRequired")),
+        commit: (raw) =>
+          raw.trim()
+            ? save({ modelName: raw.trim() }, t("field.modelName"))
+            : t("err.modelNameRequired"),
       },
       {
         key: "defaultSize",
@@ -315,14 +382,17 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
           { label: t("common.transportSse"), value: "sse" },
         ],
         commit: (raw) =>
-          raw === type ? null : save({ type: raw as McpServerEntry["type"] }, t("common.transportMode")),
+          raw === type
+            ? null
+            : save({ type: raw as McpServerEntry["type"] }, t("common.transportMode")),
       },
       {
         key: "enabled",
         label: t("field.enabled"),
         kind: "bool",
         value: entry.disabled === true ? t("common.disabledInParens") : t("common.yes"),
-        toggle: () => save({ disabled: entry.disabled === true ? undefined : true }, t("common.enabledState")),
+        toggle: () =>
+          save({ disabled: entry.disabled === true ? undefined : true }, t("common.enabledState")),
       },
       {
         key: "description",
@@ -391,7 +461,11 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
     const save = (nextDef: AgentDefinition, label: string) => {
       const marked = markCustom(nextDef);
       const suffix = customNote(managed);
-      return saveAgent(kind, marked, t("wiz.agentFieldUpdated", { kind: kindName, id: def.id, label, suffix }));
+      return saveAgent(
+        kind,
+        marked,
+        t("wiz.agentFieldUpdated", { kind: kindName, id: def.id, label, suffix }),
+      );
     };
     const fields: DetailField[] = [
       {
@@ -415,9 +489,14 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
           const name = raw.trim();
           if (!name) return t("err.idRequired");
           if (name === def.id) return null;
-          if (agentList(store, kind).some((item) => item.id === name)) return t("err.agentIdTaken", { name });
+          if (agentList(store, kind).some((item) => item.id === name))
+            return t("err.agentIdTaken", { name });
           return (async () => {
-            const failure = await saveAgent(kind, { ...def, id: name }, t("wiz.agentRenamed", { kind: kindName, id: def.id, name }));
+            const failure = await saveAgent(
+              kind,
+              { ...def, id: name },
+              t("wiz.agentRenamed", { kind: kindName, id: def.id, name }),
+            );
             if (failure) return failure;
             await removeAgentQuiet(kind, def.id);
             go({ kind: "agent", agentKind: kind, agentId: name });
@@ -431,7 +510,11 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
         kind: "text",
         value: def.description ?? t("common.empty"),
         initial: def.description ?? "",
-        commit: (raw) => save(updateAgentDefinition(def, { description: raw.trim() || undefined }), t("field.description")),
+        commit: (raw) =>
+          save(
+            updateAgentDefinition(def, { description: raw.trim() || undefined }),
+            t("field.description"),
+          ),
       },
       {
         key: "modelId",
@@ -442,7 +525,8 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
           ...config.models.map((model) => ({ label: model.name || model.id, value: model.id })),
           { label: t("common.unset"), value: "" },
         ],
-        commit: (raw) => save(updateAgentDefinition(def, { modelId: raw || undefined }), t("field.model")),
+        commit: (raw) =>
+          save(updateAgentDefinition(def, { modelId: raw || undefined }), t("field.model")),
       },
       {
         key: "prompt",
@@ -484,7 +568,8 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
           label: t("field.paramsSchema"),
           kind: "open",
           value: summarizeMultiline(JSON.stringify(def.function?.parameters ?? {}, null, 2)),
-          open: () => go({ kind: "agent-text", agentKind: kind, agentId: def.id, field: "fnParams" }),
+          open: () =>
+            go({ kind: "agent-text", agentKind: kind, agentId: def.id, field: "fnParams" }),
         },
       );
     }
@@ -504,9 +589,20 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
         if (typeof parsed === "string") return parsed;
         const managed = kind === "agent" && !def.custom;
         const next = setAgentPermission(managed ? { ...def, custom: true } : def, dim, parsed);
-        return saveAgent(kind, next, t("wiz.agentPermissionUpdated", { kind: agentKindLabel(kind), id: def.id, dim }));
+        return saveAgent(
+          kind,
+          next,
+          t("wiz.agentPermissionUpdated", { kind: agentKindLabel(kind), id: def.id, dim }),
+        );
       },
     }));
 
-  return { endpointFields, modelFields, imageModelFields, mcpServerFields, agentFields, agentPermFields };
+  return {
+    endpointFields,
+    modelFields,
+    imageModelFields,
+    mcpServerFields,
+    agentFields,
+    agentPermFields,
+  };
 }

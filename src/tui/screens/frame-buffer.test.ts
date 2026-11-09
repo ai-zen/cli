@@ -9,7 +9,14 @@ describe("isImmediateEvent（即时上屏判定）", () => {
   });
 
   it("流式增量与过程事件走合帧", () => {
-    for (const type of ["assistant-start", "reasoning", "content", "tool", "notice", "subagent-start"]) {
+    for (const type of [
+      "assistant-start",
+      "reasoning",
+      "content",
+      "tool",
+      "notice",
+      "subagent-start",
+    ]) {
       expect(isImmediateEvent(type)).toBe(false);
     }
   });

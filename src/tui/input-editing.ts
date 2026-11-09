@@ -54,7 +54,8 @@ export function killedText(before: string, after: string): string {
   let prefix = 0;
   while (prefix < b.length && a[prefix] === b[prefix]) prefix += 1;
   let suffix = 0;
-  while (suffix < b.length - prefix && a[a.length - 1 - suffix] === b[b.length - 1 - suffix]) suffix += 1;
+  while (suffix < b.length - prefix && a[a.length - 1 - suffix] === b[b.length - 1 - suffix])
+    suffix += 1;
   return a.slice(prefix, a.length - suffix).join("");
 }
 

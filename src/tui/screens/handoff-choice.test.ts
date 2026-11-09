@@ -13,7 +13,10 @@ beforeEach(() => setLocale("zh"));
 /** 捕获 pickerState 的假 setter（chooseHandoffMode 以「值」形式调用它） */
 function makeSetter() {
   let captured: HandoffPickerState | null = null;
-  const set = ((value: HandoffPickerState | null | ((prev: HandoffPickerState | null) => HandoffPickerState | null)) => {
+  const set = ((
+    value:
+      HandoffPickerState | null | ((prev: HandoffPickerState | null) => HandoffPickerState | null),
+  ) => {
     captured = typeof value === "function" ? value(captured) : value;
   }) as Parameters<typeof chooseHandoffMode>[0];
   return { set, get: () => captured };

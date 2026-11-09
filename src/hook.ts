@@ -11,9 +11,7 @@ const MARKER_START = "# === ai hook (开始) ===";
 const MARKER_END = "# === ai hook (结束) ===";
 
 /** 历史标记（aiz hook 时代，用于平滑迁移） */
-const LEGACY_BLOCKS = [
-  { start: "# === aiz hook (开始) ===", end: "# === aiz hook (结束) ===" },
-];
+const LEGACY_BLOCKS = [{ start: "# === aiz hook (开始) ===", end: "# === aiz hook (结束) ===" }];
 
 function detectShell(): { rcFile: string; hookFn: string } | null {
   const shell = process.env.SHELL || "";
@@ -127,7 +125,10 @@ export async function installHook(): Promise<void> {
   // 内容不一致（如升级后给钩子加了 `--new`）或残留多块（老版本 + 新版本各写过一次）
   // 都要走重写路径，否则用户升不上去、或者旧块永远留在 rc 里。
   const installedBlocks = readHookBlocks(current);
-  if (installedBlocks.length === 1 && normalizeBlock(installedBlocks[0]!) === normalizeBlock(desired)) {
+  if (
+    installedBlocks.length === 1 &&
+    normalizeBlock(installedBlocks[0]!) === normalizeBlock(desired)
+  ) {
     console.log(t("hook.alreadyInstalled"));
     return;
   }
@@ -138,7 +139,11 @@ export async function installHook(): Promise<void> {
   const base = cleaned.replace(/\n+$/, "");
   await fs.writeFile(shell.rcFile, base + "\n" + desired, "utf-8");
 
-  console.log(refreshed ? t("hook.updated", { file: shell.rcFile }) : t("hook.installed", { file: shell.rcFile }));
+  console.log(
+    refreshed
+      ? t("hook.updated", { file: shell.rcFile })
+      : t("hook.installed", { file: shell.rcFile }),
+  );
   if (removed) console.log(t("hook.upgraded"));
   console.log(t("hook.restartHint", { file: shell.rcFile }));
   console.log(t("hook.forwardHint"));

@@ -79,7 +79,8 @@ async function boot(): Promise<void> {
   const factory = new SessionAgentFactory({ aiZenDir: dir, homeDir: dir });
   manager = new SessionManager({
     createAgent: (input) => factory.create(input),
-    storeFor: (workspaceId) => new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) }),
+    storeFor: (workspaceId) =>
+      new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) }),
   });
   daemon = new Daemon({
     aiZenDir: dir,
@@ -123,7 +124,9 @@ async function runTurn(sessionId: string, prompt: string): Promise<ServerEvent[]
   ];
   try {
     const { turnId } = await sessions.send(sessionId, prompt);
-    await waitFor(() => seen.some((event) => event.event === "turn.end" && event.turnId === turnId));
+    await waitFor(() =>
+      seen.some((event) => event.event === "turn.end" && event.turnId === turnId),
+    );
     return seen;
   } finally {
     for (const off of offs) off();
@@ -213,7 +216,9 @@ function seedAiZenDir(root: string, baseUrl: string): void {
     join(root, "config.json"),
     JSON.stringify({
       endpoints: [{ id: "fake", name: "Fake", baseUrl, apiKey: "sk-fake", description: "" }],
-      models: [{ id: "fake-model", name: "Fake", endpointId: "fake", modelName: MODEL_NAME, custom: true }],
+      models: [
+        { id: "fake-model", name: "Fake", endpointId: "fake", modelName: MODEL_NAME, custom: true },
+      ],
       defaultModel: "fake-model",
       defaultAgent: "default",
       version: 4,

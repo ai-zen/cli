@@ -90,7 +90,9 @@ export class SocketServerClient implements ServerClient {
 
     const timer = setTimeout(() => {
       connection.settleHandshake(
-        new Error(`handshake timeout after ${connectTimeoutMs}ms (${address.host}:${address.port})`),
+        new Error(
+          `handshake timeout after ${connectTimeoutMs}ms (${address.host}:${address.port})`,
+        ),
       );
       socket.destroy();
     }, connectTimeoutMs);
@@ -221,9 +223,9 @@ export class SocketServerClient implements ServerClient {
       else {
         // 把服务端的 `code` 挂到 error 上：调用方靠它判「哪一类失败」
         // （`session-missing` / `turn-busy` …），不必去截 message 前缀
-        const failure = new Error(
-          `${response.error.code}: ${response.error.message}`,
-        ) as Error & { code?: string };
+        const failure = new Error(`${response.error.code}: ${response.error.message}`) as Error & {
+          code?: string;
+        };
         failure.code = response.error.code;
         call.reject(failure);
       }

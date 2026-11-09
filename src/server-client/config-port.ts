@@ -42,11 +42,7 @@ import {
   type WorkspaceResolveResult,
 } from "@ai-zen/agents-server";
 import type { AgentDefinition, AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import {
-  readAgentStore,
-  type AgentKind,
-  type AgentStore,
-} from "../agents-store.js";
+import { readAgentStore, type AgentKind, type AgentStore } from "../agents-store.js";
 import {
   AI_ZEN_DIR,
   readConfig,

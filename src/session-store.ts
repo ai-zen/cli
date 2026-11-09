@@ -70,7 +70,10 @@ function migrateOnce(): Promise<void> {
  */
 export async function sessionStore(): Promise<FileSessionStore<AgentNS.Message>> {
   await migrateOnce();
-  const workspace = await ensureWorkspace({ workspacesRoot: workspacesRoot(), path: process.cwd() });
+  const workspace = await ensureWorkspace({
+    workspacesRoot: workspacesRoot(),
+    path: process.cwd(),
+  });
   return new FileSessionStore<AgentNS.Message>({ rootDir: workspace.rootDir });
 }
 

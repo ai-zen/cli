@@ -2,11 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { workspaceIdFor } from "@ai-zen/agents-server";
-import {
-  generateSessionId,
-  listSessions,
-  persistSession,
-} from "./session-store.js";
+import { generateSessionId, listSessions, persistSession } from "./session-store.js";
 import { formatFileStamp } from "./format-time.js";
 import { setLocale } from "./i18n/index.js";
 import { useTempAiZenDir } from "./test-support/temp-dir.js";

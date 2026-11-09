@@ -176,9 +176,7 @@ export function matchCommandHints(keyword: string): CommandHint[] {
   const normalized = keyword.trim().toLowerCase();
   if (!normalized) return getCommandHints();
 
-  return getCommandHints().filter((hint) =>
-    hint.names.some((name) => name.startsWith(normalized)),
-  );
+  return getCommandHints().filter((hint) => hint.names.some((name) => name.startsWith(normalized)));
 }
 
 /** 全部命令名（含别名，升序），供启动横幅等场景展示 */

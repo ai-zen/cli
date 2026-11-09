@@ -83,9 +83,15 @@ export interface ChatCommandHost {
    */
   restartProcess: () => Promise<void>;
   setPickerState: Dispatch<
-    SetStateAction<{ title: string; items: SelectItem<string>[]; resolve: (value: string | null) => void } | null>
+    SetStateAction<{
+      title: string;
+      items: SelectItem<string>[];
+      resolve: (value: string | null) => void;
+    } | null>
   >;
-  setConfirmState: Dispatch<SetStateAction<{ question: string; resolve: (value: boolean) => void } | null>>;
+  setConfirmState: Dispatch<
+    SetStateAction<{ question: string; resolve: (value: boolean) => void } | null>
+  >;
   setInputText: (text: string) => void;
   /** 更新状态栏的思考强度展示（`/think` 写入后由上层重取）；文案与置灰一起给，避免漂移 */
   setEffortView: (view: { text: string; dimmed: boolean } | null) => void;
@@ -200,7 +206,9 @@ const cmdLoad: CommandHandler = async ({ session, push, rows, exit, pick }) => {
   // 覆盖层不能高于终端：仅展示最近的有限条
   const items = allItems.slice(0, maxItems);
   const title =
-    allItems.length > maxItems ? t("cmd.load.tooMany", { n: maxItems }) : t("cmd.load.titleReplacing");
+    allItems.length > maxItems
+      ? t("cmd.load.tooMany", { n: maxItems })
+      : t("cmd.load.titleReplacing");
   const choice = await pick(title, items);
   if (choice == null) {
     push(t("cmd.load.cancelled"));
@@ -232,7 +240,8 @@ const cmdBack: CommandHandler = async ({ session, push, rows, exit, pick }) => {
   // 最近的在最前；仅展示最近的有限条，避免覆盖层高于终端（上界同 /load）
   const maxItems = Math.max(1, usableFrameRows(rows ?? 24) - (pickerLines(0) + STATUS_BAR_LINES));
   const items = allItems.reverse().slice(0, maxItems);
-  const title = allItems.length > maxItems ? t("cmd.back.tooMany", { n: maxItems }) : t("cmd.back.title");
+  const title =
+    allItems.length > maxItems ? t("cmd.back.tooMany", { n: maxItems }) : t("cmd.back.title");
   const choice = await pick(title, items);
   if (choice == null) {
     push(t("cmd.back.cancelled"));
@@ -260,7 +269,9 @@ const cmdEditor: CommandHandler = async ({ push, suspendTerminal, setInputText }
     writeFileSync(file, "", "utf-8");
     await suspendTerminal(() => {
       const editor =
-        process.env.EDITOR || process.env.VISUAL || (process.platform === "win32" ? "notepad" : "vi");
+        process.env.EDITOR ||
+        process.env.VISUAL ||
+        (process.platform === "win32" ? "notepad" : "vi");
       const result = spawnSync(editor, [file], { stdio: "inherit" });
       if (result.error) throw result.error;
     });
@@ -297,7 +308,10 @@ const cmdModel: CommandHandler = async ({ session, push, args, pick, config }) =
   // 支持 `/model <id>` 直切，无参时弹选择器
   let chosen: string | undefined = args[0];
   if (chosen && !models.some((model) => model.id === chosen)) {
-    push(t("cmd.model.unknown", { id: chosen, options: models.map((m) => m.id).join(" / ") }), "error");
+    push(
+      t("cmd.model.unknown", { id: chosen, options: models.map((m) => m.id).join(" / ") }),
+      "error",
+    );
     return;
   }
   if (!chosen) {
@@ -374,7 +388,10 @@ const cmdAgent: CommandHandler = async ({ session, push, args, pick, config }) =
   let chosen: string | undefined = args[0];
   if (chosen && !choices.some((choice) => choice.id === chosen)) {
     push(
-      t("cmd.agent.unknown", { id: chosen, options: choices.map((choice) => choice.id).join(" / ") }),
+      t("cmd.agent.unknown", {
+        id: chosen,
+        options: choices.map((choice) => choice.id).join(" / "),
+      }),
       "error",
     );
     return;
@@ -401,7 +418,10 @@ const cmdAgent: CommandHandler = async ({ session, push, args, pick, config }) =
   const target = choices.find((choice) => choice.id === chosen)!;
   // 切过去跑不起来（未绑模型 / 端点缺 Key）就别切：重挂载后用户会卡在启动错误屏
   if (!target.selectable) {
-    push(t("cmd.agent.unavailableReason", { name: target.name, reason: target.reason ?? "" }), "error");
+    push(
+      t("cmd.agent.unavailableReason", { name: target.name, reason: target.reason ?? "" }),
+      "error",
+    );
     return;
   }
 
@@ -499,7 +519,10 @@ async function readDistTags(
   pkg: string,
   spawnImpl?: typeof spawn,
 ): Promise<Record<string, string> | undefined> {
-  const result = await runNpmCapture(["view", pkg, "dist-tags", "--json", "--prefer-online"], spawnImpl);
+  const result = await runNpmCapture(
+    ["view", pkg, "dist-tags", "--json", "--prefer-online"],
+    spawnImpl,
+  );
   if (result.code !== 0) return undefined;
   try {
     const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
@@ -710,7 +733,10 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
   }
   if (!picked) {
     // 「当前」指 Agent 定义上真正写着的那一档（模型默认参数不算，那是跟随状态）
-    const current = matchLevel(presetFor(model.id, model.reasoningPreset, presets), definition?.modelParams);
+    const current = matchLevel(
+      presetFor(model.id, model.reasoningPreset, presets),
+      definition?.modelParams,
+    );
     const items: SelectItem<string>[] = [
       {
         label: `${t("cmd.think.followDefault")}${current ? "" : t("common.current")}`,
@@ -723,7 +749,10 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
         hint: value,
       })),
     ];
-    const choice = await pick(t("cmd.think.title", { level: describeEffort(model, presets, definition) }), items);
+    const choice = await pick(
+      t("cmd.think.title", { level: describeEffort(model, presets, definition) }),
+      items,
+    );
     if (choice == null) {
       push(t("cmd.think.cancelled"));
       return;
@@ -732,7 +761,10 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
   }
 
   const effort = picked === "default" ? null : (picked as string);
-  const agentLevel = matchLevel(presetFor(model.id, model.reasoningPreset, presets), definition?.modelParams);
+  const agentLevel = matchLevel(
+    presetFor(model.id, model.reasoningPreset, presets),
+    definition?.modelParams,
+  );
   const unchanged = effort === null ? agentLevel === undefined : agentLevel === effort;
   if (unchanged) {
     push(t("cmd.think.unchanged"));
@@ -807,7 +839,13 @@ const cmdHandoff: CommandHandler = async ({ session, push, args, setPickerState 
   }
 };
 
-const cmdMigrate: CommandHandler = async ({ session, push, args, setPickerState, clearTranscript }) => {
+const cmdMigrate: CommandHandler = async ({
+  session,
+  push,
+  args,
+  setPickerState,
+  clearTranscript,
+}) => {
   const handoff = parseHandoffSelection(args);
   if (handoff.invalid !== undefined) {
     push(t("cmd.handoff.unknownMode", { who: handoff.invalid }), "error");
@@ -890,7 +928,8 @@ function buildContext(name: CommandName, raw: string, host: ChatCommandHost): Co
     push: (text, tone = "info") => host.notice(text, tone),
     pick: (title, items) =>
       new Promise<string | null>((resolve) => host.setPickerState({ title, items, resolve })),
-    confirm: (question) => new Promise<boolean>((resolve) => host.setConfirmState({ question, resolve })),
+    confirm: (question) =>
+      new Promise<boolean>((resolve) => host.setConfirmState({ question, resolve })),
   };
 }
 

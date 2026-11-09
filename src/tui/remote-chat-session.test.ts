@@ -125,7 +125,8 @@ const testConfigPort: ConfigPort = {
   readReasoningPresets: async () => ({}) as never,
   readMcpConfig: async () => ({ ok: true, config: { mcpServers: {} } }) as never,
   writeMcpConfig: async () => {},
-  readAgentStore: async () => ({ agents: [], subAgents: [], save: async () => {}, remove: async () => {} }) as never,
+  readAgentStore: async () =>
+    ({ agents: [], subAgents: [], save: async () => {}, remove: async () => {} }) as never,
   setModel: async () => {},
 };
 
@@ -417,7 +418,11 @@ describe("RemoteChatSession：工作区归谁决定", () => {
     mkdirSync(join(workspaceDir, "src", "tui"), { recursive: true });
     writeFileSync(join(workspaceDir, "README.md"), "# 服务端那边的文件\n", "utf-8");
     writeFileSync(join(workspaceDir, "src", "app.ts"), "export const app = 1;\n", "utf-8");
-    writeFileSync(join(workspaceDir, "src", "tui", "chat.tsx"), "export const Chat = 1;\n", "utf-8");
+    writeFileSync(
+      join(workspaceDir, "src", "tui", "chat.tsx"),
+      "export const Chat = 1;\n",
+      "utf-8",
+    );
 
     const opened = await open();
     const entries = await opened.listWorkspaceFiles();
@@ -507,7 +512,11 @@ describe("RemoteChatSession：send 的语义与进程内一致", () => {
     expect(opened.phase).not.toBeNull();
     expect(finished).toBe(false);
 
-    agent.messages.push({ role: "assistant", content: "答完了", reasoning_content: "想一想" } as never);
+    agent.messages.push({
+      role: "assistant",
+      content: "答完了",
+      reasoning_content: "想一想",
+    } as never);
     agent.fire("finally");
     await pending;
 
@@ -547,7 +556,7 @@ describe("RemoteChatSession：send 的语义与进程内一致", () => {
     await waitUntil(() => agent.sent.length === 1);
 
     expect(agent.sent[0]).toBe("看这两张"); // 退成纯文本，不整条不发
-    expect(notices.map((notice) => notice.text).join("")) .toContain("超过单帧上限");
+    expect(notices.map((notice) => notice.text).join("")).toContain("超过单帧上限");
     expect(notices.at(-1)?.tone).toBe("error");
 
     agent.fire("finally");
@@ -588,7 +597,10 @@ describe("RemoteChatSession：存档与换 id 的方法", () => {
     agent.messages = [
       { role: "user", content: "第一个问题" },
       { role: "assistant", content: "答" },
-      { role: "user", content: "第二个问题\n\n[system-injected: cwd]\nCurrent working directory: /work/proj" },
+      {
+        role: "user",
+        content: "第二个问题\n\n[system-injected: cwd]\nCurrent working directory: /work/proj",
+      },
     ];
     const opened = await open();
 
@@ -1136,7 +1148,9 @@ describe("RemoteChatSession：换 Agent 与保活区", () => {
     expect(opened.messages).toHaveLength(1);
     // 服务端那侧的会话身份也换了（`session.list` 的 keepAlive 之外就看这个）
     const live = await new RemoteSessions(await startServer()).list(workspaceId);
-    expect(live.sessions.find((item) => item.sessionId === opened.currentId)!.agentId).toBe("coder");
+    expect(live.sessions.find((item) => item.sessionId === opened.currentId)!.agentId).toBe(
+      "coder",
+    );
   });
 
   it("/new（reset）之后旧会话移出保活区：服务端当场回收，存档还在", async () => {
@@ -1168,7 +1182,9 @@ describe("RemoteChatSession：换 Agent 与保活区", () => {
     expect(await sessions.keepAliveSet(id, false)).toEqual({ sessionId: id, keepAlive: false });
 
     // 活会话没了……
-    expect((await sessions.list(workspaceId)).sessions.map((item) => item.sessionId)).not.toContain(id);
+    expect((await sessions.list(workspaceId)).sessions.map((item) => item.sessionId)).not.toContain(
+      id,
+    );
     // ……但点回来能接上（rehydrate 走存档：这就是「回收不丢内容」的依据）
     const again = await sessions.attach({ workspaceId, sessionId: id, path: workspaceDir });
     expect(again.sessionId).toBe(id);
@@ -1185,14 +1201,22 @@ describe("RemoteChatSession：只带用量的增量", () => {
     agent.fire("open");
     agent.fire("chunk-parsed", {}, { choices: [{ delta: { content: "答案" } }] });
     // 增量上屏那一刻就能看出有没有多造消息（这一条与下面的收尾快照无关）
-    await waitUntil(() => opened.messages.some((message) => message.role === AgentNS.Role.Assistant));
-    expect(opened.messages.filter((message) => message.role === AgentNS.Role.Assistant)).toHaveLength(1);
+    await waitUntil(() =>
+      opened.messages.some((message) => message.role === AgentNS.Role.Assistant),
+    );
+    expect(
+      opened.messages.filter((message) => message.role === AgentNS.Role.Assistant),
+    ).toHaveLength(1);
 
     // 流末 chunk：正文为空、只带用量（客户端拿它校准速率，见 `addExact`）
-    agent.fire("chunk-parsed", {}, {
-      choices: [{ delta: {}, finish_reason: "stop" }],
-      usage: { completion_tokens: 40 },
-    });
+    agent.fire(
+      "chunk-parsed",
+      {},
+      {
+        choices: [{ delta: {}, finish_reason: "stop" }],
+        usage: { completion_tokens: 40 },
+      },
+    );
     // 服务端那份消息就是真相（真实的 SDK 在跑完时已经有这条 assistant）
     agent.messages = [
       { role: "user", content: "问一句" },

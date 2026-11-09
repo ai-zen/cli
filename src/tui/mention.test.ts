@@ -123,7 +123,10 @@ describe("scorePath / rankPaths：排序判据", () => {
   });
 
   it("limit 生效（默认 MENTION_LIMIT）", () => {
-    const many: PathEntry[] = Array.from({ length: 100 }, (_, i) => ({ path: `f${i}.ts`, dir: false }));
+    const many: PathEntry[] = Array.from({ length: 100 }, (_, i) => ({
+      path: `f${i}.ts`,
+      dir: false,
+    }));
     expect(rankPaths("f", many)).toHaveLength(MENTION_LIMIT);
     expect(rankPaths("f", many, 3)).toHaveLength(3);
     expect(rankPaths("f", many, 0)).toEqual([]);

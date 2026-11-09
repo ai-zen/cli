@@ -58,7 +58,9 @@ describe("SocketServerClient", () => {
     try {
       expect(await connection.call("ping")).toEqual({ pong: true });
 
-      const status = await connection.call<{ port: number; pid: number; protocol: number }>("status");
+      const status = await connection.call<{ port: number; pid: number; protocol: number }>(
+        "status",
+      );
       expect(status.port).toBe(daemon!.port);
       expect(status.pid).toBe(process.pid);
       expect(status.protocol).toBe(1);
@@ -103,7 +105,9 @@ describe("SocketServerClient", () => {
       });
     });
 
-    await expect(SocketServerClient.connect({ address, client })).rejects.toThrow(/version-mismatch/);
+    await expect(SocketServerClient.connect({ address, client })).rejects.toThrow(
+      /version-mismatch/,
+    );
   });
 
   it("服务端不回 hello → connect 在 connectTimeoutMs 后超时失败", async () => {
@@ -119,8 +123,8 @@ describe("SocketServerClient", () => {
     await new Promise<void>((resolve) => fakeServer!.close(() => resolve()));
     fakeServer = null;
 
-    await expect(SocketServerClient.connect({ address: { host: "127.0.0.1", port: deadPort }, client })).rejects.toThrow(
-      /ECONNREFUSED|connect/i,
-    );
+    await expect(
+      SocketServerClient.connect({ address: { host: "127.0.0.1", port: deadPort }, client }),
+    ).rejects.toThrow(/ECONNREFUSED|connect/i);
   });
 });

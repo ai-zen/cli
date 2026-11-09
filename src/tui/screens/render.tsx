@@ -42,7 +42,13 @@ export function LineView({ line }: { line: RLine }) {
         wrap="truncate"
       >
         {line.spans.map((span, i) => (
-          <Text key={i} color={span.color} dimColor={span.dim} bold={span.bold} italic={span.italic}>
+          <Text
+            key={i}
+            color={span.color}
+            dimColor={span.dim}
+            bold={span.bold}
+            italic={span.italic}
+          >
             {span.text}
           </Text>
         ))}
@@ -53,21 +59,53 @@ export function LineView({ line }: { line: RLine }) {
     case "gap":
       return <Text>{line.text}</Text>;
     case "user-header":
-      return <Text color={theme.user} bold strikethrough={struck}>{line.text}</Text>;
+      return (
+        <Text color={theme.user} bold strikethrough={struck}>
+          {line.text}
+        </Text>
+      );
     case "user-text":
-      return <Text strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     case "ai-header":
-      return <Text color={theme.brand[2]} bold strikethrough={struck}>{line.text}</Text>;
+      return (
+        <Text color={theme.brand[2]} bold strikethrough={struck}>
+          {line.text}
+        </Text>
+      );
     case "reasoning":
-      return <Text color={theme.reasoning} italic strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text color={theme.reasoning} italic strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     case "tool":
-      return <Text color={theme.tool} strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text color={theme.tool} strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     case "content":
-      return <Text strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     case "notice":
-      return <Text color={theme.dim} strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text color={theme.dim} strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     case "error":
-      return <Text color={theme.error} strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text color={theme.error} strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     default:
       return <Text>{line.text}</Text>;
   }

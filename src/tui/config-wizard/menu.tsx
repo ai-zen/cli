@@ -27,14 +27,26 @@ export interface MenuStepProps {
   onClose: () => void;
 }
 
-export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, notice, onPick, onClose }: MenuStepProps) {
+export function MenuStep({
+  columns,
+  rows,
+  config,
+  mcp,
+  agentStore,
+  savedCount,
+  notice,
+  onPick,
+  onClose,
+}: MenuStepProps) {
   const { setCursorPosition } = useCursor();
   setCursorPosition(undefined); // 无文本编辑：隐藏硬件光标
   useInput((_char, key) => {
     if (key.escape) onClose();
   });
 
-  const defaultImage = (config.imageModels ?? []).find((model) => model.id === config.defaultImageModel);
+  const defaultImage = (config.imageModels ?? []).find(
+    (model) => model.id === config.defaultImageModel,
+  );
   const items: SelectItem<string>[] = [
     {
       label: t("wiz.menu.endpoints"),
@@ -104,8 +116,13 @@ export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, n
       <Box marginTop={1}>
         <SelectList items={items} onSelect={onPick} columns={columns} />
       </Box>
-      <KeyHints hints={[["↑ ↓", t("ui.select")], ["Enter", t("ui.confirm")], ["Esc", t("wiz.menu.doneReturn")]]} />
+      <KeyHints
+        hints={[
+          ["↑ ↓", t("ui.select")],
+          ["Enter", t("ui.confirm")],
+          ["Esc", t("wiz.menu.doneReturn")],
+        ]}
+      />
     </WizardFrame>
   );
 }
-

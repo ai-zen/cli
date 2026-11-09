@@ -101,7 +101,13 @@ function seedAgentDefinition(): void {
     JSON.stringify({
       endpoints: [{ id: "e", name: "E", baseUrl: "http://127.0.0.1:9/v1", apiKey: "k" }],
       models: [
-        { id: "test-model", name: "Test", endpointId: "e", tokenThresholds: { handoff: 1, guard: 2 }, custom: true },
+        {
+          id: "test-model",
+          name: "Test",
+          endpointId: "e",
+          tokenThresholds: { handoff: 1, guard: 2 },
+          custom: true,
+        },
       ],
       defaultAgent: "default",
       version: 4,
@@ -214,7 +220,8 @@ describe("RemoteSessions", () => {
     manager = new SessionManager({
       createAgent: async () => freshAgent,
       nextSessionId: () => "chat_unused",
-      storeFor: (workspaceId) => new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) }),
+      storeFor: (workspaceId) =>
+        new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) }),
     });
 
     // 同一个工作区的存档是同一份：直接读新 manager 的续接结果
@@ -279,7 +286,11 @@ describe("RemoteSessions", () => {
     agent.fire("open");
     agent.fire("finally");
 
-    for (let i = 0; i < 100 && !received.some((event) => event.event === SESSION_EVENTS.turnEnd); i++) {
+    for (
+      let i = 0;
+      i < 100 && !received.some((event) => event.event === SESSION_EVENTS.turnEnd);
+      i++
+    ) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     const kinds = received.map((event) => event.event);
@@ -296,9 +307,9 @@ describe("RemoteSessions：存档列表与撤回", () => {
 
     expect((await sessions.listSaved(workspace.workspaceId)).sessions).toEqual([]);
     await sessions.save(sessionId);
-    expect((await sessions.listSaved(workspace.workspaceId)).sessions.map((ref) => ref.id)).toEqual([
-      sessionId,
-    ]);
+    expect((await sessions.listSaved(workspace.workspaceId)).sessions.map((ref) => ref.id)).toEqual(
+      [sessionId],
+    );
   });
 
   it("rollback：删掉之后的现场消息随结果返回，且已经落盘", async () => {
@@ -369,7 +380,9 @@ describe("RemoteSessions：工作区归属服务端（path 可省）", () => {
 
     // 会话的归属（workspaceId）经由快照回读，这是服务端登记的那个工作区
     const defaultWorkspace = await sessions.resolveWorkspace();
-    expect((await sessions.snapshot(opened.sessionId)).workspaceId).toBe(defaultWorkspace.workspaceId);
+    expect((await sessions.snapshot(opened.sessionId)).workspaceId).toBe(
+      defaultWorkspace.workspaceId,
+    );
 
     const listed = await sessions.list(defaultWorkspace.workspaceId);
     expect(listed.sessions.map((session) => session.sessionId)).toEqual([opened.sessionId]);
@@ -426,9 +439,9 @@ describe("RemoteSessions：续接只靠 id（客户端不搬消息）", () => {
     await sessions.save(opened.sessionId);
 
     // 盘上确实只有客户端给的那个 id：续接不是「开新的再拷消息」
-    expect((await sessions.listSaved(workspace.workspaceId)).sessions.map((ref) => ref.id)).toEqual([
-      wanted,
-    ]);
+    expect((await sessions.listSaved(workspace.workspaceId)).sessions.map((ref) => ref.id)).toEqual(
+      [wanted],
+    );
     expect((await storeFor(workspace.workspaceId).read(wanted))?.id).toBe(wanted);
     expect(await storeFor(workspace.workspaceId).read("chat_test")).toBeNull();
   });

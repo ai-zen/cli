@@ -56,7 +56,10 @@ export function findAgentDefinition(
 }
 
 /** 用给定快照 + 真实文件读写构造仓储 */
-export function createAgentStore(agents: AgentDefinition[], subAgents: AgentDefinition[]): AgentStore {
+export function createAgentStore(
+  agents: AgentDefinition[],
+  subAgents: AgentDefinition[],
+): AgentStore {
   return {
     agents,
     subAgents,

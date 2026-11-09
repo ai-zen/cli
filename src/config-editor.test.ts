@@ -66,11 +66,26 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     endpoints: [
       { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", apiKey: "" },
-      { id: "bigmodelcn", name: "BigModelCN (智谱AI)", baseUrl: "https://open.bigmodel.cn/api/paas/v4", apiKey: " ea8c98b6-key " },
+      {
+        id: "bigmodelcn",
+        name: "BigModelCN (智谱AI)",
+        baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+        apiKey: " ea8c98b6-key ",
+      },
     ],
     models: [
-      { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash", endpointId: "deepseek", tokenThresholds: { handoff: 250_000, guard: 375000 } },
-      { id: "glm-5.1", name: "GLM-5.1", endpointId: "bigmodelcn", tokenThresholds: { handoff: 250_000, guard: 375000 } },
+      {
+        id: "deepseek-v4-flash",
+        name: "DeepSeek-V4-Flash",
+        endpointId: "deepseek",
+        tokenThresholds: { handoff: 250_000, guard: 375000 },
+      },
+      {
+        id: "glm-5.1",
+        name: "GLM-5.1",
+        endpointId: "bigmodelcn",
+        tokenThresholds: { handoff: 250_000, guard: 375000 },
+      },
     ],
     ...overrides,
   };
@@ -136,9 +151,15 @@ describe("config-editor / 密钥掩码与厂商指引", () => {
   });
 
   it("apiKeyGuide 按 baseUrl 识别厂商", () => {
-    expect(apiKeyGuide("https://open.bigmodel.cn/api/paas/v4").vendor).toBe("智谱 AI（BigModelCN）");
-    expect(apiKeyGuide("https://api.deepseek.com/v1").url).toBe("https://platform.deepseek.com/api_keys");
-    expect(apiKeyGuide("https://api.openai.com/v1").url).toBe("https://platform.openai.com/api-keys");
+    expect(apiKeyGuide("https://open.bigmodel.cn/api/paas/v4").vendor).toBe(
+      "智谱 AI（BigModelCN）",
+    );
+    expect(apiKeyGuide("https://api.deepseek.com/v1").url).toBe(
+      "https://platform.deepseek.com/api_keys",
+    );
+    expect(apiKeyGuide("https://api.openai.com/v1").url).toBe(
+      "https://platform.openai.com/api-keys",
+    );
     expect(apiKeyGuide("https://my-gateway.example.com/v1")).toEqual({ vendor: "OpenAI 兼容端点" });
     expect(apiKeyGuide(undefined).vendor).toBe("OpenAI 兼容端点");
   });
@@ -187,7 +208,9 @@ describe("config-editor / 不可变改写", () => {
 describe("config-editor / 通用改写（配置中心）", () => {
   it("updateEndpoint / removeEndpoint", () => {
     const before = makeConfig();
-    expect(updateEndpoint(before, "deepseek", { name: "DS", description: "x" }).endpoints[0]).toMatchObject({
+    expect(
+      updateEndpoint(before, "deepseek", { name: "DS", description: "x" }).endpoints[0],
+    ).toMatchObject({
       name: "DS",
       description: "x",
       baseUrl: "https://api.deepseek.com/v1",
@@ -197,8 +220,14 @@ describe("config-editor / 通用改写（配置中心）", () => {
   });
 
   it("updateModel 只改目标模型", () => {
-    const after = updateModel(makeConfig(), "glm-5.1", { tokenThresholds: { handoff: 100_000, guard: 150000 }, custom: true });
-    expect(after.models[1]).toMatchObject({ tokenThresholds: { handoff: 100_000, guard: 150000 }, custom: true });
+    const after = updateModel(makeConfig(), "glm-5.1", {
+      tokenThresholds: { handoff: 100_000, guard: 150000 },
+      custom: true,
+    });
+    expect(after.models[1]).toMatchObject({
+      tokenThresholds: { handoff: 100_000, guard: 150000 },
+      custom: true,
+    });
     expect(after.models[0].tokenThresholds.handoff).toBe(250_000);
   });
 
@@ -209,7 +238,12 @@ describe("config-editor / 通用改写（配置中心）", () => {
 
   it("addModel 派生 id 并标记 custom", () => {
     const { config, model } = addModel(makeConfig(), { name: "My GPT", endpointId: "deepseek" });
-    expect(model).toMatchObject({ id: "my-gpt", name: "My GPT", endpointId: "deepseek", custom: true });
+    expect(model).toMatchObject({
+      id: "my-gpt",
+      name: "My GPT",
+      endpointId: "deepseek",
+      custom: true,
+    });
     expect(model.tokenThresholds.handoff).toBeGreaterThan(0);
     expect(config.models).toHaveLength(3);
   });
@@ -221,7 +255,9 @@ describe("config-editor / 通用改写（配置中心）", () => {
 
   it("addImageModel / removeImageModel 维护 defaultImageModel", () => {
     const base = makeConfig({
-      imageModels: [{ id: "cogview-4", name: "CogView-4", endpointId: "bigmodelcn", modelName: "cogview-4" }],
+      imageModels: [
+        { id: "cogview-4", name: "CogView-4", endpointId: "bigmodelcn", modelName: "cogview-4" },
+      ],
       defaultImageModel: "cogview-4",
     });
     const added = addImageModel(base, { name: "My Image", endpointId: "bigmodelcn" });
@@ -260,14 +296,21 @@ function makeMcp(): McpConfig {
   return {
     mcpServers: {
       "socket-pty": { type: "stdio", command: "npx", args: ["-y", "@ai-zen/socket-pty", "mcp"] },
-      slack: { type: "http", url: "https://slack.example.com", headers: { Authorization: "Bearer x" } },
+      slack: {
+        type: "http",
+        url: "https://slack.example.com",
+        headers: { Authorization: "Bearer x" },
+      },
     },
   };
 }
 
 describe("parseArgs / formatArgs", () => {
   it("按空白切分，支持引号包裹与转义空格", () => {
-    expect(parseArgs("-y chrome-devtools-mcp@latest")).toEqual(["-y", "chrome-devtools-mcp@latest"]);
+    expect(parseArgs("-y chrome-devtools-mcp@latest")).toEqual([
+      "-y",
+      "chrome-devtools-mcp@latest",
+    ]);
     expect(parseArgs('"a b" c')).toEqual(["a b", "c"]);
     expect(parseArgs("a\\ b c")).toEqual(["a b", "c"]);
     expect(parseArgs("")).toEqual([]);
@@ -398,9 +441,9 @@ describe("Agent 定义改写", () => {
   });
 
   it("formatFunctionParameters 紧凑 JSON", () => {
-    expect(formatFunctionParameters({ name: "f", description: "", parameters: { type: "object" } })).toBe(
-      '{"type":"object"}',
-    );
+    expect(
+      formatFunctionParameters({ name: "f", description: "", parameters: { type: "object" } }),
+    ).toBe('{"type":"object"}');
     expect(formatFunctionParameters(undefined)).toBe("{}");
   });
 

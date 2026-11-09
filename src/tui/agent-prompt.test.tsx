@@ -18,8 +18,12 @@ const tick = () => new Promise((r) => setTimeout(r, 25));
 const ENTER = "\r";
 
 const makeConfig = (): AppConfig => ({
-  endpoints: [{ id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-x" }],
-  models: [{ id: "m", name: "M", endpointId: "deepseek", tokenThresholds: { handoff: 1000, guard: 1500 } }],
+  endpoints: [
+    { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-x" },
+  ],
+  models: [
+    { id: "m", name: "M", endpointId: "deepseek", tokenThresholds: { handoff: 1000, guard: 1500 } },
+  ],
 });
 
 const makeAgent = (): AgentDefinition => ({
@@ -35,8 +39,15 @@ const makeAgent = (): AgentDefinition => ({
 
 describe("Agent 提示词（系统编辑器）", () => {
   it("Enter 调起编辑器，保存后回写首条 system 消息", async () => {
-    const save = vi.fn<(kind: string, def: AgentDefinition) => Promise<void>>(async () => undefined);
-    const store = { agents: [makeAgent()], subAgents: [], save, remove: vi.fn(async () => undefined) } as unknown as AgentStore;
+    const save = vi.fn<(kind: string, def: AgentDefinition) => Promise<void>>(
+      async () => undefined,
+    );
+    const store = {
+      agents: [makeAgent()],
+      subAgents: [],
+      save,
+      remove: vi.fn(async () => undefined),
+    } as unknown as AgentStore;
     // 编辑器实现直接注入：不再依赖 vi.mock("child_process")（模块级 mock 是全局的，
     // 多个测试文件各自 mock 同一说明符会互相覆盖）
     const openEditor = vi.fn((_editor: string, file: string) => {
@@ -47,7 +58,12 @@ describe("Agent 提示词（系统编辑器）", () => {
       <ConfigWizard
         config={makeConfig()}
         openEditor={openEditor}
-        initialStep={{ kind: "agent-text", agentKind: "agent", agentId: "default", field: "prompt" }}
+        initialStep={{
+          kind: "agent-text",
+          agentKind: "agent",
+          agentId: "default",
+          field: "prompt",
+        }}
         agentStore={store}
         onSave={vi.fn(async () => undefined)}
         onClose={() => undefined}
@@ -72,7 +88,12 @@ describe("Agent 提示词（系统编辑器）", () => {
 
   it("编辑器启动失败时屏内报错，不写盘", async () => {
     const save = vi.fn(async () => undefined);
-    const store = { agents: [makeAgent()], subAgents: [], save, remove: vi.fn(async () => undefined) } as unknown as AgentStore;
+    const store = {
+      agents: [makeAgent()],
+      subAgents: [],
+      save,
+      remove: vi.fn(async () => undefined),
+    } as unknown as AgentStore;
     const openEditor = vi.fn(() => {
       throw new Error("boom");
     });
@@ -81,7 +102,12 @@ describe("Agent 提示词（系统编辑器）", () => {
       <ConfigWizard
         config={makeConfig()}
         openEditor={openEditor}
-        initialStep={{ kind: "agent-text", agentKind: "agent", agentId: "default", field: "prompt" }}
+        initialStep={{
+          kind: "agent-text",
+          agentKind: "agent",
+          agentId: "default",
+          field: "prompt",
+        }}
         agentStore={store}
         onSave={vi.fn(async () => undefined)}
         onClose={() => undefined}

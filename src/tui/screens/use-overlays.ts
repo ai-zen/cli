@@ -56,5 +56,12 @@ export function useChatOverlays(): ChatOverlays {
     });
   }, []);
 
-  return { confirmState, pickerState, setConfirmState, setPickerState, resolveConfirm, resolvePicker };
+  return {
+    confirmState,
+    pickerState,
+    setConfirmState,
+    setPickerState,
+    resolveConfirm,
+    resolvePicker,
+  };
 }

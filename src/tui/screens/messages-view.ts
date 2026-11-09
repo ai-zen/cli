@@ -5,7 +5,15 @@
 // 也不需要把流式 delta 翻译成中间事件 —— 流式中 SDK 会实时更新「当前那条 message」，
 // 直接读它即可。
 import { AgentNS } from "@ai-zen/agents-core";
-import { RLine, contentLines, indentLines, clipSpans, toolSpans, spanLine, innerWidth } from "./lines.js";
+import {
+  RLine,
+  contentLines,
+  indentLines,
+  clipSpans,
+  toolSpans,
+  spanLine,
+  innerWidth,
+} from "./lines.js";
 import { stripCwdNote } from "../text.js";
 import { t } from "../../i18n/index.js";
 
@@ -150,7 +158,10 @@ function signature(message: AgentNS.Message): string {
  * 命中缓存后历史消息的折行 / 高亮全部免算。用签名（而非仅对象身份）兜住「流式中那条正在
  * 增长的消息」——签名变了就重算，避免拿到陈旧结果。
  */
-const messageLineCache = new WeakMap<AgentNS.Message, { columns: number; sig: string; lines: RLine[] }>();
+const messageLineCache = new WeakMap<
+  AgentNS.Message,
+  { columns: number; sig: string; lines: RLine[] }
+>();
 
 export function cachedMessageToLines(message: AgentNS.Message, columns: number): RLine[] {
   const sig = signature(message);

@@ -56,6 +56,8 @@ describe("splitFences（围栏切分）", () => {
   });
 
   it("无语言标注的代码块 lang 为 undefined", () => {
-    expect(splitFences("```\ncode\n```")).toEqual([{ type: "code", lang: undefined, text: "code" }]);
+    expect(splitFences("```\ncode\n```")).toEqual([
+      { type: "code", lang: undefined, text: "code" },
+    ]);
   });
 });

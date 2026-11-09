@@ -156,7 +156,11 @@ describe("StatusBar", () => {
       totalTokens: 48213,
       hint: "Enter 发送 · Ctrl+J 换行 · / 命令 · PgUp 看历史",
     };
-    const rows = normalize(statusBarRows(props, 80).map((row) => row.map((s) => s.text).join("")).join("\n")).split("\n");
+    const rows = normalize(
+      statusBarRows(props, 80)
+        .map((row) => row.map((s) => s.text).join(""))
+        .join("\n"),
+    ).split("\n");
     // 身份块完整占一行，且不混入下一块的内容
     expect(rows[0]).toContain("◆ deepseek-v4-flash");
     expect(rows[0]).toContain("agent default");
@@ -230,7 +234,9 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
   const rowsOf = (frame: string) => frame.split("\n").filter((row) => row.trim().length > 0);
 
   it("第一项紧贴输入框（渲染在最底行），往上依次生长", () => {
-    const { lastFrame, unmount } = render(<BottomMenu items={mk(3)} selected={0} maxRows={3} columns={100} />);
+    const { lastFrame, unmount } = render(
+      <BottomMenu items={mk(3)} selected={0} maxRows={3} columns={100} />,
+    );
     const rows = rowsOf(lastFrame() ?? "");
     expect(rows).toHaveLength(3);
     // 数据顺序 item0 → item2；视觉顺序自下而上，所以末行是 item0、首行是 item2
@@ -241,7 +247,9 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
   });
 
   it("默认高亮最底部那一项（`hints[0]`）", () => {
-    const { lastFrame, unmount } = render(<BottomMenu items={mk(3)} selected={0} maxRows={3} columns={100} />);
+    const { lastFrame, unmount } = render(
+      <BottomMenu items={mk(3)} selected={0} maxRows={3} columns={100} />,
+    );
     const rows = rowsOf(lastFrame() ?? "");
     expect(rows[2]).toContain("❯");
     expect(rows[0]).not.toContain("❯");
@@ -250,7 +258,9 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
   });
 
   it("放不下的从顶部丢弃：只保留前 maxRows 项，最远的候选先消失", () => {
-    const { lastFrame, unmount } = render(<BottomMenu items={mk(10)} selected={0} maxRows={4} columns={100} />);
+    const { lastFrame, unmount } = render(
+      <BottomMenu items={mk(10)} selected={0} maxRows={4} columns={100} />,
+    );
     const frame = lastFrame() ?? "";
     const rows = rowsOf(frame);
     expect(rows).toHaveLength(4);
@@ -262,7 +272,9 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
   });
 
   it("选中项越过窗口后连续滚动，且始终可见", () => {
-    const { lastFrame, unmount } = render(<BottomMenu items={mk(30)} selected={12} maxRows={8} columns={100} />);
+    const { lastFrame, unmount } = render(
+      <BottomMenu items={mk(30)} selected={12} maxRows={8} columns={100} />,
+    );
     const rows = rowsOf(lastFrame() ?? "");
     expect(rows).toHaveLength(8);
     // from = 12 − 8 + 1 = 5 → 可见 5..12，选中项（最高索引）落在窗口最上一行
@@ -286,13 +298,17 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
   });
 
   it("布局没给高度（maxRows 0）时一行都不渲染", () => {
-    const { lastFrame, unmount } = render(<BottomMenu items={mk(5)} selected={0} maxRows={0} columns={100} />);
+    const { lastFrame, unmount } = render(
+      <BottomMenu items={mk(5)} selected={0} maxRows={0} columns={100} />,
+    );
     expect(rowsOf(lastFrame() ?? "")).toHaveLength(0);
     unmount();
   });
 
   it("命令占满自己的宽度，描述只能吃剩下的（窄屏下先裁描述）", () => {
-    const items = [{ key: "config", label: "/config", hint: "打开配置中心（模型 / 端点 / 思考强度）" }];
+    const items = [
+      { key: "config", label: "/config", hint: "打开配置中心（模型 / 端点 / 思考强度）" },
+    ];
     const { lastFrame, unmount } = render(
       <Box width={40}>
         <BottomMenu items={items} selected={0} maxRows={1} columns={40} />
@@ -416,7 +432,8 @@ describe("truncate（单行化 + 截断）", () => {
   });
 });
 
-describe("SelectList", () => {  it("方向键移动、回车确认", async () => {
+describe("SelectList", () => {
+  it("方向键移动、回车确认", async () => {
     const onSelect = vi.fn();
     const { stdin, unmount } = render(
       <SelectList
@@ -571,7 +588,9 @@ describe("messageToLines（直接按 messages 渲染）", () => {
   });
 
   it("hidden 跳过渲染", () => {
-    expect(messageToLines(msg({ role: AgentNS.Role.User, content: "x", hidden: true }), 80)).toEqual([]);
+    expect(
+      messageToLines(msg({ role: AgentNS.Role.User, content: "x", hidden: true }), 80),
+    ).toEqual([]);
   });
 
   it("不进上下文的消息划删除线（status 非 undefined/Completed）", () => {
@@ -579,7 +598,10 @@ describe("messageToLines（直接按 messages 渲染）", () => {
     for (const status of [AgentNS.MessageStatus.Aborted, AgentNS.MessageStatus.Error]) {
       const lines = messageToLines(msg({ role: AgentNS.Role.User, content: "x", status }), 80);
       expect(lines.length, status).toBeGreaterThan(0);
-      expect(lines.filter((l) => l.kind !== "gap").every((l) => l.struck === true), status).toBe(true);
+      expect(
+        lines.filter((l) => l.kind !== "gap").every((l) => l.struck === true),
+        status,
+      ).toBe(true);
       // 空行不划
       expect(lines.filter((l) => l.kind === "gap").every((l) => l.struck === undefined)).toBe(true);
     }
@@ -594,7 +616,10 @@ describe("messageToLines（直接按 messages 渲染）", () => {
     ];
     for (const status of statuses) {
       const lines = messageToLines(msg({ role: AgentNS.Role.User, content: "x", status }), 80);
-      expect(lines.some((l) => l.struck), String(status)).toBe(false);
+      expect(
+        lines.some((l) => l.struck),
+        String(status),
+      ).toBe(false);
     }
   });
 
@@ -667,7 +692,10 @@ describe("inputLines", () => {
 describe("inputWindow（输入区限高 8 行、窗口跟随光标）", () => {
   it("不超过上限时窗口就是全部（不预留空白）", () => {
     expect(inputWindow(3, 0)).toEqual({ from: 0, to: 3 });
-    expect(inputWindow(INPUT_MAX_ROWS, INPUT_MAX_ROWS - 1)).toEqual({ from: 0, to: INPUT_MAX_ROWS });
+    expect(inputWindow(INPUT_MAX_ROWS, INPUT_MAX_ROWS - 1)).toEqual({
+      from: 0,
+      to: INPUT_MAX_ROWS,
+    });
   });
 
   it("光标在第一行时窗口贴顶（不是固定显示末尾几行）", () => {
@@ -779,7 +807,9 @@ describe("computeChatLayout（吸底 + 应用内翻页）", () => {
 
   it("覆盖层打开时菜单不占行（hintRows 归零）", () => {
     expect(computeChatLayout({ ...base, hintCount: 5, overlay: "confirm" }).hintRows).toBe(0);
-    expect(computeChatLayout({ ...base, hintCount: 5, overlay: "picker", pickerItems: 3 }).hintRows).toBe(0);
+    expect(
+      computeChatLayout({ ...base, hintCount: 5, overlay: "picker", pickerItems: 3 }).hintRows,
+    ).toBe(0);
   });
 
   it("Agent 栏目占一行底部高度、压缩对话区（无子 Agent 时为 0）", () => {

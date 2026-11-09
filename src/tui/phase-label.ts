@@ -26,9 +26,7 @@ export function phaseLabel(phase: PhaseInfo | null): string {
     case "streaming":
       return t("phase.streaming");
     case "tool-calling":
-      return phase.tool
-        ? t("phase.toolCallingWith", { name: phase.tool })
-        : t("phase.toolCalling");
+      return phase.tool ? t("phase.toolCallingWith", { name: phase.tool }) : t("phase.toolCalling");
     case "tool-waiting":
       // 并行时把还在跑的名字一起念出来（`tools` 已由读取方按结果状态筛过）
       return phase.tools?.length

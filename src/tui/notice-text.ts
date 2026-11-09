@@ -45,10 +45,7 @@ const NOTICE_KEYS: Record<NoticeCode, string> = {
  * `params` 里已知的枚举会被翻译（`mode` / `requested` → 「原 agent 自交接」/「独立摘要」），
  * 其余原样代入 —— 服务端只放事实，不放句子。
  */
-export function noticeText(
-  code: NoticeCode,
-  params: Record<string, unknown> = {},
-): string {
+export function noticeText(code: NoticeCode, params: Record<string, unknown> = {}): string {
   return t(NOTICE_KEYS[code] ?? `notice.${code}`, localizeParams(code, params));
 }
 
@@ -67,7 +64,11 @@ function localizeParams(
     }
   }
   // 存档那条模板用的是 `{name}`（会话名），而服务端只给 `sessionId`
-  if (code === "handoffArchived" && localized.name === undefined && localized.sessionId !== undefined) {
+  if (
+    code === "handoffArchived" &&
+    localized.name === undefined &&
+    localized.sessionId !== undefined
+  ) {
     localized.name = localized.sessionId;
   }
   return localized;

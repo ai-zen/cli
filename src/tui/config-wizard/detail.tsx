@@ -68,7 +68,16 @@ export interface DetailStepProps {
  * 文本编辑时光标「就地」落在所选字段的值上（硬件光标同步，IME 候选框跟随）；
  * 帧高恒为「终端行数 − 1」，与其它屏一致。
  */
-export function DetailStep({ columns, rows, title, details, fields, actions, notice, onBack }: DetailStepProps) {
+export function DetailStep({
+  columns,
+  rows,
+  title,
+  details,
+  fields,
+  actions,
+  notice,
+  onBack,
+}: DetailStepProps) {
   const { setCursorPosition } = useCursor();
   const rowCount = Math.max(1, fields.length + (actions?.length ?? 0));
   const [index, setIndex] = useState(0);
@@ -110,7 +119,10 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
     setCursor(nextCursor);
   };
   const insert = (text: string) =>
-    update(chars.slice(0, caret).join("") + text + chars.slice(caret).join(""), caret + graphemes(text).length);
+    update(
+      chars.slice(0, caret).join("") + text + chars.slice(caret).join(""),
+      caret + graphemes(text).length,
+    );
   const deleteBefore = () => {
     if (caret === 0) return;
     update(chars.slice(0, caret - 1).join("") + chars.slice(caret).join(""), caret - 1);
@@ -238,7 +250,10 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
         columns={columns}
         rows={rows}
         title={t("wiz.pickTitle", { label: target.label })}
-        items={enumOptions.map((option) => ({ label: option.label || t("common.empty"), value: option.value }))}
+        items={enumOptions.map((option) => ({
+          label: option.label || t("common.empty"),
+          value: option.value,
+        }))}
         onPick={(picked) => {
           setChoosing(false);
           if (target.commit) void apply(() => target.commit!(picked));
@@ -326,10 +341,10 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
                 ["Esc", t("ui.back")],
               ]
             : [
-              ["Enter", t("ui.edit")],
-              ["↑ ↓", t("ui.move")],
-              ["Esc", t("ui.back")],
-            ];
+                ["Enter", t("ui.edit")],
+                ["↑ ↓", t("ui.move")],
+                ["Esc", t("ui.back")],
+              ];
 
   return (
     <WizardFrame columns={columns} rows={rows} contentLines={contentLines}>
@@ -386,4 +401,3 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
     </WizardFrame>
   );
 }
-

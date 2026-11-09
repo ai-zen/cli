@@ -45,8 +45,8 @@ export const zh: Record<string, string> = {
   "err.handoffLessThanGuard": "交接阈值需小于阻断阈值",
   "err.guardPositive": "阻断阈值需为正整数",
   "err.guardGreaterThanHandoff": "阻断阈值需大于交接阈值",
-  "err.presetNotFound": "策略 \"{name}\" 不存在（可选：{options}）",
-  "err.presetTableEmpty": "策略 \"{name}\" 不存在（策略表为空，见 reasoning-presets.json）",
+  "err.presetNotFound": '策略 "{name}" 不存在（可选：{options}）',
+  "err.presetTableEmpty": '策略 "{name}" 不存在（策略表为空，见 reasoning-presets.json）',
   "err.idRequired": "标识不能为空",
   "err.functionNameRequired": "函数名不能为空",
   "err.mcpNameTaken": "已存在名为 {name} 的服务器",
@@ -265,7 +265,8 @@ export const zh: Record<string, string> = {
   "wiz.autoRefresh.inner": "内循环开始（默认）",
   "wiz.autoRefresh.outer": "外循环开始",
   "wiz.autoRefresh.off": "关闭",
-  "wiz.autoRefresh.innerHint": "每次请求前重新发现 MCP / Skill / 工具：会话中新装的能力下一句话就能用，代价是刷新次数最多",
+  "wiz.autoRefresh.innerHint":
+    "每次请求前重新发现 MCP / Skill / 工具：会话中新装的能力下一句话就能用，代价是刷新次数最多",
   "wiz.autoRefresh.outerHint": "整个对话回合开头刷一次：开销最小，新装的能力要等下一轮才生效",
   "wiz.autoRefresh.offHint": "不自动刷，只有 /reload 能刷新工具清单",
 
@@ -280,7 +281,8 @@ export const zh: Record<string, string> = {
   "wiz.endpoints.refSuffix": " · {n} 个模型引用",
   "wiz.endpoints.moveHint": "↑ ↓ 移动 · Enter 编辑 · 改动即时写入磁盘",
   "wiz.endpoints.delete": "删除端点",
-  "wiz.endpoints.deleteBlocked": "无法删除：仍被 {n} 个模型引用（{models}），请先删除或改绑这些模型",
+  "wiz.endpoints.deleteBlocked":
+    "无法删除：仍被 {n} 个模型引用（{models}），请先删除或改绑这些模型",
   "wiz.endpoints.deleted": "已删除端点 {name}",
   "wiz.newEndpoint.nameTitle": "新建端点 · 名称",
   "wiz.newEndpoint.nameDesc": "用于在配置与状态栏中标识该服务，例如 {example}",

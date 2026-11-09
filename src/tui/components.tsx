@@ -64,7 +64,13 @@ function fitItem<T>(item: SelectItem<T>, columns?: number): SelectItem<T> {
   return { ...item, label: clipWidth(item.label, labelMax), hint: clipWidth(item.hint, hintMax) };
 }
 
-export function SelectList<T>({ items, onSelect, isActive = true, initialIndex = 0, columns }: SelectListProps<T>) {
+export function SelectList<T>({
+  items,
+  onSelect,
+  isActive = true,
+  initialIndex = 0,
+  columns,
+}: SelectListProps<T>) {
   const [index, setIndex] = useState(Math.min(initialIndex, Math.max(items.length - 1, 0)));
   // `index` 只在挂载时算一次，而 `items` 可能变短（异步列表回填 / 过滤）—— 越界时
   // `items[index]` 是 `undefined`，回车就会抛 TypeError。只在渲染与确认处钳制，
@@ -91,7 +97,11 @@ export function SelectList<T>({ items, onSelect, isActive = true, initialIndex =
             <Text color={selected ? theme.brand[0] : theme.faint} wrap="truncate">
               {selected ? "❯ " : "  "}
             </Text>
-            <Text bold={selected} color={selected ? theme.highlight : theme.assistant} wrap="truncate">
+            <Text
+              bold={selected}
+              color={selected ? theme.highlight : theme.assistant}
+              wrap="truncate"
+            >
               {item.icon ? `${item.icon} ` : ""}
               {item.label}
             </Text>
@@ -311,10 +321,7 @@ const MENU_HINT_MIN = 4;
  * 不能用「标签与说明两个并列 flex 子节点」交给 Ink 分配：它会按内容比例分宽度，
  * 说明一长就把命令名挤成 `/confi`（真机反馈）。
  */
-export function menuRow(
-  item: MenuItem,
-  columns: number,
-): { label: string; hint?: string } {
+export function menuRow(item: MenuItem, columns: number): { label: string; hint?: string } {
   const available = Math.max(1, columns - MENU_INDENT);
   const labelWidth = displayWidth(item.label);
   if (labelWidth > available) return { label: clipWidth(item.label, available) };
@@ -356,7 +363,9 @@ export function BottomMenu({ items, selected, maxRows, columns, topLine }: Botto
                   说明一长就把命令名挤成一截；嵌套后宽度由 `menuRow` 预先算好，
                   外层 `truncate` 保证恒为一行（折行会把输入框顶出屏幕） */}
               <Text wrap="truncate">
-                <Text color={isActive ? theme.brand[0] : theme.faint}>{isActive ? "❯ " : "  "}</Text>
+                <Text color={isActive ? theme.brand[0] : theme.faint}>
+                  {isActive ? "❯ " : "  "}
+                </Text>
                 <Text bold color={isActive ? theme.highlight : theme.assistant}>
                   {row.label}
                 </Text>
@@ -396,7 +405,10 @@ export function KeyHints({ hints }: { hints: [string, string][] }) {
     <Box paddingLeft={2} gap={2}>
       {hints.map(([key, label]) => (
         <Text key={key} color={theme.faint} wrap="truncate">
-          <Text color={theme.dim} wrap="truncate">{key}</Text> {label}
+          <Text color={theme.dim} wrap="truncate">
+            {key}
+          </Text>{" "}
+          {label}
         </Text>
       ))}
     </Box>

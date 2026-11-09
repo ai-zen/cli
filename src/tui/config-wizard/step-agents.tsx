@@ -3,7 +3,16 @@ import { ReactNode } from "react";
 import { DEFAULT_AGENT_DEFINITION, DEFAULT_AGENT_ID } from "@ai-zen/agents-sdk";
 import { SelectItem } from "../components.js";
 import { agentKindLabel, agentList, AgentKind, findAgentDefinition } from "../../agents-store.js";
-import { createAgentDefinition, createSubAgentDefinition, getAgentPrompt, parseFunctionParameters, restoreFactoryAgent, setAgentPrompt, uniqueAgentId, updateAgentFunction } from "../../config-editor.js";
+import {
+  createAgentDefinition,
+  createSubAgentDefinition,
+  getAgentPrompt,
+  parseFunctionParameters,
+  restoreFactoryAgent,
+  setAgentPrompt,
+  uniqueAgentId,
+  updateAgentFunction,
+} from "../../config-editor.js";
 import { NEW_AGENT, NEW_SUBAGENT } from "./types.js";
 import { WizardContext } from "./engine.js";
 import { ListStep } from "./list.js";
@@ -13,7 +22,20 @@ import { PromptScreen } from "./prompt.js";
 import { t } from "../../i18n/index.js";
 
 export function renderAgentsStep(ctx: WizardContext): ReactNode {
-  const { store, error, notice, activeStep, go, saveAgent, deleteAgent, setError, agentFields, agentPermFields, cols, rows } = ctx;
+  const {
+    store,
+    error,
+    notice,
+    activeStep,
+    go,
+    saveAgent,
+    deleteAgent,
+    setError,
+    agentFields,
+    agentPermFields,
+    cols,
+    rows,
+  } = ctx;
   // ---------- Agent 定义列表 ----------
   if (activeStep.kind === "agents") {
     const items: SelectItem<string>[] = [
@@ -31,7 +53,11 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
       ...store.subAgents.map((def) => ({
         label: def.name || def.id,
         value: `subagent:${def.id}`,
-        hint: t("wiz.agents.itemHint", { kind: agentKindLabel("subagent"), id: def.id, factory: "" }),
+        hint: t("wiz.agents.itemHint", {
+          kind: agentKindLabel("subagent"),
+          id: def.id,
+          factory: "",
+        }),
       })),
     ];
     return (
@@ -39,7 +65,10 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
         columns={cols}
         rows={rows}
         title={t("wiz.agents.title")}
-        subtitle={t("wiz.menu.agentsSummary", { agent: store.agents.length, sub: store.subAgents.length })}
+        subtitle={t("wiz.menu.agentsSummary", {
+          agent: store.agents.length,
+          sub: store.subAgents.length,
+        })}
         items={items}
         onPick={(value) => {
           if (value === NEW_AGENT) go({ kind: "agent-new", agentKind: "agent" });
@@ -53,7 +82,6 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
       />
     );
   }
-
 
   // ---------- Agent 详情 ----------
   if (activeStep.kind === "agent") {
@@ -86,7 +114,10 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
       <DetailStep
         columns={cols}
         rows={rows}
-        title={t("wiz.agent.detailTitle", { kind: agentKindLabel(agentKind), name: def.name || def.id })}
+        title={t("wiz.agent.detailTitle", {
+          kind: agentKindLabel(agentKind),
+          name: def.name || def.id,
+        })}
         details={[
           t("wiz.agent.detailLine", {
             id: def.id,
@@ -103,7 +134,6 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-
   // ---------- Agent 权限子屏 ----------
   if (activeStep.kind === "agent-perms") {
     const { agentKind, agentId } = activeStep;
@@ -112,7 +142,11 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
       <DetailStep
         columns={cols}
         rows={rows}
-        title={t("wiz.agent.subscreenTitle", { kind: agentKindLabel(agentKind), id: def.id, label: t("field.permissions") })}
+        title={t("wiz.agent.subscreenTitle", {
+          kind: agentKindLabel(agentKind),
+          id: def.id,
+          label: t("field.permissions"),
+        })}
         details={[t("wiz.agent.permHint"), t("wiz.agent.permMoveHint")]}
         fields={agentPermFields(agentKind, def)}
         notice={notice}
@@ -120,7 +154,6 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
       />
     );
   }
-
 
   // ---------- Agent / Sub-agent 多行文本编辑（提示词 / 函数说明 / 参数 schema，系统编辑器）----------
   if (activeStep.kind === "agent-text") {
@@ -137,7 +170,11 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
           openEditor={ctx.props.openEditor}
           columns={cols}
           rows={rows}
-          title={t("wiz.agent.subscreenTitle", { kind: agentKindLabel(agentKind), id: def.id, label: t("field.paramsSchema") })}
+          title={t("wiz.agent.subscreenTitle", {
+            kind: agentKindLabel(agentKind),
+            id: def.id,
+            label: t("field.paramsSchema"),
+          })}
           subtitle={t("wiz.agent.fnParamsSubtitle")}
           text={JSON.stringify(def.function?.parameters ?? {}, null, 2)}
           ext="json"
@@ -145,7 +182,11 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
           onSave={(value) => {
             const parsed = parseFunctionParameters(value);
             if (typeof parsed === "string") return Promise.resolve(parsed);
-            return saveAgent(agentKind, updateAgentFunction(target, { parameters: parsed }), t("wiz.agent.fnParamsUpdated", { name }));
+            return saveAgent(
+              agentKind,
+              updateAgentFunction(target, { parameters: parsed }),
+              t("wiz.agent.fnParamsUpdated", { name }),
+            );
           }}
           onBack={back}
         />
@@ -158,11 +199,21 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
           openEditor={ctx.props.openEditor}
           columns={cols}
           rows={rows}
-          title={t("wiz.agent.subscreenTitle", { kind: agentKindLabel(agentKind), id: def.id, label: t("field.functionDescription") })}
+          title={t("wiz.agent.subscreenTitle", {
+            kind: agentKindLabel(agentKind),
+            id: def.id,
+            label: t("field.functionDescription"),
+          })}
           subtitle={t("wiz.agent.editorSubtitle")}
           text={def.function?.description ?? ""}
           notice={notice}
-          onSave={(value) => saveAgent(agentKind, updateAgentFunction(target, { description: value }), t("wiz.agent.fnDescUpdated", { name }))}
+          onSave={(value) =>
+            saveAgent(
+              agentKind,
+              updateAgentFunction(target, { description: value }),
+              t("wiz.agent.fnDescUpdated", { name }),
+            )
+          }
           onBack={back}
         />
       );
@@ -174,16 +225,25 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
         openEditor={ctx.props.openEditor}
         columns={cols}
         rows={rows}
-        title={t("wiz.agent.subscreenTitle", { kind: agentKindLabel(agentKind), id: def.id, label: t("field.prompt") })}
+        title={t("wiz.agent.subscreenTitle", {
+          kind: agentKindLabel(agentKind),
+          id: def.id,
+          label: t("field.prompt"),
+        })}
         subtitle={t("wiz.agent.editorSubtitle")}
         text={getAgentPrompt(def)}
         notice={notice}
-        onSave={(value) => saveAgent(agentKind, setAgentPrompt(target, value), t("wiz.agent.promptUpdated", { name }))}
+        onSave={(value) =>
+          saveAgent(
+            agentKind,
+            setAgentPrompt(target, value),
+            t("wiz.agent.promptUpdated", { name }),
+          )
+        }
         onBack={back}
       />
     );
   }
-
 
   // ---------- 新建 Agent / Sub-agent ----------
   if (activeStep.kind === "agent-new") {
@@ -200,7 +260,10 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
           kind === "agent" ? t("wiz.agent.newDescAgent") : t("wiz.agent.newDescSub"),
         ]}
         error={error}
-        hints={[["Enter", t("wiz.createAndEdit")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("wiz.createAndEdit")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const name = value.trim();
           if (!name) {
@@ -212,9 +275,16 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
             name,
             kind === "agent" ? "agent" : "subagent",
           );
-          const def = kind === "agent" ? createAgentDefinition({ id, name }) : createSubAgentDefinition({ id, name });
+          const def =
+            kind === "agent"
+              ? createAgentDefinition({ id, name })
+              : createSubAgentDefinition({ id, name });
           void (async () => {
-            const failure = await saveAgent(kind, def, t("wiz.agent.created", { kind: kindName, name, id }));
+            const failure = await saveAgent(
+              kind,
+              def,
+              t("wiz.agent.created", { kind: kindName, name, id }),
+            );
             if (failure) {
               setError(failure);
               return;

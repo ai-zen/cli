@@ -28,10 +28,23 @@ export interface KvEditorScreenProps {
  *   - `Enter` 新增 / 编辑（弹出 KEY=VALUE 输入屏，首个 = 分割）；
  *   - `Ctrl+D` 或 `Delete` 删除高亮项；`↑ ↓` 移动；`Esc` 返回。
  */
-export function KvEditorScreen({ columns, rows, title, subtitle, map, notice, onCommit, onBack }: KvEditorScreenProps) {
+export function KvEditorScreen({
+  columns,
+  rows,
+  title,
+  subtitle,
+  map,
+  notice,
+  onCommit,
+  onBack,
+}: KvEditorScreenProps) {
   const { setCursorPosition } = useCursor();
   const [index, setIndex] = useState(0);
-  const [editing, setEditing] = useState<{ mode: "add" | "edit"; initial: string; key?: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    mode: "add" | "edit";
+    initial: string;
+    key?: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const entries = kvEntries(map);
@@ -120,7 +133,10 @@ export function KvEditorScreen({ columns, rows, title, subtitle, map, notice, on
         details={[t("wiz.kvHint"), t("wiz.kvExample")]}
         initialValue={editing.initial}
         error={error}
-        hints={[["Enter", t("ui.save")], ["Esc", t("ui.cancel")]]}
+        hints={[
+          ["Enter", t("ui.save")],
+          ["Esc", t("ui.cancel")],
+        ]}
         onSubmit={(value) => void submit(value)}
         onCancel={() => {
           setEditing(null);
@@ -150,7 +166,9 @@ export function KvEditorScreen({ columns, rows, title, subtitle, map, notice, on
       <Header rows={headerRows} />
       <Box marginTop={1} flexDirection="column">
         <Text wrap="truncate">
-          <Text color={safeIndex === 0 ? theme.brand[0] : theme.faint}>{safeIndex === 0 ? "❯ " : "  "}</Text>
+          <Text color={safeIndex === 0 ? theme.brand[0] : theme.faint}>
+            {safeIndex === 0 ? "❯ " : "  "}
+          </Text>
           <Text bold={safeIndex === 0} color={safeIndex === 0 ? theme.highlight : theme.assistant}>
             {t("wiz.kvAddRow")}
           </Text>
@@ -164,7 +182,9 @@ export function KvEditorScreen({ columns, rows, title, subtitle, map, notice, on
             const selected = safeIndex === i + 1;
             return (
               <Text key={entry.key} wrap="truncate">
-                <Text color={selected ? theme.brand[0] : theme.faint}>{selected ? "❯ " : "  "}</Text>
+                <Text color={selected ? theme.brand[0] : theme.faint}>
+                  {selected ? "❯ " : "  "}
+                </Text>
                 <Text bold={selected} color={selected ? theme.highlight : theme.assistant}>
                   {entry.key}
                 </Text>
@@ -179,8 +199,14 @@ export function KvEditorScreen({ columns, rows, title, subtitle, map, notice, on
           </Text>
         ) : null}
       </Box>
-      <KeyHints hints={[["Enter", t("ui.edit")], ["Ctrl+D", t("ui.delete")], ["↑ ↓", t("ui.move")], ["Esc", t("ui.back")]]} />
+      <KeyHints
+        hints={[
+          ["Enter", t("ui.edit")],
+          ["Ctrl+D", t("ui.delete")],
+          ["↑ ↓", t("ui.move")],
+          ["Esc", t("ui.back")],
+        ]}
+      />
     </WizardFrame>
   );
 }
-

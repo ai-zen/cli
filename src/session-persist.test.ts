@@ -58,7 +58,10 @@ describe("persistSession（会话落盘的唯一入口）", () => {
     expect(existsSync(join(ROOT, "cli", "conversations", "chat_where.json"))).toBe(false);
     // 工作区记录写明原始路径（目录名带哈希，不可逆）
     const record = JSON.parse(
-      readFileSync(join(ROOT, "workspaces", workspaceIdFor(process.cwd()), "workspace.json"), "utf-8"),
+      readFileSync(
+        join(ROOT, "workspaces", workspaceIdFor(process.cwd()), "workspace.json"),
+        "utf-8",
+      ),
     );
     expect(record.path).toBe(process.cwd());
   });

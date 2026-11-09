@@ -3,7 +3,14 @@ import { useState } from "react";
 import { Box, Text, useCursor, useInput } from "ink";
 import { theme } from "../theme.js";
 import { KeyHints } from "../components.js";
-import { INPUT_PREFIX_WIDTH, bottomPadding, displayWidth, graphemes, layoutInput, isTerminalReply } from "../text.js";
+import {
+  INPUT_PREFIX_WIDTH,
+  bottomPadding,
+  displayWidth,
+  graphemes,
+  layoutInput,
+  isTerminalReply,
+} from "../text.js";
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
 import { t } from "../../i18n/index.js";
 
@@ -95,7 +102,8 @@ export function PromptScreen(props: PromptScreenProps) {
     ...(props.details ?? []).flatMap((detail) => textRows(detail, props.columns, theme.dim)),
   ];
   // 输入区之后的附加行：空值提示 / 校验错误 / 明文提示
-  const extraLines = (chars.length === 0 ? 1 : 0) + (props.error ? 1 : 0) + (props.mask && revealed ? 1 : 0);
+  const extraLines =
+    (chars.length === 0 ? 1 : 0) + (props.error ? 1 : 0) + (props.mask && revealed ? 1 : 0);
   const position = promptLayout({
     terminalRows: props.rows,
     headerLines: header.length,
@@ -114,7 +122,10 @@ export function PromptScreen(props: PromptScreenProps) {
     props.onChange?.(next);
   };
   const insert = (text: string) => {
-    update(chars.slice(0, caret).join("") + text + chars.slice(caret).join(""), caret + graphemes(text).length);
+    update(
+      chars.slice(0, caret).join("") + text + chars.slice(caret).join(""),
+      caret + graphemes(text).length,
+    );
   };
   const deleteBefore = () => {
     if (caret === 0) return;
@@ -236,4 +247,3 @@ export function PromptScreen(props: PromptScreenProps) {
     </WizardFrame>
   );
 }
-

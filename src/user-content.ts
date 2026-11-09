@@ -46,7 +46,9 @@ function extOf(mime: string): string {
 }
 
 /** 粘贴的图片 → 内容块；失败的那张跳过并记一条说明 */
-export async function buildUserContent(input: BuildUserContentInput): Promise<BuildUserContentResult> {
+export async function buildUserContent(
+  input: BuildUserContentInput,
+): Promise<BuildUserContentResult> {
   const images = input.images ?? [];
   if (images.length === 0) return { content: input.text, warnings: [] };
 

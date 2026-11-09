@@ -36,39 +36,65 @@ function Probe({
   });
   useInput((char) => {
     switch (char) {
-      case "i": return e.insertAtCursor("!");
-      case "e": return e.insertAtCursor("❤️"); // 2 个 code point 的单个字素簇
-      case "b": return e.deleteBeforeCursor();
-      case "d": return e.deleteAfterCursor();
-      case "w": return e.deleteWordBeforeCursor();
-      case "W": return e.deletePrevWhitespace();
-      case "k": return e.deleteToEndOfLine();
-      case "K": return e.deleteToStartOfLine();
-      case "y": return e.yank(false);
-      case "Y": return e.yank(true);
-      case "u": return e.undoEdit();
-      case "s": return e.toggleStash();
-      case "h": return e.moveCursorToLineStart();
-      case "l": return e.moveCursorToLineEnd();
-      case "<": return e.moveCursor(-1);
-      case ">": return e.moveCursor(1);
-      case ",": return e.moveCursorByWord(-1);
-      case ".": return e.moveCursorByWord(1);
-      case "p": return e.historyPrev();
-      case "n": return e.historyNext();
-      case "r": return e.setInputText("reset");
+      case "i":
+        return e.insertAtCursor("!");
+      case "e":
+        return e.insertAtCursor("❤️"); // 2 个 code point 的单个字素簇
+      case "b":
+        return e.deleteBeforeCursor();
+      case "d":
+        return e.deleteAfterCursor();
+      case "w":
+        return e.deleteWordBeforeCursor();
+      case "W":
+        return e.deletePrevWhitespace();
+      case "k":
+        return e.deleteToEndOfLine();
+      case "K":
+        return e.deleteToStartOfLine();
+      case "y":
+        return e.yank(false);
+      case "Y":
+        return e.yank(true);
+      case "u":
+        return e.undoEdit();
+      case "s":
+        return e.toggleStash();
+      case "h":
+        return e.moveCursorToLineStart();
+      case "l":
+        return e.moveCursorToLineEnd();
+      case "<":
+        return e.moveCursor(-1);
+      case ">":
+        return e.moveCursor(1);
+      case ",":
+        return e.moveCursorByWord(-1);
+      case ".":
+        return e.moveCursorByWord(1);
+      case "p":
+        return e.historyPrev();
+      case "n":
+        return e.historyNext();
+      case "r":
+        return e.setInputText("reset");
       // `@` 补全的落字方式：整段区间替换
-      case "R": return e.replaceRange(0, 5, "@xy");
-      case "Z": return e.replaceRange(0, 999, "z"); // 右端越界要能钳制
-      case "a": return e.setInputText("aaa");
-      case "z": return e.setInputText("zzz");
+      case "R":
+        return e.replaceRange(0, 5, "@xy");
+      case "Z":
+        return e.replaceRange(0, 999, "z"); // 右端越界要能钳制
+      case "a":
+        return e.setInputText("aaa");
+      case "z":
+        return e.setInputText("zzz");
       // 提交：消息进入 `messages`（历史数据源）+ 清草稿（与 Chat 的 runSubmit 一致）
       case "m": {
         entries.push({ text: e.input, images: [] });
         e.clearDraft();
         return;
       }
-      case "c": return e.clearDraft();
+      case "c":
+        return e.clearDraft();
     }
   });
   return <Text>{`[${e.input.replace(/\n/g, "⏎")}]@${e.cursor}`}</Text>;

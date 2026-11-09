@@ -31,4 +31,3 @@ export const SDK_VERSION = readPkgVersion("@ai-zen/agents-sdk/package.json");
 
 /** @ai-zen/agents-core 实际安装版本 */
 export const CORE_VERSION = readPkgVersion("@ai-zen/agents-core/package.json");
-

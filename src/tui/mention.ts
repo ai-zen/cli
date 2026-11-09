@@ -34,14 +34,48 @@ import { graphemes } from "./text.js";
  * 属于极少数情况，且补全仍可手动补完。
  */
 const BOUNDARY = new Set([
-  "(", ")", "[", "]", "{", "}", "<", ">",
-  '"', "'", "`", "“", "”", "‘", "’",
-  ",", "，", ":", "：", ";", "；",
+  "(",
+  ")",
+  "[",
+  "]",
+  "{",
+  "}",
+  "<",
+  ">",
+  '"',
+  "'",
+  "`",
+  "“",
+  "”",
+  "‘",
+  "’",
+  ",",
+  "，",
+  ":",
+  "：",
+  ";",
+  "；",
   // 中文行文的标点：`@src/x。这里有问题` 里的 `。` 必须收住 token，否则补全会把
   // 后面整句一起替换掉，用户写句子时菜单也会一直弹着不走
-  "。", "、", "！", "？", "（", "）", "《", "》",
-  "【", "】", "〔", "〕", "「", "」", "『", "』",
-  "…", "—", "～",
+  "。",
+  "、",
+  "！",
+  "？",
+  "（",
+  "）",
+  "《",
+  "》",
+  "【",
+  "】",
+  "〔",
+  "〕",
+  "「",
+  "」",
+  "『",
+  "』",
+  "…",
+  "—",
+  "～",
 ]);
 
 /** 一次 `@` 补全的上下文 */
@@ -172,6 +206,9 @@ export function rankPaths(
     const score = scorePath(query, entry.path);
     if (score !== null) scored.push({ entry, score });
   }
-  scored.sort((a, b) => a.score - b.score || (a.entry.path < b.entry.path ? -1 : a.entry.path > b.entry.path ? 1 : 0));
+  scored.sort(
+    (a, b) =>
+      a.score - b.score || (a.entry.path < b.entry.path ? -1 : a.entry.path > b.entry.path ? 1 : 0),
+  );
   return scored.slice(0, Math.max(0, limit)).map((item) => item.entry);
 }

@@ -33,7 +33,10 @@ export function findModel(config: AppConfig, modelId: string | undefined): Model
 }
 
 /** 按 id 查找端点 */
-export function findEndpoint(config: AppConfig, endpointId: string | undefined): Endpoint | undefined {
+export function findEndpoint(
+  config: AppConfig,
+  endpointId: string | undefined,
+): Endpoint | undefined {
   if (!endpointId) return undefined;
   return config.endpoints.find((endpoint) => endpoint.id === endpointId);
 }
@@ -66,7 +69,10 @@ export interface CredentialInfo {
  * 模型缺失或端点缺失时返回 `undefined`（此时无法给出「输入 Key」的引导，
  * 属于配置本身残缺，交由调用方报错）。
  */
-export function resolveCredential(config: AppConfig, modelId: string | undefined): CredentialInfo | undefined {
+export function resolveCredential(
+  config: AppConfig,
+  modelId: string | undefined,
+): CredentialInfo | undefined {
   const model = findModel(config, modelId);
   if (!model) return undefined;
   const endpoint = findEndpoint(config, model.endpointId);
@@ -86,7 +92,9 @@ export function resolveCredential(config: AppConfig, modelId: string | undefined
 export function summarizeEndpoints(config: AppConfig): string {
   if (config.endpoints.length === 0) return t("common.noEndpoints");
   return config.endpoints
-    .map((endpoint) => `${endpoint.name || endpoint.id} ${isApiKeySet(endpoint.apiKey) ? "✓" : "✗"}`)
+    .map(
+      (endpoint) => `${endpoint.name || endpoint.id} ${isApiKeySet(endpoint.apiKey) ? "✓" : "✗"}`,
+    )
     .join(" · ");
 }
 
@@ -109,10 +117,22 @@ export interface ApiKeyGuide {
 }
 
 const VENDOR_GUIDES: ReadonlyArray<{ match: string; vendorKey: string; url: string }> = [
-  { match: "bigmodel.cn", vendorKey: "vendor.zhipu", url: "https://open.bigmodel.cn/usercenter/apikeys" },
-  { match: "deepseek.com", vendorKey: "vendor.deepseek", url: "https://platform.deepseek.com/api_keys" },
+  {
+    match: "bigmodel.cn",
+    vendorKey: "vendor.zhipu",
+    url: "https://open.bigmodel.cn/usercenter/apikeys",
+  },
+  {
+    match: "deepseek.com",
+    vendorKey: "vendor.deepseek",
+    url: "https://platform.deepseek.com/api_keys",
+  },
   { match: "openai.com", vendorKey: "vendor.openai", url: "https://platform.openai.com/api-keys" },
-  { match: "moonshot", vendorKey: "vendor.moonshot", url: "https://platform.moonshot.cn/console/api-keys" },
+  {
+    match: "moonshot",
+    vendorKey: "vendor.moonshot",
+    url: "https://platform.moonshot.cn/console/api-keys",
+  },
   { match: "dashscope", vendorKey: "vendor.dashscope", url: "https://bailian.console.aliyun.com/" },
 ];
 
@@ -127,7 +147,11 @@ export function apiKeyGuide(baseUrl: string | undefined): ApiKeyGuide {
 // ==================== 不可变改写 ====================
 
 /** 写入某端点的 API Key（去除首尾空白） */
-export function setEndpointApiKey(config: AppConfig, endpointId: string, apiKey: string): AppConfig {
+export function setEndpointApiKey(
+  config: AppConfig,
+  endpointId: string,
+  apiKey: string,
+): AppConfig {
   return {
     ...config,
     endpoints: config.endpoints.map((endpoint) =>
@@ -137,7 +161,11 @@ export function setEndpointApiKey(config: AppConfig, endpointId: string, apiKey:
 }
 
 /** 写入某端点的 Base URL（去除首尾空白） */
-export function setEndpointBaseUrl(config: AppConfig, endpointId: string, baseUrl: string): AppConfig {
+export function setEndpointBaseUrl(
+  config: AppConfig,
+  endpointId: string,
+  baseUrl: string,
+): AppConfig {
   return {
     ...config,
     endpoints: config.endpoints.map((endpoint) =>
@@ -149,7 +177,11 @@ export function setEndpointBaseUrl(config: AppConfig, endpointId: string, baseUr
 /** 由名称派生唯一 id：小写、非字母数字折叠为 `-`，冲突时追加序号 */
 function deriveUniqueId(taken: Set<string>, name: string, fallback: string): string {
   const base =
-    name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || fallback;
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32) || fallback;
   if (!taken.has(base)) return base;
   for (let i = 2; ; i += 1) {
     const candidate = `${base}-${i}`;
@@ -169,7 +201,11 @@ export function uniqueModelId(config: AppConfig, name: string): string {
 
 /** 由图片模型名派生唯一的图片模型 id */
 export function uniqueImageModelId(config: AppConfig, name: string): string {
-  return deriveUniqueId(new Set((config.imageModels ?? []).map((model) => model.id)), name, "image");
+  return deriveUniqueId(
+    new Set((config.imageModels ?? []).map((model) => model.id)),
+    name,
+    "image",
+  );
 }
 
 /** 新增端点（id 由名称派生） */
@@ -190,7 +226,11 @@ export function addEndpoint(
 // ==================== 通用改写（配置中心）====================
 
 /** 通用端点字段改写（不可变） */
-export function updateEndpoint(config: AppConfig, endpointId: string, patch: Partial<Endpoint>): AppConfig {
+export function updateEndpoint(
+  config: AppConfig,
+  endpointId: string,
+  patch: Partial<Endpoint>,
+): AppConfig {
   return {
     ...config,
     endpoints: config.endpoints.map((endpoint) =>
@@ -201,7 +241,10 @@ export function updateEndpoint(config: AppConfig, endpointId: string, patch: Par
 
 /** 删除端点（调用方负责确认它不再被任何模型引用） */
 export function removeEndpoint(config: AppConfig, endpointId: string): AppConfig {
-  return { ...config, endpoints: config.endpoints.filter((endpoint) => endpoint.id !== endpointId) };
+  return {
+    ...config,
+    endpoints: config.endpoints.filter((endpoint) => endpoint.id !== endpointId),
+  };
 }
 
 /** 通用模型字段改写（不可变） */
@@ -304,7 +347,11 @@ export function addModel(
 }
 
 /** 通用图片模型字段改写（不可变） */
-export function updateImageModel(config: AppConfig, modelId: string, patch: Partial<ImageModel>): AppConfig {
+export function updateImageModel(
+  config: AppConfig,
+  modelId: string,
+  patch: Partial<ImageModel>,
+): AppConfig {
   return {
     ...config,
     imageModels: (config.imageModels ?? []).map((model) =>
@@ -354,7 +401,10 @@ export function setDefaultAgent(config: AppConfig, agentId: string | undefined):
 }
 
 /** 设置默认迁移模型（传 `undefined` 表示清空，交由 SDK 回退出厂默认） */
-export function setDefaultMigrationModel(config: AppConfig, modelId: string | undefined): AppConfig {
+export function setDefaultMigrationModel(
+  config: AppConfig,
+  modelId: string | undefined,
+): AppConfig {
   return { ...config, defaultMigrationModel: modelId };
 }
 
@@ -440,7 +490,11 @@ export function parseArgs(raw: string): string[] {
 export function formatArgs(args: string[] | undefined): string {
   if (!args || args.length === 0) return "";
   return args
-    .map((arg) => (arg === "" || /[\s"'\\]/.test(arg) ? `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : arg))
+    .map((arg) =>
+      arg === "" || /[\s"'\\]/.test(arg)
+        ? `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+        : arg,
+    )
     .join(" ");
 }
 
@@ -454,7 +508,9 @@ export function parseKvInput(raw: string): { key: string; value: string } | null
 }
 
 /** 键值映射 → 有序数组（保持插入顺序） */
-export function kvEntries(map: Record<string, string> | undefined): { key: string; value: string }[] {
+export function kvEntries(
+  map: Record<string, string> | undefined,
+): { key: string; value: string }[] {
   return Object.entries(map ?? {}).map(([key, value]) => ({ key, value }));
 }
 
@@ -489,7 +545,11 @@ export function addMcpServer(mcp: McpConfig, name: string): { mcp: McpConfig; id
 }
 
 /** 改写某 MCP 服务器的字段（不可变；未列出的字段原样保留） */
-export function updateMcpServer(mcp: McpConfig, id: string, patch: Partial<McpServerEntry>): McpConfig {
+export function updateMcpServer(
+  mcp: McpConfig,
+  id: string,
+  patch: Partial<McpServerEntry>,
+): McpConfig {
   const current = mcp.mcpServers[id];
   if (!current) return mcp;
   return { ...mcp, mcpServers: { ...mcp.mcpServers, [id]: { ...current, ...patch } } };
@@ -525,7 +585,9 @@ export function uniqueAgentId(taken: Iterable<string>, name: string, fallback = 
 
 /** 提示词 = 首条 system 消息的文本内容（无则空串） */
 export function getAgentPrompt(def: AgentDefinition): string {
-  const sys = (def.messages ?? []).find((m) => m.role === "system" && typeof m.content === "string");
+  const sys = (def.messages ?? []).find(
+    (m) => m.role === "system" && typeof m.content === "string",
+  );
   return typeof sys?.content === "string" ? sys.content : "";
 }
 
@@ -593,7 +655,10 @@ export function setAgentPermission(
 }
 
 /** 通用 Agent 字段改写（纯合并；`updatedAt` 由写盘侧统一刷新） */
-export function updateAgentDefinition(def: AgentDefinition, patch: Partial<AgentDefinition>): AgentDefinition {
+export function updateAgentDefinition(
+  def: AgentDefinition,
+  patch: Partial<AgentDefinition>,
+): AgentDefinition {
   return { ...def, ...patch };
 }
 
@@ -612,7 +677,8 @@ export function parseFunctionParameters(raw: string): Record<string, unknown> | 
   } catch (cause: any) {
     return t("err.jsonParseFailed", { error: cause?.message ?? cause });
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return t("err.paramsSchemaNotObject");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return t("err.paramsSchemaNotObject");
   return parsed as Record<string, unknown>;
 }
 
@@ -621,8 +687,11 @@ export function updateAgentFunction(
   def: AgentDefinition,
   patch: { name?: string; description?: string; parameters?: Record<string, unknown> },
 ): AgentDefinition {
-  const fn: AgentNS.FunctionDefine =
-    def.function ?? { name: `sub_agent_${def.id.replace(/-/g, "_")}`, description: "", parameters: {} };
+  const fn: AgentNS.FunctionDefine = def.function ?? {
+    name: `sub_agent_${def.id.replace(/-/g, "_")}`,
+    description: "",
+    parameters: {},
+  };
   return { ...def, function: { ...fn, ...patch } };
 }
 

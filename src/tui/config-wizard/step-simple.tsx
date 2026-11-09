@@ -1,6 +1,13 @@
 // 由 src/tui/config-wizard.tsx 拆分而来 —— 工具输出上限 / 端点字段直达编辑
 import { ReactNode } from "react";
-import { apiKeyGuide, findEndpoint, maskApiKey, setEndpointApiKey, setEndpointBaseUrl, setMaxToolOutput } from "../../config-editor.js";
+import {
+  apiKeyGuide,
+  findEndpoint,
+  maskApiKey,
+  setEndpointApiKey,
+  setEndpointBaseUrl,
+  setMaxToolOutput,
+} from "../../config-editor.js";
 import { WizardContext } from "./engine.js";
 import { PromptScreen } from "./prompt.js";
 import { t } from "../../i18n/index.js";
@@ -19,20 +26,27 @@ export function renderSimpleStep(ctx: WizardContext): ReactNode {
         details={[t("wiz.currentLine", { value: current }), t("wiz.maxToolOutput.desc")]}
         initialValue={String(current)}
         error={error}
-        hints={[["Enter", t("ui.save")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("ui.save")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const n = Number(value.trim());
           if (!Number.isFinite(n) || n <= 0) {
             setError(t("err.positiveInteger"));
             return;
           }
-          void commit(setMaxToolOutput(config, Math.floor(n)), t("wiz.maxToolOutput.updated", { n: Math.floor(n) }), [], { kind: "menu" });
+          void commit(
+            setMaxToolOutput(config, Math.floor(n)),
+            t("wiz.maxToolOutput.updated", { n: Math.floor(n) }),
+            [],
+            { kind: "menu" },
+          );
         }}
         onCancel={() => go({ kind: "menu" })}
       />
     );
   }
-
 
   // ---------- 端点字段直达编辑（首启引导 / `/key`）----------
   if (activeStep.kind === "edit") {
@@ -46,7 +60,11 @@ export function renderSimpleStep(ctx: WizardContext): ReactNode {
           key={`apiKey:${endpoint.id}`}
           columns={cols}
           rows={rows}
-          title={props.onboarding ? t("wiz.apiKey.titleOnboarding", { name }) : t("wiz.apiKey.title", { name })}
+          title={
+            props.onboarding
+              ? t("wiz.apiKey.titleOnboarding", { name })
+              : t("wiz.apiKey.title", { name })
+          }
           details={[
             t("wiz.apiKey.endpointLine", { name, url: endpoint.baseUrl }),
             t("wiz.currentLine", { value: maskApiKey(endpoint.apiKey) }),
@@ -68,7 +86,11 @@ export function renderSimpleStep(ctx: WizardContext): ReactNode {
               setError(t("err.apiKeyRequired"));
               return;
             }
-            void commit(setEndpointApiKey(config, endpoint.id, key), t("wiz.endpointUpdated", { name, label: "API Key" }), [endpoint.id]);
+            void commit(
+              setEndpointApiKey(config, endpoint.id, key),
+              t("wiz.endpointUpdated", { name, label: "API Key" }),
+              [endpoint.id],
+            );
           }}
           onCancel={() => (props.closeOnSave ? props.onClose(snapshot()) : go({ kind: "menu" }))}
         />
@@ -84,14 +106,21 @@ export function renderSimpleStep(ctx: WizardContext): ReactNode {
         details={[t("wiz.currentLine", { value: endpoint.baseUrl }), t("wiz.baseUrl.hint")]}
         initialValue={endpoint.baseUrl}
         error={error}
-        hints={[["Enter", t("ui.save")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("ui.save")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const baseUrl = value.trim();
           if (!/^https?:\/\//i.test(baseUrl)) {
             setError(t("err.baseUrlScheme"));
             return;
           }
-          void commit(setEndpointBaseUrl(config, endpoint.id, baseUrl), t("wiz.endpointUpdated", { name, label: "Base URL" }), [endpoint.id]);
+          void commit(
+            setEndpointBaseUrl(config, endpoint.id, baseUrl),
+            t("wiz.endpointUpdated", { name, label: "Base URL" }),
+            [endpoint.id],
+          );
         }}
         onCancel={() => go({ kind: "menu" })}
       />

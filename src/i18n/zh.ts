@@ -54,9 +54,11 @@ export const zh: Record<string, string> = {
   "notice.imageLimit": "单条消息最多 {n} 张图片",
   "notice.imageTooLarge": "图片太大（{size}MB），已超出 20MB 上限",
   "notice.imagesCleared": "已清空附加的图片",
-  "notice.textTooLarge": "剪贴板文本 {size}KB，超过 {limit}KB 上限，没有粘贴 —— 大段内容建议存成文件后用 @ 引用",
+  "notice.textTooLarge":
+    "剪贴板文本 {size}KB，超过 {limit}KB 上限，没有粘贴 —— 大段内容建议存成文件后用 @ 引用",
   "notice.clipboardEmpty": "剪贴板里没有内容",
-  "notice.clipboardUnavailable": "没有可用的剪贴板工具（macOS 需 pbpaste，Linux 需 wl-paste 或 xclip）",
+  "notice.clipboardUnavailable":
+    "没有可用的剪贴板工具（macOS 需 pbpaste，Linux 需 wl-paste 或 xclip）",
   "notice.inputCleared": "已清空输入 · 再按一次 Ctrl+C 退出",
   "notice.pressCtrlDAgain": "再按一次 Ctrl+D 退出",
   "notice.languageChanged": "界面语言已切换为中文",
@@ -104,9 +106,11 @@ export const zh: Record<string, string> = {
   "cmd.update.done": "✅ 已安装 {spec}：v{current} → v{version}",
   "cmd.update.checking": "正在查询 {pkg} 的最新版本…",
   "cmd.update.found": "发现新版本 v{target}（当前 v{current}），开始安装…",
-  "cmd.update.installHeader": "\n📦 正在安装 {spec}（当前 v{current}）\n   安装位置  {root}\n   执行命令  npm install -g {spec} --prefer-online --no-fund",
+  "cmd.update.installHeader":
+    "\n📦 正在安装 {spec}（当前 v{current}）\n   安装位置  {root}\n   执行命令  npm install -g {spec} --prefer-online --no-fund",
   "cmd.update.rootUnknown": "未知",
-  "cmd.update.confirmRestart": "已装好 v{version}，重启后才会生效（当前进程仍跑 v{current}）。现在重启？当前对话已保存。",
+  "cmd.update.confirmRestart":
+    "已装好 v{version}，重启后才会生效（当前进程仍跑 v{current}）。现在重启？当前对话已保存。",
   "cmd.update.same": "✅ 已是最新版本 v{version}，无需重启",
   "cmd.update.restart": "重启 ai 后生效（当前进程仍在跑 v{current} 的旧代码）",
   "cmd.update.failed": "❌ 安装 {spec} 失败：{error}",
@@ -145,7 +149,8 @@ export const zh: Record<string, string> = {
   "cmd.reload.failed": "刷新失败：{error}",
   "cmd.think.noModel": "Agent「{id}」未绑定模型，请用 /config 为它选择模型",
   "cmd.think.modelMissing": "模型 {id} 不存在，请用 /model 或 /config 检查",
-  "cmd.think.notAdjustable": "模型 {id} 未关联可用的思考策略（缺 reasoningPreset，或策略表里没这一档），无法调整",
+  "cmd.think.notAdjustable":
+    "模型 {id} 未关联可用的思考策略（缺 reasoningPreset，或策略表里没这一档），无法调整",
   "cmd.think.unknown": "未知强度：{level}（可选 {options} / default）",
   "cmd.think.title": "思考强度（当前：{level}）",
   "cmd.think.failed": "切换思考强度失败：{error}",
@@ -192,24 +197,25 @@ export const zh: Record<string, string> = {
   "confirm.hint": "← → 选择 · y/n · Enter 确认",
 
   // ---------- 业务模块返回的 summary / 报错（思考档位 / 切模型 / 切 Agent / 交接） ----------
-  "effort.err.agentMissing": "Agent \"{id}\" 不存在",
-  "effort.err.noModel": "Agent \"{id}\" 未绑定模型，请先为它选择模型",
-  "effort.err.modelMissing": "模型 \"{id}\" 不存在，请先用 /model 或 /config 检查",
-  "effort.err.noPreset": "模型 \"{id}\" 未关联可用的思考策略（reasoningPreset），无法设置思考强度",
-  "effort.err.unknownLevel": "策略 \"{preset}\" 没有档位 \"{level}\"（可选：{options}）",
+  "effort.err.agentMissing": 'Agent "{id}" 不存在',
+  "effort.err.noModel": 'Agent "{id}" 未绑定模型，请先为它选择模型',
+  "effort.err.modelMissing": '模型 "{id}" 不存在，请先用 /model 或 /config 检查',
+  "effort.err.noPreset": '模型 "{id}" 未关联可用的思考策略（reasoningPreset），无法设置思考强度',
+  "effort.err.unknownLevel": '策略 "{preset}" 没有档位 "{level}"（可选：{options}）',
   "effort.followDefault": "跟随模型默认",
   "effort.quoted": "「{label}」",
   "effort.summary": "思考强度已设为 {label} · 写入 Agent「{id}」（模型 {model}）",
-  "modelSwitch.err.modelMissing": "模型 \"{id}\" 不存在",
-  "modelSwitch.err.agentMissing": "Agent \"{id}\" 不存在",
+  "modelSwitch.err.modelMissing": '模型 "{id}" 不存在',
+  "modelSwitch.err.agentMissing": 'Agent "{id}" 不存在',
   "modelSwitch.resetHint": " · 思考强度已重置为模型默认",
   "modelSwitch.summary": "已切换模型：{name}（{id}）· 已写入 Agent「{agent}」{hint}",
   "agentSwitch.err.noModel": "未绑定模型",
   "agentSwitch.err.modelMissing": "模型 {id} 不存在",
   "agentSwitch.err.missingKey": "端点「{endpoint}」缺 API Key",
-  "agentSwitch.err.agentMissing": "Agent \"{id}\" 不存在",
+  "agentSwitch.err.agentMissing": 'Agent "{id}" 不存在',
   "agentSwitch.err.agentNoModel": "Agent「{name}」未绑定模型，请先用 /config 为它选择模型",
-  "agentSwitch.err.modelGone": "Agent「{name}」绑定的模型“{id}”已不在配置中，请用 /model 或 /config 重新选择",
+  "agentSwitch.err.modelGone":
+    "Agent「{name}」绑定的模型“{id}”已不在配置中，请用 /model 或 /config 重新选择",
   "agentSwitch.err.noKey": "端点「{endpoint}」还没有 API Key，请先用 /config 配置后再切换",
   "agentSwitch.summary": "已切换主 Agent：{name}（{id}）· 模型 {model}（{modelId}）",
   "handoff.mode.self": "原 agent 自交接",
@@ -230,12 +236,15 @@ export const zh: Record<string, string> = {
   "app.noAgents": "没有可用的 Agent，请先在配置中创建（配置文件 config.json）",
   "app.bootFailed": "✖ 无法启动对话：{error}",
   "app.unexpected": "✖ 意外错误: {error}",
-  "migrate.skipped": "⏭️ 已跳过本次任务迁移；可随时输入 /migrate 手动迁移，若继续增长至严重超限对话会被安全护栏中断。",
+  "migrate.skipped":
+    "⏭️ 已跳过本次任务迁移；可随时输入 /migrate 手动迁移，若继续增长至严重超限对话会被安全护栏中断。",
 
   // ---------- `ai --help`（在 TUI 之外打印，故单独在 help 分支初始化语言） ----------
   "cli.help.title": "ai — AI-Zen CLI v{version}",
-  "cli.help.usage": "\n用法:\n  ai                      进入交互式界面（TUI，需 stdin/stdout 为 TTY）\n  ai <提示词>              以纯 stdio 模式提问，结果写入 stdout\n  cat 文件 | ai “总结要点”  通过管道传入内容，参数作为指令\n  ai hook install         安装 shell 兜底钩子（命令不存在时转发给 AI）\n  ai hook uninstall       卸载 shell 兜底钩子",
-  "cli.help.options": "\n选项:\n  --save                  保存本次对话到存档（默认不落盘）\n  --tui [提示词…]          强制进入交互界面，提示词作为首条消息自动发送（shell 钩子用）\n  --new                   进入交互界面时开新会话，不续接上一轮对话\n  -h, --help              显示本帮助\n  -v, --version           显示版本号\n  --server-status         打印常驻服务进程的状态（JSON，未运行退出码 1）",
+  "cli.help.usage":
+    "\n用法:\n  ai                      进入交互式界面（TUI，需 stdin/stdout 为 TTY）\n  ai <提示词>              以纯 stdio 模式提问，结果写入 stdout\n  cat 文件 | ai “总结要点”  通过管道传入内容，参数作为指令\n  ai hook install         安装 shell 兜底钩子（命令不存在时转发给 AI）\n  ai hook uninstall       卸载 shell 兜底钩子",
+  "cli.help.options":
+    "\n选项:\n  --save                  保存本次对话到存档（默认不落盘）\n  --tui [提示词…]          强制进入交互界面，提示词作为首条消息自动发送（shell 钩子用）\n  --new                   进入交互界面时开新会话，不续接上一轮对话\n  -h, --help              显示本帮助\n  -v, --version           显示版本号\n  --server-status         打印常驻服务进程的状态（JSON，未运行退出码 1）",
   "cli.help.notes": "\n说明:\n  stdio 模式无任何交互，结果走 stdout、日志走 stderr，成功退出码 0。",
 
   // ---------- `ai hook install / uninstall`（非 TUI 输出，同 help 一样在分支内先初始化语言） ----------

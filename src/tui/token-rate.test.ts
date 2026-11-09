@@ -1,11 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  IDLE_RATE,
-  MIN_SPAN_MS,
-  TokenRateMeter,
-  deltaText,
-  estimateTokens,
-} from "./token-rate.js";
+import { IDLE_RATE, MIN_SPAN_MS, TokenRateMeter, deltaText, estimateTokens } from "./token-rate.js";
 
 describe("estimateTokens（按字符估算）", () => {
   it("空文本为零", () => {
@@ -36,7 +30,16 @@ describe("deltaText（从流式 chunk 取新增文本）", () => {
   });
 
   it("数组形式的正文增量", () => {
-    expect(deltaText(wrap({ content: [{ index: 0, text: "ab" }, { index: 0, text: "cd" }] }))).toBe("abcd");
+    expect(
+      deltaText(
+        wrap({
+          content: [
+            { index: 0, text: "ab" },
+            { index: 0, text: "cd" },
+          ],
+        }),
+      ),
+    ).toBe("abcd");
   });
 
   it("思考增量也计入（推理模型的思考同样是吐出来的 token）", () => {
@@ -44,9 +47,9 @@ describe("deltaText（从流式 chunk 取新增文本）", () => {
   });
 
   it("工具调用名与参数增量也计入", () => {
-    expect(deltaText(wrap({ tool_calls: [{ function: { name: "read", arguments: '{"a":1}' } }] }))).toBe(
-      'read{"a":1}',
-    );
+    expect(
+      deltaText(wrap({ tool_calls: [{ function: { name: "read", arguments: '{"a":1}' } }] })),
+    ).toBe('read{"a":1}');
   });
 
   it("无 delta 的 chunk（纯 usage / 心跳）返回空串", () => {

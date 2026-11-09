@@ -42,8 +42,9 @@ export const en: Record<string, string> = {
   "err.handoffLessThanGuard": "Handoff threshold must be lower than the guard threshold",
   "err.guardPositive": "Guard threshold must be a positive integer",
   "err.guardGreaterThanHandoff": "Guard threshold must be higher than the handoff threshold",
-  "err.presetNotFound": "Preset \"{name}\" does not exist (available: {options})",
-  "err.presetTableEmpty": "Preset \"{name}\" does not exist (the preset table is empty, see reasoning-presets.json)",
+  "err.presetNotFound": 'Preset "{name}" does not exist (available: {options})',
+  "err.presetTableEmpty":
+    'Preset "{name}" does not exist (the preset table is empty, see reasoning-presets.json)',
   "err.idRequired": "ID cannot be empty",
   "err.functionNameRequired": "Function name cannot be empty",
   "err.mcpNameTaken": "A server named {name} already exists",
@@ -98,7 +99,8 @@ export const en: Record<string, string> = {
 
   // ---------- Config center home ----------
   "wiz.menu.title": "◆ Configuration",
-  "wiz.menu.hint": "Changes are written to disk immediately; changes touching the current endpoint rebuild the session (messages are kept).",
+  "wiz.menu.hint":
+    "Changes are written to disk immediately; changes touching the current endpoint rebuild the session (messages are kept).",
   "wiz.menu.configFile": "Config file: {path}",
   "wiz.menu.endpoints": "Endpoints",
   "wiz.menu.models": "Models",
@@ -161,7 +163,8 @@ export const en: Record<string, string> = {
   "wiz.models.createTitle": "New model · name",
   "wiz.models.createDesc": "Identifies the model in the config and the status bar, e.g. {example}",
   "wiz.models.created": "Created model {name} ({id}, marked as custom)",
-  "wiz.models.noEndpoint": "⚠ No endpoint configured — cannot create; add one under Endpoints first",
+  "wiz.models.noEndpoint":
+    "⚠ No endpoint configured — cannot create; add one under Endpoints first",
   "wiz.models.defaultEndpoint": "Will bind the default endpoint: {endpoint}",
   "wiz.createAndEdit": "Create & edit",
   "wiz.imageModels.newItem": "+ New image model",
@@ -185,15 +188,19 @@ export const en: Record<string, string> = {
   "wiz.agent.subSuffix": " · Sub-agent",
   "wiz.agent.detailTitle": "◆ {kind} · {name}",
   "wiz.agent.detailLine": "{id} · {kind}{subSuffix}",
-  "wiz.agent.moveHint": "↑ ↓ move · Enter edit/toggle/open · changes are written to disk immediately",
+  "wiz.agent.moveHint":
+    "↑ ↓ move · Enter edit/toggle/open · changes are written to disk immediately",
   "wiz.agent.deleteAction": "Delete {kind}",
   "wiz.agent.restore": "Restore factory defaults",
   "wiz.agentRestored": "Restored the {kind} {id} prompt to its factory definition",
   "wiz.agent.subscreenTitle": "◆ {kind} · {id} · {label}",
-  "wiz.agent.permHint": "Format: `allow: a, b` or `deny: x` (comma-separated; empty clears this dimension)",
+  "wiz.agent.permHint":
+    "Format: `allow: a, b` or `deny: x` (comma-separated; empty clears this dimension)",
   "wiz.agent.permMoveHint": "↑ ↓ move · Enter edit · Esc back",
-  "wiz.agent.fnParamsSubtitle": "A JSON object; Enter opens the system editor, and saving validates and writes immediately",
-  "wiz.agent.editorSubtitle": "Enter opens the system editor ($EDITOR / notepad); saving writes to disk",
+  "wiz.agent.fnParamsSubtitle":
+    "A JSON object; Enter opens the system editor, and saving validates and writes immediately",
+  "wiz.agent.editorSubtitle":
+    "Enter opens the system editor ($EDITOR / notepad); saving writes to disk",
   "wiz.agent.fnParamsUpdated": "{name}: params schema updated",
   "wiz.agent.fnDescUpdated": "{name}: function description updated",
   "wiz.agent.promptUpdated": "{name}: prompt updated",
@@ -206,7 +213,8 @@ export const en: Record<string, string> = {
   // ---------- Tool output limit / direct endpoint field editing ----------
   "wiz.maxToolOutput.title": "Tool output limit (characters)",
   "wiz.currentLine": "Current: {value}",
-  "wiz.maxToolOutput.desc": "Single tool output above this limit is written to disk or only warned about, so the context never blows up",
+  "wiz.maxToolOutput.desc":
+    "Single tool output above this limit is written to disk or only warned about, so the context never blows up",
   "wiz.maxToolOutput.updated": "Tool output limit → {n} chars",
   "err.positiveInteger": "Must be a positive integer",
   "wiz.apiKey.titleOnboarding": "First-time setup · set the API key for {name}",
@@ -221,7 +229,7 @@ export const en: Record<string, string> = {
   "wiz.baseUrl.hint": "Must start with http:// or https:// (OpenAI-compatible endpoint)",
 
   // ---------- MCP servers / defaults ----------
-  "wiz.mcp.switchScope": "⇄ Switch to the \"{scope}\" scope",
+  "wiz.mcp.switchScope": '⇄ Switch to the "{scope}" scope',
   "wiz.mcp.serverCount": "{n} server(s)",
   "wiz.mcp.newItem": "+ New server",
   "wiz.mcp.listTitle": "◆ MCP servers · {scope}",
@@ -236,7 +244,8 @@ export const en: Record<string, string> = {
   "wiz.mcp.kvSubtitle": "{scope} · {n} entries",
   "wiz.mcp.newTitle": "New MCP server · name ({scope})",
   "wiz.mcp.newDescKey": "Used as the key under mcpServers, e.g. github / chrome-devtools",
-  "wiz.mcp.newDescDefault": "Created as stdio by default; transport / command / args / env are all editable",
+  "wiz.mcp.newDescDefault":
+    "Created as stdio by default; transport / command / args / env are all editable",
   "wiz.mcp.created": "Created MCP server {id} ({scope})",
   "wiz.defaults.title": "Defaults",
   "wiz.defaults.subtitle": "Values used by new sessions and task migration",
@@ -250,20 +259,26 @@ export const en: Record<string, string> = {
   "wiz.defaults.updated": "{label} → {value}",
   "wiz.defaults.strategyMessage": "Keep output on interrupt",
   "wiz.defaults.strategyToolRound": "Interrupted tool rounds",
-  "wiz.defaults.strategySubtitle": "Written to disk as soon as you pick; the session is rebuilt when you close the config center",
+  "wiz.defaults.strategySubtitle":
+    "Written to disk as soon as you pick; the session is rebuilt when you close the config center",
   "wiz.strategy.keep": "Keep (keep)",
   "wiz.strategy.drop": "Drop (drop)",
   "wiz.strategy.fill": "Keep the whole round (fill)",
-  "wiz.strategy.keepHint": "After an interrupt the partial reasoning and answer stay in context, so the model can continue",
+  "wiz.strategy.keepHint":
+    "After an interrupt the partial reasoning and answer stay in context, so the model can continue",
   "wiz.strategy.dropHint": "The partial turn never enters the context (core library default)",
-  "wiz.strategy.fillHint": "Restore the whole round and backfill a reason for unfinished results — tool_calls must pair with results",
-  "wiz.strategy.toolDropHint": "Drop the whole round: neither the assistant message nor its tool results are sent",
+  "wiz.strategy.fillHint":
+    "Restore the whole round and backfill a reason for unfinished results — tool_calls must pair with results",
+  "wiz.strategy.toolDropHint":
+    "Drop the whole round: neither the assistant message nor its tool results are sent",
   "wiz.defaults.autoRefreshTools": "When to refresh tools",
   "wiz.autoRefresh.inner": "Start of each inner loop (default)",
   "wiz.autoRefresh.outer": "Start of each outer loop",
   "wiz.autoRefresh.off": "Off",
-  "wiz.autoRefresh.innerHint": "Re-discover MCP / skills / tools before every request: capabilities added mid-session work on the next request, at the cost of the most refreshes",
-  "wiz.autoRefresh.outerHint": "Refresh once at the start of a turn: cheapest, but new capabilities only apply from the next turn",
+  "wiz.autoRefresh.innerHint":
+    "Re-discover MCP / skills / tools before every request: capabilities added mid-session work on the next request, at the cost of the most refreshes",
+  "wiz.autoRefresh.outerHint":
+    "Refresh once at the start of a turn: cheapest, but new capabilities only apply from the next turn",
   "wiz.autoRefresh.offHint": "Never refresh automatically; only /reload picks up new tools",
 
   // ---------- Endpoints list / new endpoint ----------
@@ -277,14 +292,18 @@ export const en: Record<string, string> = {
   "wiz.endpoints.refSuffix": " · referenced by {n} model(s)",
   "wiz.endpoints.moveHint": "↑ ↓ move · Enter edit · changes are written to disk immediately",
   "wiz.endpoints.delete": "Delete endpoint",
-  "wiz.endpoints.deleteBlocked": "Cannot delete: still referenced by {n} model(s) ({models}) — delete or rebind them first",
+  "wiz.endpoints.deleteBlocked":
+    "Cannot delete: still referenced by {n} model(s) ({models}) — delete or rebind them first",
   "wiz.endpoints.deleted": "Deleted endpoint {name}",
   "wiz.newEndpoint.nameTitle": "New endpoint · name",
-  "wiz.newEndpoint.nameDesc": "Identifies the service in the config and the status bar, e.g. {example}",
+  "wiz.newEndpoint.nameDesc":
+    "Identifies the service in the config and the status bar, e.g. {example}",
   "wiz.newEndpoint.baseUrlTitle": "New endpoint · base URL",
-  "wiz.newEndpoint.baseUrlDesc": "e.g. https://api.openai.com/v1 (must be an OpenAI-compatible API)",
+  "wiz.newEndpoint.baseUrlDesc":
+    "e.g. https://api.openai.com/v1 (must be an OpenAI-compatible API)",
   "wiz.newEndpoint.apiKeyTitle": "New endpoint · API key",
-  "wiz.newEndpoint.apiKeyOptional": "Leave it empty to add later (the endpoint stays unusable until then)",
+  "wiz.newEndpoint.apiKeyOptional":
+    "Leave it empty to add later (the endpoint stays unusable until then)",
   "wiz.newEndpoint.save": "Save endpoint",
   "wiz.newEndpoint.created": "Added endpoint {name} ({id}){suffix}",
   "wiz.newEndpoint.keyPending": " · API key pending",
@@ -307,7 +326,7 @@ export const en: Record<string, string> = {
   "common.permissionSummary": "{n} dimension(s) ({dims})",
   "common.transportHttp": "http (Streamable HTTP)",
   "common.transportSse": "sse (Server-Sent Events)",
-  "err.permissionFormat": "Expected \"allow: a, b\" or \"deny: x\"",
+  "err.permissionFormat": 'Expected "allow: a, b" or "deny: x"',
   "err.permissionNeedsPattern": "At least one pattern is required (e.g. `*`)",
   "err.paramsSchemaEmpty": "Params schema cannot be empty (at least {})",
   "err.paramsSchemaNotObject": "Params must be a JSON object",

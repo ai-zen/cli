@@ -77,7 +77,11 @@ const fakeSpawn = ((_cmd: string, args: string[] = []) => {
 function fakeGlobalInstall(root: string, version: string): void {
   const dir = join(root, "@ai-zen", "cli");
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "@ai-zen/cli", version }), "utf-8");
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ name: "@ai-zen/cli", version }),
+    "utf-8",
+  );
 }
 
 function createHost(options: { confirmAnswer?: boolean; withHistory?: boolean } = {}) {

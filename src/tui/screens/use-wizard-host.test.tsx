@@ -80,7 +80,12 @@ function Probe({ hasSession }: { hasSession: boolean }) {
     }
     if (char === "s") {
       // 只改了中断策略：端点没动，但建 Agent 时才读的配置变了 → 也要重建会话
-      w.closeWizard({ dirty: true, summary: [], changedEndpointIds: [], sessionOptionsChanged: true });
+      w.closeWizard({
+        dirty: true,
+        summary: [],
+        changedEndpointIds: [],
+        sessionOptionsChanged: true,
+      });
     }
     if (char === "n") {
       w.closeWizard({ dirty: false, summary: [], changedEndpointIds: [] });
@@ -141,7 +146,9 @@ describe("useWizardHost", () => {
 
   it("坏 mcp.json：进向导时记下损坏的作用域", async () => {
     readMcpImpl = async (scope) =>
-      scope === "global" ? { ok: false, error: "Unexpected token" } : { ok: true, config: { mcpServers: {} } };
+      scope === "global"
+        ? { ok: false, error: "Unexpected token" }
+        : { ok: true, config: { mcpServers: {} } };
     const p = await probe();
     await p.press("o");
     // 照样进向导（屏上会写明），但要记住是哪个作用域坏了

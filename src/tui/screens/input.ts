@@ -203,4 +203,3 @@ export function deleteToLineEnd(text: string, cursor: number): { text: string; c
     cursor: cp,
   };
 }
-

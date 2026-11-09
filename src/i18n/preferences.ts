@@ -21,8 +21,7 @@ import { detectLocale, setLocale, normalizeLocale, type Locale } from "./index.j
  */
 export function preferencesFile(): string {
   const root =
-    process.env.AI_ZEN_DIR ||
-    join(process.env.HOME || process.env.USERPROFILE || "", ".ai-zen");
+    process.env.AI_ZEN_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".ai-zen");
   return process.env.AIZ_PREFERENCES_FILE || join(root, "cli", "preferences.json");
 }
 
@@ -33,9 +32,7 @@ export interface CliPreferences {
 }
 
 /** 读取偏好：文件缺失 / 损坏 / 字段非法都按「没设置」处理，绝不抛错 */
-export async function readPreferences(
-  file: string = preferencesFile(),
-): Promise<CliPreferences> {
+export async function readPreferences(file: string = preferencesFile()): Promise<CliPreferences> {
   try {
     const raw = await readFile(file, "utf-8");
     const parsed = JSON.parse(raw) as unknown;

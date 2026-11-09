@@ -27,14 +27,18 @@ describe("phaseLabel", () => {
     expect(phaseLabel({ kind: "tool-waiting" })).toBe("等待工具返回…");
     expect(phaseLabel({ kind: "streaming" })).toBe("输出中…");
     // 六者互不相同 —— 这正是本次改动的目的（原来全都叫「思考中…」）
-    expect(new Set(Object.values({
-      connecting: phaseLabel({ kind: "connecting" }),
-      queued: phaseLabel({ kind: "queued" }),
-      thinking: phaseLabel({ kind: "thinking" }),
-      calling: phaseLabel({ kind: "tool-calling" }),
-      waiting: phaseLabel({ kind: "tool-waiting" }),
-      streaming: phaseLabel({ kind: "streaming" }),
-    })).size).toBe(6);
+    expect(
+      new Set(
+        Object.values({
+          connecting: phaseLabel({ kind: "connecting" }),
+          queued: phaseLabel({ kind: "queued" }),
+          thinking: phaseLabel({ kind: "thinking" }),
+          calling: phaseLabel({ kind: "tool-calling" }),
+          waiting: phaseLabel({ kind: "tool-waiting" }),
+          streaming: phaseLabel({ kind: "streaming" }),
+        }),
+      ).size,
+    ).toBe(6);
   });
 
   it("带工具名时把工具名插进文案", () => {

@@ -112,8 +112,7 @@ export function AgentTabs({ tabs, activeId }: AgentTabsProps) {
               {tab.status ? (
                 <Text color={agentStatusColor(tab.status, blinkOn)}>{AGENT_STATUS_DOT}</Text>
               ) : null}
-              {tab.label}
-              {" "}
+              {tab.label}{" "}
             </Text>
           );
         })}

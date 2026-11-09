@@ -291,7 +291,11 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
          * 接回另一段对话，或撞 `session-missing`。
          */
         if (value.sessionId) {
-          current = { ...current, sessionId: value.sessionId, sessionName: value.sessionName ?? value.sessionId };
+          current = {
+            ...current,
+            sessionId: value.sessionId,
+            sessionName: value.sessionName ?? value.sessionId,
+          };
         }
         continue;
       }

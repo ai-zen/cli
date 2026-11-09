@@ -2,7 +2,16 @@
 import { ReactNode } from "react";
 import { DEFAULT_APP_CONFIG } from "@ai-zen/agents-sdk";
 import { SelectItem } from "../components.js";
-import { addImageModel, addModel, findEndpoint, findModel, removeImageModel, removeModel, restoreFactoryImageModel, restoreFactoryModel } from "../../config-editor.js";
+import {
+  addImageModel,
+  addModel,
+  findEndpoint,
+  findModel,
+  removeImageModel,
+  removeModel,
+  restoreFactoryImageModel,
+  restoreFactoryModel,
+} from "../../config-editor.js";
 import { NEW_MODEL, NEW_IMAGE_MODEL } from "./types.js";
 import { WizardContext } from "./engine.js";
 import { ListStep } from "./list.js";
@@ -17,7 +26,19 @@ function kindLabel(custom: boolean | undefined, withNote = false): string {
 }
 
 export function renderModelsStep(ctx: WizardContext): ReactNode {
-  const { config, error, notice, activeStep, go, persist, setError, modelFields, imageModelFields, cols, rows } = ctx;
+  const {
+    config,
+    error,
+    notice,
+    activeStep,
+    go,
+    persist,
+    setError,
+    modelFields,
+    imageModelFields,
+    cols,
+    rows,
+  } = ctx;
   // ---------- 模型管理 ----------
   if (activeStep.kind === "models") {
     const items: SelectItem<string>[] = [
@@ -39,12 +60,13 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         title={t("wiz.menu.models")}
         subtitle={t("wiz.models.subtitle", { n: config.models.length })}
         items={items}
-        onPick={(value) => (value === NEW_MODEL ? go({ kind: "new-model" }) : go({ kind: "model", modelId: value }))}
+        onPick={(value) =>
+          value === NEW_MODEL ? go({ kind: "new-model" }) : go({ kind: "model", modelId: value })
+        }
         onCancel={() => go({ kind: "menu" })}
       />
     );
   }
-
 
   /**
    * 出厂清单里同 id 的定义。
@@ -76,7 +98,10 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
       label: t("wiz.models.delete"),
       danger: true,
       run: async () => {
-        const failure = await persist(removeModel(config, model.id), t("wiz.models.deleted", { name }));
+        const failure = await persist(
+          removeModel(config, model.id),
+          t("wiz.models.deleted", { name }),
+        );
         if (!failure) go({ kind: "models" });
         return failure;
       },
@@ -86,7 +111,10 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         columns={cols}
         rows={rows}
         title={t("wiz.models.detailTitle", { name })}
-        details={[t("wiz.models.detailLine", { id: model.id, kind: kindLabel(model.custom, true) }), t("wiz.detail.moveHint")]}
+        details={[
+          t("wiz.models.detailLine", { id: model.id, kind: kindLabel(model.custom, true) }),
+          t("wiz.detail.moveHint"),
+        ]}
         fields={modelFields(model)}
         notice={notice}
         actions={actions}
@@ -95,12 +123,15 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-
   // ---------- 图片模型列表 ----------
   if (activeStep.kind === "image-models") {
     const list = config.imageModels ?? [];
     const items: SelectItem<string>[] = [
-      { label: t("wiz.imageModels.newItem"), value: NEW_IMAGE_MODEL, hint: t("wiz.models.newItemHint") },
+      {
+        label: t("wiz.imageModels.newItem"),
+        value: NEW_IMAGE_MODEL,
+        hint: t("wiz.models.newItemHint"),
+      },
       ...list.map((model) => ({
         label: model.name || model.id,
         value: model.id,
@@ -118,12 +149,15 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         title={t("wiz.menu.imageModels")}
         subtitle={t("wiz.imageModels.subtitle", { n: list.length })}
         items={items}
-        onPick={(value) => (value === NEW_IMAGE_MODEL ? go({ kind: "new-image-model" }) : go({ kind: "image-model", modelId: value }))}
+        onPick={(value) =>
+          value === NEW_IMAGE_MODEL
+            ? go({ kind: "new-image-model" })
+            : go({ kind: "image-model", modelId: value })
+        }
         onCancel={() => go({ kind: "menu" })}
       />
     );
   }
-
 
   // ---------- 图片模型详情 ----------
   if (activeStep.kind === "image-model") {
@@ -146,7 +180,10 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
       label: t("wiz.imageModels.delete"),
       danger: true,
       run: async () => {
-        const failure = await persist(removeImageModel(config, model.id), t("wiz.imageModels.deleted", { name }));
+        const failure = await persist(
+          removeImageModel(config, model.id),
+          t("wiz.imageModels.deleted", { name }),
+        );
         if (!failure) go({ kind: "image-models" });
         return failure;
       },
@@ -156,7 +193,10 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         columns={cols}
         rows={rows}
         title={t("wiz.imageModels.detailTitle", { name })}
-        details={[t("wiz.models.detailLine", { id: model.id, kind: kindLabel(model.custom, true) }), t("wiz.detail.moveHint")]}
+        details={[
+          t("wiz.models.detailLine", { id: model.id, kind: kindLabel(model.custom, true) }),
+          t("wiz.detail.moveHint"),
+        ]}
         fields={imageModelFields(model)}
         notice={notice}
         actions={actions}
@@ -164,7 +204,6 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
       />
     );
   }
-
 
   // ---------- 新建模型（名称 → 创建并进入详情）----------
   if (activeStep.kind === "new-model") {
@@ -183,7 +222,10 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
             : t("wiz.models.noEndpoint"),
         ]}
         error={error}
-        hints={[["Enter", t("wiz.createAndEdit")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("wiz.createAndEdit")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const name = value.trim();
           if (!name) {
@@ -197,7 +239,10 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
           }
           const { config: next, model } = addModel(config, { name, endpointId });
           void (async () => {
-            const failure = await persist(next, t("wiz.models.created", { name: model.name, id: model.id }));
+            const failure = await persist(
+              next,
+              t("wiz.models.created", { name: model.name, id: model.id }),
+            );
             if (failure) {
               setError(failure);
               return;
@@ -209,7 +254,6 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
       />
     );
   }
-
 
   // ---------- 新建图片模型（名称 → 创建并进入详情）----------
   if (activeStep.kind === "new-image-model") {
@@ -227,7 +271,10 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
             : t("wiz.models.noEndpoint"),
         ]}
         error={error}
-        hints={[["Enter", t("wiz.createAndEdit")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("wiz.createAndEdit")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const name = value.trim();
           if (!name) {
@@ -241,7 +288,10 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
           }
           const { config: next, model } = addImageModel(config, { name, endpointId });
           void (async () => {
-            const failure = await persist(next, t("wiz.imageModels.created", { name: model.name, id: model.id }));
+            const failure = await persist(
+              next,
+              t("wiz.imageModels.created", { name: model.name, id: model.id }),
+            );
             if (failure) {
               setError(failure);
               return;

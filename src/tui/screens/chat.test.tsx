@@ -11,7 +11,11 @@ import { render } from "ink-testing-library";
 import { setLocale } from "../../i18n/index.js";
 
 const { created, createFakeSession, fakeIndex } = vi.hoisted(() => {
-  const created: { notifier: any; session: any; options: any } = { notifier: null, session: null, options: null };
+  const created: { notifier: any; session: any; options: any } = {
+    notifier: null,
+    session: null,
+    options: null,
+  };
 
   /**
    * 本工作区的文件清单 —— 假会话的「服务端磁盘」。
@@ -41,24 +45,26 @@ const { created, createFakeSession, fakeIndex } = vi.hoisted(() => {
       totalUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       rateSample: { live: null, average: null, running: false },
       phase: null,
-      send: vi.fn(async (input: string, images: readonly { base64: string; mime: string }[] = []) => {
-        // 与真实 ChatSession.send 同形：有图时内容是多段（文本 + image_url 的 data URL），
-        // 于是 messages 里真的带着图片 —— `↑` 的图片还原才有东西可解。
-        const content =
-          images.length === 0
-            ? input
-            : [
-                { type: "text", text: input },
-                ...images.map((image) => ({
-                  type: "image_url",
-                  image_url: { url: `data:${image.mime};base64,${image.base64}` },
-                })),
-              ];
-        messages.push({ id: `m${messages.length}`, role: "user", content });
-        // 与真实 ChatSession 一致：新一轮输入清空上一轮的子 Agent
-        subAgents.length = 0;
-        notifier.onChange(true);
-      }),
+      send: vi.fn(
+        async (input: string, images: readonly { base64: string; mime: string }[] = []) => {
+          // 与真实 ChatSession.send 同形：有图时内容是多段（文本 + image_url 的 data URL），
+          // 于是 messages 里真的带着图片 —— `↑` 的图片还原才有东西可解。
+          const content =
+            images.length === 0
+              ? input
+              : [
+                  { type: "text", text: input },
+                  ...images.map((image) => ({
+                    type: "image_url",
+                    image_url: { url: `data:${image.mime};base64,${image.base64}` },
+                  })),
+                ];
+          messages.push({ id: `m${messages.length}`, role: "user", content });
+          // 与真实 ChatSession 一致：新一轮输入清空上一轮的子 Agent
+          subAgents.length = 0;
+          notifier.onChange(true);
+        },
+      ),
       abort: vi.fn(),
       dispose: vi.fn(),
       reset: vi.fn(async () => null),
@@ -80,7 +86,8 @@ const { created, createFakeSession, fakeIndex } = vi.hoisted(() => {
  * 模块级 mock 是全局注册的，进程内共享模块（`isolate: false`）时会污染其他测试文件
  * —— 实测它会把这个文件里的假 `readConfig`（models 为空）泄漏给同进程的其它模块。
  */
-const fakeAgentStore = () => ({ agents: [], subAgents: [], save: async () => {}, remove: async () => {} }) as any;
+const fakeAgentStore = () =>
+  ({ agents: [], subAgents: [], save: async () => {}, remove: async () => {} }) as any;
 
 /** 空配置 + 空 Agent 仓储：向导与思考档位读取都走它 */
 const fakeConfig = () => ({ models: [], endpoints: [], imageModels: [] }) as any;
@@ -558,9 +565,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     const frame = lastFrame() ?? "";
     const readme = rowOf(frame, "README.md");
     // 「src/tui/」是「src/tui/screens/chat.tsx」的子串，必须锁行尾才能定位到那条目录
-    const dir = frame
-      .split("\n")
-      .findIndex((row) => row.trim().endsWith("src/tui/"));
+    const dir = frame.split("\n").findIndex((row) => row.trim().endsWith("src/tui/"));
     const separator = rowOf(frame, "───");
     expect(readme).toBeGreaterThanOrEqual(0);
     expect(dir).toBeGreaterThanOrEqual(0);

@@ -19,7 +19,9 @@
     "pretest": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:e2e": "npm run pretest && npm run build && vitest run --config vitest.e2e.config.ts",
-    "test:all": "npm run pretest && vitest run && npm run build && vitest run --config vitest.e2e.config.ts"
+    "test:all": "npm run pretest && vitest run && npm run build && vitest run --config vitest.e2e.config.ts",
+    "format": "prettier --write --ignore-path .prettierignore \"src/**/*.{ts,tsx,js,mjs,cjs,json}\" \"scripts/**/*.{mjs,js,cjs}\" \"*.{ts,js,mjs,cjs,json}\"",
+    "format:check": "prettier --check --ignore-path .prettierignore \"src/**/*.{ts,tsx,js,mjs,cjs,json}\" \"scripts/**/*.{mjs,js,cjs}\" \"*.{ts,js,mjs,cjs,json}\""
   },
   "keywords": [
     "ai",
@@ -54,7 +56,8 @@
     "rimraf": "^6.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "prettier": "^3.9.5"
   },
   "files": [
     "dist",

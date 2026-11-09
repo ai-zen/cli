@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 import { AgentNS } from "@ai-zen/agents-core";
 import { userDrafts } from "./chat-history.js";
 
-const user = (content: unknown) => ({ role: AgentNS.Role.User, content }) as unknown as AgentNS.Message;
+const user = (content: unknown) =>
+  ({ role: AgentNS.Role.User, content }) as unknown as AgentNS.Message;
 const assistant = (content: unknown) =>
   ({ role: AgentNS.Role.Assistant, content }) as unknown as AgentNS.Message;
 
@@ -31,7 +32,9 @@ describe("userDrafts（↑ 历史 = messages 里的用户消息）", () => {
 
   it("剥掉 CwdTracker 追加的工作目录注记（否则 ↑ 回来带着一坨系统提示）", () => {
     const drafts = userDrafts([
-      user("你好\n\n[system-injected: working directory changed — not written by the user]\nCurrent working directory: /tmp/x"),
+      user(
+        "你好\n\n[system-injected: working directory changed — not written by the user]\nCurrent working directory: /tmp/x",
+      ),
     ]);
     expect(drafts[0]!.text).toBe("你好");
   });
@@ -46,7 +49,11 @@ describe("userDrafts（↑ 历史 = messages 里的用户消息）", () => {
 
   it("多张内联图片按原顺序还回来（重发时附件顺序不能乱）", () => {
     const drafts = userDrafts([
-      user([{ type: "text", text: "两张" }, inlineImage("image/png", "AA"), inlineImage("image/jpeg", "BB")]),
+      user([
+        { type: "text", text: "两张" },
+        inlineImage("image/png", "AA"),
+        inlineImage("image/jpeg", "BB"),
+      ]),
     ]);
     expect(drafts[0]!.images).toEqual([
       { mime: "image/png", base64: "AA" },

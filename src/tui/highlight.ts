@@ -21,8 +21,7 @@ export interface HlToken {
 
 /** 围栏代码块切分结果 */
 export type CodeSegment =
-  | { type: "text"; text: string }
-  | { type: "code"; lang?: string; text: string };
+  { type: "text"; text: string } | { type: "code"; lang?: string; text: string };
 
 function shortScope(className: string): string {
   return className.replace(/^hljs-/, "");

@@ -9,7 +9,10 @@ describe("parseVersion", () => {
 
   it("忽略构建元数据与 v 前缀", () => {
     expect(parseVersion("v1.2.3+build.7")).toEqual({ core: [1, 2, 3], pre: [] });
-    expect(parseVersion("1.2.3-alpha+exp.sha.5114f85")).toEqual({ core: [1, 2, 3], pre: ["alpha"] });
+    expect(parseVersion("1.2.3-alpha+exp.sha.5114f85")).toEqual({
+      core: [1, 2, 3],
+      pre: ["alpha"],
+    });
   });
 
   it("畸形输入返回 null（不抛错）", () => {

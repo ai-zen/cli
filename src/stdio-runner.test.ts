@@ -35,9 +35,7 @@ describe("mergePrompt", () => {
   });
 
   it("指令 + 内容 → 指令在前、空行分隔", () => {
-    expect(mergePrompt("总结要点", "第一行\n第二行\n")).toBe(
-      "总结要点\n\n第一行\n第二行",
-    );
+    expect(mergePrompt("总结要点", "第一行\n第二行\n")).toBe("总结要点\n\n第一行\n第二行");
   });
 
   it("仅空白 stdin 视为无内容", () => {
@@ -189,9 +187,11 @@ afterEach(async () => {
 afterAll(() => aiz.cleanup());
 
 /** 跑一次 `ai "…"`：注入真 socket，把 stdout / stderr 抓成字符串 */
-async function run(
-  options: { instruction: string; save?: boolean; stdin?: string },
-): Promise<{ code: number; stdout: string; stderr: string }> {
+async function run(options: {
+  instruction: string;
+  save?: boolean;
+  stdin?: string;
+}): Promise<{ code: number; stdout: string; stderr: string }> {
   let stdout = "";
   let stderr = "";
   const code = await runStdio(

@@ -19,9 +19,10 @@ export function mcpCount(mcp: McpSnapshot, scope: McpScope): number {
 export function mcpServerHint(entry: McpServerEntry): string {
   const type = entry.type ?? "auto";
   const remote = entry.type === "http" || entry.type === "sse";
-  const target = remote ? entry.url ?? t("common.noUrl") : entry.command ?? t("common.noCommand");
+  const target = remote
+    ? (entry.url ?? t("common.noUrl"))
+    : (entry.command ?? t("common.noCommand"));
   const extra = !remote && entry.args?.length ? ` ${entry.args.join(" ")}` : "";
   const off = entry.disabled === true ? t("common.disabledSuffix") : "";
   return `${type} · ${target}${extra}${off}`;
 }
-

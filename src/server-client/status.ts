@@ -19,8 +19,7 @@ export interface ServerStatusDeps {
 }
 
 export type ServerStatus =
-  | { running: false; pid?: number; reason: string }
-  | ({ running: true } & Record<string, unknown>);
+  { running: false; pid?: number; reason: string } | ({ running: true } & Record<string, unknown>);
 
 export async function readServerStatus(deps: ServerStatusDeps): Promise<ServerStatus> {
   const descriptor = await readDescriptor(deps.aiZenDir);

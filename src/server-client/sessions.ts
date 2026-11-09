@@ -171,12 +171,17 @@ export class RemoteSessions {
 
   /** 某个工作区下已存档的会话（`/load` 的选择器用，按写入时间倒序） */
   async listSaved(workspaceId: string): Promise<SessionListSavedResult> {
-    return await this.client.call<SessionListSavedResult>(SESSION_METHODS.listSaved, { workspaceId });
+    return await this.client.call<SessionListSavedResult>(SESSION_METHODS.listSaved, {
+      workspaceId,
+    });
   }
 
   /** 撤回：从 `index` 起删掉并落盘；返回剩下的消息与被删的首条用户消息 */
   async rollback(sessionId: string, index: number): Promise<SessionRollbackResult> {
-    return await this.client.call<SessionRollbackResult>(SESSION_METHODS.rollback, { sessionId, index });
+    return await this.client.call<SessionRollbackResult>(SESSION_METHODS.rollback, {
+      sessionId,
+      index,
+    });
   }
 
   /** 整份快照：消息 / 阶段 / 轮次 / 用量 */
@@ -191,7 +196,10 @@ export class RemoteSessions {
    * {@link reload}，Agent 才会按新模型重建。
    */
   async setModel(agentId: string, modelId: string): Promise<AgentSetModelResult> {
-    return await this.client.call<AgentSetModelResult>(AGENT_METHODS.setModel, { agentId, modelId });
+    return await this.client.call<AgentSetModelResult>(AGENT_METHODS.setModel, {
+      agentId,
+      modelId,
+    });
   }
 
   /** 按磁盘上的新配置/定义重建 Agent（保留消息），返回重建后的快照 */

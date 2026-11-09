@@ -38,18 +38,27 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
   const { config, store, activeStep, go, commit, cols, rows, props } = ctx;
   // ---------- 默认项子菜单 ----------
   if (activeStep.kind === "defaults") {
-    const defaultImage = (config.imageModels ?? []).find((model) => model.id === config.defaultImageModel);
+    const defaultImage = (config.imageModels ?? []).find(
+      (model) => model.id === config.defaultImageModel,
+    );
     const items: SelectItem<DefaultTarget>[] = [
       {
         label: t("wiz.defaults.imageModel"),
         value: "defaultImageModel",
         hint: defaultImage?.name ?? config.defaultImageModel ?? t("common.unsetPlain"),
       },
-      { label: t("wiz.defaults.agent"), value: "defaultAgent", hint: config.defaultAgent ?? t("common.unsetPlain") },
+      {
+        label: t("wiz.defaults.agent"),
+        value: "defaultAgent",
+        hint: config.defaultAgent ?? t("common.unsetPlain"),
+      },
       {
         label: t("wiz.defaults.migrationModel"),
         value: "defaultMigrationModel",
-        hint: findModel(config, config.defaultMigrationModel)?.name ?? config.defaultMigrationModel ?? t("common.unsetPlain"),
+        hint:
+          findModel(config, config.defaultMigrationModel)?.name ??
+          config.defaultMigrationModel ??
+          t("common.unsetPlain"),
       },
       // 中断策略：改的是「建 Agent 时才读的配置」，关向导时宿主会重建会话让它生效
       {
@@ -81,7 +90,6 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
       />
     );
   }
-
 
   // ---------- 选择某个默认项的值 ----------
   if (activeStep.kind === "pick-default") {
@@ -131,7 +139,9 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
           value: model.id,
           hint: t("wiz.defaults.itemHint", {
             endpoint: endpoint?.name ?? model.endpointId,
-            state: isApiKeySet(endpoint?.apiKey) ? t("wiz.defaults.keyReady") : t("wiz.defaults.missingKey"),
+            state: isApiKeySet(endpoint?.apiKey)
+              ? t("wiz.defaults.keyReady")
+              : t("wiz.defaults.missingKey"),
           }),
         };
       });
@@ -156,13 +166,18 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
         columns={cols}
         rows={rows}
         title={title}
-        subtitle={strategyTarget ? t("wiz.defaults.strategySubtitle") : t("wiz.defaults.pickSubtitle")}
+        subtitle={
+          strategyTarget ? t("wiz.defaults.strategySubtitle") : t("wiz.defaults.pickSubtitle")
+        }
         items={items}
         onPick={(value) => {
           if (target === "abortedMessageStrategy") {
             void commit(
               setAbortedMessageStrategy(config, value as AbortedMessageStrategyValue),
-              t("wiz.defaults.updated", { label: t("wiz.defaults.strategyMessage"), value: strategyLabel(value) }),
+              t("wiz.defaults.updated", {
+                label: t("wiz.defaults.strategyMessage"),
+                value: strategyLabel(value),
+              }),
               [],
               { kind: "defaults" },
               // 策略在建 Agent 时才读 → 标记会话选项已改，关向导时宿主重建会话
@@ -172,7 +187,10 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
           }
           if (target === "autoRefreshTools") {
             void commit(
-              { ...config, autoRefreshTools: value as "inner-loop-start" | "outer-loop-start" | "off" },
+              {
+                ...config,
+                autoRefreshTools: value as "inner-loop-start" | "outer-loop-start" | "off",
+              },
               t("wiz.defaults.updated", {
                 label: t("wiz.defaults.autoRefreshTools"),
                 value: autoRefreshLabel(value),
@@ -187,7 +205,10 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
           if (target === "abortedToolRoundStrategy") {
             void commit(
               setAbortedToolRoundStrategy(config, value as AbortedToolRoundStrategyValue),
-              t("wiz.defaults.updated", { label: t("wiz.defaults.strategyToolRound"), value: strategyLabel(value) }),
+              t("wiz.defaults.updated", {
+                label: t("wiz.defaults.strategyToolRound"),
+                value: strategyLabel(value),
+              }),
               [],
               { kind: "defaults" },
               true,
@@ -197,10 +218,26 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
           const id = value || undefined;
           const label = value || t("common.unsetPlain");
           if (target === "defaultMigrationModel")
-            void commit(setDefaultMigrationModel(config, id), t("wiz.defaults.updated", { label: t("wiz.defaults.migrationModel"), value: label }), [], { kind: "defaults" });
+            void commit(
+              setDefaultMigrationModel(config, id),
+              t("wiz.defaults.updated", { label: t("wiz.defaults.migrationModel"), value: label }),
+              [],
+              { kind: "defaults" },
+            );
           else if (target === "defaultImageModel")
-            void commit(setDefaultImageModel(config, id), t("wiz.defaults.updated", { label: t("wiz.defaults.imageModel"), value: label }), [], { kind: "defaults" });
-          else void commit(setDefaultAgent(config, id), t("wiz.defaults.updated", { label: t("wiz.defaults.agent"), value: label }), [], { kind: "defaults" });
+            void commit(
+              setDefaultImageModel(config, id),
+              t("wiz.defaults.updated", { label: t("wiz.defaults.imageModel"), value: label }),
+              [],
+              { kind: "defaults" },
+            );
+          else
+            void commit(
+              setDefaultAgent(config, id),
+              t("wiz.defaults.updated", { label: t("wiz.defaults.agent"), value: label }),
+              [],
+              { kind: "defaults" },
+            );
         }}
         onCancel={() => go({ kind: "defaults" })}
       />

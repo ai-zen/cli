@@ -117,8 +117,18 @@ function imageCommands(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): Image
   if (platform === "linux") {
     const wayland = Boolean(env.WAYLAND_DISPLAY) || env.XDG_SESSION_TYPE === "wayland";
     const wl: ImageCommand[] = [
-      { cmd: "wl-paste", args: ["--type", "image/png"], mime: "image/png", parse: (stdout) => stdout },
-      { cmd: "wl-paste", args: ["--type", "image/jpeg"], mime: "image/jpeg", parse: (stdout) => stdout },
+      {
+        cmd: "wl-paste",
+        args: ["--type", "image/png"],
+        mime: "image/png",
+        parse: (stdout) => stdout,
+      },
+      {
+        cmd: "wl-paste",
+        args: ["--type", "image/jpeg"],
+        mime: "image/jpeg",
+        parse: (stdout) => stdout,
+      },
     ];
     const x11: ImageCommand[] = [
       {
@@ -175,7 +185,12 @@ function textCommands(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): TextCo
     return wayland ? [...wl, ...x11] : [...x11, ...wl];
   }
   if (platform === "win32") {
-    return [{ cmd: "powershell", args: ["-NoProfile", "-NonInteractive", "-Command", "Get-Clipboard -Raw"] }];
+    return [
+      {
+        cmd: "powershell",
+        args: ["-NoProfile", "-NonInteractive", "-Command", "Get-Clipboard -Raw"],
+      },
+    ];
   }
   return [];
 }
@@ -204,9 +219,7 @@ export async function readClipboardImage(deps: ClipboardDeps = {}): Promise<Clip
  * `too-large` = 真问题（用户以为粘上了其实没有），空文本 = 剪贴板确实空着。
  */
 export type ClipboardTextResult =
-  | { kind: "text"; text: string }
-  | { kind: "too-large"; bytes: number }
-  | { kind: "unavailable" };
+  { kind: "text"; text: string } | { kind: "too-large"; bytes: number } | { kind: "unavailable" };
 
 /**
  * 读剪贴板里的文本。

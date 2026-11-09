@@ -348,7 +348,10 @@ export async function readMcpConfig(scope: McpScope = "global"): Promise<McpRead
 /**
  * 原子写入某个作用域的 mcp.json（默认全局 ~/.ai-zen/mcp.json）。
  */
-export async function writeMcpConfig(mcpConfig: McpConfig, scope: McpScope = "global"): Promise<void> {
+export async function writeMcpConfig(
+  mcpConfig: McpConfig,
+  scope: McpScope = "global",
+): Promise<void> {
   await writeMcpConfigAt(mcpConfigPath(scope), mcpConfig);
 }
 

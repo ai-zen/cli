@@ -23,7 +23,8 @@ export function welcomeLines({ columns }: { columns: number }): RLine[] {
   const versions = `v${CLI_VERSION} · sdk ${SDK_VERSION} · core ${CORE_VERSION}`;
 
   /** 逐行居中（不按最宽行对齐 —— 否则 logo 会因版本行更长而看起来偏左） */
-  const center = (text: string) => " ".repeat(Math.max(0, Math.floor((columns - displayWidth(text)) / 2)));
+  const center = (text: string) =>
+    " ".repeat(Math.max(0, Math.floor((columns - displayWidth(text)) / 2)));
 
   const lines: RLine[] = logo.map((line, i) => {
     const spans: Span[] = [{ text: center(line) }];
@@ -32,7 +33,17 @@ export function welcomeLines({ columns }: { columns: number }): RLine[] {
   });
 
   lines.push({ key: "welcome-gap", kind: "gap", text: "" });
-  lines.push(spanLine("welcome-tagline", "content", [{ text: center(tagline) }, { text: tagline, color: theme.accent }]));
-  lines.push(spanLine("welcome-versions", "content", [{ text: center(versions) }, { text: versions, color: theme.dim }]));
+  lines.push(
+    spanLine("welcome-tagline", "content", [
+      { text: center(tagline) },
+      { text: tagline, color: theme.accent },
+    ]),
+  );
+  lines.push(
+    spanLine("welcome-versions", "content", [
+      { text: center(versions) },
+      { text: versions, color: theme.dim },
+    ]),
+  );
   return lines;
 }
