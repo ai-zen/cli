@@ -699,15 +699,16 @@ describe("RemoteChatSession：自动迁移的交接方式由用户选", () => {
     expect(await trigger()).toBeNull();
   });
 
-  it("没有 requestMode：立刻回默认执行者 self，不让服务端干等超时", async () => {
+  it("没有 requestMode：立刻回服务端的兜底（本次不交接），不让服务端干等超时", async () => {
     await open();
 
     // 服务端超时是 5 分钟：这里 2 秒内落定，就证明客户端自己答了（不是等超时）
-    const mode = await Promise.race([
+    const choice = await Promise.race([
       trigger(),
       new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 2000)),
     ]);
-    expect(mode).toBe("self");
+    // 兜底是「什么都不做」：交接类问题的 fallback 就是 null（不替用户选 self 迁移）
+    expect(choice).toBeNull();
   });
 });
 

@@ -61,7 +61,6 @@ export const zh: Record<string, string> = {
   "notice.pressCtrlDAgain": "再按一次 Ctrl+D 退出",
   "notice.languageChanged": "界面语言已切换为中文",
   "notice.turnAborted": "已中止本轮，会话回到中止前的状态",
-  "notice.toolFailed": "工具执行失败：{error}",
   // 子 Agent 出错：模板只把原文吐出来（不加前缀）—— 与原来直接把 error.message 推上通知栏逐字一致
   "notice.subAgentFailed": "{message}",
   "notice.mcpUnavailable": "MCP server 连不上：{name}",
@@ -175,8 +174,6 @@ export const zh: Record<string, string> = {
   "handoff.modeSkipHint": "跳过本次",
   "agentTabs.main": "主AGENT",
   "agentTabs.sub": "子AGENT{n}",
-  "chat.noMigratable": "当前对话还没有可迁移的内容",
-  "chat.noHandoffable": "当前对话还没有可交接的内容",
   "chat.configReadFailed": "读取配置失败：{error}",
   "chat.modelNoEndpoint": "模型 {id} 未绑定可用端点，请用 /config 检查配置",
   "chat.configUpdated": "配置已更新：{line}",
@@ -233,7 +230,6 @@ export const zh: Record<string, string> = {
   "app.noAgents": "没有可用的 Agent，请先在配置中创建（配置文件 config.json）",
   "app.bootFailed": "✖ 无法启动对话：{error}",
   "app.unexpected": "✖ 意外错误: {error}",
-  "chat.persistFailed": "⚠️ 会话落盘失败：{error}",
   "migrate.skipped": "⏭️ 已跳过本次任务迁移；可随时输入 /migrate 手动迁移，若继续增长至严重超限对话会被安全护栏中断。",
 
   // ---------- `ai --help`（在 TUI 之外打印，故单独在 help 分支初始化语言） ----------

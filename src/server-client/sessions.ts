@@ -90,12 +90,12 @@ export class RemoteSessions {
   async answer(
     sessionId: string,
     questionId: string,
-    mode: HandoffMode | null,
+    choice: string | null,
   ): Promise<SessionAnswerResult> {
     return await this.client.call<SessionAnswerResult>(SESSION_METHODS.answer, {
       sessionId,
       questionId,
-      mode,
+      choice,
     });
   }
 

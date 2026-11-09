@@ -26,7 +26,10 @@ const NOTICE_KEYS: Record<NoticeCode, string> = {
   migrationDegraded: "handoff.degraded",
   turnAborted: "notice.turnAborted",
   persistFailed: "handoff.persistFailed",
-  toolFailed: "notice.toolFailed",
+  // 迁移落地的两条与「本次跳过」：旧版这三句在 CLI 侧产文案，服务端化之后一度静默
+  handoffMigrated: "handoff.migrated",
+  handoffMigratedHint: "handoff.migratedHint",
+  migrationSkipped: "migrate.skipped",
   // 子 Agent 出错（`params.index` 指哪个子 Agent，`params.message` 是原文）。
   // 模板只是把 `message` 原样吐出来 —— 与进程内实现「直接把 `error.message` 推上通知栏」
   // 逐字一致，**不加**「子 Agent 1 出错：」这类前缀（那是交互变化）。

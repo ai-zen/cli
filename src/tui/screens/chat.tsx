@@ -394,7 +394,8 @@ export function Chat(props: ChatScreenProps) {
     deps.createSession(
       {
         agentId: props.agentId,
-        messages: props.messages,
+        // 消息**不在这里传**：远程实现只持有一个会话 id，内容由服务端快照给
+        // （`props.messages` 仍用于本屏首帧渲染与 `/back` 的显示起点）
         sessionId: props.sessionId,
         sessionName: props.sessionName,
         // 「接着上次」只是意图：接哪一段由会话实现去问（服务端存档 / 本地指针），屏幕不判断

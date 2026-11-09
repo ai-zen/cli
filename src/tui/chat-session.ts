@@ -133,7 +133,6 @@ export interface SubAgentView {
 
 export interface ChatSessionOptions {
   agentId?: string;
-  messages?: AgentNS.Message[];
   sessionId?: string;
   sessionName?: string;
   /**

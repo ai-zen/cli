@@ -19,7 +19,9 @@ export type DefaultTarget =
   | "defaultAgent"
   | "defaultMigrationModel"
   | "abortedMessageStrategy"
-  | "abortedToolRoundStrategy";
+  | "abortedToolRoundStrategy"
+  /** 工具刷新时机（三档，含「关闭」） */
+  | "autoRefreshTools";
 
 /** 向导步骤（判别联合，逐步收敛） */
 export type WizardStep =

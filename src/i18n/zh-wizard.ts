@@ -261,6 +261,13 @@ export const zh: Record<string, string> = {
   "wiz.strategy.dropHint": "中断后那半截不进上下文（core 库级默认）",
   "wiz.strategy.fillHint": "恢复整轮并给未完成的结果补原因，tool_calls 与结果必须配对",
   "wiz.strategy.toolDropHint": "整轮出列：assistant 与其工具结果都不发给模型",
+  "wiz.defaults.autoRefreshTools": "工具清单刷新时机",
+  "wiz.autoRefresh.inner": "内循环开始（默认）",
+  "wiz.autoRefresh.outer": "外循环开始",
+  "wiz.autoRefresh.off": "关闭",
+  "wiz.autoRefresh.innerHint": "每次请求前重新发现 MCP / Skill / 工具：会话中新装的能力下一句话就能用，代价是刷新次数最多",
+  "wiz.autoRefresh.outerHint": "整个对话回合开头刷一次：开销最小，新装的能力要等下一轮才生效",
+  "wiz.autoRefresh.offHint": "不自动刷，只有 /reload 能刷新工具清单",
 
   // ---------- 端点列表 / 新建端点 ----------
   "ui.next": "下一步",

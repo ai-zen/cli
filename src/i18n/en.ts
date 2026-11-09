@@ -58,7 +58,6 @@ export const en: Record<string, string> = {
   "notice.pressCtrlDAgain": "Press Ctrl+D again to exit",
   "notice.languageChanged": "Language switched to English",
   "notice.turnAborted": "Turn aborted — the session is back to where it was",
-  "notice.toolFailed": "Tool failed: {error}",
   // A sub-agent failed: the template only echoes the raw message (no prefix), matching
   // what the client used to push straight onto the notice bar
   "notice.subAgentFailed": "{message}",
@@ -173,8 +172,6 @@ export const en: Record<string, string> = {
   "handoff.modeSkipHint": "Skip this time",
   "agentTabs.main": "MAIN",
   "agentTabs.sub": "SUB{n}",
-  "chat.noMigratable": "This conversation has nothing to migrate yet",
-  "chat.noHandoffable": "This conversation has nothing to hand off yet",
   "chat.configReadFailed": "Failed to read the config: {error}",
   "chat.modelNoEndpoint": "Model {id} has no usable endpoint bound — check the config with /config",
   "chat.configUpdated": "Config updated: {line}",
@@ -230,7 +227,6 @@ export const en: Record<string, string> = {
   "app.noAgents": "No usable agent — create one in the config first (config.json)",
   "app.bootFailed": "✖ Cannot start the conversation: {error}",
   "app.unexpected": "✖ Unexpected error: {error}",
-  "chat.persistFailed": "⚠️ Failed to save the conversation: {error}",
   "migrate.skipped": "⏭️ Task migration skipped this time; run /migrate whenever you like. If the context keeps growing past the hard limit, the safety guard will interrupt the conversation.",
 
   // ---------- `ai --help` (printed outside the TUI, hence the locale init in the help branch) ----------

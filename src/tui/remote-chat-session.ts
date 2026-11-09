@@ -88,6 +88,7 @@ import {
   type MessageContent,
   type PhaseInfo,
   type ServerEvent,
+  type SessionQuestionEvent,
   type SessionSnapshotResult,
 } from "@ai-zen/agents-server";
 import type { ClipboardImage } from "../clipboard.js";
@@ -876,23 +877,41 @@ export class RemoteChatSession implements ChatSessionLike {
    * 选择器自己抛错时按「没人能回答」处理（回 `self`）：面板被别的交互拆掉、渲染异常都会
    * 走到这里，而它同样不该让这一轮干等 —— 与第 2 条是同一条降级，不是另造一种行为。
    */
-  private async answerQuestion(
-    question: AutoMigrateTriggerInfo & { questionId: string },
-  ): Promise<void> {
-    let mode: HandoffMode | null = "self";
-    if (this.requestMode) {
-      try {
-        mode = await this.requestMode({
-          promptTokens: question.promptTokens,
-          handoffTokens: question.handoffTokens,
-        });
-      } catch {
-        mode = "self";
-      }
-    }
-
-    await this.sessions.answer(this.sessionId, question.questionId, mode);
+  private async answerQuestion(event: SessionQuestionEvent): Promise<void> {
+    const choice = await this.answerChoice(event);
+    await this.sessions.answer(this.sessionId, event.questionId, choice);
   }
+
+  /**
+   * 按 `kind` 分派「怎么答」，返回要送回去的选项 id。
+   *
+   * 一张表就是协议「客户端可按 `kind` 扩展」那半边的实现：新增一类问题时，这里加一个
+   * case + 一个选择器；**不认识的 kind 一律回服务端给的 `fallback`** —— 那一轮正卡在
+   * 提问上等答复，沉默的代价是「界面看起来卡住了」，而不是「这个功能没实现」。
+   *
+   * 选择器自己抛错（面板被别的交互拆掉、渲染异常）同样按「没人能回答」处理，回到
+   * `fallback`：与「没有 requestMode」是同一条降级，不是另造一种行为。
+   */
+  private async answerChoice(event: SessionQuestionEvent): Promise<string | null> {
+    switch (event.kind) {
+      case "handoff-mode": {
+        // 没有能问的人（无头 / 测试）→ 服务端给的兜底
+        if (!this.requestMode) return event.fallback;
+        const info = {
+          promptTokens: Number(event.params.promptTokens ?? 0),
+          handoffTokens: Number(event.params.handoffTokens ?? 0),
+        };
+        try {
+          return await this.requestMode(info);
+        } catch {
+          return event.fallback;
+        }
+      }
+      default:
+        return event.fallback;
+    }
+  }
+
 
   /**
    * 清空 Agent 栏目。

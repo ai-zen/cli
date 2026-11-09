@@ -258,6 +258,13 @@ export const en: Record<string, string> = {
   "wiz.strategy.dropHint": "The partial turn never enters the context (core library default)",
   "wiz.strategy.fillHint": "Restore the whole round and backfill a reason for unfinished results — tool_calls must pair with results",
   "wiz.strategy.toolDropHint": "Drop the whole round: neither the assistant message nor its tool results are sent",
+  "wiz.defaults.autoRefreshTools": "When to refresh tools",
+  "wiz.autoRefresh.inner": "Start of each inner loop (default)",
+  "wiz.autoRefresh.outer": "Start of each outer loop",
+  "wiz.autoRefresh.off": "Off",
+  "wiz.autoRefresh.innerHint": "Re-discover MCP / skills / tools before every request: capabilities added mid-session work on the next request, at the cost of the most refreshes",
+  "wiz.autoRefresh.outerHint": "Refresh once at the start of a turn: cheapest, but new capabilities only apply from the next turn",
+  "wiz.autoRefresh.offHint": "Never refresh automatically; only /reload picks up new tools",
 
   // ---------- Endpoints list / new endpoint ----------
   "ui.next": "Next",

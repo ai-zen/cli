@@ -19,6 +19,14 @@ import { ListStep } from "./list.js";
 import { t } from "../../i18n/index.js";
 
 /** 策略值的展示名（固定两档，直接按值取词条） */
+/** 工具刷新三档的显示名 */
+function autoRefreshLabel(value: string): string {
+  if (value === "inner-loop-start") return t("wiz.autoRefresh.inner");
+  if (value === "outer-loop-start") return t("wiz.autoRefresh.outer");
+  if (value === "off") return t("wiz.autoRefresh.off");
+  return value;
+}
+
 function strategyLabel(value: string): string {
   if (value === "keep") return t("wiz.strategy.keep");
   if (value === "drop") return t("wiz.strategy.drop");
@@ -54,6 +62,12 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
         value: "abortedToolRoundStrategy",
         hint: strategyLabel(config.abortedToolRoundStrategy ?? "fill"),
       },
+      // 工具刷新时机：三档，改完同样要重建会话（BuildAgent 时才读）
+      {
+        label: t("wiz.defaults.autoRefreshTools"),
+        value: "autoRefreshTools",
+        hint: autoRefreshLabel(config.autoRefreshTools ?? "inner-loop-start"),
+      },
     ];
     return (
       <ListStep
@@ -75,7 +89,10 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
     let title = t("wiz.defaults.title");
     let items: SelectItem<string>[] = [];
     // 策略是**固定两档**，没有「不设置」这一项（它们总是有值：配置里写着的就是运行时用的）
-    const strategyTarget = target === "abortedMessageStrategy" || target === "abortedToolRoundStrategy";
+    const strategyTarget =
+      target === "abortedMessageStrategy" ||
+      target === "abortedToolRoundStrategy" ||
+      target === "autoRefreshTools";
     if (target === "abortedMessageStrategy") {
       title = t("wiz.defaults.strategyMessage");
       const current = config.abortedMessageStrategy ?? "keep";
@@ -91,6 +108,19 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
         label: `${strategyLabel(value)}${value === current ? t("common.current") : ""}`,
         value,
         hint: value === "fill" ? t("wiz.strategy.fillHint") : t("wiz.strategy.toolDropHint"),
+      }));
+    } else if (target === "autoRefreshTools") {
+      title = t("wiz.defaults.autoRefreshTools");
+      const current = config.autoRefreshTools ?? "inner-loop-start";
+      items = (["inner-loop-start", "outer-loop-start", "off"] as const).map((value) => ({
+        label: `${autoRefreshLabel(value)}${value === current ? t("common.current") : ""}`,
+        value,
+        hint:
+          value === "inner-loop-start"
+            ? t("wiz.autoRefresh.innerHint")
+            : value === "outer-loop-start"
+              ? t("wiz.autoRefresh.outerHint")
+              : t("wiz.autoRefresh.offHint"),
       }));
     } else if (target === "defaultMigrationModel") {
       title = t("wiz.defaults.migrationModel");
@@ -136,6 +166,20 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
               [],
               { kind: "defaults" },
               // 策略在建 Agent 时才读 → 标记会话选项已改，关向导时宿主重建会话
+              true,
+            );
+            return;
+          }
+          if (target === "autoRefreshTools") {
+            void commit(
+              { ...config, autoRefreshTools: value as "inner-loop-start" | "outer-loop-start" | "off" },
+              t("wiz.defaults.updated", {
+                label: t("wiz.defaults.autoRefreshTools"),
+                value: autoRefreshLabel(value),
+              }),
+              [],
+              { kind: "defaults" },
+              // 工具刷新在建 Agent 时才读 → 标记会话选项已改，关向导时宿主重建会话
               true,
             );
             return;

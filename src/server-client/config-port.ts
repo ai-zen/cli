@@ -58,7 +58,6 @@ import {
   type McpReadResult,
   type McpScope,
 } from "../config.js";
-import { switchModel } from "../model-switch.js";
 import { CLI_VERSION } from "../version.js";
 import { ensureServer } from "./ensure-server.js";
 import { clientWorkspacePath } from "./local-host.js";
@@ -82,17 +81,13 @@ export interface ConfigPort {
    *
    * 为什么是专门一个方法而不是「读定义 → 改字段 → 写回」：思考参数是**模型相关**的
    * （GLM-5.3 不接受 `thinking.disabled` 这类），这条规则只该有一份实现。
-   * 服务端 `agent.model.set` 与 CLI 的 `switchModel` 是同一条语义，客户端不必自己再做一次。
+   * 服务端 `agent.model.set` 就是那条实现，客户端不必自己再做一次。
    */
   setModel(agentId: string, modelId: string): Promise<void>;
 }
 
 // ==================================================================
-// 进程内模式
-// ==================================================================
-
-// ==================================================================
-// 客户端模式
+// 客户端模式（唯一的实现：配置的真相源在服务端）
 // ==================================================================
 
 export interface RemoteConfigPortDeps {
@@ -278,7 +273,7 @@ export function createRemoteConfigPort(deps: RemoteConfigPortDeps = {}): ConfigP
     },
 
     /**
-     * 换模型：服务端 `agent.model.set` 与本地 `switchModel` 是同一条语义（写
+     * 换模型：服务端 `agent.model.set`（写
      * `definition.modelId` 并清空思考参数），客户端不再自己做一遍 —— 否则「换模型即
      * 重置思考强度」就有了两份实现。
      */
