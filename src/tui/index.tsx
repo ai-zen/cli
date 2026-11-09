@@ -2,7 +2,7 @@
  * TUI 入口 —— 屏幕循环与终端状态安全
  *
  * 流程：启动界面 → 端点凭据预检（缺 API Key 时先引导输入）→ 对话屏
- * （优先续接「上一轮会话」，否则新建对话）。
+ * （未带 `--new` 时把「接着上次」的意图交给会话层，由它去问服务端）。
  * 对话屏内 `/clear`、`/back`、`/load` 通过重挂载（新 Ink 实例 + 原生清屏）实现；
  * 对话屏退出即结束进程。
  *
@@ -15,7 +15,6 @@ import type { AppConfig } from "@ai-zen/agents-sdk";
 import { AGENTS_DIR, ensureConfigDir, readConfig, saveConfig } from "../config.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
-import { sessionStore } from "../session-store.js";
 import { Chat } from "./screens/index.js";
 import { keyDebugStart } from "./key-debug.js";
 import { disableMouseTracking, enableMouseTracking } from "./mouse.js";
@@ -140,6 +139,14 @@ interface ChatTarget {
   messages?: AgentNS.Message[];
   sessionId?: string;
   sessionName?: string;
+  /**
+   * 「接着该工作区的上一轮会话」—— 只是**意图**，不带任何数据。
+   *
+   * 为什么不再由这里读盘：会话执行已经搬到服务端，远程时那段对话根本不在本机磁盘上，
+   * 读本地存档只会得出「永远没有上次」。哪一段算上一轮，交给会话实现去问（远程问
+   * 服务端的 `session.last`，进程内读本地指针）。
+   */
+  resume?: boolean;
 }
 
 /**
@@ -177,35 +184,15 @@ async function resolveTarget(): Promise<ChatTarget> {
   return { agentId };
 }
 
-/** 读取「上一轮会话 id」指针，续接该会话（指针缺失或会话不存在时返回 null） */
-async function resumeLastSession(): Promise<ChatTarget | null> {
-  const store = await sessionStore();
-  const pointer = await store.lastSession();
-  if (!pointer) return null;
-  const record = await store.read(pointer.id);
-  if (!record) return null;
-  // 模型由 Agent 定义决定（旧存档里的 modelId 一律忽略）
-  return targetFromMessages({
-    agentId: record.agentId,
-    messages: record.messages,
-    sessionId: record.id,
-    sessionName: record.id,
-  });
-}
-
-/** 从已保存对话构造对话目标 */
-function targetFromMessages(input: {
-  agentId?: string;
-  messages: AgentNS.Message[];
-  sessionId?: string;
-  sessionName?: string;
-}): ChatTarget {
-  return {
-    agentId: input.agentId,
-    messages: input.messages,
-    sessionId: input.sessionId,
-    sessionName: input.sessionName,
-  };
+/**
+ * 「接着上次」的意图。
+ *
+ * 这里**只有意图、没有数据**：上一轮是哪一段只有会话实现的那一侧知道（服务端存档 /
+ * 本地指针），客户端自己去读一遍就是又一份会漂的真相。窗口层说「接着上次」，
+ * 会话层负责找出接哪一段；找不到就当新会话开。
+ */
+function resumeLastSession(): ChatTarget {
+  return { resume: true };
 }
 
 // ==================== 对话屏 ====================
@@ -225,6 +212,14 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
    * **只发一次**：挂载后置空，否则重挂载（切模型 / `/lang` 等）会反复重发。
    */
   let initialPrompt = options.initialPrompt;
+  /**
+   * 「接着上次」是**一次性**意图：只对首屏有效。
+   *
+   * 重挂载（`/load`、/model 重启）带的是已经拿到手的 `messages` / `sessionId`，
+   * 若让 resume 一直跟着，第二次挂载会一边给 id 一边让会话「再找一次上次」，
+   * 两者指向不同会话时就成了「以为在接着聊、其实换了段对话」。
+   */
+  let resume = target.resume;
 
   while (true) {
     const result = await mount(
@@ -233,12 +228,14 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
         messages={messages}
         sessionId={current.sessionId}
         sessionName={current.sessionName}
+        resume={resume}
         initialInput={initialInput}
         initialNotice={initialNotice}
         initialPrompt={initialPrompt}
       />,
     );
     initialPrompt = undefined;
+    resume = false;
 
     if (result && typeof result === "object") {
       const value = result as {
@@ -297,9 +294,10 @@ export interface RunTuiOptions {
    */
   initialPrompt?: string;
   /**
-   * `--new`：**开一条新会话**，跳过「续接该目录上一轮对话」（`last-session.json` 指针）。
+   * `--new`：**开一条新会话**，跳过「接着该目录的上一轮对话」。
    *
-   * 默认（不带 `--new`）保持续接行为：`ai` 回到上次的对话是常用预期。
+   * 默认（不带 `--new`）保持续接意图：`ai` 回到上次的对话是常用预期。
+   * 具体接哪一段由会话实现问服务端，客户端不读本地存档。
    */
   newSession?: boolean;
 }
@@ -320,24 +318,24 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
     // 配置初始化必须早于任何 Agent 读取：
     //   - 目录 / config.json / 默认 Agent / 出厂策略表都在这里释放；
     //   - 历史 Agent 缺 `modelId` 的补齐也在这里（`ensureDefaultAgent`）。
-    // 而「续接上一轮会话」这条路径不会经过 `resolveTarget()`，少了这一步，
+    // 启动目标（`resolveTarget`）与凭据预检（`modelOf`）都要读配置，少了这一步，
     // 升级后第一次启动会直接报「Agent 未绑定模型」。
     await ensureConfigDir();
 
-    // 直达对话：优先续接「上一轮会话」，否则新建对话。
-    // `--new` 跳过续接（不读 last-session.json 指针），直接走新建路径
-    let target: ChatTarget | null = options.newSession ? null : await resumeLastSession();
-    if (!target) {
-      try {
-        target = await resolveTarget();
-      } catch (error: any) {
-        process.stderr.write(`\n${t("app.bootFailed", { error: error?.message ?? error })}\n`);
-      }
+    // 直达对话：Agent 身份仍来自本地定义（换成远端源是下一轮的事）；
+    // 「接不接上次」只在这里定 —— 不带 `--new` 就带上 resume 意图，带上就一定是新会话。
+    let target: ChatTarget | null = null;
+    try {
+      target = await resolveTarget();
+    } catch (error: any) {
+      process.stderr.write(`\n${t("app.bootFailed", { error: error?.message ?? error })}\n`);
     }
     if (!target) {
       farewell();
       return;
     }
+    // 顺序很重要：`--new` 是「我不要上次」的明确表态，绝不能在这一步又把 resume 加回来
+    if (!options.newSession) target = { ...target, ...resumeLastSession() };
 
     // 端点凭据预检：未配置 API Key 时先弹出输入屏，而不是「报错即退出」
     // 模型从 Agent 定义读 —— 与 SDK 实发请求用的是同一个值

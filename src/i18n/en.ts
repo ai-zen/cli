@@ -9,7 +9,7 @@ export const en: Record<string, string> = {
   "input.hint.ready": "Enter send · Ctrl+J newline · / commands · PgUp history",
   "input.hint.scrolling": "↕ scrolling · PgUp/PgDn pages · send to jump to bottom",
   "input.hint.initializing": "Initializing…",
-  "mention.scanning": "Scanning project files…",
+  "mention.scanning": "Reading workspace files…",
   "input.pastedImages": "{n} attached · Ctrl+V add more · Esc to clear",
 
   // ---------- Status bar ----------

@@ -10,8 +10,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "ink-testing-library";
 import { setLocale } from "../../i18n/index.js";
 
-const { created, createFakeSession } = vi.hoisted(() => {
-  const created: { notifier: any; session: any } = { notifier: null, session: null };
+const { created, createFakeSession, fakeIndex } = vi.hoisted(() => {
+  const created: { notifier: any; session: any; options: any } = { notifier: null, session: null, options: null };
+
+  /**
+   * 本工作区的文件清单 —— 假会话的「服务端磁盘」。
+   *
+   * 它刻意不代表本机目录：`@` 补全只能从这里出候选（远程时会话跑在服务端，
+   * 屏幕这边扫本机磁盘只会列出客户端的文件）。
+   */
+  const fakeIndex = [
+    { path: "src/tui", dir: true },
+    { path: "src/tui/screens/chat.tsx", dir: false },
+    { path: "README.md", dir: false },
+  ];
 
   /** 只实现 Chat 会用的成员；`send` 默认立即把用户消息追加进 messages */
   const createFakeSession = (notifier: any) => {
@@ -55,10 +67,12 @@ const { created, createFakeSession } = vi.hoisted(() => {
       handoff: vi.fn(async () => "/tmp/handoff.md"),
       rollbackTo: vi.fn(() => ""),
       save: vi.fn(async () => "chat_test"),
+      // `@` 补全的唯一来源：清单由会话提供，屏幕不碰本地磁盘
+      listWorkspaceFiles: vi.fn(async () => fakeIndex as any),
     };
   };
 
-  return { created, createFakeSession };
+  return { created, createFakeSession, fakeIndex };
 });
 
 /**
@@ -76,12 +90,6 @@ const fakeReaders = {
   readReasoningPresets: async () => ({}),
   readAgentStore: async () => fakeAgentStore(),
 };
-
-const fakeIndex = [
-  { path: "src/tui", dir: true },
-  { path: "src/tui/screens/chat.tsx", dir: false },
-  { path: "README.md", dir: false },
-];
 
 /** 剪贴板桩：不打桩就会真去 spawn `pbpaste` / `wl-paste` */
 const clipboardMock = vi.hoisted(() => ({
@@ -144,22 +152,24 @@ const waitUntilEditable = async (
   }
 };
 
-const mount = (options: { initialInput?: string } = {}) =>
+const mount = (options: { initialInput?: string; resume?: boolean } = {}) =>
   render(
     <Chat
       agentId="default"
       initialInput={options.initialInput}
+      resume={options.resume}
       deps={{
         readConfig: async () => fakeConfig(),
         readReasoningPresets: async () => ({}),
         readAgentStore: async () => fakeAgentStore(),
-        createSession: (async (_options: unknown, notifier: any) => {
+        createSession: (async (sessionOptions: unknown, notifier: any) => {
           const session = createFakeSession(notifier);
           created.notifier = notifier;
           created.session = session;
+          // 存下屏幕交给会话的选项：`resume` 这类「意图」是否透传就看它
+          created.options = sessionOptions;
           return session;
         }) as any,
-        listProjectPaths: async () => fakeIndex as any,
         readClipboardImage: async () => clipboardMock.image as any,
         readClipboardText: async () => clipboardMock.text,
         // 向导路径（`/config`、`/key`）也要注入，否则会读写真实配置目录
@@ -175,6 +185,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     setLocale("zh");
     created.notifier = null;
     created.session = null;
+    created.options = null;
   });
 
   it("会话就绪后渲染输入占位与状态栏身份块", async () => {
@@ -436,7 +447,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await flush();
     stdin.write("@");
     await flush();
-    await flush(); // 等文件索引回填（注入的 listProjectPaths 是 Promise）
+    await flush(); // 等文件清单回填（`session.listWorkspaceFiles()` 是 Promise）
     const frame = lastFrame() ?? "";
     const readme = rowOf(frame, "README.md");
     // 「src/tui/」是「src/tui/screens/chat.tsx」的子串，必须锁行尾才能定位到那条目录
@@ -559,6 +570,26 @@ describe("`@` 文件路径补全", () => {
     setLocale("zh");
     created.notifier = null;
     created.session = null;
+    created.options = null;
+  });
+
+  it("候选来自 session.listWorkspaceFiles（问会话，不扫客户端磁盘）", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    // 换成一份「只在服务端存在」的清单（本机根本不可能有这些文件）：
+    // 它们能出现在候选里，就证明候选确实来自会话，而不是屏幕这边扫盘
+    created.session.listWorkspaceFiles = vi.fn(async () => [
+      { path: "服务端工作区/只有那里才有的文件.md", dir: false },
+    ]);
+    stdin.write("@");
+    await flush();
+    await flush();
+    const frame = lastFrame() ?? "";
+    expect(created.session.listWorkspaceFiles).toHaveBeenCalled();
+    expect(frame).toContain("只有那里才有的文件.md");
+    // 旧实现会去扫本机磁盘：换成会话给的清单后，这份假索引里的条目一条也不该出现
+    expect(frame).not.toContain("README.md");
+    unmount();
   });
 
   it("敲下 @ 后弹出候选菜单（先显示扫描中，再出结果）", async () => {
@@ -567,6 +598,8 @@ describe("`@` 文件路径补全", () => {
     stdin.write("@");
     await flush();
     const frame = lastFrame() ?? "";
+    // 候选整体来自会话，不是本机扫描
+    expect(created.session.listWorkspaceFiles).toHaveBeenCalled();
     expect(frame).toContain("README.md");
     // 目录带尾斜杠：一眼能看出「选中它会继续往下钻」
     expect(frame).toContain("src/tui/");
@@ -637,11 +670,35 @@ describe("`@` 文件路径补全", () => {
   });
 });
 
+describe("续接意图透传（resume）", () => {
+  beforeEach(() => {
+    setLocale("zh");
+    created.notifier = null;
+    created.session = null;
+    created.options = null;
+  });
+
+  it("resume 原样交给 createSession（屏幕不判断有没有上一轮）", async () => {
+    const { unmount } = mount({ resume: true });
+    await flush();
+    expect(created.options?.resume).toBe(true);
+    unmount();
+  });
+
+  it("不给 resume 时选项里就是空的（不会凭空宣称要接着上次）", async () => {
+    const { unmount } = mount();
+    await flush();
+    expect(created.options?.resume).toBeUndefined();
+    unmount();
+  });
+});
+
 describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
   beforeEach(() => {
     setLocale("zh");
     created.notifier = null;
     created.session = null;
+    created.options = null;
     clipboardMock.image = { kind: "none" };
     clipboardMock.text = { kind: "unavailable" };
   });

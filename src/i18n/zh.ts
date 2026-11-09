@@ -12,7 +12,7 @@ export const zh: Record<string, string> = {
   "input.hint.ready": "Enter 发送 · Ctrl+J 换行 · / 命令 · PgUp 看历史",
   "input.hint.scrolling": "↕ 滚动中 · PgUp/PgDn 翻页 · 发送回到底部",
   "input.hint.initializing": "初始化中…",
-  "mention.scanning": "正在扫描项目文件…",
+  "mention.scanning": "正在读取工作区文件…",
   "input.pastedImages": "已附加 {n} 张图片 · Ctrl+V 再加 · Esc 清空",
 
   // ---------- 状态栏 ----------

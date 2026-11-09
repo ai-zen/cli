@@ -48,7 +48,6 @@ import { useWizardHost, type WizardHostDeps } from "./use-wizard-host.js";
 import { useInputEditing } from "./use-input-editing.js";
 import { extractMention, mentionInsertText, rankPaths, type PathEntry } from "../mention.js";
 import { userDrafts } from "../chat-history.js";
-import { listProjectPaths } from "../file-index.js";
 import { MAX_CLIPBOARD_TEXT_BYTES, readClipboardImage, readClipboardText, type ClipboardImage } from "../../clipboard.js";
 import { handleCtrlDExit, handleScrollKey } from "./common-keys.js";
 
@@ -76,7 +75,6 @@ export interface ChatDeps {
   readReasoningPresets: typeof readReasoningPresets;
   readAgentStore: typeof readAgentStore;
   createSession: CreateChatSession;
-  listProjectPaths: typeof listProjectPaths;
   readClipboardImage: typeof readClipboardImage;
   readClipboardText: typeof readClipboardText;
   /** 配置向导读快照的四个读取器（`/config`、`/key` 路径） */
@@ -93,6 +91,14 @@ export interface ChatScreenProps {
   messages?: AgentNS.Message[];
   sessionId?: string;
   sessionName?: string;
+  /**
+   * 「接着该工作区的上一轮会话」—— 只表达**意图**，不带数据。
+   *
+   * 为什么屏幕层不自己判断「有没有上一轮」：哪一段算上一轮，真相在会话实现的那一侧
+   * （远程时是服务端存档，进程内时是本地指针）。屏幕去读一遍就是第二份会漂的真相，
+   * 远程时更会永远得出「没有上次」——所以这里只把意图透传给会话层。
+   */
+  resume?: boolean;
   /** 重挂载时的初始输入（/back 撤回后用于预填） */
   initialInput?: string;
   /**
@@ -154,7 +160,6 @@ export function Chat(props: ChatScreenProps) {
     readReasoningPresets,
     readAgentStore,
     createSession: createRemoteChatSession,
-    listProjectPaths,
     readClipboardImage,
     readClipboardText,
     wizardReaders: {
@@ -361,6 +366,8 @@ export function Chat(props: ChatScreenProps) {
         messages: props.messages,
         sessionId: props.sessionId,
         sessionName: props.sessionName,
+        // 「接着上次」只是意图：接哪一段由会话实现去问（服务端存档 / 本地指针），屏幕不判断
+        resume: props.resume,
         // 自动迁移：与手动 /migrate、/handoff 共用同一套「交接方式三选一」选择器
         requestMode: (info) =>
           chooseHandoffMode(
@@ -404,6 +411,7 @@ export function Chat(props: ChatScreenProps) {
     props.messages,
     props.sessionId,
     props.sessionName,
+    props.resume,
   ]);
 
   // 速率采样：Spinner 的重渲染只影响它自己，不会带着状态栏一起刷，所以生成中要自己定时读快照。
@@ -463,7 +471,7 @@ export function Chat(props: ChatScreenProps) {
   useEffect(() => {
     setMenuIndex(0);
   }, [input]);
-  /** 项目文件索引（`@` 补全的候选源）；null = 还没扫过 */
+  /** 本工作区的文件清单（`@` 补全的候选源）；null = 还没问到（会话实现那一侧持有缓存） */
   const [fileIndex, setFileIndex] = useState<PathEntry[] | null>(null);
   /** 用户按 Esc 主动关掉了 `@` 菜单：输入 / 光标一变就重新允许弹出 */
   const [mentionOff, setMentionOff] = useState(false);
@@ -501,12 +509,30 @@ export function Chat(props: ChatScreenProps) {
         label: entry.dir ? `${entry.path}/` : entry.path,
       }));
 
-  /** 每次「重新唤起 `@`」都问一次索引：`listProjectPaths` 内部有 15s 缓存，未过期时几乎零成本，
-   *  过期则顺手重扫 —— 于是会话里新建的文件不会因为「只扫过一次」而永远看不到。 */
+  /**
+   * 每次「重新唤起 `@`」都问一次本工作区的文件清单。
+   *
+   * 为什么问会话而不是自己扫盘：`@` 补全给出的路径必须对**跑会话的那台机器**成立。
+   * 会话现在跑在服务端，屏幕这边扫本机磁盘列出的是客户端机器的文件 —— 模型拿到那些
+   * 路径一律 not found。`listWorkspaceFiles()` 由会话实现决定问谁（远程问服务端，
+   * 进程内扫本机），屏幕只负责过滤与插入。
+   *
+   * 为什么这里不再叠一层缓存：15s TTL 已经在真正持有清单的那一侧（服务端的 `FileIndex`）。
+   * 屏幕再存一份就是两份 TTL、两个真相——两边过期时间不同时，用户看到的是「刚建的
+   * 文件有时在、有时不在」。每次唤起都问，刷新节奏由清单的持有者说了算。
+   *
+   * 失败语义与从前一致：问不到就按空清单处理，绝不让补全卡住输入框。
+   */
   useEffect(() => {
     if (mention == null) return;
+    // 会话还没建好就问不到；`ready` 与 `sessionRef` 同时就绪（见上面的创建 effect），
+    // 所以这里直接返回，等 `ready` 变化时本 effect 再跑一次——否则 `@` 菜单会一直
+    // 停在「扫描中…」。
+    const session = sessionRef.current;
+    if (!session) return;
     let alive = true;
-    void deps.listProjectPaths(process.cwd())
+    void session
+      .listWorkspaceFiles()
       .then((paths) => {
         if (alive) setFileIndex(paths);
       })
@@ -516,8 +542,9 @@ export function Chat(props: ChatScreenProps) {
     return () => {
       alive = false;
     };
-    // 只在「从无菜单到有菜单」时触发：同一 token 内每敲一个键都重扫毫无意义
-  }, [mention == null]);
+    // 只在「从无菜单到有菜单」时触发：同一 token 内每敲一个键都重问毫无意义；
+    // `ready` 进依赖是因为会话就绪可能晚于用户敲下的那个 `@`。
+  }, [mention == null, ready]);
 
   /**
    * 把 `@` 菜单里高亮的那条补进草稿。

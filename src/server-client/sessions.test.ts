@@ -120,6 +120,16 @@ function seedAgentDefinition(): void {
   );
 }
 
+/**
+ * 服务端给某个工作区用的存档目录（约定：`<aiZenDir>/workspaces/<workspaceId>`）。
+ *
+ * 测试要造「上次留下的存档」时得写进**同一个**目录 —— 客户端这一侧没有别的入口能造存档，
+ * 而存档本身是服务端的事实，测试只能按服务端的布局落盘。
+ */
+function storeFor(workspaceId: string): FileSessionStore {
+  return new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) });
+}
+
 async function start(): Promise<void> {
   seedAgentDefinition();
   const factory = new SessionAgentFactory({ aiZenDir: dir, homeDir: dir });
@@ -131,7 +141,7 @@ async function start(): Promise<void> {
       ...createSessionHandlers({
         manager: manager!,
         workspacesRoot: join(dir, "workspaces"),
-        // 客户端总要带 path，所以默认工作区在这个用例里用不上；给一个合法值即可
+        // 客户端**不给** path 时服务端落在这个目录上（「cwd 归服务端」那条路的落点）
         defaultWorkspacePath: dir,
       }),
       ...createAgentHandlers({
@@ -332,5 +342,128 @@ describe("RemoteSessions：换模型与重建", () => {
     const snapshot = await sessions.reload(sessionId);
     expect(snapshot.messages).toEqual([{ role: "user", content: "上下文留住" }]);
     expect(snapshot.sessionId).toBe(sessionId);
+  });
+});
+
+describe("RemoteSessions：工作区归属服务端（path 可省）", () => {
+  it("resolveWorkspace()：不给 path 问到的就是服务端自己的工作区", async () => {
+    await start();
+
+    // 客户端手里只有「服务端的工作目录」这一个概念：不给 path 时落点由服务端决定，
+    // 所以断言那正是注入的 defaultWorkspacePath，而不是客户端进程的某个目录。
+    const fallback = await sessions.resolveWorkspace();
+    expect(fallback.path).toBe(dir);
+
+    // 带 path 则是另一个工作区：证明缺省那条路没把两者混成同一个
+    const explicit = await sessions.resolveWorkspace(join(dir, "proj"));
+    expect(explicit.path).toBe(join(dir, "proj"));
+    expect(explicit.workspaceId).not.toBe(fallback.workspaceId);
+
+    // id 是路径确定性派生的：不给 path 连问两次必须落到同一个工作区，否则「续接」无处可寻
+    expect((await sessions.resolveWorkspace()).workspaceId).toBe(fallback.workspaceId);
+  });
+
+  it("open()：不给 path 也能开成会话，且落在默认工作区里", async () => {
+    await start();
+    const opened = await sessions.open({});
+
+    // 会话的归属（workspaceId）经由快照回读，这是服务端登记的那个工作区
+    const defaultWorkspace = await sessions.resolveWorkspace();
+    expect((await sessions.snapshot(opened.sessionId)).workspaceId).toBe(defaultWorkspace.workspaceId);
+
+    const listed = await sessions.list(defaultWorkspace.workspaceId);
+    expect(listed.sessions.map((session) => session.sessionId)).toEqual([opened.sessionId]);
+
+    // 这条会话没有掉进「客户端指定的另一个目录」那个工作区里
+    const other = await sessions.resolveWorkspace(join(dir, "proj"));
+    expect((await sessions.list(other.workspaceId)).sessions).toEqual([]);
+  });
+
+  // 祖先目录项（`src` / `src/tui`）是这条用例的重点：客户端靠条目的 `dir` 判断能不能
+  // 「钻目录」，服务端只回文件的话，远程模式下 `@src/` 这个能力直接消失。
+  it("files：清单来自服务端磁盘，文件与祖先目录都在，路径相对工作区根", async () => {
+    // 补全要的是「会话真正跑在哪个目录」的内容：这里造一棵真文件树（含子目录），
+    // 客户端只递 workspaceId，路径由服务端从 workspace.json 反查。
+    const root = join(dir, "proj");
+    mkdirSync(join(root, "src", "tui"), { recursive: true });
+    writeFileSync(join(root, "README.md"), "# 说明\n");
+    writeFileSync(join(root, "src", "index.ts"), "export {};\n");
+    writeFileSync(join(root, "src", "tui", "app.ts"), "export {};\n");
+    await start();
+
+    const workspace = await sessions.resolveWorkspace(root);
+    expect(workspace.path).toBe(root);
+
+    const { entries } = await sessions.files(workspace.workspaceId);
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        { path: "README.md", dir: false },
+        { path: "src", dir: true },
+        { path: "src/index.ts", dir: false },
+        { path: "src/tui", dir: true },
+        { path: "src/tui/app.ts", dir: false },
+      ]),
+    );
+
+    // 路径一律相对工作区根：客户端拿到就能直接拼进补全（不是服务端的绝对路径）
+    for (const entry of entries) {
+      expect(entry.path.startsWith("/")).toBe(false);
+      expect(entry.path.startsWith(root)).toBe(false);
+    }
+  });
+});
+
+describe("RemoteSessions：续接只靠 id（客户端不搬消息）", () => {
+  it("open({ sessionId })：沿用客户端给的 id，服务端不再另起一个", async () => {
+    await start();
+    // 这个 id 与 manager 的确定性生成器（`chat_test`）不同：万一处理器又把客户端给的
+    // sessionId 丢掉，服务端会分配 `chat_test` 回来，断言立刻炸 —— 这就是那个 bug 的回归保护。
+    const wanted = "chat_resumed";
+    const opened = await sessions.open({ path: join(dir, "proj"), sessionId: wanted });
+    expect(opened.sessionId).toBe(wanted);
+
+    const workspace = await sessions.resolveWorkspace(join(dir, "proj"));
+    await sessions.save(opened.sessionId);
+
+    // 盘上确实只有客户端给的那个 id：续接不是「开新的再拷消息」
+    expect((await sessions.listSaved(workspace.workspaceId)).sessions.map((ref) => ref.id)).toEqual([
+      wanted,
+    ]);
+    expect((await storeFor(workspace.workspaceId).read(wanted))?.id).toBe(wanted);
+    expect(await storeFor(workspace.workspaceId).read("chat_test")).toBeNull();
+  });
+
+  it("open({ sessionId }) 且存档里有内容：Agent 带着那份消息起来", async () => {
+    await start();
+    const workspace = await sessions.resolveWorkspace(join(dir, "proj"));
+    const archived = [
+      { role: "system", content: "旧系统提示" },
+      { role: "user", content: "上一轮的问题" },
+      { role: "assistant", content: "上一轮的回答" },
+    ];
+    // 造「上次留下的存档」：服务端是唯一真相源，客户端只负责说「要这个 id」
+    await storeFor(workspace.workspaceId).write({
+      id: "chat_loaded",
+      agentId: "default",
+      messages: archived,
+    });
+
+    const opened = await sessions.open({ path: join(dir, "proj"), sessionId: "chat_loaded" });
+    expect(opened.sessionId).toBe("chat_loaded");
+
+    const snapshot = await sessions.snapshot(opened.sessionId);
+    expect(snapshot.messages).toEqual(archived);
+  });
+
+  it("last：没有指针时 null，save 之后指向那个 id", async () => {
+    await start();
+    const workspace = await sessions.resolveWorkspace(join(dir, "proj"));
+
+    // 全新工作区没有「上一轮会话」：客户端按 null 走新会话
+    expect(await sessions.last(workspace.workspaceId)).toEqual({ sessionId: null });
+
+    const { sessionId } = await sessions.open({ path: join(dir, "proj") });
+    await sessions.save(sessionId);
+    expect(await sessions.last(workspace.workspaceId)).toEqual({ sessionId });
   });
 });

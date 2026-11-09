@@ -16,11 +16,13 @@ import {
   type AgentSetModelResult,
   type HandoffMode,
   type MessageContent,
+  type SessionAttachResult,
   type SessionCancelResult,
   type SessionCreateResult,
   type SessionHandoffResult,
   type SessionListResult,
   type SessionListSavedResult,
+  type SessionLastResult,
   type SessionMigrateResult,
   type SessionRollbackResult,
   type SessionSaveAsResult,
@@ -28,13 +30,17 @@ import {
   type SessionSendResult,
   type SessionSnapshotResult,
   type WorkspaceResolveResult,
+  type WorkspaceFilesResult,
 } from "@ai-zen/agents-server";
 import type { ServerClient } from "./types.js";
 
 /** 开一个会话要多说几句，单独成类型，避免调用点各拼一份 */
 export interface OpenSessionInput {
-  /** 工作目录绝对路径（服务端负责规范化、建目录、写 workspace.json） */
-  path: string;
+  /**
+   * 工作目录绝对路径。**建议不给**：不给就用服务端自己的目录（那才是会话真正跑的地方）。
+   * 给了也只是“我希望是这里”，路径仍由服务端规范化。
+   */
+  path?: string;
   agentId?: string;
   /** 续接已有存档时给出它的 id；不给则由服务端分配新 id */
   sessionId?: string;
@@ -48,9 +54,27 @@ export class RemoteSessions {
     await this.client.call(EVENT_METHODS.watch);
   }
 
-  /** 路径 → 工作区身份 */
-  async resolveWorkspace(path: string): Promise<WorkspaceResolveResult> {
-    return await this.client.call<WorkspaceResolveResult>(WORKSPACE_METHODS.resolve, { path });
+  /**
+   * 路径 → 工作区身份。
+   *
+   * 不给 `path` 就是在问「服务端自己的工作区在哪」—— 远程部署时这才是唯一有意义的问法：
+   * 客户端把自己进程的当前工作目录送上去，等于让客户端替服务端决定会话跑在哪个目录。
+   */
+  async resolveWorkspace(path?: string): Promise<WorkspaceResolveResult> {
+    return await this.client.call<WorkspaceResolveResult>(
+      WORKSPACE_METHODS.resolve,
+      path ? { path } : {},
+    );
+  }
+
+  /** 工作区的文件清单（`@` 补全用；扫的是**服务端**磁盘） */
+  async files(workspaceId: string): Promise<WorkspaceFilesResult> {
+    return await this.client.call<WorkspaceFilesResult>(WORKSPACE_METHODS.files, { workspaceId });
+  }
+
+  /** 某个工作区「上一轮会话」的指针（续接用；没有则 null） */
+  async last(workspaceId: string): Promise<SessionLastResult> {
+    return await this.client.call<SessionLastResult>(SESSION_METHODS.last, { workspaceId });
   }
 
   /** 开（或续接）一个会话 */
@@ -58,10 +82,29 @@ export class RemoteSessions {
     const workspace = await this.resolveWorkspace(input.path);
     return await this.client.call<SessionCreateResult>(SESSION_METHODS.create, {
       workspaceId: workspace.workspaceId,
-      path: workspace.path,
+      // 服务端能自己反查路径：客户端只在**它确实知道**时才递上去
+      ...(input.path ? { path: input.path } : {}),
       ...(input.agentId ? { agentId: input.agentId } : {}),
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     });
+  }
+
+  /**
+   * 接上一段**已经存在**的会话。
+   *
+   * 与 `open()` 的区别就是「要不要开新的」：`open()` 对活着的 id 会被服务端拒掉
+   * （`session-exists`，不静默顶掉正在跑的会话），而「接着上次」/「`/load` 选一段」
+   * 要的恰恰是接上那段 —— 它可能还在服务端内存里活着（上次 TUI 只是断开了连接）。
+   * 活着就接、盘上有就装回来，都没有则服务端回 `session-missing`。
+   */
+  async attach(input: {
+    workspaceId: string;
+    sessionId: string;
+    /** 服务端已知这个工作区时可以不给 */
+    path?: string;
+    agentId?: string;
+  }): Promise<SessionAttachResult> {
+    return await this.client.call<SessionAttachResult>(SESSION_METHODS.attach, input);
   }
 
   /**

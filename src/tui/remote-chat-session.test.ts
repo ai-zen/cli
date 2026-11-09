@@ -3,12 +3,16 @@
  *
  * 这是「TUI 换源」的护栏：屏幕要的那几个事实（消息、阶段、模型、用量、id）全都必须
  * 只能从服务端拿到，而 `send()` 的语义要**与进程内模式一致**（一轮跑完才 resolve）。
+ *
+ * 工作区那几件事也在这里定死：客户端**不上送 cwd**（会话落在服务端自己的目录）、
+ * `@` 补全的清单来自服务端磁盘、续接问 `session.last`。因此用例里的会话一律不传
+ * `path`，期望值一律对着 Daemon 的 `defaultWorkspacePath`。
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   Daemon,
   createSessionHandlers,
@@ -16,6 +20,7 @@ import {
   SessionManager,
   type AgentLike,
 } from "@ai-zen/agents-server";
+import { RemoteSessions } from "../server-client/sessions.js";
 import { SocketServerClient } from "../server-client/socket-server-client.js";
 import { setLocale } from "../i18n/index.js";
 import { useTempAiZenDir } from "../test-support/temp-dir.js";
@@ -66,6 +71,13 @@ class FakeAgent implements AgentLike {
 const DOC = `# 交接\n\n${"- 桩\n".repeat(80)}`;
 
 let dir: string;
+/**
+ * 服务端自己的工作目录（Daemon 的 `defaultWorkspacePath`）。
+ *
+ * 客户端不再上送 `process.cwd()`：会话的工作目录由服务端决定，所以它就是每个用例里
+ * 「这段会话到底跑在哪个目录」的期望值。
+ */
+let workspaceDir: string;
 let daemon: Daemon | null = null;
 let manager: SessionManager | null = null;
 let agent: FakeAgent;
@@ -102,6 +114,9 @@ beforeEach(() => {
     }),
   );
   dir = mkdtempSync(join(tmpdir(), "aiz-remote-chat-"));
+  workspaceDir = join(dir, "proj");
+  // 服务端的工作目录得真的存在（生产里它就是服务端进程的 cwd）
+  mkdirSync(workspaceDir, { recursive: true });
   agent = new FakeAgent();
   notices = [];
   changes = 0;
@@ -147,8 +162,14 @@ async function waitUntil(what: () => boolean, timeoutMs = 2000): Promise<void> {
   }
 }
 
-/** 起服务端 + 连一条连接，然后开一段远程会话 */
-async function open(input: { agentId?: string; sessionId?: string } = {}): Promise<RemoteChatSession> {
+/**
+ * 起服务端 + 连一条连接。
+ *
+ * 分出来单独一步：有些用例（续接）要**在开会话之前**先往服务端的存档目录里造一份旧档，
+ * 而那个目录属于哪个工作区只有服务端知道（`workspace.resolve` 说了算）。
+ */
+async function startServer(): Promise<SocketServerClient> {
+  if (client) return client;
   daemon = new Daemon({
     aiZenDir: dir,
     port: 0,
@@ -156,8 +177,8 @@ async function open(input: { agentId?: string; sessionId?: string } = {}): Promi
     handlers: createSessionHandlers({
       manager: manager!,
       workspacesRoot: join(dir, "workspaces"),
-      // 这几个用例总带 path，默认工作区用不上；给一个合法值即可
-      defaultWorkspacePath: dir,
+      // 客户端不上送路径：开会话用它（**服务端**的目录）
+      defaultWorkspacePath: workspaceDir,
     }),
   });
   await daemon.start();
@@ -165,9 +186,37 @@ async function open(input: { agentId?: string; sessionId?: string } = {}): Promi
     address: { host: "127.0.0.1", port: daemon.port },
     client: { name: "@ai-zen/cli", version: "0.0.0-test" },
   });
-  const workspace = join(dir, "proj");
-  session = await RemoteChatSession.openWith(client, { path: workspace, ...input }, notifier);
+  return client;
+}
+
+/** 起服务端并开一段远程会话 —— **不传 path**：工作区归属服务端 */
+async function open(
+  input: { agentId?: string; sessionId?: string; resume?: boolean } = {},
+): Promise<RemoteChatSession> {
+  const connected = await startServer();
+  session = await RemoteChatSession.openWith(connected, input, notifier);
   return session;
+}
+
+/**
+ * 服务端认定的默认工作区 → 它的存档 store（与 `SessionManager.storeFor` 同一个目录）。
+ *
+ * 服务端才是存档与指针的真相源，所以「造一段旧档」也造在**它**认定的那个工作区里：
+ * 路径用 `workspace.resolve`（不带 path）问来，不在测试里推导 id 算法。
+ */
+async function defaultStore(): Promise<FileSessionStore> {
+  const { workspaceId } = await new RemoteSessions(await startServer()).resolveWorkspace();
+  return new FileSessionStore({ rootDir: join(dir, "workspaces", workspaceId) });
+}
+
+/**
+ * 读一个**私有**字段。
+ *
+ * `path` / `workspaceId` 不在 `ChatSessionLike` 里（界面不需要它们），但「会话落在哪个目录」
+ * 只能从实例上看。只在这里做窄口读取，不把它们提升成对外契约（同 `(manager as any)` 的用法）。
+ */
+function observed<T>(session: RemoteChatSession, key: string): T {
+  return (session as unknown as Record<string, T>)[key]!;
 }
 
 describe("RemoteChatSession：开一段会话", () => {
@@ -181,6 +230,93 @@ describe("RemoteChatSession：开一段会话", () => {
     expect(opened.messages).toEqual([{ role: "user", content: "上次聊到这儿" }]);
     // 子 Agent 栏目还没有协议承载：恒为空，界面因此不出现这一栏
     expect(opened.subAgents).toEqual([]);
+  });
+});
+
+describe("RemoteChatSession：工作区归属服务端", () => {
+  it("不上送客户端 cwd：会话落在服务端自己的工作目录（服务端规范化后的路径）", async () => {
+    const opened = await open();
+
+    // 路径来自 `workspace.resolve` 的返回值，等于 Daemon 的 `defaultWorkspacePath`
+    // （`ensureWorkspace` 做的是 `resolve(path)`，两边对同一个值取规范化结果）
+    expect(observed<string>(opened, "path")).toBe(resolve(workspaceDir));
+    // 客户端进程的 cwd（本仓根目录）不该出现在任何地方：以前那句
+    // `path: process.cwd()` 会让会话跑到**这台机器**的目录上去
+    expect(observed<string>(opened, "path")).not.toBe(process.cwd());
+  });
+
+  it("listWorkspaceFiles：清单来自服务端磁盘，既有文件也有祖先目录条目", async () => {
+    // 造几个**服务端那边**的真文件：补全扫的是会话真正跑在哪个目录
+    mkdirSync(join(workspaceDir, "src", "tui"), { recursive: true });
+    writeFileSync(join(workspaceDir, "README.md"), "# 服务端那边的文件\n", "utf-8");
+    writeFileSync(join(workspaceDir, "src", "app.ts"), "export const app = 1;\n", "utf-8");
+    writeFileSync(join(workspaceDir, "src", "tui", "chat.tsx"), "export const Chat = 1;\n", "utf-8");
+
+    const opened = await open();
+    const entries = await opened.listWorkspaceFiles();
+
+    // 文件条目：路径相对工作区根、`/` 分隔、不带 `./` 前缀
+    expect(entries).toContainEqual({ path: "README.md", dir: false });
+    expect(entries).toContainEqual({ path: "src/app.ts", dir: false });
+    expect(entries).toContainEqual({ path: "src/tui/chat.tsx", dir: false });
+    // 祖先目录条目（`dir: true`）：没有它们，远程模式下「钻目录」这个能力就不存在了
+    expect(entries).toContainEqual({ path: "src", dir: true });
+    expect(entries).toContainEqual({ path: "src/tui", dir: true });
+    for (const entry of entries) expect(entry.path.startsWith("/")).toBe(false);
+  });
+
+  it("resume：上一轮会话的 id 与消息都由服务端给（客户端不搬消息）", async () => {
+    const store = await defaultStore();
+    await store.write({
+      id: "chat_archived",
+      agentId: "default",
+      messages: [{ role: "user", content: "上次聊到这儿" }],
+    });
+    await store.setLastSession("chat_archived");
+
+    const opened = await open({ resume: true });
+
+    // id 是 `session.last` 给的那一个（客户端只说「接着上次」，没说接哪一段）
+    expect(opened.currentId).toBe("chat_archived");
+    // 消息来自 `session.snapshot`：服务端 `session.create` 把存档装进了 Agent
+    expect(opened.messages).toEqual([{ role: "user", content: "上次聊到这儿" }]);
+    expect(agent.messages).toEqual([{ role: "user", content: "上次聊到这儿" }]);
+  });
+
+  it("resume 但没有指针：开一段新会话，不报错", async () => {
+    // 有存档、但「上一轮会话」指针没指它（从未保存过 / 已被改名）
+    const store = await defaultStore();
+    await store.write({
+      id: "chat_archived",
+      agentId: "default",
+      messages: [{ role: "user", content: "没人指着的旧档" }],
+    });
+
+    const opened = await open({ resume: true });
+
+    expect(opened.currentId).not.toBe("chat_archived");
+    expect(opened.currentId).toBe("chat_1"); // 服务端分配的新 id
+    expect(opened.messages).toEqual([]);
+  });
+
+  it("明确的 sessionId 优先于 resume：/load 选中的那段不被指针覆盖", async () => {
+    const store = await defaultStore();
+    await store.write({
+      id: "chat_last",
+      agentId: "default",
+      messages: [{ role: "user", content: "指针指的那段" }],
+    });
+    await store.setLastSession("chat_last");
+    await store.write({
+      id: "chat_picked",
+      agentId: "default",
+      messages: [{ role: "user", content: "用户点的那段" }],
+    });
+
+    const opened = await open({ sessionId: "chat_picked", resume: true });
+
+    expect(opened.currentId).toBe("chat_picked");
+    expect(opened.messages).toEqual([{ role: "user", content: "用户点的那段" }]);
   });
 });
 

@@ -15,6 +15,20 @@
  * 3. **换 id 的方法（`migrate` / `saveAs`）以返回值里的 `sessionId` 为准**。服务端在旧
  *    id 上收尾、再把活会话挪到新键；客户端拿到响应后立刻跟着换，之后的事件才过滤得上。
  *
+ * ## cwd 归属服务端（本文件不再上送客户端自己的当前目录）
+ *
+ * 客户端只递 `workspaceId`，工作目录由服务端 `workspace.resolve` 给出：远程部署时
+ * 服务端在一台机器上、TUI 在另一台上，客户端把自己进程的 cwd 送上去等于**让客户端替
+ * 服务端决定会话跑在哪个目录**——而那个目录在服务端很可能根本不存在（于是要么开出一个
+ * 空目录、要么直接失败）。所以：
+ *
+ *   · `openWith` 不带路径，服务端用它自己的工作目录解析出 `workspaceId` + **规范化后的**
+ *     绝对路径；本类持有的 `this.path` 是那个返回值，不是构造参数里抄来的副本
+ *     （`reset()` 再开新会话时还在同一个工作区里，靠的就是它）；
+ *   · `@` 补全的清单（`listWorkspaceFiles`）同样问服务端（`workspace.files`）—— 清单
+ *     必须来自会话真正跑在哪个目录，那是服务端的事实；
+ *   · 续接（`resume`）问 `session.last`：哪一段是「上一轮」也只存在于服务端。
+ *
  * ## 现在还没有的三样（协议里就没有，不是 bug）
  *
  * 图片粘贴、子 Agent 栏目、按阈值自动迁移。前者在界面上是「说清楚」而不是静默丢弃：
@@ -45,6 +59,7 @@ import type {
   ChatSessionOptions,
   SubAgentView,
 } from "./chat-session.js";
+import type { PathEntry } from "./mention.js";
 import { noticeText } from "./notice-text.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, type RateSample } from "./token-rate.js";
@@ -54,16 +69,35 @@ export const REMOTE_CLIENT_INFO = { name: "@ai-zen/cli", version: CLI_VERSION };
 
 /** 开一段远程会话需要的最小输入 */
 export interface OpenRemoteSessionInput {
-  /** 工作区绝对路径（客户端的当前目录；`/load` 时仍然是它） */
-  path: string;
+  /**
+   * 工作目录。**建议不要给**：不给就用服务端自己的工作目录（cwd 归属服务端）。
+   *
+   * 给了也只是「我希望是这里」，路径仍由服务端规范化 —— 客户端手上那份是**它自己**
+   * 那边的路径，两机部署时服务端不一定有那个目录。留这个口子只因为同一台机器上
+   * 「换个目录再开一段」确实存在（测试也用得上）。
+   */
+  path?: string;
   agentId?: string;
   /** 续接已有存档：只给 id，消息由服务端从存档装 */
   sessionId?: string;
+  /**
+   * 续接本工作区的「上一轮会话」（有就接着，没有就开新的）。
+   *
+   * 与 `ChatSessionOptions.resume` 同一个口径：这是**意图**，不是数据。哪一段是
+   * 「上一轮」只存在于服务端（指针 + 存档），客户端自己去读就是又一份会漂的真相。
+   * 给了明确的 `sessionId` 时以它为准（用户已经指名道姓了）。
+   */
+  resume?: boolean;
 }
 
 export class RemoteChatSession implements ChatSessionLike {
   readonly agentId: string;
-  /** 工作区路径：`/new` 要在同一个工作区里开新会话 */
+  /**
+   * 工作区路径 —— **服务端规范化后**的那个（`workspace.resolve` 的返回值）。
+   *
+   * `/new` 要在同一个工作区里开新会话：路径若取自客户端进程的 cwd，远程部署时就会
+   * 在服务端开出一个不相干的目录。
+   */
   private readonly path: string;
   private readonly client: ServerClient;
   private readonly sessions: RemoteSessions;
@@ -126,12 +160,49 @@ export class RemoteChatSession implements ChatSessionLike {
     const sessions = new RemoteSessions(client);
     await sessions.watch();
 
-    const opened = await sessions.open({
-      path: input.path,
-      ...(input.agentId ? { agentId: input.agentId } : {}),
-      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-    });
+    /**
+     * 工作区在**这一处**解析，且只解析这一处。
+     *
+     * `sessions.open()` 门面内部也会 `resolveWorkspace`，但那用的是我们递给它的
+     * `workspace.path`（已规范化，幂等）；真正需要对齐的是「问 `last` 的工作区」与
+     * 「开会话的工作区」——分两处各解析一次，就多出两个能漂的答案。所以顺序是：
+     * 解析一次 → 用它的 id 问上一轮 → 用它的 path 开会话。
+     */
     const workspace = await sessions.resolveWorkspace(input.path);
+
+    /**
+     * 续接：`resume` 只是意图，**哪一段是上一轮**只有服务端知道（`session.last`）。
+     *
+     * 明确的 `sessionId` 永远优先：`/load` 已经指定了具体那一段，再拿指针覆盖它
+     * 就成了「悄悄换了用户点的东西」。
+     */
+    const lastId =
+      input.sessionId || input.resume !== true
+        ? null
+        : (await sessions.last(workspace.workspaceId)).sessionId;
+    const sessionId = input.sessionId ?? lastId ?? undefined;
+
+    /**
+     * 有明确目标 id（用户点的 `/load`，或 `session.last` 指的上一轮）就走 `attach`，
+     * 否则才 `open` 一段新的。
+     *
+     * 为什么不能一律 `open`：那段会话很可能**还在服务端活着**（上次 TUI 只是断开了
+     * 连接，Agent 与 MCP 连接都没销毁），而 `open`/`create` 对活着的 id 是「拒绝」
+     * （不静默顶掉正在跑的会话）。于是「接着上次」会撞在 `session-exists` 上 ——
+     * 用户看到的是「打不开自己上一轮会话」。`attach` 的语义就是「这段我要接上」。
+     */
+    const opened = sessionId
+      ? await sessions.attach({
+          workspaceId: workspace.workspaceId,
+          // 递回**服务端规范化后的**路径：两处说的是同一个工作区
+          path: workspace.path,
+          sessionId,
+          ...(input.agentId ? { agentId: input.agentId } : {}),
+        })
+      : await sessions.open({
+          path: workspace.path,
+          ...(input.agentId ? { agentId: input.agentId } : {}),
+        });
 
     const session = new RemoteChatSession(
       client,
@@ -144,6 +215,8 @@ export class RemoteChatSession implements ChatSessionLike {
       },
       notifier,
     );
+    // 续接时的历史也在这份快照里：服务端 `session.create` 已经把存档消息装进了 Agent，
+    // 客户端不搬、不拼，屏幕上的第一条都来自服务端。
     session.applySnapshot(await sessions.snapshot(opened.sessionId));
     return session;
   }
@@ -214,6 +287,8 @@ export class RemoteChatSession implements ChatSessionLike {
     const hasContent = this.currentMessages.some((message) => message.role === AgentNS.Role.User);
     const archivedId = hasContent ? await this.save() : null;
 
+    // 用 `this.path`（服务端规范化后的工作区路径）而不是客户端 cwd：`/new` 是「同一个
+    // 工作区里换一段会话」，换到客户端进程的目录就等于替服务端换了地方
     const opened = await this.sessions.open({ path: this.path, agentId: this.agentId });
     this.sessionId = opened.sessionId;
     this.currentMessages = [];
@@ -269,6 +344,20 @@ export class RemoteChatSession implements ChatSessionLike {
 
   async exists(id: string): Promise<boolean> {
     return (await this.listSaved()).some((ref) => ref.id === id);
+  }
+
+  /**
+   * 本工作区的文件清单（`@` 补全用）—— 问服务端要（`workspace.files`）。
+   *
+   * 清单必须来自**会话真正跑在哪个目录**：那是服务端的磁盘事实（Agent 的 cwd、工具读
+   * 相对路径的基准都在那边）。扫客户端自己的 cwd，在「TUI 连远端服务端」这种形态下会
+   * 列出另一台机器上的文件 —— 用户选中一个路径送过去，服务端根本没有那个文件。
+   *
+   * 形状两端逐字对齐（`{ path, dir }`，路径相对工作区根、`/` 分隔、目录条目带
+   * `dir: true`），所以这里不做映射：多一层搬运只会多一处会漂的翻译。
+   */
+  async listWorkspaceFiles(): Promise<PathEntry[]> {
+    return (await this.sessions.files(this.workspaceId)).entries;
   }
 
   dispose(): void {
@@ -477,14 +566,20 @@ function toneOf(level: "info" | "warn" | "error"): "info" | "error" {
 /**
  * `ChatDeps.createSession` 的默认实现：连服务端（没有就拉起）并开一段会话。
  *
- * 工作区取客户端当前目录：TUI 就是在项目里跑的，`path` 由服务端规范化与建目录。
+ * **不上送任何路径**：cwd 归属服务端。这里曾经发的是客户端进程的当前目录，等于让
+ * 客户端替服务端决定会话跑在哪 —— 远程部署时那是**这台**机器上的目录，服务端那边很可能
+ * 根本不存在（轻则开出一个不相干的新目录，重则直接失败）。
+ * 服务端不给路径时用它自己的工作目录，那才是会话真正跑的地方。
+ *
+ * `resume` / `sessionId` 原样透传：一个说「接着上次」，一个说「就这一段」，
+ * 两者的优先级由 `openWith` 处理（明确的 id 优先）。
  */
 export async function createRemoteChatSession(
   options: ChatSessionOptions,
   notifier: ChatSessionNotifier,
 ): Promise<ChatSessionLike> {
   return await RemoteChatSession.create(
-    { path: process.cwd(), agentId: options.agentId, sessionId: options.sessionId },
+    { agentId: options.agentId, sessionId: options.sessionId, resume: options.resume },
     notifier,
   );
 }
