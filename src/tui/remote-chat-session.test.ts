@@ -5,8 +5,8 @@
  * 只能从服务端拿到，而 `send()` 的语义要**与进程内模式一致**（一轮跑完才 resolve）。
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -18,6 +18,7 @@ import {
 } from "@ai-zen/agents-server";
 import { SocketServerClient } from "../server-client/socket-server-client.js";
 import { setLocale } from "../i18n/index.js";
+import { useTempAiZenDir } from "../test-support/temp-dir.js";
 import { RemoteChatSession } from "./remote-chat-session.js";
 import type { ChatSessionNotifier } from "./chat-session.js";
 
@@ -27,7 +28,7 @@ class FakeAgent implements AgentLike {
   /** 交接要用的那几面（真件是 SDK 的 `SdkAgent`）；无 write 工具 → 走摘要模式 */
   definition = { messages: [] as any[], modelId: "test-model" };
   tools: Array<{ function?: { name?: string } }> = [];
-  model = "m";
+  model = "test-model";
   modelConfig: Record<string, unknown> = {};
   client: unknown = {
     chat: { completions: { create: async () => ({ choices: [{ message: { content: DOC } }] }) } },
@@ -73,6 +74,12 @@ let session: RemoteChatSession | null = null;
 let notices: Array<{ text: string; tone: "info" | "error" }>;
 let changes: number;
 
+/**
+ * 拼图片内容块要读配置（端点 / 视觉能力），绝不能读真实 `~/.ai-zen`。
+ * 进程内共享模块下只有 `pin()` 能让路径真的生效（见 test-support/temp-dir.ts）。
+ */
+const zen = useTempAiZenDir("aiz-remote-chat-");
+
 const notifier: ChatSessionNotifier = {
   onChange: () => {
     changes += 1;
@@ -82,6 +89,18 @@ const notifier: ChatSessionNotifier = {
 
 beforeEach(() => {
   setLocale("zh");
+  zen.pin();
+  // 图片链路要按实发模型名反查端点：`test-model` 与 FakeAgent 的 model 同名
+  writeFileSync(
+    join(zen.dir, "config.json"),
+    JSON.stringify({
+      endpoints: [{ id: "e", name: "E", baseUrl: "http://127.0.0.1:9/v1", apiKey: "k" }],
+      // `vision: true` 才走真图片内容块（否则 SDK 会把它降级成文本提示，测不到链路）
+      models: [{ id: "test-model", name: "Test", endpointId: "e", custom: true, vision: true }],
+      defaultAgent: "default",
+      version: 4,
+    }),
+  );
   dir = mkdtempSync(join(tmpdir(), "aiz-remote-chat-"));
   agent = new FakeAgent();
   notices = [];
@@ -108,6 +127,10 @@ afterEach(async () => {
     daemon = null;
   }
   rmSync(dir, { recursive: true, force: true });
+});
+
+afterAll(() => {
+  zen.cleanup();
 });
 
 /**
@@ -189,16 +212,36 @@ describe("RemoteChatSession：send 的语义与进程内一致", () => {
     expect(opened.phase).toBeNull();
   });
 
-  it("带图提交：明确告知本次只发了文字，文字照发（不静默丢、也不整条不发）", async () => {
+  it("带图提交：图片真的发出去了（内容块里有文本段 + 内联图片）", async () => {
     const opened = await open();
     const pending = opened.send("看看这张图", [{ base64: "AAA", mime: "image/png" }]);
     await waitUntil(() => agent.sent.length === 1);
 
-    expect(agent.sent).toEqual(["看看这张图"]);
-    expect(notices.map((notice) => notice.text).join("")).toContain("暂时还不能发图片");
-    expect(notices.at(-1)?.tone).toBe("error");
+    // 文本段排在最前（图在文前会把指令切断），图片是内联 data URL
+    expect(agent.sent[0]).toEqual([
+      { type: "text", text: "看看这张图" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAA" } },
+    ]);
 
     agent.messages.push({ role: "user", content: "看看这张图" });
+    agent.fire("finally");
+    await pending;
+  });
+
+  it("图片装不进一帧：只发文字并明确告知（超限帧会让服务端直接断连接）", async () => {
+    const opened = await open();
+    // 两张各 ~5MB：单张都过得了 SDK 的内联上限（8MiB），合起来超过单帧上限
+    const big = "A".repeat(5_000_000);
+    const pending = opened.send("看这两张", [
+      { base64: big, mime: "image/png" },
+      { base64: big, mime: "image/png" },
+    ]);
+    await waitUntil(() => agent.sent.length === 1);
+
+    expect(agent.sent[0]).toBe("看这两张"); // 退成纯文本，不整条不发
+    expect(notices.map((notice) => notice.text).join("")) .toContain("超过单帧上限");
+    expect(notices.at(-1)?.tone).toBe("error");
+
     agent.fire("finally");
     await pending;
   });

@@ -64,7 +64,7 @@ export const zh: Record<string, string> = {
   "notice.toolFailed": "工具执行失败：{error}",
   "notice.mcpUnavailable": "MCP server 连不上：{name}",
   "notice.storeUnavailable": "会话存档目录不可用：{error}",
-  "notice.remoteImagesDropped": "远程会话暂时还不能发图片（{n} 张未发送），本次只发了文字",
+  "notice.remoteImagesTooLarge": "图片太大（{size}MB），超过单帧上限，本次只发了文字",
 
   // ---------- 命令说明（/help 与斜杠菜单） ----------
   "cmd.save.desc": "保存对话",

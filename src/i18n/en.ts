@@ -61,7 +61,7 @@ export const en: Record<string, string> = {
   "notice.toolFailed": "Tool failed: {error}",
   "notice.mcpUnavailable": "MCP server unreachable: {name}",
   "notice.storeUnavailable": "The session store is unavailable: {error}",
-  "notice.remoteImagesDropped": "Remote sessions cannot send images yet ({n} dropped) — only the text was sent",
+  "notice.remoteImagesTooLarge": "Images are too large ({size}MB) for a single frame — only the text was sent",
 
   // ---------- Command descriptions (/help & slash menu) ----------
   "cmd.save.desc": "Save the conversation",

@@ -24,17 +24,20 @@
 import { AgentNS, sumUsage } from "@ai-zen/agents-core";
 import type { HandoffMode } from "@ai-zen/agents-sdk";
 import {
+  MAX_FRAME_BYTES,
   SESSION_EVENTS,
+  type MessageContent,
   type PhaseInfo,
   type ServerEvent,
   type SessionSnapshotResult,
 } from "@ai-zen/agents-server";
 import type { ClipboardImage } from "../clipboard.js";
-import { AI_ZEN_DIR } from "../config.js";
+import { AI_ZEN_DIR, readConfig } from "../config.js";
 import { t } from "../i18n/index.js";
 import { ensureServer } from "../server-client/ensure-server.js";
 import { RemoteSessions } from "../server-client/sessions.js";
 import type { ServerClient } from "../server-client/types.js";
+import { buildUserContent } from "../user-content.js";
 import { CLI_VERSION } from "../version.js";
 import type {
   ChatSessionLike,
@@ -71,6 +74,8 @@ export class RemoteChatSession implements ChatSessionLike {
   private sessionId: string;
   private workspaceId: string;
   private modelIdValue = "";
+  /** 实发模型名：拼图片内容块时按它反查端点与视觉能力（`file_id` 是端点维度资源） */
+  private apiModelValue = "";
   /** 服务端给的权威消息（事件期间的增量也追加在这里，收尾时整体换成快照） */
   private currentMessages: AgentNS.Message[] = [];
   /** 正在流式累积的那条 assistant 消息；不在生成中时 `null` */
@@ -191,12 +196,9 @@ export class RemoteChatSession implements ChatSessionLike {
   async send(input: string, images: readonly ClipboardImage[] = []): Promise<void> {
     this.rate.begin();
     try {
-      // 图片还没有协议承载（`session.send` 只收文本）：说清楚「本次只发了文字」。
-      // 不静默丢弃（用户以为图送到了），也不整条不发（文字部分是有效的）。
-      if (images.length > 0) {
-        this.notifier.onNotice(t("notice.remoteImagesDropped", { n: images.length }), "error");
-      }
-      const { turnId } = await this.sessions.send(this.sessionId, input);
+      const content = await this.buildContent(input, images);
+      if (content === null) return; // 图片全被降级/过滤，且已给过说明
+      const { turnId } = await this.sessions.send(this.sessionId, content);
       await this.waitForTurn(turnId);
     } finally {
       this.rate.finish();
@@ -277,6 +279,47 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   // ==================== 内部 ====================
+
+  /**
+   * 拼出这一条要发的内容：纯文本，或「文本 + 图片」内容块。
+   *
+   * 与进程内模式走**同一段**逻辑（`buildUserContent`）：内联还是 Files API 的
+   * `file_id`、模型支不支持视觉，都按**实发模型名**反查端点 —— 那是端点维度的事，
+   * 换一份实现就会漂。
+   *
+   * 唯一的远程约束是帧大小：内容块里的图片是 base64 内联的，一张 20MB 的图编码后
+   * 远超单帧上限，而超限帧会让服务端直接判协议错误、**断掉整条连接**。所以这里先量
+   * 一下：装不下就发文字（用户至少把话说出去了），并明确告知图片没带上。
+   *
+   * @returns 要发的内容；`null` = 什么都不发（已给过说明）
+   */
+  private async buildContent(
+    input: string,
+    images: readonly ClipboardImage[],
+  ): Promise<MessageContent | null> {
+    if (images.length === 0) return input;
+
+    const { content, warnings } = await buildUserContent({
+      text: input,
+      images,
+      config: await readConfig(),
+      apiModelName: this.apiModelValue || undefined,
+    });
+    for (const warning of warnings) this.notifier.onNotice(warning, "info");
+
+    // 降级成纯文本（一张图都没转成功）：文字照发
+    if (typeof content === "string") return content;
+
+    const bytes = Buffer.byteLength(JSON.stringify(content), "utf-8");
+    if (bytes > MAX_FRAME_BYTES) {
+      this.notifier.onNotice(
+        t("notice.remoteImagesTooLarge", { size: (bytes / 1024 / 1024).toFixed(1) }),
+        "error",
+      );
+      return input;
+    }
+    return content;
+  }
 
   /**
    * 订阅事件并按 `sessionId` 过滤。
@@ -413,6 +456,7 @@ export class RemoteChatSession implements ChatSessionLike {
     this.applyMessages(snapshot.messages);
     this.currentPhase = snapshot.phase;
     this.modelIdValue = snapshot.modelId;
+    this.apiModelValue = snapshot.apiModel;
     this.lastUsageValue = snapshot.lastUsage as AgentNS.Usage | undefined;
   }
 

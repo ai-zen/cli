@@ -14,6 +14,7 @@ import {
   SESSION_METHODS,
   type AgentSetModelResult,
   type HandoffMode,
+  type MessageContent,
   type SessionCancelResult,
   type SessionCreateResult,
   type SessionHandoffResult,
@@ -62,8 +63,13 @@ export class RemoteSessions {
     });
   }
 
-  /** 开始一轮；返回 `turnId`，过程与结果都走事件 */
-  async send(sessionId: string, content: string): Promise<SessionSendResult> {
+  /**
+   * 开始一轮；返回 `turnId`，过程与结果都走事件。
+   *
+   * `content` 可以是纯文本，也可以是「文本 + 图片」的内容块数组 —— 服务端不解释它，
+   * 原样交给 Agent（内容块怎么拼是客户端的事，见 `protocol/sessions.ts`）。
+   */
+  async send(sessionId: string, content: MessageContent): Promise<SessionSendResult> {
     return await this.client.call<SessionSendResult>(SESSION_METHODS.send, { sessionId, content });
   }
 
