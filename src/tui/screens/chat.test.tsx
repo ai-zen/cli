@@ -90,7 +90,7 @@ const clipboardMock = vi.hoisted(() => ({
 }));
 
 import { Chat } from "./chat.js";
-import { getCommandHints } from "../../conversation-commands/registry.js";
+import { getCommandHints } from "../../session-commands/registry.js";
 import type { ClipboardTextResult } from "../../clipboard.js";
 
 /** 等 effect / Promise / FrameBuffer 合帧跑完（合帧间隔 60ms） */

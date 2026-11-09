@@ -18,7 +18,7 @@ import {
   commandBlocksInput,
   matchCommandHints,
   parseCommandInput,
-} from "../../conversation-commands/registry.js";
+} from "../../session-commands/registry.js";
 import { readConfig, readMcpConfig, readReasoningPresets, saveConfig, writeMcpConfig } from "../../config.js";
 import { readAgentStore } from "../../agents-store.js";
 import { ConfigWizard } from "../config-wizard/index.js";
@@ -75,8 +75,8 @@ export interface ChatScreenProps {
   /** 依赖注入（测试用；缺省全部走真实实现） */
   deps?: Partial<ChatDeps>;
   messages?: AgentNS.Message[];
-  conversationId?: string;
-  conversationName?: string;
+  sessionId?: string;
+  sessionName?: string;
   /** 重挂载时的初始输入（/back 撤回后用于预填） */
   initialInput?: string;
   /**
@@ -343,8 +343,8 @@ export function Chat(props: ChatScreenProps) {
       {
         agentId: props.agentId,
         messages: props.messages,
-        conversationId: props.conversationId,
-        conversationName: props.conversationName,
+        sessionId: props.sessionId,
+        sessionName: props.sessionName,
         // 自动迁移：与手动 /migrate、/handoff 共用同一套「交接方式三选一」选择器
         requestMode: (info) =>
           chooseHandoffMode(
@@ -386,8 +386,8 @@ export function Chat(props: ChatScreenProps) {
   }, [
     props.agentId,
     props.messages,
-    props.conversationId,
-    props.conversationName,
+    props.sessionId,
+    props.sessionName,
   ]);
 
   // 速率采样：Spinner 的重渲染只影响它自己，不会带着状态栏一起刷，所以生成中要自己定时读快照。

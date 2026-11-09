@@ -6,7 +6,7 @@
  * `config.json` 的类型是 SDK 的 `AppConfig`，CLI 与 Desktop 共享同一份契约；
  * 往里加 `ui.language` 等于把 CLI 的偏好写进跨端配置，桌面端读到时既无法理解、
  * 又可能在回写时丢掉。因此单独放 `~/.ai-zen/cli/preferences.json`：
- * 落点与 `conversations/`、`last-session.json` 同级，都是「CLI 运行时数据」。
+ * 落点与 `cli/` 下其它运行时数据同级，都是「CLI 运行时数据」。
  */
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";

@@ -1,7 +1,7 @@
 // 斜杠命令执行器 —— 表驱动
 //
 // 命令的**元数据**（名字 / 别名 / 说明 / 是否阻塞输入）在
-// `conversation-commands/registry.ts`；**执行体**在本文件末尾的 `HANDLERS` 表里。
+// `session-commands/registry.ts`；**执行体**在本文件末尾的 `HANDLERS` 表里。
 // 两者以 `Record<CommandName, CommandHandler>` 绑定，于是「新增命令忘了写处理器」
 // 是编译错误（此前是 557 行 switch，漏一个分支只会在运行时落到「未知命令」）。
 //
@@ -22,8 +22,8 @@ import {
   matchCommandHints,
   parseCommandArgs,
   type CommandName,
-} from "../../conversation-commands/registry.js";
-import { conversationExists, conversationStore, listConversations } from "../../conversation-repository.js";
+} from "../../session-commands/registry.js";
+import { sessionExists, sessionStore, listSessions } from "../../session-store.js";
 import { mcpConfigOrEmpty, readConfig, readMcpConfig, readReasoningPresets, saveConfig } from "../../config.js";
 import { resetScope } from "../../agent-creator.js";
 import { switchModel } from "../../model-switch.js";
@@ -165,7 +165,7 @@ const cmdSave: CommandHandler = async ({ session, push, args, confirm }) => {
       push(t("cmd.save.done", { id }));
       return;
     }
-    if (name !== session.currentId && (await conversationExists(name))) {
+    if (name !== session.currentId && (await sessionExists(name))) {
       if (!(await confirm(t("cmd.save.overwrite", { id: name })))) {
         push(t("cmd.save.cancelled"));
         return;
@@ -183,7 +183,7 @@ const cmdLoad: CommandHandler = async ({ push, rows, exit, pick }) => {
   // 覆盖层能用的是 `usableFrameRows(rows) = rows - 1`；picker 自身占
   // `pickerLines(n) + STATUS_BAR_LINES`。
   const maxItems = Math.max(1, usableFrameRows(rows ?? 24) - (pickerLines(0) + STATUS_BAR_LINES));
-  const list = await listConversations();
+  const list = await listSessions();
   if (list.length === 0) {
     push(t("cmd.load.none"), "error");
     return;
@@ -199,18 +199,18 @@ const cmdLoad: CommandHandler = async ({ push, rows, exit, pick }) => {
     push(t("cmd.load.cancelled"));
     return;
   }
-  const conversation = await (await conversationStore()).read(choice);
-  if (!conversation) {
+  const record = await (await sessionStore()).read(choice);
+  if (!record) {
     push(t("cmd.load.readFailed", { id: choice }), "error");
     return;
   }
   // 整体切换会话（含模型 / Agent）——交由上层重挂载对话屏
   exit({
     load: {
-      agentId: conversation.agentId,
-      messages: conversation.messages,
-      conversationId: conversation.id,
-      conversationName: conversation.id,
+      agentId: record.agentId,
+      messages: record.messages,
+      sessionId: record.id,
+      sessionName: record.id,
     },
   });
 };
@@ -608,7 +608,7 @@ const cmdUpdate: CommandHandler = async ({
     try {
       await session.save();
     } catch {
-      // 落盘失败不阻断重启：ConversationPersistPlugin 每轮已落过一次，这里只是补最后一手
+      // 落盘失败不阻断重启：SessionPersistPlugin 每轮已落过一次，这里只是补最后一手
     }
   }
   await restartProcess();

@@ -1,8 +1,8 @@
 /**
- * ConversationPersistPlugin — 会话自动落盘插件。
+ * SessionPersistPlugin — 会话自动落盘插件。
  *
  * 取代原 `DraftPlugin`：不再写单文件草稿，而是每轮内循环结束后把当前
- * 消息写入该会话文件（`conversations/<id>.json`），并更新「上一轮会话 id」指针。
+ * 消息写入该会话文件（`sessions/<id>.json`），并更新「上一轮会话 id」指针。
  *
  * 采用「方案 B」：仅在产生实质内容（至少一条用户消息）时落盘，避免留下空会话。
  * 会话 id 通过 `getId()` 动态获取，以便任务迁移切换新会话后依然落盘到正确的文件。
@@ -10,10 +10,10 @@
 
 import type { AgentPlugin, SendContext } from "@ai-zen/agents-sdk";
 import { AgentNS } from "@ai-zen/agents-core";
-import { persistConversation } from "./conversation-repository.js";
+import { persistSession } from "./session-store.js";
 import { t } from "./i18n/index.js";
 
-export interface ConversationPersistPluginOptions {
+export interface SessionPersistPluginOptions {
   /** 动态返回当前会话 id（迁移切换会话后随之变化） */
   getId: () => string;
   agentId: string;
@@ -21,8 +21,8 @@ export interface ConversationPersistPluginOptions {
   onError?: (text: string) => void;
 }
 
-export class ConversationPersistPlugin implements AgentPlugin {
-  constructor(private options: ConversationPersistPluginOptions) {}
+export class SessionPersistPlugin implements AgentPlugin {
+  constructor(private options: SessionPersistPluginOptions) {}
 
   async onInnerLoopEnd(ctx: SendContext): Promise<void> {
     const { getId, agentId, onError } = this.options;
@@ -35,7 +35,7 @@ export class ConversationPersistPlugin implements AgentPlugin {
     try {
       // 每轮自动落盘也算「本工作区的上一轮会话」—— 下次在这个工作区启动时续接它。
       // 落到哪个工作区由 storage 层按 `process.cwd()` 解析（以前这里要自己带 cwd）。
-      await persistConversation({ id, agentId, messages });
+      await persistSession({ id, agentId, messages });
     } catch (err: any) {
       onError?.(t("chat.persistFailed", { error: err?.message ?? err }));
     }

@@ -2,7 +2,7 @@
  * CLI 类型定义
  *
  * 配置/Agent 等共享实体类型委托给 @ai-zen/agents-sdk。
- * 会话（Conversation）是 CLI 的产品数据，定义在 conversation-repository.ts。
+ * 会话（SessionRecord）是 CLI 的产品数据，定义在 session-store.ts。
  *
  * ## 命名规约（`*Context` 曾经一窝蜂，故定三条判据）
  *
@@ -27,11 +27,11 @@ export type {
   McpServerManifest,
 } from "@ai-zen/agents-sdk";
 
-export type { Conversation } from "./conversation-repository.js";
+export type { SessionRecord } from "./session-store.js";
 
 import type { SdkAgent, HandoffService } from "@ai-zen/agents-sdk";
 
-export interface ConversationContext {
+export interface SessionContext {
   agent: SdkAgent;
   currentName: string;
   currentId: string;

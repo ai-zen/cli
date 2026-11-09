@@ -36,7 +36,7 @@ import {
   stripCwdNote,
   type RLine,
 } from "./screens/index.js";
-import { getCommandHints, matchCommandHints } from "../conversation-commands/registry.js";
+import { getCommandHints, matchCommandHints } from "../session-commands/registry.js";
 import { isTerminalReply } from "./text.js";
 import { RENDER_OPTIONS } from "./index.js";
 import { AgentNS } from "@ai-zen/agents-core";

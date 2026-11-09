@@ -6,7 +6,7 @@
  * 模型只写在 **`AgentDefinition.modelId`** 上：
  *
  *   - 配置层没有 `defaultModel`（`AppConfig` 已无此字段）；
- *   - 会话存档不记模型（`Conversation` 已无 `modelId`）；
+ *   - 会话存档不记模型（`SessionRecord` 已无 `modelId`）；
  *   - 运行期 `createAgent` 只读 `definition.modelId`，缺了直接报错。
  *
  * 于是「切换模型」只有一种写法和一种读法，不存在两层分歧导致的

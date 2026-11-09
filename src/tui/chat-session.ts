@@ -26,17 +26,17 @@ import { readConfig } from "../config.js";
 import { buildUserContent } from "../user-content.js";
 import type { ClipboardImage } from "../clipboard.js";
 import { CwdTrackerPlugin } from "../cwd-tracker-plugin.js";
-import { ConversationPersistPlugin } from "../conversation-persist-plugin.js";
+import { SessionPersistPlugin } from "../session-persist-plugin.js";
 import { SubAgentGuardInstallerPlugin } from "../sub-agent-guard-plugin.js";
 import type { TokenThresholds } from "@ai-zen/agents-sdk";
 import { createAutoMigratePlugin } from "../auto-migrate-confirm.js";
 import { createHandoffService } from "../handoff-service.js";
 import {
-  generateConversationId,
-  conversationStore,
-  persistConversation,
-} from "../conversation-repository.js";
-import type { ConversationContext } from "../types.js";
+  generateSessionId,
+  sessionStore,
+  persistSession,
+} from "../session-store.js";
+import type { SessionContext } from "../types.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, deltaText, type RateSample } from "./token-rate.js";
 import { PhaseTracker, pendingToolCalls, type PhaseInfo } from "@ai-zen/agents-server";
@@ -98,8 +98,8 @@ export interface SubAgentView {
 export interface ChatSessionOptions {
   agentId?: string;
   messages?: AgentNS.Message[];
-  conversationId?: string;
-  conversationName?: string;
+  sessionId?: string;
+  sessionName?: string;
   /**
    * 自动迁移时的执行者选择（由 Ink 层弹出选择器实现）。
    * 返回 `null` 表示跳过本次迁移；未提供时按默认执行者（原 agent 自交接）直接迁移。
@@ -134,12 +134,12 @@ export class ChatSession {
   readonly tokenThresholds?: TokenThresholds;
 
   /**
-   * 会话 id / 名称的**唯一真相源是 `ctx`**（`ConversationContext`）。
+   * 会话 id / 名称的**唯一真相源是 `ctx`**（`SessionContext`）。
    *
    * 为什么必须代理而不是各存一份：自动迁移由 SDK 的 `AutoMigratePlugin` 直接驱动
    * `HandoffService.migrate()`，**不经过本类任何方法**，新 id 只会写进 `ctx.currentId`
    * （`onMigrated` 钩子）。若本类另持一份 `currentId`，自动迁移后它就停在旧值上，
-   * 而 `ConversationPersistPlugin.getId()` 读的正是这份旧值——于是 prune 之后的
+   * 而 `SessionPersistPlugin.getId()` 读的正是这份旧值——于是 prune 之后的
    * 「系统提示 + 交接断点」会被写进**旧会话文件**，把已保存的完整历史覆盖掉。
    */
   get currentId(): string {
@@ -157,7 +157,7 @@ export class ChatSession {
   }
 
   private agent!: SdkAgent;
-  private readonly ctx: ConversationContext;
+  private readonly ctx: SessionContext;
   private readonly handoffService: HandoffService;
   private readonly notifier: ChatSessionNotifier;
   private readonly requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
@@ -183,7 +183,7 @@ export class ChatSession {
 
   private constructor(
     handoffService: HandoffService,
-    ctx: ConversationContext,
+    ctx: SessionContext,
     options: ChatSessionOptions,
     tokenThresholds: TokenThresholds | undefined,
     notifier: ChatSessionNotifier,
@@ -192,7 +192,7 @@ export class ChatSession {
     this.ctx = ctx;
     this.agentId = options.agentId || "default";
     this.tokenThresholds = tokenThresholds;
-    this.currentId = ctx.currentId || generateConversationId();
+    this.currentId = ctx.currentId || generateSessionId();
     this.currentName = ctx.currentName;
     this.notifier = notifier;
     this.requestMode = options.requestMode;
@@ -215,10 +215,10 @@ export class ChatSession {
     // 阈值由配置直接给出（旧字段已在 SDK 的 ConfigManager.read() 里迁移过）
     const tokenThresholds = model?.tokenThresholds;
 
-    const currentId = options.conversationId || generateConversationId();
-    const ctx: ConversationContext = {
+    const currentId = options.sessionId || generateSessionId();
+    const ctx: SessionContext = {
       agent,
-      currentName: options.conversationName || currentId,
+      currentName: options.sessionName || currentId,
       currentId,
       agentId: options.agentId,
     };
@@ -356,7 +356,7 @@ export class ChatSession {
     });
     this.agent = agent;
     this.ctx.agent = agent;
-    this.currentId = generateConversationId();
+    this.currentId = generateSessionId();
     this.currentName = this.currentId;
     await this.attach(agent);
     this.notifier.onChange(true);
@@ -427,7 +427,7 @@ export class ChatSession {
 
   /** 保存当前对话到存档 */
   async save(): Promise<string> {
-    return persistConversation({
+    return persistSession({
       id: this.currentId,
       agentId: this.agentId,
       messages: this.agent.messages,
@@ -446,14 +446,14 @@ export class ChatSession {
    */
   async saveAs(id: string): Promise<string> {
     const previous = this.currentId;
-    await persistConversation({
+    await persistSession({
       id,
       agentId: this.agentId,
       messages: this.agent.messages,
     });
     if (id === previous) return id; // 自己盖自己：不删
     // 旧文件不能留：同一份对话出现两条记录会让 `/load` 里分不清哪条是新的
-    await (await conversationStore()).remove(previous);
+    await (await sessionStore()).remove(previous);
     this.currentId = id;
     this.currentName = id;
     return id;
@@ -473,7 +473,7 @@ export class ChatSession {
     agent.use(new CwdTrackerPlugin());
     agent.use(new AutoRefreshToolsPlugin());
     agent.use(
-      new ConversationPersistPlugin({
+      new SessionPersistPlugin({
         getId: () => this.currentId,
         agentId: this.agentId,
         // 每轮自动落盘失败是真错误（用户会以为什么都没丢）—— 走 error 语气

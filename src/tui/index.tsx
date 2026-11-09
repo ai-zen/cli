@@ -15,7 +15,7 @@ import type { AppConfig } from "@ai-zen/agents-sdk";
 import { AGENTS_DIR, ensureConfigDir, readConfig, saveConfig } from "../config.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
-import { conversationStore } from "../conversation-repository.js";
+import { sessionStore } from "../session-store.js";
 import { Chat } from "./screens/index.js";
 import { keyDebugStart } from "./key-debug.js";
 import { disableMouseTracking, enableMouseTracking } from "./mouse.js";
@@ -138,8 +138,8 @@ async function ensureCredential(modelId: string): Promise<boolean> {
 interface ChatTarget {
   agentId?: string;
   messages?: AgentNS.Message[];
-  conversationId?: string;
-  conversationName?: string;
+  sessionId?: string;
+  sessionName?: string;
 }
 
 /**
@@ -179,17 +179,17 @@ async function resolveTarget(): Promise<ChatTarget> {
 
 /** 读取「上一轮会话 id」指针，续接该会话（指针缺失或会话不存在时返回 null） */
 async function resumeLastSession(): Promise<ChatTarget | null> {
-  const store = await conversationStore();
+  const store = await sessionStore();
   const pointer = await store.lastSession();
   if (!pointer) return null;
-  const conversation = await store.read(pointer.id);
-  if (!conversation) return null;
+  const record = await store.read(pointer.id);
+  if (!record) return null;
   // 模型由 Agent 定义决定（旧存档里的 modelId 一律忽略）
   return targetFromMessages({
-    agentId: conversation.agentId,
-    messages: conversation.messages,
-    conversationId: conversation.id,
-    conversationName: conversation.id,
+    agentId: record.agentId,
+    messages: record.messages,
+    sessionId: record.id,
+    sessionName: record.id,
   });
 }
 
@@ -197,14 +197,14 @@ async function resumeLastSession(): Promise<ChatTarget | null> {
 function targetFromMessages(input: {
   agentId?: string;
   messages: AgentNS.Message[];
-  conversationId?: string;
-  conversationName?: string;
+  sessionId?: string;
+  sessionName?: string;
 }): ChatTarget {
   return {
     agentId: input.agentId,
     messages: input.messages,
-    conversationId: input.conversationId,
-    conversationName: input.conversationName,
+    sessionId: input.sessionId,
+    sessionName: input.sessionName,
   };
 }
 
@@ -231,8 +231,8 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
       <Chat
         agentId={current.agentId}
         messages={messages}
-        conversationId={current.conversationId}
-        conversationName={current.conversationName}
+        sessionId={current.sessionId}
+        sessionName={current.sessionName}
         initialInput={initialInput}
         initialNotice={initialNotice}
         initialPrompt={initialPrompt}
@@ -246,13 +246,13 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
         load?: {
           agentId?: string;
           messages?: AgentNS.Message[];
-          conversationId?: string;
-          conversationName?: string;
+          sessionId?: string;
+          sessionName?: string;
         };
         messages?: AgentNS.Message[];
         initialInput?: string;
-        conversationId?: string;
-        conversationName?: string;
+        sessionId?: string;
+        sessionName?: string;
         /** `/model` 切换后重挂载：Agent 变了（模型由 Agent 定义承载） */
         agentId?: string;
         /** 重挂载后展示一次的系统提示 */
@@ -262,8 +262,8 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
         // /load：整体切换到另一段已保存对话（含 Agent），重挂载对话屏
         current = {
           agentId: value.load.agentId,
-          conversationId: value.load.conversationId,
-          conversationName: value.load.conversationName,
+          sessionId: value.load.sessionId,
+          sessionName: value.load.sessionName,
         };
         messages = value.load.messages;
         initialInput = undefined;

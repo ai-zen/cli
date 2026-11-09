@@ -18,19 +18,19 @@ import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
 import {
   ensureWorkspace,
-  FileConversationStore,
-  migrateLegacyConversations,
-  type Conversation as StoredConversation,
-  type ConversationSummary,
+  FileSessionStore,
+  migrateLegacySessions,
+  type SessionRecord as StoredSessionRecord,
+  type SessionRef,
   type SessionPointer,
 } from "@ai-zen/agents-server";
 import { AI_ZEN_DIR, CLI_DIR } from "./config.js";
 import { formatFileStamp } from "./format-time.js";
-import type { ConversationContext } from "./types.js";
+import type { SessionContext } from "./types.js";
 
 /** 存档里的会话（消息类型取 core 的 `AgentNS.Message`，服务端只当不透明载荷搬） */
-export type Conversation = StoredConversation<AgentNS.Message>;
-export type { ConversationSummary, SessionPointer };
+export type SessionRecord = StoredSessionRecord<AgentNS.Message>;
+export type { SessionRef, SessionPointer };
 
 /** 工作区根目录：`<AI_ZEN_DIR>/workspaces`（每次现拼，`AI_ZEN_DIR` 是会变的活绑定） */
 function workspacesRoot(): string {
@@ -51,9 +51,9 @@ function migrateOnce(): Promise<void> {
   if (migration?.aiZenDir !== aiZenDir) {
     migration = {
       aiZenDir,
-      done: migrateLegacyConversations({
+      done: migrateLegacySessions({
         // 旧位置全在 `cli/` 下，属于历史包袱：搬完就没了
-        legacyConversationsDir: join(CLI_DIR, "conversations"),
+        legacySessionsDir: join(CLI_DIR, "conversations"),
         legacyPointerFile: join(CLI_DIR, "last-session.json"),
         workspacesRoot: workspacesRoot(),
       }).then(() => undefined),
@@ -68,22 +68,22 @@ function migrateOnce(): Promise<void> {
  * 每次调用新建一个轻对象：store 只包一个目录，而目录每次都可能不同（测试换
  * `AI_ZEN_DIR`、将来服务端服务多个工作区）。缓存实例等于把路径也缓存了。
  */
-export async function conversationStore(): Promise<FileConversationStore<AgentNS.Message>> {
+export async function sessionStore(): Promise<FileSessionStore<AgentNS.Message>> {
   await migrateOnce();
   const workspace = await ensureWorkspace({ workspacesRoot: workspacesRoot(), path: process.cwd() });
-  return new FileConversationStore<AgentNS.Message>({ rootDir: workspace.rootDir });
+  return new FileSessionStore<AgentNS.Message>({ rootDir: workspace.rootDir });
 }
 
 /**
  * 生成文件名安全的会话 id：英文前缀 + 全下划线时间戳，中英一致。
  * 形如 `chat_2026_10_28_00_56_34`。
  */
-export function generateConversationId(date: Date = new Date()): string {
+export function generateSessionId(date: Date = new Date()): string {
   return `chat_${formatFileStamp(date.toISOString())}`;
 }
 
-/** 落盘一份会话所需的全部输入（工作区由 {@link conversationStore} 决定，不必再传） */
-export interface PersistConversationInput {
+/** 落盘一份会话所需的全部输入（工作区由 {@link sessionStore} 决定，不必再传） */
+export interface PersistSessionInput {
   id: string;
   agentId?: string;
   messages: AgentNS.Message[];
@@ -100,12 +100,12 @@ export interface PersistConversationInput {
  * 落盘一份会话 —— **唯一的写入入口**。
  *
  * 此前「读旧记录拿 createdAt → 写 → 更新指针」这段在 5 个地方各写了一遍，并且已经
- * 漂移：`saveConversation()` 漏写 `cwd`、stdio 的 `--save` 不更新指针、还写了一个已
+ * 漂移：`saveSession()` 漏写 `cwd`、stdio 的 `--save` 不更新指针、还写了一个已
  * 废弃的 `modelId`。收敛到这里后，各处差异只剩「是否更新指针」一个显式开关。
  */
-export async function persistConversation(input: PersistConversationInput): Promise<string> {
+export async function persistSession(input: PersistSessionInput): Promise<string> {
   // store **只取一次**：同一份落盘必须只落在一个工作区里
-  const store = await conversationStore();
+  const store = await sessionStore();
   await store.write({
     id: input.id,
     agentId: input.agentId || "default",
@@ -118,9 +118,9 @@ export async function persistConversation(input: PersistConversationInput): Prom
 /**
  * 保存当前对话（交接前落盘旧会话时用）：以 `ctx` 为真相源，走统一的写入入口。
  */
-export async function saveConversation(ctx: ConversationContext): Promise<string> {
-  return persistConversation({
-    id: ctx.currentId || generateConversationId(),
+export async function saveSession(ctx: SessionContext): Promise<string> {
+  return persistSession({
+    id: ctx.currentId || generateSessionId(),
     agentId: ctx.agentId,
     messages: ctx.agent.messages,
   });
@@ -131,8 +131,8 @@ export async function saveConversation(ctx: ConversationContext): Promise<string
  *
  * 只 `access`：判断重名不需要解析内容，`read()` 会把整个会话 JSON.parse 一遍。
  */
-export async function conversationExists(id: string): Promise<boolean> {
-  return (await conversationStore()).exists(id);
+export async function sessionExists(id: string): Promise<boolean> {
+  return (await sessionStore()).exists(id);
 }
 
 /**
@@ -141,6 +141,6 @@ export async function conversationExists(id: string): Promise<boolean> {
  * 只 `readdir` + `stat`，**不 read 任何会话文件**：列表只显示文件名，摘要（首条消息）
  * 已取消 —— 会话攒到上百条时，逐个 `JSON.parse` 会明显拖慢 `/load`。
  */
-export async function listConversations(): Promise<ConversationSummary[]> {
-  return (await conversationStore()).list();
+export async function listSessions(): Promise<SessionRef[]> {
+  return (await sessionStore()).list();
 }

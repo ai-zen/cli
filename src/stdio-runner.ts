@@ -22,7 +22,7 @@ import { AGENTS_DIR, readConfig } from "./config.js";
 import { CwdTrackerPlugin } from "./cwd-tracker-plugin.js";
 import { SubAgentGuardInstallerPlugin } from "./sub-agent-guard-plugin.js";
 import type { TokenThresholds } from "@ai-zen/agents-sdk";
-import { generateConversationId, persistConversation } from "./conversation-repository.js";
+import { generateSessionId, persistSession } from "./session-store.js";
 
 export interface StdioRunOptions {
   /** 位置参数拼接而成的指令（可空，此时全部内容来自 stdin） */
@@ -164,8 +164,8 @@ export async function runStdio(options: StdioRunOptions): Promise<number> {
 
     if (save) {
       // 会话名与 TUI 同源（避免两处拼接各自漂移）
-      const name = await persistConversation({
-        id: generateConversationId(),
+      const name = await persistSession({
+        id: generateSessionId(),
         agentId,
         messages: agent.messages,
         // 一次性管道调用只归档，不改「本工作区上一轮会话」指针：

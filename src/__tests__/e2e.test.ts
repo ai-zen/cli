@@ -270,7 +270,7 @@ describe("E2E: 真实 API 对话（纯 stdio）", () => {
     expect(result.exitCode).toBe(0);
 
     // 断言至少有一个对话存档文件（会话落在**当前工作区**的目录下）
-    const convDir = join(aizDir, "workspaces", workspaceIdFor(process.cwd()), "conversations");
+    const convDir = join(aizDir, "workspaces", workspaceIdFor(process.cwd()), "sessions");
     const { readdirSync } = await import("node:fs");
     expect(readdirSync(convDir).length).toBeGreaterThan(0);
   }, 60000);

@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
 import { runCommand, type ChatCommandHost } from "./chat-commands.js";
 import type { ChatSession } from "../chat-session.js";
-import { persistConversation } from "../../conversation-repository.js";
+import { persistSession } from "../../session-store.js";
 import { useTempAiZenDir } from "../../test-support/temp-dir.js";
 import { setLocale } from "../../i18n/index.js";
 import { workspaceIdFor } from "@ai-zen/agents-server";
@@ -105,7 +105,7 @@ describe("/back：撤回后必须落盘", () => {
       { role: AgentNS.Role.User, content: "第二条" },
     ];
     // 先落一份「完整的」存档，模拟撤回前已自动保存
-    await persistConversation({ id: "chat_back", messages });
+    await persistSession({ id: "chat_back", messages });
 
     const session = {
       messages,
@@ -116,7 +116,7 @@ describe("/back：撤回后必须落盘", () => {
         const removed = messages.splice(index);
         return removed.find((m) => m.role === AgentNS.Role.User)?.content ?? "";
       }),
-      save: vi.fn(async () => persistConversation({ id: "chat_back", messages })),
+      save: vi.fn(async () => persistSession({ id: "chat_back", messages })),
     };
     const { host } = createHost({ ...session });
     // 选择器直接作答：选「第二条」（它的 messages 下标为 2，列表里是最近在前，但 value 就是下标）
@@ -136,7 +136,7 @@ describe("/back：撤回后必须落盘", () => {
 
     const saved = JSON.parse(
       readFileSync(
-        join(zen.dir, "workspaces", workspaceIdFor(process.cwd()), "conversations", "chat_back.json"),
+        join(zen.dir, "workspaces", workspaceIdFor(process.cwd()), "sessions", "chat_back.json"),
         "utf-8",
       ),
     );
@@ -179,7 +179,7 @@ describe("/save：支持指定名字 + 重名二次确认", () => {
   });
 
   it("名字已存在且不是当前 id：先问一遍；取消则完全不写", async () => {
-    await persistConversation({ id: "旧对话", messages: [], setAsLastSession: false });
+    await persistSession({ id: "旧对话", messages: [], setAsLastSession: false });
     const { host, session, notices } = createHost({
       currentId: "chat_now",
       saveAs: vi.fn(async (id: string) => id),
@@ -194,7 +194,7 @@ describe("/save：支持指定名字 + 重名二次确认", () => {
   });
 
   it("确认之后才覆盖", async () => {
-    await persistConversation({ id: "旧对话", messages: [], setAsLastSession: false });
+    await persistSession({ id: "旧对话", messages: [], setAsLastSession: false });
     const { host, session } = createHost({
       currentId: "chat_now",
       saveAs: vi.fn(async (id: string) => id),
@@ -226,7 +226,7 @@ describe("/save：支持指定名字 + 重名二次确认", () => {
       currentId: "chat_now",
       saveAs: vi.fn(async (id: string) => id),
     });
-    await persistConversation({ id: "chat_now", messages: [], setAsLastSession: false });
+    await persistSession({ id: "chat_now", messages: [], setAsLastSession: false });
 
     await runCommand("save", "/save chat_now", host);
 
@@ -271,7 +271,7 @@ describe("picker 条数上限（不超出一帧）", () => {
 
   it("/load：条数上限正好装进一帧（rows − 10）", async () => {
     for (let i = 0; i < 20; i += 1) {
-      await persistConversation({
+      await persistSession({
         id: `chat_${String(i).padStart(2, "0")}`,
         messages: [{ role: AgentNS.Role.User, content: `第 ${i} 条` }] as any,
       });

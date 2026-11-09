@@ -214,7 +214,7 @@ export const zh: Record<string, string> = {
   "handoff.writing": "📋 正在编写任务交接文档（{mode}）…",
   "handoff.degraded": "⚠️ {requested}未能产出文档，已降级为{mode}",
   "handoff.path": "📄 交接文档：{path}",
-  "handoff.savedConversation": "✅ 原对话已保存：{name}",
+  "handoff.savedSession": "✅ 原对话已保存：{name}",
   "handoff.migrated": "🚀 任务迁移完成，已开启新会话（共 {n} 条消息）",
   "handoff.migratedHint": "💡 新助手会先读取交接文档，随后即可继续推进任务。",
   "handoff.persistFailed": "⚠️ 迁移后会话落盘失败：{error}",

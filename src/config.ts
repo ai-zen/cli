@@ -19,7 +19,7 @@
  *
  *   ~/.ai-zen/workspaces/<workspaceId>/   ← 会话真正的位置（CLI / 桌面端共享）
  *   ├── workspace.json            ← 该工作区对应的原始路径（哈希不可逆，得留凭据）
- *   ├── conversations/            ← 对话记录（每个会话一个 JSON）
+ *   ├── sessions/                 ← 对话记录（每个会话一个 JSON）
  *   └── last-session.json         ← 「本工作区上一轮会话」指针 *
  *   项目/.ai-zen/                 ← 项目级配置与产物
  *   ├── skills/                   ← 项目级 Skill
@@ -76,7 +76,7 @@ function resolveRoot(): string {
  *
  * **会失效的是快照**：在模块顶层把路径塞进常量或实例（`const POINTER_FILE = join(CLI_DIR, …)`、
  * `new Repo(CONVERSATIONS_DIR)`、`new ConfigManager(CONFIG_FILE)`）—— 那个值在模块求值那一刻就定死了。
- * 这类地方一律改成函数（`pointerFile()` / `conversationRepository()` / `configManager()`），
+ * 这类地方一律改成函数（`pointerFile()` / `sessionStore()` / `configManager()`），
  * 由调用时机决定读哪个目录。
  */
 export let AI_ZEN_DIR = resolveRoot();
@@ -85,7 +85,7 @@ export let AI_ZEN_DIR = resolveRoot();
 
 /**
  * CLI 自己的目录。会话已搬到 `workspaces/`，这里**只剩旧存档**的位置：
- * 启动时由 `conversation-repository.ts` 的迁移把里面的东西搬走，之后就能删。
+ * 启动时由 `session-store.ts` 的迁移把里面的东西搬走，之后就能删。
  */
 export let CLI_DIR = join(AI_ZEN_DIR, "cli");
 export let CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
@@ -219,7 +219,7 @@ export function refreshPaths(): void {
  * 确保配置目录和默认文件存在（进程内只真正执行一次）。
  *
  * 共享实体（Agent、SubAgent、Skill 目录等）委托给 SDK 的 ConfigManager.bootstrap()。
- * CLI 自身的运行时目录（conversations/）由本函数额外创建。
+ * CLI 自身的运行时目录（cli/）由本函数额外创建。
  * SDK 的出厂默认配置会自动写入 config.json（如果不存在）。
  */
 export async function ensureConfigDir(): Promise<void> {

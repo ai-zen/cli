@@ -10,13 +10,13 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { workspaceIdFor } from "@ai-zen/agents-server";
-import { listConversations } from "./conversation-repository.js";
+import { listSessions } from "./session-store.js";
 import { useTempAiZenDir } from "./test-support/temp-dir.js";
 
 const zen = useTempAiZenDir("aiz-migrate-wire-");
 const legacyDir = () => join(zen.dir, "cli", "conversations");
 const workspaceConvDir = (path: string) =>
-  join(zen.dir, "workspaces", workspaceIdFor(path), "conversations");
+  join(zen.dir, "workspaces", workspaceIdFor(path), "sessions");
 
 beforeEach(() => {
   zen.pin();
@@ -42,7 +42,7 @@ describe("老存档搬迁（CLI 侧接线）", () => {
     }
 
     // `/load` 只看得见当前工作区的那条
-    expect((await listConversations()).map((c) => c.id)).toEqual(["chat_here"]);
+    expect((await listSessions()).map((c) => c.id)).toEqual(["chat_here"]);
 
     // 两条都搬走了，旧目录不残留
     expect(existsSync(join(workspaceConvDir(process.cwd()), "chat_here.json"))).toBe(true);

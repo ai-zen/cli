@@ -3,9 +3,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ConversationContext } from "./types.js";
+import type { SessionContext } from "./types.js";
 import { createHandoffService } from "./handoff-service.js";
-import { conversationStore } from "./conversation-repository.js";
+import { sessionStore } from "./session-store.js";
 import { setLocale } from "./i18n/index.js";
 import { useTempAiZenDir } from "./test-support/temp-dir.js";
 
@@ -54,7 +54,7 @@ function makeAgent(lastUsage: unknown) {
   };
 }
 
-function makeCtx(agent: ReturnType<typeof makeAgent>): ConversationContext {
+function makeCtx(agent: ReturnType<typeof makeAgent>): SessionContext {
   return {
     agent: agent as any,
     currentName: "会话_x",
@@ -62,7 +62,7 @@ function makeCtx(agent: ReturnType<typeof makeAgent>): ConversationContext {
     currentId: "会话_x",
     agentId: "default",
     running: true,
-  } as unknown as ConversationContext;
+  } as unknown as SessionContext;
 }
 
 function uniqueDir(name: string): string {
@@ -93,7 +93,7 @@ describe("createHandoffService", () => {
     expect(result.handoffPath.startsWith(dir)).toBe(true);
     // 新会话：id 已切换并落盘
     expect(ctx.currentId).not.toBe("会话_x");
-    const saved = await (await conversationStore()).read(ctx.currentId!);
+    const saved = await (await sessionStore()).read(ctx.currentId!);
     expect(saved).toBeTruthy();
     expect(saved!.messages.length).toBe(1);
   });

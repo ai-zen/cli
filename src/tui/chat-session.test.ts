@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
 import { ChatSession } from "./chat-session.js";
 import { ContextGuardPlugin, HandoffAbortedError } from "@ai-zen/agents-sdk";
-import { ConversationPersistPlugin } from "../conversation-persist-plugin.js";
-import { conversationStore } from "../conversation-repository.js";
+import { SessionPersistPlugin } from "../session-persist-plugin.js";
+import { sessionStore } from "../session-store.js";
 import { refreshPaths } from "../config.js";
 import { workspaceIdFor } from "@ai-zen/agents-server";
 
@@ -85,9 +85,9 @@ const newSession = (
 describe("ChatSession.reset（/new 归档旧对话）", () => {
   it("空对话不落盘；有内容则归档到原 id，且不误写到新 id", async () => {
     const dir = state.dir;
-    // 会话落在**当前工作区**下（`workspaces/<workspaceId>/conversations/`）
-    const convFile = (id: string) =>
-      join(dir, "workspaces", workspaceIdFor(process.cwd()), "conversations", `${id}.json`);
+    // 会话落在**当前工作区**下（`workspaces/<workspaceId>/sessions/`）
+    const sessionFile = (id: string) =>
+      join(dir, "workspaces", workspaceIdFor(process.cwd()), "sessions", `${id}.json`);
     const session = await newSession(
       {},
       { onChange: () => {}, onNotice: () => {} },
@@ -98,7 +98,7 @@ describe("ChatSession.reset（/new 归档旧对话）", () => {
     session.currentName = "会话_旧对话A";
     expect(await session.reset()).toBeNull();
     expect(session.currentId).not.toBe("会话_旧对话A");
-    expect(existsSync(convFile("会话_旧对话A"))).toBe(false);
+    expect(existsSync(sessionFile("会话_旧对话A"))).toBe(false);
 
     // 情形 2：有内容 → 归档到原 id
     session.currentId = "会话_旧对话B";
@@ -109,19 +109,19 @@ describe("ChatSession.reset（/new 归档旧对话）", () => {
     expect(archived).toBe("会话_旧对话B");
     expect(session.currentId).not.toBe("会话_旧对话B");
 
-    const saved = JSON.parse(await fs.readFile(convFile("会话_旧对话B"), "utf-8"));
+    const saved = JSON.parse(await fs.readFile(sessionFile("会话_旧对话B"), "utf-8"));
     expect(saved.id).toBe("会话_旧对话B");
     expect(saved.messages).toHaveLength(1);
     expect(saved.messages[0].content).toBe("你好");
 
     // 关键：不得把旧内容误写到新会话 id 上
-    expect(existsSync(convFile(session.currentId))).toBe(false);
+    expect(existsSync(sessionFile(session.currentId))).toBe(false);
   });
 });
 
 describe("ChatSession.saveAs（`/save <名字>`）", () => {
-  const convFile = (id: string) =>
-    join(state.dir, "workspaces", workspaceIdFor(process.cwd()), "conversations", `${id}.json`);
+  const sessionFile = (id: string) =>
+    join(state.dir, "workspaces", workspaceIdFor(process.cwd()), "sessions", `${id}.json`);
 
   it("写到新名字、删掉旧文件、更新 currentId 与 last-session 指针", async () => {
     const session = await newSession();
@@ -129,17 +129,17 @@ describe("ChatSession.saveAs（`/save <名字>`）", () => {
     session.currentName = "chat_before_rename";
     session.messages.push({ role: AgentNS.Role.User, content: "你好" } as any);
     await session.save(); // 自动落盘先发生了：旧文件已存在
-    expect(existsSync(convFile("chat_before_rename"))).toBe(true);
+    expect(existsSync(sessionFile("chat_before_rename"))).toBe(true);
 
     expect(await session.saveAs("我的对话")).toBe("我的对话");
 
     expect(session.currentId).toBe("我的对话");
-    expect(existsSync(convFile("我的对话"))).toBe(true);
+    expect(existsSync(sessionFile("我的对话"))).toBe(true);
     // 旧文件消失（否则同一份对话会有两条记录）
-    expect(existsSync(convFile("chat_before_rename"))).toBe(false);
+    expect(existsSync(sessionFile("chat_before_rename"))).toBe(false);
     // 指针跟着走：下次启动要续接到改名后的会话
-    expect((await (await conversationStore()).lastSession())?.id).toBe("我的对话");
-    const saved = JSON.parse(await fs.readFile(convFile("我的对话"), "utf-8"));
+    expect((await (await sessionStore()).lastSession())?.id).toBe("我的对话");
+    const saved = JSON.parse(await fs.readFile(sessionFile("我的对话"), "utf-8"));
     expect(saved.id).toBe("我的对话");
     expect(saved.messages).toHaveLength(1);
   });
@@ -148,11 +148,11 @@ describe("ChatSession.saveAs（`/save <名字>`）", () => {
     const session = await newSession();
     session.currentId = "chat_never_saved";
     session.messages.push({ role: AgentNS.Role.User, content: "刚开的新会话" } as any);
-    expect(existsSync(convFile("chat_never_saved"))).toBe(false);
+    expect(existsSync(sessionFile("chat_never_saved"))).toBe(false);
 
     await session.saveAs("新名字");
 
-    expect(existsSync(convFile("新名字"))).toBe(true);
+    expect(existsSync(sessionFile("新名字"))).toBe(true);
     expect(session.currentId).toBe("新名字");
   });
 
@@ -164,14 +164,14 @@ describe("ChatSession.saveAs（`/save <名字>`）", () => {
 
     // 校验来自存储层的 `assertSafeId()`：以前这里会静默写到 `<dir>/cli/逃逸.json`
     // —— 删旧文件那一步还会顺手删掉目录外的同名文件
-    await expect(session.saveAs("../逃逸")).rejects.toThrow(/invalid conversation id/);
+    await expect(session.saveAs("../逃逸")).rejects.toThrow(/invalid session id/);
 
     const workspaceRoot = join(state.dir, "workspaces", workspaceIdFor(process.cwd()));
     expect(existsSync(join(workspaceRoot, "逃逸.json"))).toBe(false);
     expect(existsSync(join(state.dir, "逃逸.json"))).toBe(false);
     // 当前会话不受影响：新文件没写成，旧文件也不该被删
     expect(session.currentId).toBe("chat_escape");
-    expect(existsSync(convFile("chat_escape"))).toBe(true);
+    expect(existsSync(sessionFile("chat_escape"))).toBe(true);
   });
 
   it("目标名与当前 id 相同：只落盘，不删自己", async () => {
@@ -183,7 +183,7 @@ describe("ChatSession.saveAs（`/save <名字>`）", () => {
     expect(await session.saveAs("chat_same")).toBe("chat_same");
 
     expect(session.currentId).toBe("chat_same");
-    expect(existsSync(convFile("chat_same"))).toBe(true);
+    expect(existsSync(sessionFile("chat_same"))).toBe(true);
   });
 });
 
@@ -198,7 +198,7 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
     // 模拟 SDK 的 HandoffService.onMigrated：自动迁移由 AutoMigratePlugin 直接驱动，
     // 只写 ctx.currentId，不经过 ChatSession 的任何方法。
     // 旧实现另持一份 this.currentId，此处会停在旧值上，导致
-    // ConversationPersistPlugin.getId() 拿到旧 id，把 prune 后的空会话写回旧文件。
+    // SessionPersistPlugin.getId() 拿到旧 id，把 prune 后的空会话写回旧文件。
     (session as any).ctx.currentId = "会话_迁移后";
 
     expect(session.currentId).toBe("会话_迁移后");
@@ -246,13 +246,13 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
     // 模拟 AutoMigratePlugin：直接调 SDK 服务，不经过 ChatSession.migrate()
     await (session as any).handoffService.migrate({ agent });
 
-    // 修复前：currentId 停在旧值 → ConversationPersistPlugin 会把 prune 后的
+    // 修复前：currentId 停在旧值 → SessionPersistPlugin 会把 prune 后的
     // 「系统提示 + 交接断点」写回「会话_自动迁移前」，覆盖掉完整历史。
     expect(session.currentId).not.toBe("会话_自动迁移前");
 
     const archived = JSON.parse(
       await fs.readFile(
-        join(state.dir, "workspaces", workspaceIdFor(process.cwd()), "conversations", "会话_自动迁移前.json"),
+        join(state.dir, "workspaces", workspaceIdFor(process.cwd()), "sessions", "会话_自动迁移前.json"),
         "utf-8",
       ),
     );
@@ -310,7 +310,7 @@ describe("ChatSession 落盘失败的上报（PLAN L7）", () => {
     const notices: { text: string; tone?: string }[] = [];
     await newSession({}, { onChange: () => {}, onNotice: (text: string, tone?: string) => notices.push({ text, tone }) });
 
-    const persist = harness.plugins.filter((p) => p instanceof ConversationPersistPlugin).at(-1) as any;
+    const persist = harness.plugins.filter((p) => p instanceof SessionPersistPlugin).at(-1) as any;
     expect(persist).toBeDefined();
 
     // 把根目录指向「文件下面」—— mkdir 必失败，从而必然走到 onError

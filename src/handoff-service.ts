@@ -4,13 +4,13 @@ import {
   type HandoffMode,
 } from "@ai-zen/agents-sdk";
 import {
-  saveConversation,
-  persistConversation,
-  generateConversationId,
-} from "./conversation-repository.js";
+  saveSession,
+  persistSession,
+  generateSessionId,
+} from "./session-store.js";
 import { projectDirs } from "./config.js";
 import { listSkillDirs } from "./agent-creator.js";
-import type { ConversationContext } from "./types.js";
+import type { SessionContext } from "./types.js";
 import { t } from "./i18n/index.js";
 
 /** 执行者的中文名（供提示文案使用） */
@@ -28,7 +28,7 @@ export function describeMode(mode: HandoffMode): string {
  * @param ctx 当前会话上下文（先建后回填 handoffService；钩子直接引用该对象）
  */
 export function createHandoffService(
-  ctx: ConversationContext,
+  ctx: SessionContext,
   options: {
     log?: (text: string) => void;
     /** 交接文档目录；默认项目级 `<cwd>/.ai-zen/handoffs`（测试/多工作区可覆盖） */
@@ -74,8 +74,8 @@ export function createHandoffService(
 
       // 迁移前（历史尚未剔除）保存旧对话：此时已包含交接回合，可完整审计
       if (hctx.migrating) {
-        await saveConversation(ctx);
-        log(t("handoff.savedConversation", { name: ctx.currentName }));
+        await saveSession(ctx);
+        log(t("handoff.savedSession", { name: ctx.currentName }));
       }
     },
     onMigrated: async (hctx: HandoffContext) => {
@@ -84,7 +84,7 @@ export function createHandoffService(
       // `ContextGuardPlugin.isSuspended`（接线 `() => handoffService.busy`）负责。
 
       // 迁移开启新会话：分配新的会话 id 与名称
-      const id = generateConversationId();
+      const id = generateSessionId();
       ctx.currentId = id;
       ctx.currentName = id;
 
@@ -92,10 +92,10 @@ export function createHandoffService(
       log(t("handoff.migratedHint"));
 
       // 迁移后立即把新开场白落盘为独立会话文件，并更新「上一轮会话 id」指针，
-      // 避免迁移发生在 onAfterSend（ConversationPersistPlugin 的 onInnerLoopEnd
+      // 避免迁移发生在 onAfterSend（SessionPersistPlugin 的 onInnerLoopEnd
       // 已不再触发）导致迁移后的新对话未被及时落盘、用户中途退出时丢失。
       try {
-        await persistConversation({
+        await persistSession({
           id,
           agentId: ctx.agentId,
           messages: hctx.agent.messages,
