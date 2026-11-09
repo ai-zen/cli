@@ -12,6 +12,7 @@ import {
   AGENT_METHODS,
   EVENT_METHODS,
   SESSION_METHODS,
+  WORKSPACE_METHODS,
   type AgentSetModelResult,
   type HandoffMode,
   type MessageContent,
@@ -49,7 +50,7 @@ export class RemoteSessions {
 
   /** 路径 → 工作区身份 */
   async resolveWorkspace(path: string): Promise<WorkspaceResolveResult> {
-    return await this.client.call<WorkspaceResolveResult>(SESSION_METHODS.workspaceResolve, { path });
+    return await this.client.call<WorkspaceResolveResult>(WORKSPACE_METHODS.resolve, { path });
   }
 
   /** 开（或续接）一个会话 */

@@ -14,6 +14,7 @@ import {
   Daemon,
   createAgentHandlers,
   createSessionHandlers,
+  ConfigService,
   FileSessionStore,
   SessionAgentFactory,
   SessionManager,
@@ -127,8 +128,22 @@ async function start(): Promise<void> {
     port: 0,
     version: "0.0.0-test",
     handlers: {
-      ...createSessionHandlers({ manager: manager!, workspacesRoot: join(dir, "workspaces") }),
-      ...createAgentHandlers({ factory }),
+      ...createSessionHandlers({
+        manager: manager!,
+        workspacesRoot: join(dir, "workspaces"),
+        // 客户端总要带 path，所以默认工作区在这个用例里用不上；给一个合法值即可
+        defaultWorkspacePath: dir,
+      }),
+      ...createAgentHandlers({
+        factory,
+        config: new ConfigService({
+          configFile: join(dir, "config.json"),
+          agentsDir: join(dir, "agents"),
+          subAgentsDir: join(dir, "sub-agents"),
+          globalMcpFile: join(dir, "mcp.json"),
+          workspacesRoot: join(dir, "workspaces"),
+        }),
+      }),
     },
   });
   await daemon.start();

@@ -153,7 +153,12 @@ async function open(input: { agentId?: string; sessionId?: string } = {}): Promi
     aiZenDir: dir,
     port: 0,
     version: "0.0.0-test",
-    handlers: createSessionHandlers({ manager: manager!, workspacesRoot: join(dir, "workspaces") }),
+    handlers: createSessionHandlers({
+      manager: manager!,
+      workspacesRoot: join(dir, "workspaces"),
+      // 这几个用例总带 path，默认工作区用不上；给一个合法值即可
+      defaultWorkspacePath: dir,
+    }),
   });
   await daemon.start();
   client = await SocketServerClient.connect({
