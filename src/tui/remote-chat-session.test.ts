@@ -4,9 +4,10 @@
  * 这是「TUI 换源」的护栏：屏幕要的那几个事实（消息、阶段、模型、用量、id）全都必须
  * 只能从服务端拿到，而 `send()` 的语义要**与进程内模式一致**（一轮跑完才 resolve）。
  *
- * 工作区那几件事也在这里定死：客户端**不上送 cwd**（会话落在服务端自己的目录）、
- * `@` 补全的清单来自服务端磁盘、续接问 `session.last`。因此用例里的会话一律不传
- * `path`，期望值一律对着 Daemon 的 `defaultWorkspacePath`。
+ * 工作区那几件事也在这里定死：本地服务端（loopback）时客户端递自己的 cwd、远端不递、
+ * `@` 补全的清单来自服务端磁盘、续接问 `session.last`。用例里的会话默认显式传
+ * `path: workspaceDir`（要断言「跑在哪个目录」就得有确定的期望值），不传 path 的
+ * 「本地取 cwd」那条另有专门用例。
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -34,6 +35,7 @@ import {
   type RemoteChatSessionDeps,
   type SubAgentStream,
 } from "./remote-chat-session.js";
+import { clientWorkspacePath } from "../server-client/local-host.js";
 import type { ChatSessionNotifier } from "./chat-session.js";
 
 class FakeAgent implements AgentLike {
@@ -305,9 +307,14 @@ async function startServer(): Promise<SocketServerClient> {
   return client;
 }
 
-/** 起服务端并开一段远程会话 —— **不传 path**：工作区归属服务端 */
+/** 起服务端并开一段远程会话。
+ *
+ * 默认把 `path` 固定成服务端的工作目录：用例里要断言「这档会话跑在哪个目录」时，
+ * 期望值就必须是确定的。**不传 `path`** 的那种情况（本地取客户端 cwd）另有专门用例。
+ */
 async function open(
   input: {
+    path?: string;
     agentId?: string;
     sessionId?: string;
     resume?: boolean;
@@ -317,7 +324,12 @@ async function open(
   deps: RemoteChatSessionDeps = { reconnect: reconnectToNextServer },
 ): Promise<RemoteChatSession> {
   const connected = await startServer();
-  session = await RemoteChatSession.openWith(connected, input, notifier, deps);
+  session = await RemoteChatSession.openWith(
+    connected,
+    { path: workspaceDir, ...input },
+    notifier,
+    deps,
+  );
   return session;
 }
 
@@ -356,16 +368,32 @@ describe("RemoteChatSession：开一段会话", () => {
   });
 });
 
-describe("RemoteChatSession：工作区归属服务端", () => {
-  it("不上送客户端 cwd：会话落在服务端自己的工作目录（服务端规范化后的路径）", async () => {
-    const opened = await open();
+describe("RemoteChatSession：工作区归谁决定", () => {
+  it("本地服务端（loopback）：不传 path 就用客户端 cwd —— 会话落在你敲 `ai` 的那个目录", async () => {
+    const opened = await open({ path: undefined });
 
-    // 路径来自 `workspace.resolve` 的返回值，等于 Daemon 的 `defaultWorkspacePath`
-    // （`ensureWorkspace` 做的是 `resolve(path)`，两边对同一个值取规范化结果）
+    // 服务端规范化后的路径就是客户端递上去的那个目录（本仓根）：
+    // 这是「在项目里敲 `ai` 就接着这个项目」的全部依据
+    expect(observed<string>(opened, "path")).toBe(resolve(process.cwd()));
+    expect(observed<string>(opened, "path")).not.toBe(resolve(workspaceDir));
+  });
+
+  it("远端（非 loopback）：不递 cwd，用服务端自己的工作目录", async () => {
+    // 判据就是地址：两机部署时客户端把自己进程的目录送上去，服务端根本没有那个目录
+    expect(clientWorkspacePath("127.0.0.1", "/work/a")).toBe("/work/a");
+    expect(clientWorkspacePath("localhost", "/work/a")).toBe("/work/a");
+    expect(clientWorkspacePath("[::1]", "/work/a")).toBe("/work/a");
+    expect(clientWorkspacePath("127.8.9.10", "/work/a")).toBe("/work/a");
+    expect(clientWorkspacePath("192.168.1.20", "/work/a")).toBeUndefined();
+    expect(clientWorkspacePath("ai.example.com", "/work/a")).toBeUndefined();
+    // `0.0.0.0` 是监听地址，不是连接目标：不该当成「本地」
+    expect(clientWorkspacePath("0.0.0.0", "/work/a")).toBeUndefined();
+  });
+
+  it("明确给了 path 就以它为准（同一个工作区里换会话用得上）", async () => {
+    const opened = await open({ path: workspaceDir });
+
     expect(observed<string>(opened, "path")).toBe(resolve(workspaceDir));
-    // 客户端进程的 cwd（本仓根目录）不该出现在任何地方：以前那句
-    // `path: process.cwd()` 会让会话跑到**这台机器**的目录上去
-    expect(observed<string>(opened, "path")).not.toBe(process.cwd());
   });
 
   it("listWorkspaceFiles：清单来自服务端磁盘，既有文件也有祖先目录条目", async () => {

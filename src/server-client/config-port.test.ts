@@ -197,10 +197,11 @@ describe("createRemoteConfigPort：客户端模式（配置落在服务端）", 
 
   it("readMcpConfig / writeMcpConfig（project）：工作区由服务端解析，文件落在工作区里", async () => {
     await start();
-    const port = createRemoteConfigPort({ client: connection! });
+    // 项目作用域的路径来源：生产里是「本地就取客户端 cwd」，这里指到临时目录
+    // （不然这用例会往真实工作区写 mcp.json）
+    const port = createRemoteConfigPort({ client: connection!, workspacePath: () => dir });
 
-    // 没有文件时是空配置；project 作用域要的 workspaceId 由服务端用它自己的目录解析
-    // （Daemon 的 defaultWorkspacePath = dir），所以这里不必也不该上送路径
+    // 没有文件时是空配置；project 作用域要的 workspaceId 由服务端按这个路径解析
     expect(await port.readMcpConfig("project")).toEqual({ ok: true, config: { mcpServers: {} } });
 
     const mcpConfig = { mcpServers: { demo: { command: "echo", args: ["hi"] } } };
@@ -351,10 +352,11 @@ describe("createRemoteConfigPort：连接的懒建与重建（注入假连接）
     expect(second.map((call) => call.method)).toEqual([CONFIG_METHODS.get]);
   });
 
-  it("project 作用域：不带 path 地问服务端，问一次就缓存", async () => {
+  it("project 作用域：把客户端 cwd 递给服务端，问一次就缓存", async () => {
     const calls: RecordedCall[] = [];
     const port = createRemoteConfigPort({
       connect: async () => fakeClient(calls),
+      workspacePath: () => "/work/proj",
     });
 
     await port.readMcpConfig("project");
@@ -362,8 +364,8 @@ describe("createRemoteConfigPort：连接的懒建与重建（注入假连接）
 
     const resolves = calls.filter((call) => call.method === WORKSPACE_METHODS.resolve);
     expect(resolves).toHaveLength(1);
-    // 不带 path：工作区在哪是服务端的事实，客户端不替它决定
-    expect(resolves[0]!.params).toEqual({});
+    // 与开会话同一套判据：本地就把 cwd 递上去，远端才不说（见 `local-host.ts`）
+    expect(resolves[0]!.params).toEqual({ path: "/work/proj" });
 
     expect(calls.filter((call) => call.method === CONFIG_METHODS.mcpGet)[0]!.params).toEqual({
       scope: "project",

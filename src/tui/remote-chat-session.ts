@@ -15,19 +15,20 @@
  * 3. **换 id 的方法（`migrate` / `saveAs`）以返回值里的 `sessionId` 为准**。服务端在旧
  *    id 上收尾、再把活会话挪到新键；客户端拿到响应后立刻跟着换，之后的事件才过滤得上。
  *
- * ## cwd 归属服务端（本文件不再上送客户端自己的当前目录）
+ * ## 工作区：本地取客户端 cwd，远端归服务端
  *
- * 客户端只递 `workspaceId`，工作目录由服务端 `workspace.resolve` 给出：远程部署时
- * 服务端在一台机器上、TUI 在另一台上，客户端把自己进程的 cwd 送上去等于**让客户端替
- * 服务端决定会话跑在哪个目录**——而那个目录在服务端很可能根本不存在（于是要么开出一个
- * 空目录、要么直接失败）。所以：
+ * 工作目录到底该由谁决定，取决于服务端在哪台机器上：
  *
- *   · `openWith` 不带路径，服务端用它自己的工作目录解析出 `workspaceId` + **规范化后的**
- *     绝对路径；本类持有的 `this.path` 是那个返回值，不是构造参数里抄来的副本
- *     （`reset()` 再开新会话时还在同一个工作区里，靠的就是它）；
- *   · `@` 补全的清单（`listWorkspaceFiles`）同样问服务端（`workspace.files`）—— 清单
- *     必须来自会话真正跑在哪个目录，那是服务端的事实；
- *   · 续接（`resume`）问 `session.last`：哪一段是「上一轮」也只存在于服务端。
+ *   · **本地**（连的是 loopback）—— 用**客户端**的 `process.cwd()`。这是使用者的实际
+ *     意图：「我在这个项目里敲 `ai`，会话就该跑在这个项目里」，也才能「复用或新建这个
+ *     目录的工作区 → 接着它最后一段对话」。客户端递的是「我希望是这里」，路径仍由服务端
+ *     规范化，本类持有的 `this.path` 也永远是那个返回值（`reset()` 再开新会话时还在同一个
+ *     工作区里，靠的就是它）；
+ *   · **远端**（非 loopback）—— 不上送，用服务端自己的默认工作区。客户端把自己进程的目录
+ *     送上去，等于让客户端替服务端决定会话跑在哪：那个目录在服务端很可能不存在。
+ *
+ * `@` 补全的清单（`listWorkspaceFiles`）与续接（`resume` → `session.last`）都跟着工作区
+ * 走，所以它们不需要再各自判断一次「本地还是远端」。
  *
  * ## 断线重连（透明恢复，不是一个新的交互）
  *
@@ -93,6 +94,7 @@ import type { ClipboardImage } from "../clipboard.js";
 import { AI_ZEN_DIR, readConfig } from "../config.js";
 import { t } from "../i18n/index.js";
 import { ensureServer } from "../server-client/ensure-server.js";
+import { clientWorkspacePath } from "../server-client/local-host.js";
 import { RemoteSessions } from "../server-client/sessions.js";
 import type { ServerClient } from "../server-client/types.js";
 import { buildUserContent } from "../user-content.js";
@@ -245,11 +247,12 @@ async function connectToServer(): Promise<ServerClient> {
 /** 开一段远程会话需要的最小输入 */
 export interface OpenRemoteSessionInput {
   /**
-   * 工作目录。**建议不要给**：不给就用服务端自己的工作目录（cwd 归属服务端）。
+   * 明确指定工作目录。**一般不要给**：本地由 {@link clientWorkspacePath} 自动取客户端 cwd，
+   * 远端则用服务端默认目录。
    *
    * 给了也只是「我希望是这里」，路径仍由服务端规范化 —— 客户端手上那份是**它自己**
-   * 那边的路径，两机部署时服务端不一定有那个目录。留这个口子只因为同一台机器上
-   * 「换个目录再开一段」确实存在（测试也用得上）。
+   * 那边的路径，两机部署时服务端不一定有那个目录。留这个口子只因为「换个目录再开一段」
+   * 确实存在（测试也用它）。
    */
   path?: string;
   agentId?: string;
@@ -403,8 +406,12 @@ export class RemoteChatSession implements ChatSessionLike {
      * `workspace.path`（已规范化，幂等）；真正需要对齐的是「问 `last` 的工作区」与
      * 「开会话的工作区」——分两处各解析一次，就多出两个能漂的答案。所以顺序是：
      * 解析一次 → 用它的 id 问上一轮 → 用它的 path 开会话。
+     *
+     * 路径的取舍只有这一行：明确给的就用，否则本地（loopback）才递客户端 cwd。
+     * 递过去之后以服务端的返回值为准（`resolve` 就是「你说的那个目录，规范成什么样」）。
      */
-    const workspace = await sessions.resolveWorkspace(input.path);
+    const requestedPath = input.path ?? clientWorkspacePath(client.address.host);
+    const workspace = await sessions.resolveWorkspace(requestedPath);
 
     /**
      * 续接：`resume` 只是意图，**哪一段是上一轮**只有服务端知道（`session.last`）。
@@ -1209,10 +1216,10 @@ function toneOf(level: "info" | "warn" | "error"): "info" | "error" {
 /**
  * `ChatDeps.createSession` 的默认实现：连服务端（没有就拉起）并开一段会话。
  *
- * **不上送任何路径**：cwd 归属服务端。这里曾经发的是客户端进程的当前目录，等于让
- * 客户端替服务端决定会话跑在哪 —— 远程部署时那是**这台**机器上的目录，服务端那边很可能
- * 根本不存在（轻则开出一个不相干的新目录，重则直接失败）。
- * 服务端不给路径时用它自己的工作目录，那才是会话真正跑的地方。
+ * **路径由 `openWith` 那一处决定**（本地递客户端 cwd、远端不说）：
+ * 客户端把本机目录递给远端服务端，等于替它决定会话跑在哪 —— 那个目录在服务端很可能
+ * 根本不存在（轻则开出一个不相干的新目录，重则直接失败）；而同一台机器上，用户的 cwd
+ * 就是最准的意图（「我在这个项目里敲 `ai`」）。判据只有一条（`local-host.ts`）。
  *
  * `resume` / `sessionId` 原样透传：一个说「接着上次」，一个说「就这一段」，
  * 两者的优先级由 `openWith` 处理（明确的 id 优先）。

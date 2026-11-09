@@ -61,6 +61,7 @@ import {
 import { switchModel } from "../model-switch.js";
 import { CLI_VERSION } from "../version.js";
 import { ensureServer } from "./ensure-server.js";
+import { clientWorkspacePath } from "./local-host.js";
 import type { ClientInfo, ServerClient } from "./types.js";
 
 export interface ConfigPort {
@@ -99,6 +100,13 @@ export interface RemoteConfigPortDeps {
   client?: ServerClient;
   /** 注入「拿连接」的函数（可选，二者取一） */
   connect?: () => Promise<ServerClient>;
+  /**
+   * 项目作用域的路径来源（缺省：按 loopback 判据取客户端 cwd，见 `local-host.ts`）。
+   *
+   * 之所以可注入：「当前目录」在测试里是进程级全局（会往真实工作区写文件），
+   * 而它与连接无关。注入一个函数比在用例里 `chdir` 干净，也不会串到别的用例。
+   */
+  workspacePath?: () => string | undefined;
 }
 
 /**
@@ -114,12 +122,13 @@ export interface RemoteConfigPortDeps {
  * 连接死了（服务端重启、网络断）不必再来问一次：下次调用发现它已关闭就重建一条
  * —— 这正是「TUI 常驻、服务端可以随时重启」那个使用形态。
  *
- * ## 为什么工作区 id 也在这层解析（且不带 path）
+ * ## 为什么工作区 id 也在这层解析
  *
- * 项目级 `mcp.json` 在 `<工作区>/.ai-zen/` 下，而「当前工作区」是服务端的事实：不带
- * path 的 `workspace.resolve()` 就是「服务端自己的目录」，与会话开在哪里是同一个答案。
- * 客户端把自己进程的 cwd 送上去，等于替服务端决定会话跑在哪个目录（两机部署时那个
- * 目录在服务端很可能不存在）。所以接口里刻意没有 workspaceId 参数，这里也不上送路径。
+ * 项目级 `mcp.json` 在 `<工作区>/.ai-zen/` 下，而「当前工作区」要用与开会话**同一套判据**
+ * （见 `local-host.ts`）：本地就把客户端 cwd 递上去（这样项目级 mcp 改的确实是这个项目的
+ * 那份文件），远端不说（客户端把本机目录递给远端服务端，等于替它决定会话跑在哪）。
+ * 两处各自判断一次就会出现「会话在 A 项目、mcp 配置读的是别处」。接口里刻意没有
+ * workspaceId 参数：那是服务端的返回，不是客户端的入参。
  *
  * ## 错误不包装
  *
@@ -168,15 +177,23 @@ export function createRemoteConfigPort(deps: RemoteConfigPortDeps = {}): ConfigP
     return await pendingConnect;
   };
 
+  const resolveWorkspacePath = (client: ServerClient): string | undefined =>
+    deps.workspacePath ? deps.workspacePath() : clientWorkspacePath(client.address.host);
+
   /**
-   * 项目作用域的 `workspaceId`：**不带 path** 地问服务端。
+   * 项目作用域的 `workspaceId`：问服务端「这个目录对应哪个工作区」。
    *
-   * 缓存它是因为它是「服务端自己的目录」，进程内不会变；换连接时由 `connection()` 作废。
+   * 路径按与开会话**同一套判据**给（{@link clientWorkspacePath}）：本地递客户端 cwd、
+   * 远端不递。分成两套判断就会出现「会话在 A 项目、项目级 mcp.json 读的却是别处」——
+   * 用户改完那屏以为生效了，实际改到了与本会话无关的文件里。
+   *
+   * 缓存它是因为同一个进程的 cwd 不变（换连接时由 `connection()` 作废）。
    */
   const projectWorkspaceId = async (client: ServerClient): Promise<string> => {
     if (!cachedWorkspaceId) {
+      const path = resolveWorkspacePath(client);
       cachedWorkspaceId = client
-        .call<WorkspaceResolveResult>(WORKSPACE_METHODS.resolve, {})
+        .call<WorkspaceResolveResult>(WORKSPACE_METHODS.resolve, path ? { path } : {})
         .then((resolved) => resolved.workspaceId)
         .catch((error: unknown) => {
           // 问不到就别记着：一次瞬时故障不该让这个进程永久以为「没有工作区」
