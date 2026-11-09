@@ -21,6 +21,7 @@ import {
   SessionManager,
   type AgentLike,
   type CreateAgentInput,
+  type ModelLevel,
 } from "@ai-zen/agents-server";
 import { AgentNS } from "@ai-zen/agents-core";
 import { RemoteSessions } from "../server-client/sessions.js";
@@ -42,6 +43,8 @@ import type { ChatSessionNotifier } from "./chat-session.js";
 class FakeAgent implements AgentLike {
   messages: any[] = [];
   lastUsage: unknown = undefined;
+  /** 三级解析的档位（真件由 SDK 的 `createAgent` 给；假件照抄这一位） */
+  modelLevel: ModelLevel = "agent";
   /** 交接要用的那几面（真件是 SDK 的 `SdkAgent`）；无 write 工具 → 走摘要模式 */
   definition = { messages: [] as any[], modelId: "test-model" };
   tools: Array<{ function?: { name?: string } }> = [];
@@ -133,6 +136,8 @@ const testConfigPort: ConfigPort = {
     ({ agents: [], subAgents: [], save: async () => {}, remove: async () => {} }) as never,
   setModel: async () => {},
   setDefaultAgent: async () => {},
+  setSessionModel: async () => {},
+  setDefaultModel: async () => {},
 };
 
 const notifier: ChatSessionNotifier = {
@@ -383,6 +388,8 @@ describe("RemoteChatSession：开一段会话", () => {
 
     expect(opened.currentId).toBe("chat_1");
     expect(opened.modelId).toBe("test-model");
+    // 档位也是服务端解析的结果（假件手工装配的定义档）：`/model` 的选择器靠它标「当前生效档」
+    expect(opened.modelLevel).toBe("agent");
     expect(opened.phase).toBeNull();
     expect(opened.messages).toEqual([{ role: "user", content: "上次聊到这儿" }]);
     // 还没人委派：栏目不出现（有子 Agent 才有这一栏）

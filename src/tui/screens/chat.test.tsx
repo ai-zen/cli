@@ -110,6 +110,8 @@ const fakePort = (config: any = fakeConfig()) =>
     readAgentStore: vi.fn(async () => fakeAgentStore()),
     setModel: vi.fn(async (_agentId: string, _modelId: string) => {}),
     setDefaultAgent: vi.fn(async (_agentId: string) => {}),
+    setSessionModel: vi.fn(async (_sessionId: string, _modelId: string) => {}),
+    setDefaultModel: vi.fn(async (_modelId: string) => {}),
   }) satisfies ConfigPort;
 
 type FakePort = ReturnType<typeof fakePort>;

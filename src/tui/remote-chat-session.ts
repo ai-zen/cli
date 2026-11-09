@@ -86,6 +86,7 @@ import {
   SESSION_EVENTS,
   SESSION_METHODS,
   type MessageContent,
+  type ModelLevel,
   type PhaseInfo,
   type ServerEvent,
   type SessionQuestionEvent,
@@ -340,6 +341,13 @@ export class RemoteChatSession implements ChatSessionLike {
   private sessionId: string;
   private workspaceId: string;
   private modelIdValue = "";
+  /**
+   * 生效模型的档位（服务端解析结果的一手透传）。
+   *
+   * 初值只是「首次快照到达前」的占位：构造完立刻会 `snapshot` 一次把它盖掉，
+   * 而界面在那之前不渲染模型信息。
+   */
+  private modelLevelValue: ModelLevel = "agent";
   /** 实发模型名：拼图片内容块时按它反查端点与视觉能力（`file_id` 是端点维度资源） */
   private apiModelValue = "";
   /** 服务端给的权威消息（事件期间的增量也追加在这里，收尾时整体换成快照） */
@@ -502,6 +510,10 @@ export class RemoteChatSession implements ChatSessionLike {
 
   get modelId(): string {
     return this.modelIdValue;
+  }
+
+  get modelLevel(): ModelLevel {
+    return this.modelLevelValue;
   }
 
   get currentId(): string {
@@ -1271,6 +1283,7 @@ export class RemoteChatSession implements ChatSessionLike {
     this.applyMessages(snapshot.messages);
     this.currentPhase = snapshot.phase;
     this.modelIdValue = snapshot.modelId;
+    this.modelLevelValue = snapshot.modelLevel;
     this.apiModelValue = snapshot.apiModel;
     this.lastUsageValue = snapshot.lastUsage as AgentNS.Usage | undefined;
   }

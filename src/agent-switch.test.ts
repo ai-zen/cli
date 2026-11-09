@@ -93,6 +93,24 @@ describe("checkAgentSwitch：只校验、不写配置", () => {
     ).toThrow(/未绑定模型/);
   });
 
+  it("定义没绑模型但配了全局兜底：可以切（用兜底那个模型）", () => {
+    // 三级解析：定义没绑 → 落 `config.defaultModel`；预检要跟着它，否则界面说
+    // 「不可用」而服务端其实能跑（用户就再也切不过去了）
+    const bare = [...agents, makeAgent({ id: "bare", name: "裸 Agent", modelId: undefined })];
+    const config = makeConfig({ defaultModel: "deepseek-flash" });
+
+    expect(() => checkAgentSwitch({ config, agents: bare, targetAgentId: "bare" })).not.toThrow();
+
+    // 兜底模型也不可用（这里换成缺 Key 的那个）时照样拦住
+    expect(() =>
+      checkAgentSwitch({
+        config: makeConfig({ defaultModel: "glm-5.3" }),
+        agents: bare,
+        targetAgentId: "bare",
+      }),
+    ).toThrow(/API Key/);
+  });
+
   it("绑定的模型已从配置里删掉时抛错", () => {
     const orphan = [...agents, makeAgent({ id: "orphan", name: "孤儿", modelId: "gone" })];
     expect(() =>
@@ -143,6 +161,20 @@ describe("listAgentChoices：选择器的行与可用性", () => {
     expect(choices[1]).toMatchObject({ selectable: false, reason: "模型 gone 不存在" });
     expect(choices[2]).toMatchObject({ selectable: false });
     expect(choices[2]!.reason).toContain("API Key");
+  });
+
+  it("定义没绑模型时用全局兜底那个模型的凭据判断可用性", () => {
+    const bare = [makeAgent({ id: "bare", name: "裸 Agent", modelId: undefined })];
+
+    expect(listAgentChoices(makeConfig({ defaultModel: "deepseek-flash" }), bare)[0]).toMatchObject(
+      {
+        selectable: true,
+        modelName: "DeepSeek-V4.1-Flash",
+      },
+    );
+    expect(listAgentChoices(makeConfig({ defaultModel: "glm-5.3" }), bare)[0]).toMatchObject({
+      selectable: false,
+    });
   });
 
   it("name 缺失时回落 id", () => {

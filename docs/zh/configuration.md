@@ -84,11 +84,11 @@ outline: deep
 - `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`：其余默认项。
 - `abortedMessageStrategy`（`keep` / `drop`）与 `abortedToolRoundStrategy`（`fill` / `drop`）：**中断策略**。前者决定被中断时模型已输出的思考 / 正文是否留在上下文（出厂 `keep`：下一轮接着半截往下说；`drop` 则不发给模型）；后者决定被中断 / 结果不完整的工具轮次怎么归一（出厂 `fill`：整轮保留并给未完成结果补原因，`tool_calls` 与结果必须配对；`drop` 则整轮出列）。缺字段或写了非法值时，启动会补成出厂默认。配置中心「默认项」里可直接切换；它只在**建 Agent** 时读取，改完关掉配置中心会自动重建会话生效（也可手动 `/reload`）。
 - `autoRefreshTools`（`inner-loop-start` / `outer-loop-start` / `off`）：**工具清单刷新时机**。一次刷新会重新发现 MCP server、Skill 与用户工具，所以这是「开销 / 时效」的取舍：`inner-loop-start`（出厂）在**每次请求前**刷，会话中新装的能力下一次请求就能用（旧版即如此）；`outer-loop-start` 整个回合开头刷一次，开销最小，新能力下一轮生效；`off` 不自动刷，只有 `/reload` 生效。同样在配置中心「默认项」里切换，也是建 Agent 时才读。
-- **模型不在 `config.json` 里指定**：它写在 Agent 定义的 `modelId` 上（见下节）。旧版的 `config.defaultModel` 已在升级时自动搬迁到默认 Agent 并从配置中删除。
+- **模型按三级解析**（会话级覆盖 > Agent 定义 > `defaultModel`）：日常在用的写在 Agent 定义的 `modelId` 上（见下节）；`config.defaultModel` 是**兜底**，只在 Agent 没绑模型时生效，默认不写。`/model <id>` 改当前会话、`/model -a <id>` 改定义、`/model -g <id>` 改兜底。
 
 ## Agent 定义（`agents/<id>.json`）
 
-每个 Agent 在自己的定义文件里绑定模型 —— 这是运行期的**唯一真相源**：状态栏、凭据预检、上下文阈值与发给 API 的请求全部读它，`/model` 切换写的也是它。
+每个 Agent 在自己的定义文件里绑定模型 —— 这是三级解析的**第二级**（也是最常生效的那一级）：解析结果（会话级覆盖 > 本字段 > `config.defaultModel`）决定状态栏、凭据预检、上下文阈值与发给 API 的请求；`/model -a` 写的才是本字段。
 
 ```json
 {

@@ -19,6 +19,7 @@ import { join } from "node:path";
 import {
   AGENT_METHODS,
   CONFIG_METHODS,
+  SESSION_METHODS,
   ConfigService,
   Daemon,
   FileSessionStore,
@@ -241,6 +242,25 @@ describe("createRemoteConfigPort：客户端模式（配置落在服务端）", 
     ]);
   });
 
+  it("setDefaultModel：只写 config.json 的 defaultModel，模型清单一个不动", async () => {
+    await start();
+    const port = createRemoteConfigPort({ client: connection! });
+    const before = await port.readConfig();
+
+    await port.setDefaultModel("alt-model");
+
+    const after = await port.readConfig();
+    expect(after.defaultModel).toBe("alt-model");
+    // 窄方法的意义：模型 / 端点这些字段不被「整份写回」碰一遍
+    expect(after.models).toEqual(before.models);
+    expect(after.endpoints).toEqual(before.endpoints);
+    // 写的是服务端那份 config.json（客户端的磁盘一个字都没改）
+    const onDisk = JSON.parse(readFileSync(join(dir, "config.json"), "utf-8")) as {
+      defaultModel?: string;
+    };
+    expect(onDisk.defaultModel).toBe("alt-model");
+  });
+
   it("setModel：modelId 变了，modelParams 被清空（换模型即重置思考强度的回归保护）", async () => {
     await start();
     const port = createRemoteConfigPort({ client: connection! });
@@ -328,15 +348,23 @@ describe("createRemoteConfigPort：连接的懒建与重建（注入假连接）
     expect(connects).toBe(1);
     await port.saveConfig(config);
     await port.setModel("default", "m");
+    await port.setSessionModel("chat_1", "m");
+    await port.setDefaultModel("m");
     await port.readAgentStore();
 
     expect(connects).toBe(1);
+    // 三档模型写入各走各的线上方法名：会话级 `session.model.set`、定义级 `agent.model.set`、
+    // 全局兜底 `config.defaultModel.set`（字面量只有协议里那一份，这里顺带钉住）
     expect(calls.map((call) => call.method)).toEqual([
       CONFIG_METHODS.get,
       CONFIG_METHODS.save,
       AGENT_METHODS.setModel,
+      SESSION_METHODS.modelSet,
+      CONFIG_METHODS.defaultModelSet,
       AGENT_METHODS.list,
     ]);
+    expect(calls[3]!.params).toEqual({ sessionId: "chat_1", modelId: "m" });
+    expect(calls[4]!.params).toEqual({ modelId: "m" });
   });
 
   it("连接已关闭 → 下一次调用重建一条（服务端可以随时重启）", async () => {

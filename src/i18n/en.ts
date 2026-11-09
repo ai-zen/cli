@@ -76,7 +76,7 @@ export const en: Record<string, string> = {
   "cmd.editor.desc": "Compose a long message in your editor",
   "cmd.clear.desc": "Clear the screen",
   "cmd.config.desc": "Open the configuration center (model / endpoints)",
-  "cmd.model.desc": "Switch model (writes to config)",
+  "cmd.model.desc": "Switch model (session / agent / global)",
   "cmd.agent.desc": "Switch the primary agent (rebuilds the session)",
   "cmd.reload.desc": "Refresh the runtime (rediscovers tools / MCP)",
   "cmd.update.desc": "Upgrade the CLI to the newest published release",
@@ -95,7 +95,11 @@ export const en: Record<string, string> = {
   /** Separator when listing several names (e.g. "Waiting for edit, exec…") */
   "common.listSeparator": ", ",
   "cmd.model.noModels": "No models configured yet — use /config to add endpoints and models",
-  "cmd.model.title": "Switch model (writes to config)",
+  // One picker for all three levels: title says which level you edit **and** which one is in effect
+  "cmd.model.title": "Switch model · {scope} (in effect: {level})",
+  "cmd.model.scope.session": "session",
+  "cmd.model.scope.agent": "agent definition",
+  "cmd.model.scope.global": "global default",
   "cmd.model.cancelled": "Model switch cancelled",
   "cmd.agent.noAgents": "No primary agents yet — use /config to create one",
   "cmd.agent.unavailable": " · unavailable",
@@ -138,7 +142,8 @@ export const en: Record<string, string> = {
   "cmd.back.title": "Pick the message to retract (everything after it is removed)",
   "cmd.back.cancelled": "Retract cancelled",
   "cmd.model.unknown": "Unknown model: {id} (available: {options})",
-  "cmd.model.already": "Already on model {id}",
+  "cmd.model.already": "Already the {scope} model: {id}",
+  "cmd.model.done": "Switched the {scope} model to {name} ({id})",
   "cmd.model.endpointMissing":
     "Model {id} references endpoint {endpoint}, which does not exist — check /config",
   "cmd.model.noApiKey":

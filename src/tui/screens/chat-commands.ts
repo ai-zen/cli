@@ -297,6 +297,49 @@ const cmdConfig: CommandHandler = async ({ openWizard }) => {
   await openWizard({ kind: "menu" });
 };
 
+/**
+ * `/model` 能改的三个作用级别 —— 与模型的三级解析一一对应（`会话级 > Agent 定义 > 全局兜底`）。
+ */
+export type ModelScope = "session" | "agent" | "global";
+
+/** `/model` 解析出来的动作：改哪一档 + 改成什么（没给 id = 弹选择器） */
+export interface ModelSelection {
+  scope: ModelScope;
+  /** 直切的模型 id；`undefined` = 弹选择器 */
+  modelId: string | undefined;
+}
+
+/** 作用级别参数（只有这三种写法，大小写不敏感） */
+const MODEL_SCOPE_FLAGS: Record<string, ModelScope> = {
+  "-a": "agent",
+  "--agent": "agent",
+  "-g": "global",
+  "--global": "global",
+};
+
+/**
+ * 解析 `/model` 的参数。
+ *
+ * ```text
+ * /model                 → 会话级选择器
+ * /model <id>            → 会话级直切（**这一段**用它）
+ * /model -a|--agent <id> → Agent 定义（`agent.model.set`，`/model` 从前的意思）
+ * /model -g|--global <id>→ 全局兜底（`config.defaultModel`）
+ * /model -a|-g           → 对应档位的选择器（三档共用同一个选择器）
+ * ```
+ *
+ * 为什么缺省落到**会话级**：`/model` 最常表达的是「这次换个模型」。写进 Agent 定义会连带
+ * 改掉所有用这个 Agent 的会话（另一个终端里正聊着的对话会莫名换模型），代价远大于收益 ——
+ * 要改定义就显式说 `-a`。
+ */
+export function parseModelSelection(args: readonly string[]): ModelSelection {
+  const flag = args[0]?.toLowerCase();
+  const scope = flag ? MODEL_SCOPE_FLAGS[flag] : undefined;
+  // 首个 token 不是作用级别参数 → 它就是模型 id（`/model <id>`），落在会话级
+  if (!scope) return { scope: "session", modelId: args[0] };
+  return { scope, modelId: args[1] };
+}
+
 const cmdModel: CommandHandler = async ({ session, push, args, pick, config }) => {
   const appConfig = await config.readConfig();
   const models = appConfig.models ?? [];
@@ -305,8 +348,9 @@ const cmdModel: CommandHandler = async ({ session, push, args, pick, config }) =
     return;
   }
 
-  // 支持 `/model <id>` 直切，无参时弹选择器
-  let chosen: string | undefined = args[0];
+  const selection = parseModelSelection(args);
+  const scopeName = t(`cmd.model.scope.${selection.scope}`);
+  let chosen: string | undefined = selection.modelId;
   if (chosen && !models.some((model) => model.id === chosen)) {
     push(
       t("cmd.model.unknown", { id: chosen, options: models.map((m) => m.id).join(" / ") }),
@@ -320,7 +364,15 @@ const cmdModel: CommandHandler = async ({ session, push, args, pick, config }) =
       value: model.id,
       hint: model.id,
     }));
-    const picked = await pick(t("cmd.model.title"), items);
+    // 三档共用这一个选择器，所以标题必须说清两件事：**这次改哪一档**、**当前生效的是哪一档**
+    // （生效档来自服务端的解析结果 `modelLevel`，客户端不自己推顺序）。
+    const picked = await pick(
+      t("cmd.model.title", {
+        scope: scopeName,
+        level: t(`cmd.model.scope.${session.modelLevel}`),
+      }),
+      items,
+    );
     if (picked == null) {
       push(t("cmd.model.cancelled"));
       return;
@@ -328,13 +380,31 @@ const cmdModel: CommandHandler = async ({ session, push, args, pick, config }) =
     chosen = picked;
   }
 
-  if (chosen === session.modelId) {
-    push(t("cmd.model.already", { id: chosen }));
+  /**
+   * 这一档现在是什么（只用于「已经是它了」的短路）。三档各读各的事实：
+   *   - 会话级：快照里的**生效**模型 —— 用户看到的就是它；覆盖没设时它来自下一档，
+   *     此时「已经是这个模型」依然成立（再设一次覆盖不会有任何可观察的变化）；
+   *   - Agent 定义：定义上的 `modelId`（多一次往返，值得：`/model -a` 是低频命令，
+   *     而拿生效模型去比会把「定义已经是它、只是本会话覆盖了别的」误报成「已切换」）；
+   *   - 全局兜底：`defaultModel`（`readConfig` 刚拿到的，不用再问）。
+   */
+  const currentOfScope = async (): Promise<string | undefined> => {
+    if (selection.scope === "session") return session.modelId;
+    if (selection.scope === "global") return appConfig.defaultModel;
+    const store = await config.readAgentStore();
+    return store.agents.find((agent) => agent.id === session.agentId)?.modelId;
+  };
+  if (chosen === (await currentOfScope())) {
+    // 提示里报的是**模型现在真正来自哪一档**（不是「你本来想改哪一档」）：会话级短路时
+    // 这个模型往往来自下一档（如定义上就是这个），说成「已经是会话级模型」就是在撒谎。
+    const alreadyScope =
+      selection.scope === "session" ? t(`cmd.model.scope.${session.modelLevel}`) : scopeName;
+    push(t("cmd.model.already", { scope: alreadyScope, id: chosen }));
     return;
   }
 
   // 先确认目标模型可用：端点缺 Key 时切过去根本跑不起来，这里只是给用户的可读提示
-  // （不是校验层 —— 真正的拒绝由服务端的 `agent.model.set` / reload 给出）
+  // （不是校验层 —— 真正的拒绝由服务端的 `session.model.set` / `agent.model.set` 给出）
   const targetModel = models.find((model) => model.id === chosen)!;
   const targetEndpoint = (appConfig.endpoints ?? []).find(
     (endpoint) => endpoint.id === targetModel.endpointId,
@@ -349,27 +419,37 @@ const cmdModel: CommandHandler = async ({ session, push, args, pick, config }) =
   }
 
   try {
-    // 写发生在服务端：`agent.model.set` 只改 `AgentDefinition.modelId`，并把思考参数
-    // 清空 —— 档位是模型相关的（GLM-5.3 不接受 `thinking.disabled` 这类），这条规则
-    // 只该有一份实现，命令层不再自己读定义 → 改字段 → 写回。
-    await config.setModel(session.agentId, chosen);
-    // 生效靠「按磁盘上的新配置重建 Agent、消息保留」，`session.reload()` 就是这件事
-    // （`/reload` 走同一条路）。
+    // 三条写路径都在服务端，各写各的那一档：
+    //   session → 会话存档的 `modelId`（只影响这一段）
+    //   agent   → Agent 定义的 `modelId`（影响所有用它的会话；顺带清空思考参数）
+    //   global  → `config.json` 的 `defaultModel`（只在 Agent 没绑模型时兜底）
+    // 命令层不再「读定义 → 改字段 → 写回」：思考参数重置、窄方法写盘这些规则只该有一份实现。
+    if (selection.scope === "session") await config.setSessionModel(session.currentId, chosen);
+    else if (selection.scope === "agent") await config.setModel(session.agentId, chosen);
+    else await config.setDefaultModel(chosen);
+
+    // 之后让这一段会话按新事实重建（服务端 `session.reload`：保留消息、快照回最新状态）。
+    // 三档都要走这一步：会话级与全局兜底改完之后，当前这段会话的 Agent 也还停在旧模型上，
+    // 而状态栏的 `modelId` 只有拿到新快照才会更新。
     //
     // 这里**刻意不再 `exit({ restart: true })`**：模型变了不需要重挂载整个对话屏 ——
-    // 重启会把整屏刷一遍，还会丢掉用户正在写的输入草稿；而「Scope 里是旧配置快照」
-    // 这件旧理由也已经不成立（reload 内部自己重置 Scope）。
+    // 重启会把整屏刷一遍，还会丢掉用户正在写的输入草稿。
     await session.reload();
-    // `setModel` 无条件清空思考参数，所以这句提示总是成立；不为此多读一次 Agent 定义
-    // （远程模式下那就是多一次往返，只为渲染一个后缀）。
-    push(
-      t("modelSwitch.summary", {
-        name: targetModel.name,
-        id: chosen,
-        agent: session.agentId,
-        hint: t("modelSwitch.resetHint"),
-      }),
-    );
+
+    if (selection.scope === "agent") {
+      // 写进定义那条会顺带清空思考参数，所以它的提示要说明「思考强度已重置」；
+      // 另外两档不动思考参数，别跟着说一句不成立的话。
+      push(
+        t("modelSwitch.summary", {
+          name: targetModel.name,
+          id: chosen,
+          agent: session.agentId,
+          hint: t("modelSwitch.resetHint"),
+        }),
+      );
+    } else {
+      push(t("cmd.model.done", { scope: scopeName, name: targetModel.name, id: chosen }));
+    }
   } catch (error: any) {
     push(t("cmd.model.failed", { error: error?.message ?? error }), "error");
   }

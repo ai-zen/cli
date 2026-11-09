@@ -9,8 +9,11 @@
  *
  * ## 切换前必须能跑起来
  *
- * Agent 定义里的 `modelId` 是运行期唯一真相源（`createAgent` 只认它）。所以切换
- * 前先做完整链路校验：Agent 存在 → 绑定了模型 → 模型还在配置里 → 端点在 → 端点有 Key。
+ * 模型按**三级解析**（`会话级覆盖 > AgentDefinition.modelId > config.defaultModel`），
+ * 而「切换 Agent」这一刻还没有会话级覆盖，所以预检只看后两级 —— 直接复用 SDK 的
+ * `resolveModel`，不在这里再写一遍 `??` 链（那样两处迟早会漂：界面说「不可用」、
+ * 服务端其实能跑，或者反过来）。链路校验：Agent 存在 → 解析得出模型 → 模型还在配置里
+ * → 端点在 → 端点有 Key。
  * 少任何一环都直接抛错并把原因说清楚，绝不「先切过去再看它崩不崩」——
  * 切错 Agent 的代价是下一轮由一个未配置好的 Agent 来跑，而用户手上已经没有可用的 `/model`。
  *
@@ -25,9 +28,19 @@
  * `config.defaultAgent.set`（整份写回会把并发修改抹掉）。
  */
 
-import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
+import { resolveModel, type AgentDefinition, type AppConfig } from "@ai-zen/agents-sdk";
 import { resolveCredential } from "./config-editor.js";
 import { t } from "./i18n/index.js";
+
+/**
+ * 这个 Agent 会实际用哪个模型（三级解析的**前两级**）。
+ *
+ * 不含会话级覆盖：预检发生在「要不要切过去」的时候，那一段会话还不存在。解析本身走 SDK
+ * 的 `resolveModel`（唯一实现），这里只是把「Agent 定义 + 全局兜底」两个输入喂进去。
+ */
+function modelIdOfAgent(config: AppConfig, agent: AgentDefinition): string | undefined {
+  return resolveModel({ agentModelId: agent.modelId, defaultModel: config.defaultModel })?.modelId;
+}
 
 /** 选择器里的一行：一个可选的主 Agent */
 export interface AgentChoice {
@@ -54,16 +67,17 @@ export function listAgentChoices(
 ): AgentChoice[] {
   return agents.map((agent) => {
     const name = agent.name || agent.id;
-    if (!agent.modelId) {
+    const modelId = modelIdOfAgent(config, agent);
+    if (!modelId) {
       return { id: agent.id, name, selectable: false, reason: t("agentSwitch.err.noModel") };
     }
-    const credential = resolveCredential(config, agent.modelId);
+    const credential = resolveCredential(config, modelId);
     if (!credential) {
       return {
         id: agent.id,
         name,
         selectable: false,
-        reason: t("agentSwitch.err.modelMissing", { id: agent.modelId }),
+        reason: t("agentSwitch.err.modelMissing", { id: modelId }),
       };
     }
     if (!credential.configured) {
@@ -108,13 +122,15 @@ export function checkAgentSwitch(options: CheckAgentSwitchOptions): CheckAgentSw
   if (!agent) throw new Error(t("agentSwitch.err.agentMissing", { id: targetAgentId }));
 
   const name = agent.name || agent.id;
-  if (!agent.modelId) {
+  // 定义没绑模型但配了全局兜底时，切过去照样能跑（三级解析的最后一级）
+  const modelId = modelIdOfAgent(config, agent);
+  if (!modelId) {
     throw new Error(t("agentSwitch.err.agentNoModel", { name }));
   }
 
-  const credential = resolveCredential(config, agent.modelId);
+  const credential = resolveCredential(config, modelId);
   if (!credential) {
-    throw new Error(t("agentSwitch.err.modelGone", { name, id: agent.modelId }));
+    throw new Error(t("agentSwitch.err.modelGone", { name, id: modelId }));
   }
   if (!credential.configured) {
     throw new Error(t("agentSwitch.err.noKey", { endpoint: credential.endpointName }));

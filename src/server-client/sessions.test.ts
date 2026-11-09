@@ -20,6 +20,7 @@ import {
   SessionManager,
   SESSION_EVENTS,
   type AgentLike,
+  type ModelLevel,
   type ServerEvent,
 } from "@ai-zen/agents-server";
 import { SocketServerClient } from "./socket-server-client.js";
@@ -29,6 +30,8 @@ import type { ClientInfo } from "./types.js";
 class FakeAgent implements AgentLike {
   messages: any[] = [];
   lastUsage: unknown = undefined;
+  /** 三级解析的档位（真件由 SDK 的 `createAgent` 给；假件照抄这一位） */
+  modelLevel: ModelLevel = "agent";
   /** 交接要用的那几面（真件是 SDK 的 `SdkAgent`）：无 write 工具 → 走摘要模式 */
   definition = { messages: [] as any[] };
   tools: Array<{ function?: { name?: string } }> = [];

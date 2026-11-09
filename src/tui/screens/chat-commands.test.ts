@@ -41,7 +41,10 @@ function createHost(
   const session = {
     messages: [{ role: AgentNS.Role.User, content: "hi" }],
     agentId: "default",
+    currentId: "chat_now",
+    // 生效模型是 m1、来自 Agent 定义（会话级覆盖没设）
     modelId: "m1",
+    modelLevel: "agent",
     migrate: vi.fn(async () => "/tmp/handoff.md"),
     reset: vi.fn(async () => "chat_archived"),
     reload: vi.fn(async () => {}),
@@ -153,6 +156,8 @@ function fakeConfigPort(overrides: Partial<ConfigPort> = {}): ConfigPort {
     readAgentStore: vi.fn(async () => fakeAgentStore([agentDefinition("default", "m1")])),
     setModel: vi.fn(async () => {}),
     setDefaultAgent: vi.fn(async () => {}),
+    setSessionModel: vi.fn(async () => {}),
+    setDefaultModel: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -404,28 +409,56 @@ describe("picker 条数上限（不超出一帧）", () => {
 /**
  * 配置读写搬到服务端（`ConfigPort`）：命令层不再吃盘。
  *
- * `/model` 的关键回归是**生效方式**：写配置之后靠 `session.reload()`（服务端按磁盘上
- * 的新配置重建 Agent、保留消息），不再是 `exit({ restart: true })` 重挂载整个对话屏 ——
- * 重挂载会把整屏刷一遍、还会丢掉用户正在写的输入草稿。
+ * `/model` 现在有**三档作用级别**：默认改会话（`session.model.set`）、`-a` 改 Agent 定义
+ * （`agent.model.set`，`/model` 从前的意思）、`-g` 改全局兜底（`config.defaultModel`）。
+ *
+ * 另一条关键回归是**生效方式**：写完之后靠 `session.reload()`（服务端按新事实重建 Agent、
+ * 保留消息），不再是 `exit({ restart: true })` 重挂载整个对话屏 —— 重挂载会把整屏刷一遍、
+ * 还会丢掉用户正在写的输入草稿。
  */
-describe("/model：服务端写 + 会话重载（不再重启屏幕）", () => {
+describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
   const texts = (notices: Array<{ text: string }>) => notices.map((n) => n.text).join("\n");
 
-  it("成功：setModel(agentId, 目标) → reload，且不 exit({restart:true})", async () => {
+  it("默认（会话级）：setSessionModel(currentId, 目标) → reload，且不 exit({restart:true})", async () => {
     const reload = vi.fn(async () => {});
+    const setSessionModel = vi.fn(async () => {});
     const setModel = vi.fn(async () => {});
-    const { host, notices } = createHost({ reload }, { setModel });
+    const { host, notices } = createHost({ reload }, { setSessionModel, setModel });
 
     await runCommand("model", "/model m2", host);
 
     // 会话当前在 m1 上（见 createHost），目标是 m2
-    expect(setModel).toHaveBeenCalledWith("default", "m2");
+    expect(setSessionModel).toHaveBeenCalledWith("chat_now", "m2");
+    // 会话级覆盖不该顺手改 Agent 定义（那会波及所有用它的会话）
+    expect(setModel).not.toHaveBeenCalled();
     expect(reload).toHaveBeenCalledTimes(1);
     // 不再重挂载屏幕：模型变了不需要重建整个界面
     expect(host.exit).not.toHaveBeenCalled();
-    // 先写配置、再让服务端按它重建 Agent（顺序反了就是重建出旧模型）
-    expect(setModel.mock.invocationCallOrder[0]!).toBeLessThan(reload.mock.invocationCallOrder[0]!);
-    // 成功提示复用已有的 modelSwitch.summary，不新造 i18n 键
+    // 先写、再让服务端按它重建 Agent（顺序反了就是重建出旧模型）
+    expect(setSessionModel.mock.invocationCallOrder[0]!).toBeLessThan(
+      reload.mock.invocationCallOrder[0]!,
+    );
+    expect(notices.at(-1)).toEqual({
+      text: t("cmd.model.done", {
+        scope: t("cmd.model.scope.session"),
+        name: "模型二",
+        id: "m2",
+      }),
+      tone: "info",
+    });
+  });
+
+  it("--agent / -a：改 Agent 定义（setModel + 思考参数随之重置的提示）", async () => {
+    const reload = vi.fn(async () => {});
+    const setModel = vi.fn(async () => {});
+    const setSessionModel = vi.fn(async () => {});
+    const { host, notices } = createHost({ reload }, { setModel, setSessionModel });
+
+    await runCommand("model", "/model --agent m2", host);
+
+    expect(setModel).toHaveBeenCalledWith("default", "m2");
+    expect(setSessionModel).not.toHaveBeenCalled();
+    expect(reload).toHaveBeenCalledTimes(1);
     expect(notices.at(-1)).toEqual({
       text: t("modelSwitch.summary", {
         name: "模型二",
@@ -437,20 +470,133 @@ describe("/model：服务端写 + 会话重载（不再重启屏幕）", () => {
     });
   });
 
-  it("目标端点缺 Key：不写配置、不 reload，只报错", async () => {
+  it("-a 是 --agent 的短写（同一个动作）", async () => {
+    const setModel = vi.fn(async () => {});
+    const { host } = createHost({}, { setModel });
+
+    await runCommand("model", "/model -a m2", host);
+
+    expect(setModel).toHaveBeenCalledWith("default", "m2");
+  });
+
+  it("--global / -g：只写全局兜底（config.defaultModel），不动定义也不动会话", async () => {
+    const reload = vi.fn(async () => {});
+    const setDefaultModel = vi.fn(async () => {});
+    const setModel = vi.fn(async () => {});
+    const setSessionModel = vi.fn(async () => {});
+    const { host, notices } = createHost(
+      { reload },
+      { setDefaultModel, setModel, setSessionModel },
+    );
+
+    await runCommand("model", "/model --global m2", host);
+
+    expect(setDefaultModel).toHaveBeenCalledWith("m2");
+    expect(setModel).not.toHaveBeenCalled();
+    expect(setSessionModel).not.toHaveBeenCalled();
+    // 兜底那一档也要让当前会话按新事实重建一次（否则状态栏停在旧模型上）
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(notices.at(-1)!.text).toBe(
+      t("cmd.model.done", { scope: t("cmd.model.scope.global"), name: "模型二", id: "m2" }),
+    );
+  });
+
+  it("目标端点缺 Key：三档都不写、不 reload，只报错", async () => {
     const reload = vi.fn(async () => {});
     const setModel = vi.fn(async () => {});
-    const { host, notices } = createHost({ reload }, { setModel });
+    const setSessionModel = vi.fn(async () => {});
+    const setDefaultModel = vi.fn(async () => {});
+    const { host, notices } = createHost(
+      { reload },
+      { setModel, setSessionModel, setDefaultModel },
+    );
 
     // m3 挂在没配 Key 的端点上
     await runCommand("model", "/model m3", host);
 
+    expect(setSessionModel).not.toHaveBeenCalled();
     expect(setModel).not.toHaveBeenCalled();
+    expect(setDefaultModel).not.toHaveBeenCalled();
     expect(reload).not.toHaveBeenCalled();
     expect(host.exit).not.toHaveBeenCalled();
     expect(notices).toHaveLength(1);
     expect(notices[0]!.tone).toBe("error");
     expect(texts(notices)).toContain("没配 Key 的端点");
+  });
+
+  it("未知模型：三档都不写，只报错", async () => {
+    const setModel = vi.fn(async () => {});
+    const setSessionModel = vi.fn(async () => {});
+    const { host, notices } = createHost({}, { setModel, setSessionModel });
+
+    await runCommand("model", "/model -a nope", host);
+
+    expect(setModel).not.toHaveBeenCalled();
+    expect(setSessionModel).not.toHaveBeenCalled();
+    expect(texts(notices)).toContain(
+      t("cmd.model.unknown", { id: "nope", options: "m1 / m2 / m3" }),
+    );
+  });
+
+  it("选择器：三档共用同一个，标题标明「改哪一档」与「当前生效的是哪一档」", async () => {
+    const setSessionModel = vi.fn(async () => {});
+    const { host, notices } = createHost({}, { setSessionModel });
+    const titles: string[] = [];
+    // 接管选择器：记下标题并选「模型二」
+    (host as any).setPickerState = (next: any) => {
+      const state = typeof next === "function" ? next(null) : next;
+      if (!state) return;
+      titles.push(state.title);
+      state.resolve("m2");
+    };
+
+    // 不带参数 → 会话级的选择器；带作用级别但没给 id → 该档的选择器
+    await runCommand("model", "/model", host);
+    await runCommand("model", "/model -g", host);
+
+    expect(titles).toEqual([
+      t("cmd.model.title", {
+        scope: t("cmd.model.scope.session"),
+        level: t("cmd.model.scope.agent"),
+      }),
+      t("cmd.model.title", {
+        scope: t("cmd.model.scope.global"),
+        level: t("cmd.model.scope.agent"),
+      }),
+    ]);
+    // 三档共用同一个选择器，选中之后各写各的那一份
+    expect(setSessionModel).toHaveBeenCalledWith("chat_now", "m2");
+    expect(texts(notices)).toContain(
+      t("cmd.model.done", { scope: t("cmd.model.scope.global"), name: "模型二", id: "m2" }),
+    );
+  });
+
+  it("会话级短路：说清模型其实来自哪一档（而不是「已经是会话级模型」）", async () => {
+    const setSessionModel = vi.fn(async () => {});
+    // 生效模型 m1 来自 Agent 定义（`modelLevel: "agent"`），用户 `/model m1`
+    const { host, notices } = createHost({}, { setSessionModel });
+
+    await runCommand("model", "/model m1", host);
+
+    expect(setSessionModel).not.toHaveBeenCalled();
+    expect(texts(notices)).toBe(
+      t("cmd.model.already", { scope: t("cmd.model.scope.agent"), id: "m1" }),
+    );
+  });
+
+  it("已经就是那一档的模型：不写、不 reload，只说一句（提示报的是模型真正来自哪一档）", async () => {
+    const reload = vi.fn(async () => {});
+    const setModel = vi.fn(async () => {});
+    // 端口给的 Agent 定义绑的就是 m1（按定义比较，不是按生效模型）
+    const { host, notices } = createHost({ reload }, { setModel });
+
+    await runCommand("model", "/model -a m1", host);
+
+    expect(setModel).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+    expect(texts(notices)).toBe(
+      t("cmd.model.already", { scope: t("cmd.model.scope.agent"), id: "m1" }),
+    );
   });
 });
 

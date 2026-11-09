@@ -206,7 +206,7 @@ key input="" flags=[pageUp] raw=false
 | `/editor` | 用外部编辑器（vim/nano）写长消息 |
 | `/clear` | 清屏 |
 | `/config` | 打开配置中心（端点 / 模型 / 图片模型 / MCP / Agent 定义 / 默认项（含中断策略）/ 工具上限） |
-| `/model` | 切换模型（写入 Agent 的 `modelId`，思考强度重置为模型默认） |
+| `/model` | 切换模型：`/model <id>` 只改**当前会话**；`-a`/`--agent <id>` 改 Agent 定义（思考强度重置）；`-g`/`--global <id>` 改全局兜底；不带参数弹选择器 |
 | `/agent` | 切换主 Agent（写入 `defaultAgent` 并重建会话；跑不起来的标为不可用并给出原因） |
 | `/reload` | 刷新运行环境（重新发现工具 / MCP；消息与上下文保留） |
 | `/update` | 升级 CLI 到最新发布版（在**全部** dist-tags 里挑 semver 最大的那个，alpha 比 `latest` 新就用 alpha；逐步骤显示进度，装完可一键重启到新版本） |
@@ -305,7 +305,7 @@ ai hook uninstall
 
 > 说明：`models` / `imageModels` 中**未标 `custom: true`** 的条目属于**出厂托管**——每次启动会与 SDK 出厂清单对齐、被替换为最新定义；自建模型请加 `"custom": true`。`endpoints` 始终保留用户配置，不受影响。
 >
-> 模型**不在 `config.json` 里指定**：每个 Agent 在自己的定义文件（`agents/<id>.json`）的 `modelId` 字段上绑定模型，这是运行期的唯一真相源；`/model` 切换写的也是它。
+> 模型按**三级解析**：会话级覆盖 > Agent 定义（`agents/<id>.json` 的 `modelId`）> `config.json` 的 `defaultModel`（兜底，默认不写）。日常在用的那个写在 Agent 定义上；`/model <id>` 只改当前会话，`/model -a <id>` 改定义，`/model -g <id>` 改兜底。
 
 ### 环境变量
 

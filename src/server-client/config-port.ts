@@ -28,6 +28,7 @@
 import {
   AGENT_METHODS,
   CONFIG_METHODS,
+  SESSION_METHODS,
   WORKSPACE_METHODS,
   type AgentListResult,
   type AgentRemoveParams,
@@ -38,6 +39,8 @@ import {
   type ConfigReasoningPresetsResult,
   type ConfigSaveParams,
   type ConfigSetDefaultAgentParams,
+  type ConfigSetDefaultModelParams,
+  type SessionModelSetParams,
   type WorkspaceResolveResult,
 } from "@ai-zen/agents-server";
 import type { AgentDefinition, AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
@@ -91,6 +94,21 @@ export interface ConfigPort {
    * 服务端 `agent.model.set` 就是那条实现，客户端不必自己再做一次。
    */
   setModel(agentId: string, modelId: string): Promise<void>;
+  /**
+   * 换**这一段会话**的模型（`session.model.set`）：只写这段会话存档里的 `modelId`。
+   *
+   * 为什么不并进 {@link setModel}：那是「以后用这个 Agent 就跑这个模型」（写定义，影响
+   * 所有用它的会话），这个是「这次用它」（只影响这一段）。两个意思两个方法 —— 合成一个
+   * 就只能靠参数开关分叉，调用方得猜自己改的是哪一份。
+   */
+  setSessionModel(sessionId: string, modelId: string): Promise<void>;
+  /**
+   * 换**全局兜底模型**（`config.defaultModel`）—— 三级解析的最后一级。
+   *
+   * 同样是窄方法（只写一个字段）：整份写回在多客户端（终端 + 桌面端）并存时会抹掉对方
+   * 刚改的字段。它只在 Agent **没绑模型**时才生效（`会话级 > 定义 > 全局`）。
+   */
+  setDefaultModel(modelId: string): Promise<void>;
 }
 
 // ==================================================================
@@ -297,6 +315,23 @@ export function createRemoteConfigPort(deps: RemoteConfigPortDeps = {}): ConfigP
      */
     setModel: async (agentId, modelId) => {
       await call(AGENT_METHODS.setModel, { agentId, modelId });
+    },
+
+    /**
+     * 换这一段会话的模型：服务端 `session.model.set`（写存档、重建 Agent、回新快照）。
+     *
+     * 快照这一层用不上：紧接着的 `session.reload()` 会再要一份（它同时刷新消息与
+     * 状态栏）。少一层返回值，就少一份「谁负责更新界面」的分叉。
+     */
+    setSessionModel: async (sessionId, modelId) => {
+      const params: SessionModelSetParams = { sessionId, modelId };
+      await call(SESSION_METHODS.modelSet, params);
+    },
+
+    /** 换全局兜底模型：一条窄方法，**不**读整份再写回（见接口上的注释） */
+    setDefaultModel: async (modelId) => {
+      const params: ConfigSetDefaultModelParams = { modelId };
+      await call(CONFIG_METHODS.defaultModelSet, params);
     },
   };
 }

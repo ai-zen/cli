@@ -83,11 +83,11 @@ Fields (aligned with the SDK's `AppConfig` type):
 - Legacy fields `maxContextTokens` / `maxContextChars` / `reasoning` are migrated automatically on launch (the first two fold into `tokenThresholds`, `reasoning` becomes `reasoningPreset`); no manual edit is needed, and the file is written only once when a difference is detected.
 - `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`: the remaining defaults.
 - `abortedMessageStrategy` (`keep` / `drop`) and `abortedToolRoundStrategy` (`fill` / `drop`): the **interrupt strategies**. The first decides whether the reasoning/content already produced is kept in the context after an interrupt (factory `keep`: the next turn continues the half-finished sentence; `drop` never sends it); the second decides how an interrupted or incomplete tool round is reconciled (factory `fill`: the whole round is kept and unfinished results get a reason backfilled, since `tool_calls` must pair with results; `drop` takes the whole round out). Missing or invalid values are filled with the factory defaults on launch. Both are switchable under *Configuration center → Defaults*; they are read when an Agent is **built**, so closing the configuration center rebuilds the session automatically (or run `/reload` manually).
-- **The model is not selected here**: it lives on the Agent definition's `modelId` field (see below). The old `config.defaultModel` is moved onto the default Agent during upgrade and then dropped from the config.
+- **Models resolve in three levels** (session override > Agent definition > `defaultModel`): the everyday model lives on the Agent definition's `modelId` (see below); `config.defaultModel` is a **fallback** used only when the Agent binds none, and it is not written by default. `/model <id>` changes the current session, `/model -a <id>` the definition, `/model -g <id>` the fallback.
 
 ## Agent definition (`agents/<id>.json`)
 
-Each Agent binds its model in its own definition file — this is the **single source of truth** at runtime: the status bar, credential pre-check, context thresholds and the actual API request all read it, and `/model` writes exactly this field.
+Each Agent binds its model in its own definition file — the **second of the three levels** (and the one that usually wins): the resolved model (session override > this field > `config.defaultModel`) drives the status bar, the credential pre-check, context thresholds and the actual API request. `/model -a` is what writes this field.
 
 ```json
 {

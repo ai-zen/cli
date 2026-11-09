@@ -18,7 +18,7 @@
 
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
-import type { PhaseInfo } from "@ai-zen/agents-server";
+import type { ModelLevel, PhaseInfo } from "@ai-zen/agents-server";
 import type { ClipboardImage } from "../clipboard.js";
 import type { ConfigPort } from "../server-client/config-port.js";
 import type { PathEntry } from "./mention.js";
@@ -28,8 +28,21 @@ import { stripCwdNote } from "./text.js";
 export interface ChatSessionLike {
   /** 用哪个 Agent（会话的父级是工作区，Agent 决定能力与模型） */
   readonly agentId: string;
-  /** 当前模型 id（真相源是 `AgentDefinition.modelId`；空串 = 定义里没绑模型） */
+  /**
+   * 当前模型 id —— **三级解析之后**的那个值（`会话级覆盖 > Agent 定义 > 全局兜底`）。
+   *
+   * 解析发生在服务端（唯一实现：SDK 的 `resolveModel`），这里只是快照的一手透传：客户端
+   * 自己再推一遍 `??` 链就会出现「状态栏写着 A、请求实际发给 B」。空串 = 服务端没给
+   * （正常不会发生：三级都拿不到模型时那段会话根本装不起来）。
+   */
   readonly modelId: string;
+  /**
+   * 上面那个 `modelId` 来自哪一级。
+   *
+   * `/model` 的选择器靠它标「当前生效的是哪一档」—— 档位只能在解析发生的地方算出来，
+   * 客户端不去猜。
+   */
+  readonly modelLevel: ModelLevel;
   /** 当前会话 id（`/save`、状态栏与「上一轮会话」指针用；会话只有 id，没有第二个名字） */
   readonly currentId: string;
   /** 对话消息（屏幕的唯一数据源） */

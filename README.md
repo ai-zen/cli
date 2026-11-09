@@ -204,7 +204,7 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 | `/editor` | Compose a long message in your editor (vim/nano) |
 | `/clear` | Clear the screen |
 | `/config` | Open the configuration center (endpoints / models / image models / MCP / agent definitions / defaults incl. interrupt strategies / tool-output cap) |
-| `/model` | Switch model (writes the Agent's `modelId`; thinking level resets to the model default) |
+| `/model` | Switch model: `/model <id>` changes **this session only**; `-a`/`--agent <id>` changes the Agent definition (thinking level resets); `-g`/`--global <id>` changes the global fallback; no argument opens a picker |
 | `/agent` | Switch the main Agent (writes `defaultAgent` and rebuilds the session; unusable Agents are marked with the reason) |
 | `/reload` | Refresh the runtime (rediscovers tools / MCP; messages and context are kept) |
 | `/update` | Upgrade the CLI to the newest published release (the highest semver across **all** dist-tags, so an alpha newer than `latest` wins; shows each step, then offers to restart into the new version) |
@@ -303,7 +303,7 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
 
 > Note: entries in `models` / `imageModels` **without `custom: true`** are **factory-managed** — on every launch they are reconciled with (and replaced by) the SDK factory catalog; add `"custom": true` for your own entries. `endpoints` are never managed and always keep your configuration.
 >
-> The model is **not** selected in `config.json`: each Agent binds one in its own definition file (`agents/<id>.json`, field `modelId`), which is the single source of truth at runtime. `/model` writes exactly that field.
+> Models resolve in **three levels**: session override > Agent definition (`modelId` in `agents/<id>.json`) > `defaultModel` in `config.json` (fallback, not set by default). The everyday model lives on the Agent definition; `/model <id>` changes only this session, `/model -a <id>` the definition, `/model -g <id>` the fallback.
 
 ### Environment Variable
 

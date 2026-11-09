@@ -10,7 +10,7 @@
  */
 
 import { render, useApp, type Instance } from "ink";
-import type { AppConfig } from "@ai-zen/agents-sdk";
+import { resolveModel, type AppConfig } from "@ai-zen/agents-sdk";
 import { createRemoteConfigPort } from "../server-client/config-port.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
@@ -172,25 +172,33 @@ interface ChatTarget {
 }
 
 /**
- * 解析某个 Agent 绑定模型（**唯一真相源**）。
+ * 启动预检：这个 Agent 实际会用哪个模型。
  *
- * 配置层已无 `defaultModel`、会话存档也不再记模型，所以这里缺失就直接报错，
- * 绝不做任何隐式回退——回退正是「状态栏显示 A、实发请求 B」的根源。
+ * 走 **SDK 的 `resolveModel`（唯一实现的三级解析）**，只喂「Agent 定义 + 全局兜底」两级
+ * —— 启动这一刻还没有会话，会话级覆盖不存在。客户端自己推 `??` 链就会出现「预检说不可用、
+ * 服务端其实能跑」（或者反过来），而那种分叉正是「状态栏显示 A、实发请求 B」的起点。
+ *
+ * 解析不出来就直接报错，绝不做任何隐式回退：静默挑一个模型，用户会以为在用配置里那个。
  */
 async function modelOf(agentId: string | undefined): Promise<string> {
   const id = agentId || "default";
   // 历史 Agent 缺 `modelId` 的补齐（迁移 / bootstrap）发生在**持有定义的那一侧**
   // （服务端）。客户端只负责读快照，不自己重做一遍迁移
-  // （在这里补写会让「谁改的配置」变得说不清）；读到的定义若仍无 modelId，就是真缺。
+  // （在这里补写会让「谁改的配置」变得说不清）；读到的定义若仍无 modelId 且没有兜底，
+  // 就是真缺。
   const [config, store] = await Promise.all([configPort.readConfig(), configPort.readAgentStore()]);
-  const modelId = store.agents.find((agent) => agent.id === id)?.modelId;
-  if (!modelId) {
+  const definition = store.agents.find((agent) => agent.id === id);
+  const resolved = resolveModel({
+    agentModelId: definition?.modelId,
+    defaultModel: config.defaultModel,
+  });
+  if (!resolved) {
     throw new Error(t("app.agentNoModel", { id }));
   }
-  if (!config.models.some((model) => model.id === modelId)) {
-    throw new Error(t("app.agentModelGone", { id, model: modelId }));
+  if (!config.models.some((model) => model.id === resolved.modelId)) {
+    throw new Error(t("app.agentModelGone", { id, model: resolved.modelId }));
   }
-  return modelId;
+  return resolved.modelId;
 }
 
 async function resolveTarget(): Promise<ChatTarget> {
