@@ -12,12 +12,13 @@ import { join } from "node:path";
 import {
   Daemon,
   createSessionHandlers,
+  EventHub,
   SessionManager,
   SESSION_EVENTS,
   EVENT_METHODS,
   SESSION_METHODS,
   type AgentLike,
-  type SessionEvent,
+  type ServerEvent,
 } from "@ai-zen/agents-server";
 import { SocketServerClient } from "./socket-server-client.js";
 import type { ClientInfo } from "./types.js";
@@ -48,13 +49,16 @@ const clientInfo: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
 let dir: string;
 let daemon: Daemon | null = null;
 let manager: SessionManager | null = null;
+/** 与会话管理器共用的出口：全局通知也要从同一条线出去 */
+let hub: EventHub;
 let agent: FakeAgent;
 let connection: SocketServerClient | null = null;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aiz-cli-events-"));
   agent = new FakeAgent();
-  manager = new SessionManager({ createAgent: async () => agent });
+  hub = new EventHub();
+  manager = new SessionManager({ createAgent: async () => agent, hub });
 });
 
 afterEach(async () => {
@@ -85,7 +89,7 @@ async function start(): Promise<SocketServerClient> {
 }
 
 /** 等到某个事件出现（事件是推的，没有"等这一帧"的 API） */
-async function waitFor(received: SessionEvent[], name: string, count = 1): Promise<void> {
+async function waitFor(received: ServerEvent[], name: string, count = 1): Promise<void> {
   for (let i = 0; i < 200; i++) {
     if (received.filter((event) => event.event === name).length >= count) return;
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -96,7 +100,7 @@ async function waitFor(received: SessionEvent[], name: string, count = 1): Promi
 describe("SocketServerClient.on（服务端推的事件）", () => {
   it("watch 之后收得到阶段 / 正文增量 / 轮次收尾", async () => {
     const client = await start();
-    const received: SessionEvent[] = [];
+    const received: ServerEvent[] = [];
     client.on(SESSION_EVENTS.phase, (event) => received.push(event));
     client.on(SESSION_EVENTS.delta, (event) => received.push(event));
     client.on(SESSION_EVENTS.turnEnd, (event) => received.push(event));
@@ -129,7 +133,7 @@ describe("SocketServerClient.on（服务端推的事件）", () => {
 
   it("取消订阅之后不再收到事件", async () => {
     const client = await start();
-    const received: SessionEvent[] = [];
+    const received: ServerEvent[] = [];
     const off = client.on(SESSION_EVENTS.phase, (event) => received.push(event));
 
     await client.call(EVENT_METHODS.watch);
@@ -158,5 +162,36 @@ describe("SocketServerClient.on（服务端推的事件）", () => {
     agent.fire("finally");
 
     expect(await client.call("ping")).toEqual({ pong: true });
+  });
+});
+
+describe("两个通知通道", () => {
+  it("对话内通知与全局通知都能收到，形状可区分（一个有 sessionId，一个没有）", async () => {
+    const client = await start();
+    const notices: ServerEvent[] = [];
+    client.on(SESSION_EVENTS.notice, (event) => notices.push(event));
+    client.on(SESSION_EVENTS.globalNotice, (event) => notices.push(event));
+
+    await client.call(EVENT_METHODS.watch);
+    const created = await client.call<{ sessionId: string }>(SESSION_METHODS.create, {
+      workspaceId: "ws-1",
+      path: dir,
+    });
+
+    manager!.notice(created.sessionId, { level: "error", code: "persistFailed" });
+    hub.publish({ event: SESSION_EVENTS.globalNotice, level: "warn", code: "mcpUnavailable" });
+
+    for (let i = 0; i < 100 && notices.length < 2; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    expect(notices[0]).toMatchObject({
+      event: "session.notice",
+      sessionId: created.sessionId,
+      level: "error",
+      code: "persistFailed",
+    });
+    expect(notices[1]).toMatchObject({ event: "global.notice", level: "warn", code: "mcpUnavailable" });
+    expect(notices[1]).not.toHaveProperty("sessionId");
   });
 });

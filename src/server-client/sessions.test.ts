@@ -18,7 +18,7 @@ import {
   SessionManager,
   SESSION_EVENTS,
   type AgentLike,
-  type SessionEvent,
+  type ServerEvent,
 } from "@ai-zen/agents-server";
 import { SocketServerClient } from "./socket-server-client.js";
 import { RemoteSessions } from "./sessions.js";
@@ -192,7 +192,7 @@ describe("RemoteSessions", () => {
 
   it("事件线：send 之后阶段与收尾都推到客户端", async () => {
     await start();
-    const received: SessionEvent[] = [];
+    const received: ServerEvent[] = [];
     connection!.on(SESSION_EVENTS.phase, (event) => received.push(event));
     connection!.on(SESSION_EVENTS.turnEnd, (event) => received.push(event));
 

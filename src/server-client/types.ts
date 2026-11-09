@@ -6,7 +6,7 @@
  * ssh 隧道）只换实现类，调用点一行不改 —— 这是「传输自由」在类型上的落点。
  */
 
-import type { SessionEvent } from "@ai-zen/agents-server";
+import type { ServerEvent } from "@ai-zen/agents-server";
 
 /**
  * 服务端在哪。
@@ -48,11 +48,11 @@ export interface ServerClient {
   /**
    * 订阅某个事件；返回取消订阅的函数。
    *
-   * 事件名绑到 `SessionEvent` 上：写错事件名是编译错误，而不是"订阅了但永远收不到"。
+   * 事件名绑到 `ServerEvent` 上：写错事件名是编译错误，而不是"订阅了但永远收不到"。
    */
-  on<E extends SessionEvent["event"]>(
+  on<E extends ServerEvent["event"]>(
     event: E,
-    listener: (payload: Extract<SessionEvent, { event: E }>) => void,
+    listener: (payload: Extract<ServerEvent, { event: E }>) => void,
   ): () => void;
   close(): void;
 }

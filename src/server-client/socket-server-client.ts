@@ -24,7 +24,7 @@ import {
   PROTOCOL_VERSION,
   type HelloResponse,
   type ResponseFrame,
-  type SessionEvent,
+  type ServerEvent,
 } from "@ai-zen/agents-server";
 import type { CallOptions, ClientInfo, ServerAddress, ServerClient } from "./types.js";
 
@@ -52,7 +52,7 @@ export class SocketServerClient implements ServerClient {
   private readonly socket: Socket;
   private readonly decoder = new FrameDecoder();
   private readonly pending = new Map<number, PendingCall>();
-  private readonly listeners = new Map<string, Set<(payload: SessionEvent) => void>>();
+  private readonly listeners = new Map<string, Set<(payload: ServerEvent) => void>>();
   private readonly callTimeoutMs: number;
 
   /** 握手期间的非空槽位：握手帧到时由它落定 `connect()` 的 promise */
@@ -138,13 +138,13 @@ export class SocketServerClient implements ServerClient {
     });
   }
 
-  on<E extends SessionEvent["event"]>(
+  on<E extends ServerEvent["event"]>(
     event: E,
-    listener: (payload: Extract<SessionEvent, { event: E }>) => void,
+    listener: (payload: Extract<ServerEvent, { event: E }>) => void,
   ): () => void {
     if (!this.listeners.has(event)) this.listeners.set(event, new Set());
     const set = this.listeners.get(event)!;
-    const wrapped = listener as (payload: SessionEvent) => void;
+    const wrapped = listener as (payload: ServerEvent) => void;
     set.add(wrapped);
     return () => set.delete(wrapped);
   }
@@ -215,7 +215,7 @@ export class SocketServerClient implements ServerClient {
       if (!set) return;
       for (const listener of set) {
         try {
-          listener(value as SessionEvent);
+          listener(value as ServerEvent);
         } catch {
           // 一个监听器抛错不该连累同事件的其它监听器（更不该弄坏连接）
         }
