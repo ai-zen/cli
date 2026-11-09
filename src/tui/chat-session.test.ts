@@ -5,8 +5,9 @@ import { AgentNS } from "@ai-zen/agents-core";
 import { ChatSession } from "./chat-session.js";
 import { ContextGuardPlugin, HandoffAbortedError } from "@ai-zen/agents-sdk";
 import { ConversationPersistPlugin } from "../conversation-persist-plugin.js";
-import { readLastSession } from "../session-pointer.js";
+import { conversationStore } from "../conversation-repository.js";
 import { refreshPaths } from "../config.js";
+import { workspaceIdFor } from "@ai-zen/agents-server";
 
 // 在静态导入之前设置 AI_ZEN_DIR（config.ts 在导入时即固化该路径）
 const state = vi.hoisted(() => {
@@ -84,7 +85,9 @@ const newSession = (
 describe("ChatSession.reset（/new 归档旧对话）", () => {
   it("空对话不落盘；有内容则归档到原 id，且不误写到新 id", async () => {
     const dir = state.dir;
-    const convFile = (id: string) => join(dir, "cli", "conversations", `${id}.json`);
+    // 会话落在**当前工作区**下（`workspaces/<workspaceId>/conversations/`）
+    const convFile = (id: string) =>
+      join(dir, "workspaces", workspaceIdFor(process.cwd()), "conversations", `${id}.json`);
     const session = await newSession(
       {},
       { onChange: () => {}, onNotice: () => {} },
@@ -117,7 +120,8 @@ describe("ChatSession.reset（/new 归档旧对话）", () => {
 });
 
 describe("ChatSession.saveAs（`/save <名字>`）", () => {
-  const convFile = (id: string) => join(state.dir, "cli", "conversations", `${id}.json`);
+  const convFile = (id: string) =>
+    join(state.dir, "workspaces", workspaceIdFor(process.cwd()), "conversations", `${id}.json`);
 
   it("写到新名字、删掉旧文件、更新 currentId 与 last-session 指针", async () => {
     const session = await newSession();
@@ -134,7 +138,7 @@ describe("ChatSession.saveAs（`/save <名字>`）", () => {
     // 旧文件消失（否则同一份对话会有两条记录）
     expect(existsSync(convFile("chat_before_rename"))).toBe(false);
     // 指针跟着走：下次启动要续接到改名后的会话
-    expect((await readLastSession(process.cwd()))?.id).toBe("我的对话");
+    expect((await (await conversationStore()).lastSession())?.id).toBe("我的对话");
     const saved = JSON.parse(await fs.readFile(convFile("我的对话"), "utf-8"));
     expect(saved.id).toBe("我的对话");
     expect(saved.messages).toHaveLength(1);
@@ -158,11 +162,13 @@ describe("ChatSession.saveAs（`/save <名字>`）", () => {
     session.messages.push({ role: AgentNS.Role.User, content: "x" } as any);
     await session.save();
 
-    // 校验来自 SDK 的 `EntityRepository.path()`（alpha.25）：以前这里会静默写到
-    // `<dir>/cli/逃逸.json` —— 删旧文件那一步还会顺手删掉目录外的同名文件
-    await expect(session.saveAs("../逃逸")).rejects.toThrow(/Invalid entity id/);
+    // 校验来自存储层的 `assertSafeId()`：以前这里会静默写到 `<dir>/cli/逃逸.json`
+    // —— 删旧文件那一步还会顺手删掉目录外的同名文件
+    await expect(session.saveAs("../逃逸")).rejects.toThrow(/invalid conversation id/);
 
-    expect(existsSync(join(state.dir, "cli", "逃逸.json"))).toBe(false);
+    const workspaceRoot = join(state.dir, "workspaces", workspaceIdFor(process.cwd()));
+    expect(existsSync(join(workspaceRoot, "逃逸.json"))).toBe(false);
+    expect(existsSync(join(state.dir, "逃逸.json"))).toBe(false);
     // 当前会话不受影响：新文件没写成，旧文件也不该被删
     expect(session.currentId).toBe("chat_escape");
     expect(existsSync(convFile("chat_escape"))).toBe(true);
@@ -233,7 +239,7 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
     agent.tools = [];
     agent.definition = { messages: [] };
 
-    // 交接文档目录固化自模块加载时的 cwd（`PROJECT_HANDOFFS_DIR`），
+    // 交接文档目录在 createHandoffService 时按 cwd 定下（`projectDirs().handoffs`），
     // 这里改指临时区，避免在仓库里留下 .ai-zen/handoffs（afterAll 会清理 state.dir）
     (session as any).handoffService.handoffDirPath = join(state.dir, "handoffs");
 
@@ -246,7 +252,7 @@ describe("ChatSession.currentId（唯一真相源 = ctx）", () => {
 
     const archived = JSON.parse(
       await fs.readFile(
-        join(state.dir, "cli", "conversations", "会话_自动迁移前.json"),
+        join(state.dir, "workspaces", workspaceIdFor(process.cwd()), "conversations", "会话_自动迁移前.json"),
         "utf-8",
       ),
     );
@@ -602,7 +608,7 @@ describe("ChatSession.subAgents（Agent 栏目的数据源）", () => {
 describe("ChatSession.abort（Ctrl+C 中断交接）", () => {
   /**
    * 把 session 武装成「能跑 self 交接」：`self` 需要 `write` 工具 + `send`，
-   * 文档目录改指临时区（`PROJECT_HANDOFFS_DIR` 固化自模块加载时的 cwd）。
+   * 文档目录改指临时区（否则会写进仓库的 `.ai-zen/handoffs`）。
    */
   function armSelfHandoff(session: ChatSession): any {
     const agent = (session as any).agent;

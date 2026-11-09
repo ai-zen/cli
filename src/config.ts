@@ -13,10 +13,14 @@
  *   ├── tools/                    ← 用户工具（共享）
  *   ├── mcp.json                  ← MCP 配置（共享）
  *   ├── mcp-oauth/                ← MCP OAuth token（共享）
- *   └── cli/                      ← CLI 运行时数据
- *       ├── conversations/        ← 对话记录
- *       └── last-session.json     ← 「各 cwd 上一轮会话 id」指针（cwd → id）
+ *   └── cli/                      ← CLI 的旧存档位置（**只剩迁移用**：会话已搬到 workspaces/）
+ *       ├── conversations/        ← （旧）对话记录，启动时搬进 workspaces/<id>/ 后删除
+ *       └── last-session.json     ← （旧）按 cwd 分键的续接指针，同上
  *
+ *   ~/.ai-zen/workspaces/<workspaceId>/   ← 会话真正的位置（CLI / 桌面端共享）
+ *   ├── workspace.json            ← 该工作区对应的原始路径（哈希不可逆，得留凭据）
+ *   ├── conversations/            ← 对话记录（每个会话一个 JSON）
+ *   └── last-session.json         ← 「本工作区上一轮会话」指针 *
  *   项目/.ai-zen/                 ← 项目级配置与产物
  *   ├── skills/                   ← 项目级 Skill
  *   ├── tools/                    ← 项目级工具
@@ -79,9 +83,12 @@ export let AI_ZEN_DIR = resolveRoot();
 
 // ==================== CLI 运行时目录 ====================
 
+/**
+ * CLI 自己的目录。会话已搬到 `workspaces/`，这里**只剩旧存档**的位置：
+ * 启动时由 `conversation-repository.ts` 的迁移把里面的东西搬走，之后就能删。
+ */
 export let CLI_DIR = join(AI_ZEN_DIR, "cli");
 export let CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
-export let CONVERSATIONS_DIR = join(CLI_DIR, "conversations");
 
 // ==================== 共享目录 ====================
 
@@ -92,16 +99,54 @@ export let TOOLS_DIR = join(AI_ZEN_DIR, "tools");
 
 // ==================== 项目级目录（基于 CWD）====================
 
-export const PROJECT_SUB_AGENTS_DIR = join(process.cwd(), ".ai-zen", "sub-agents");
-export const PROJECT_SKILLS_DIR = join(process.cwd(), ".ai-zen", "skills");
-export const PROJECT_TOOLS_DIR = join(process.cwd(), ".ai-zen", "tools");
 /**
- * 交接文档目录（项目级）：`<cwd>/.ai-zen/handoffs/`。
+ * 某个工作目录下的全部项目级路径。
  *
- * 交接文档是「人也能直接读」的产物，放在项目内便于随仓库共享/评审；
- * 目录由交接时的 write 工具或服务落盘时自动创建，无需预先建立。
+ * **为什么是函数不是常量**：这些路径全部挂在 `process.cwd()` 上，而常量只在**模块求值
+ * 那一刻**算一次。于是进程内一旦换目录（测试换临时根、将来服务端一个进程服务多个
+ * 工作区），常量就永远指向启动时的那个目录 —— 而且错得很安静：路径存在、读写不报错，
+ * 只是全落到别的工作区里。
+ *
+ * 参数默认 `process.cwd()` 只出现在**这一处**（config.ts 是组装根），调用点可以显式传。
  */
-export const PROJECT_HANDOFFS_DIR = join(process.cwd(), ".ai-zen", "handoffs");
+export interface ProjectDirs {
+  /** `<cwd>/.ai-zen` */
+  root: string;
+  subAgents: string;
+  skills: string;
+  tools: string;
+  /**
+   * 交接文档目录：`<cwd>/.ai-zen/handoffs/`。
+   *
+   * 交接文档是「人也能直接读」的产物，放在项目内便于随仓库共享/评审；
+   * 目录由交接时的 write 工具或服务落盘时自动创建，无需预先建立。
+   */
+  handoffs: string;
+  mcpConfig: string;
+  /** `<cwd>/.agents`（业界通用规范） */
+  agentsRoot: string;
+  agentsSkills: string;
+  agentsMcpConfig: string;
+  /** `<cwd>/.mcp.json`（业界通用规范优先级最高的一层） */
+  sharedMcpConfig: string;
+}
+
+export function projectDirs(cwd: string = process.cwd()): ProjectDirs {
+  const root = join(cwd, ".ai-zen");
+  const agentsRoot = join(cwd, ".agents");
+  return {
+    root,
+    subAgents: join(root, "sub-agents"),
+    skills: join(root, "skills"),
+    tools: join(root, "tools"),
+    handoffs: join(root, "handoffs"),
+    mcpConfig: join(root, "mcp.json"),
+    agentsRoot,
+    agentsSkills: join(agentsRoot, "skills"),
+    agentsMcpConfig: join(agentsRoot, "mcp.json"),
+    sharedMcpConfig: join(cwd, ".mcp.json"),
+  };
+}
 
 // ==================== 业界通用规范 ~/.agents/ 目录 ====================
 
@@ -114,17 +159,9 @@ let USER_AGENTS_DIR = resolveUserAgentsDir();
 export let USER_AGENTS_SKILLS_DIR = join(USER_AGENTS_DIR, "skills");
 export let USER_AGENTS_MCP_CONFIG_FILE = join(USER_AGENTS_DIR, "mcp.json");
 
-// ==================== 业界通用规范 项目/.agents/ 目录 ====================
-
-export const PROJECT_AGENTS_DIR = join(process.cwd(), ".agents");
-export const PROJECT_AGENTS_SKILLS_DIR = join(PROJECT_AGENTS_DIR, "skills");
-export const PROJECT_AGENTS_MCP_CONFIG_FILE = join(PROJECT_AGENTS_DIR, "mcp.json");
-
 // ==================== MCP 配置 ====================
 
 export let MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
-export const PROJECT_MCP_CONFIG_FILE = join(process.cwd(), ".ai-zen", "mcp.json");
-export const SHARED_MCP_CONFIG_FILE = join(process.cwd(), ".mcp.json");
 
 // ==================== SDK ConfigManager ====================
 
@@ -166,7 +203,6 @@ export function refreshPaths(): void {
   AI_ZEN_DIR = resolveRoot();
   CLI_DIR = join(AI_ZEN_DIR, "cli");
   CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
-  CONVERSATIONS_DIR = join(CLI_DIR, "conversations");
   AGENTS_DIR = join(AI_ZEN_DIR, "agents");
   SUB_AGENTS_DIR = join(AI_ZEN_DIR, "sub-agents");
   SKILLS_DIR = join(AI_ZEN_DIR, "skills");
@@ -202,14 +238,12 @@ async function initOnce(): Promise<void> {
   await configManager().bootstrap();
 
   // CLI 运行时目录（recursive 模式已存在时不报错，无需先 access 探测）
-  for (const dir of [CLI_DIR, CONVERSATIONS_DIR]) {
-    try {
-      await fs.mkdir(dir, { recursive: true });
-    } catch (error: any) {
-      // 走统一日志出口：TUI 下已改道落盘、stdio 下走 stderr。
-      // 这里不能用 console.warn —— 那会绕过日志系统，界面里看不见、日志文件里也查不到。
-      getLogger().warn(t("app.mkdirFailed", { dir, error: error?.message ?? error }));
-    }
+  try {
+    await fs.mkdir(CLI_DIR, { recursive: true });
+  } catch (error: any) {
+    // 走统一日志出口：TUI 下已改道落盘、stdio 下走 stderr。
+    // 这里不能用 console.warn —— 那会绕过日志系统，界面里看不见、日志文件里也查不到。
+    getLogger().warn(t("app.mkdirFailed", { dir: CLI_DIR, error: error?.message ?? error }));
   }
 }
 
@@ -274,7 +308,7 @@ export interface McpConfig {
 
 /** 作用域对应的 mcp.json 路径 */
 export function mcpConfigPath(scope: McpScope): string {
-  return scope === "project" ? PROJECT_MCP_CONFIG_FILE : MCP_CONFIG_FILE;
+  return scope === "project" ? projectDirs().mcpConfig : MCP_CONFIG_FILE;
 }
 
 /**
@@ -338,5 +372,5 @@ export async function writeMcpConfig(mcpConfig: McpConfig, scope: McpScope = "gl
 
 /** 读取项目级 <cwd>/.ai-zen/mcp.json（等价于 readMcpConfig("project")） */
 export async function readProjectMcpConfig(): Promise<McpReadResult> {
-  return readMcpConfigAt(PROJECT_MCP_CONFIG_FILE);
+  return readMcpConfigAt(projectDirs().mcpConfig);
 }

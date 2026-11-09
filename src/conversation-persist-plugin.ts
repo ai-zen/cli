@@ -17,7 +17,6 @@ export interface ConversationPersistPluginOptions {
   /** 动态返回当前会话 id（迁移切换会话后随之变化） */
   getId: () => string;
   agentId: string;
-  cwd?: string;
   /** 落盘失败时的上报（TUI 走 Ink notice）；默认丢弃 */
   onError?: (text: string) => void;
 }
@@ -26,7 +25,7 @@ export class ConversationPersistPlugin implements AgentPlugin {
   constructor(private options: ConversationPersistPluginOptions) {}
 
   async onInnerLoopEnd(ctx: SendContext): Promise<void> {
-    const { getId, agentId, cwd, onError } = this.options;
+    const { getId, agentId, onError } = this.options;
     const messages = ctx.agent.messages;
 
     // 尚无实质内容（没有用户消息）时不落盘，避免产生空会话文件
@@ -34,9 +33,9 @@ export class ConversationPersistPlugin implements AgentPlugin {
 
     const id = getId();
     try {
-      // 每轮自动落盘也算「本目录的上一轮会话」—— 下次在该目录启动时续接它。
-      // `SendContext.cwd` 是 SDK 的可选字段，这里（调用点）是**唯一**需要兜底的地方。
-      await persistConversation({ id, agentId, messages, cwd: cwd ?? process.cwd() });
+      // 每轮自动落盘也算「本工作区的上一轮会话」—— 下次在这个工作区启动时续接它。
+      // 落到哪个工作区由 storage 层按 `process.cwd()` 解析（以前这里要自己带 cwd）。
+      await persistConversation({ id, agentId, messages });
     } catch (err: any) {
       onError?.(t("chat.persistFailed", { error: err?.message ?? err }));
     }

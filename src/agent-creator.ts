@@ -17,9 +17,8 @@ import type { AgentNS } from "@ai-zen/agents-core";
 import {
   AGENTS_DIR, SUB_AGENTS_DIR, SKILLS_DIR, TOOLS_DIR,
   AI_ZEN_DIR,
-  PROJECT_SUB_AGENTS_DIR, PROJECT_SKILLS_DIR, PROJECT_TOOLS_DIR,
+  projectDirs,
   USER_AGENTS_SKILLS_DIR, USER_AGENTS_MCP_CONFIG_FILE,
-  PROJECT_AGENTS_SKILLS_DIR, PROJECT_AGENTS_MCP_CONFIG_FILE,
 } from "./config.js";
 import { readConfig } from "./config.js";
 
@@ -48,9 +47,10 @@ const exists = existsSync;
  * 只返回**当前真实存在**的目录，不存在的不参与发现。
  */
 export function listSkillDirs(): string[] {
+  const project = projectDirs();
   return [
-    PROJECT_SKILLS_DIR,
-    PROJECT_AGENTS_SKILLS_DIR,
+    project.skills,
+    project.agentsSkills,
     SKILLS_DIR,
     USER_AGENTS_SKILLS_DIR,
   ].filter(exists);
@@ -76,10 +76,11 @@ async function createScopeOnce(): Promise<Scope> {
   //   3. 项目/.agents/mcp.json           ← 业界通用规范
   //   4. ~/.ai-zen/mcp.json
   //   5. ~/.agents/mcp.json              ← 业界通用规范
+  const project = projectDirs();
   const mcpPaths = [
-    join(process.cwd(), ".mcp.json"),
-    join(process.cwd(), ".ai-zen", "mcp.json"),
-    PROJECT_AGENTS_MCP_CONFIG_FILE,
+    project.sharedMcpConfig,
+    project.mcpConfig,
+    project.agentsMcpConfig,
     join(AI_ZEN_DIR, "mcp.json"),
     USER_AGENTS_MCP_CONFIG_FILE,
   ].filter(exists);
@@ -92,9 +93,9 @@ async function createScopeOnce(): Promise<Scope> {
     agentsDir: AGENTS_DIR,
   }).use(
     ...allInOne({
-      subAgentsPaths: [PROJECT_SUB_AGENTS_DIR, SUB_AGENTS_DIR].filter(exists),
+      subAgentsPaths: [project.subAgents, SUB_AGENTS_DIR].filter(exists),
       skillsPaths,
-      toolsPaths: [PROJECT_TOOLS_DIR, TOOLS_DIR].filter(exists),
+      toolsPaths: [project.tools, TOOLS_DIR].filter(exists),
       mcpPaths,
     }),
   );

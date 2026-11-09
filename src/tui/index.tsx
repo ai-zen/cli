@@ -15,8 +15,7 @@ import type { AppConfig } from "@ai-zen/agents-sdk";
 import { AGENTS_DIR, ensureConfigDir, readConfig, saveConfig } from "../config.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
-import { conversationRepository } from "../conversation-repository.js";
-import { readLastSession } from "../session-pointer.js";
+import { conversationStore } from "../conversation-repository.js";
 import { Chat } from "./screens/index.js";
 import { keyDebugStart } from "./key-debug.js";
 import { disableMouseTracking, enableMouseTracking } from "./mouse.js";
@@ -180,9 +179,10 @@ async function resolveTarget(): Promise<ChatTarget> {
 
 /** 读取「上一轮会话 id」指针，续接该会话（指针缺失或会话不存在时返回 null） */
 async function resumeLastSession(): Promise<ChatTarget | null> {
-  const pointer = await readLastSession(process.cwd());
+  const store = await conversationStore();
+  const pointer = await store.lastSession();
   if (!pointer) return null;
-  const conversation = await conversationRepository().read(pointer.id);
+  const conversation = await store.read(pointer.id);
   if (!conversation) return null;
   // 模型由 Agent 定义决定（旧存档里的 modelId 一律忽略）
   return targetFromMessages({

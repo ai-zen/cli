@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { workspaceIdFor } from "@ai-zen/agents-server";
 import {
   generateConversationId,
   listConversations,
@@ -45,7 +46,8 @@ describe("时间戳：文件名用，不随语言变", () => {
 
 describe("listConversations（`/load` 只认文件名）", () => {
   const zen = useTempAiZenDir("aiz-list-test-");
-  const convDir = () => join(zen.dir, "cli", "conversations");
+  // 列的是**当前工作区**的会话（会话已按工作区隔离，不再混在一个全局目录里）
+  const convDir = () => join(zen.dir, "workspaces", workspaceIdFor(process.cwd()), "conversations");
   beforeEach(() => {
     zen.pin();
     // 每例从空目录开始（否则上一个用例落的会话会带到下一个）
@@ -57,7 +59,6 @@ describe("listConversations（`/load` 只认文件名）", () => {
     await persistConversation({
       id: "chat_a",
       messages: [{ role: "user", content: "以前这里会当摘要显示" }] as never,
-      cwd: "/work",
       setAsLastSession: false,
     });
     // 旧实现返回 { id, name, preview, updatedAt, size }，且为取 preview 逐个 JSON.parse
@@ -68,7 +69,7 @@ describe("listConversations（`/load` 只认文件名）", () => {
     const stamps = ["2026-01-01T00:00:00Z", "2026-03-01T00:00:00Z", "2026-02-01T00:00:00Z"];
     const ids = ["chat_a", "chat_b", "chat_c"];
     for (const [index, id] of ids.entries()) {
-      await persistConversation({ id, messages: [], cwd: "/work", setAsLastSession: false });
+      await persistConversation({ id, messages: [], setAsLastSession: false });
       const when = new Date(stamps[index]!);
       utimesSync(join(convDir(), `${id}.json`), when, when);
     }
@@ -76,7 +77,7 @@ describe("listConversations（`/load` 只认文件名）", () => {
   });
 
   it("只列 .json，临时文件与其它后缀不算会话", async () => {
-    await persistConversation({ id: "chat_real", messages: [], cwd: "/work", setAsLastSession: false });
+    await persistConversation({ id: "chat_real", messages: [], setAsLastSession: false });
     writeFileSync(join(convDir(), "chat_real.json.tmp"), "{}", "utf-8");
     writeFileSync(join(convDir(), "notes.txt"), "x", "utf-8");
     expect((await listConversations()).map((c) => c.id)).toEqual(["chat_real"]);

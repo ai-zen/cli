@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationContext } from "./types.js";
 import { createHandoffService } from "./handoff-service.js";
-import { conversationRepository } from "./conversation-repository.js";
+import { conversationStore } from "./conversation-repository.js";
 import { setLocale } from "./i18n/index.js";
 import { useTempAiZenDir } from "./test-support/temp-dir.js";
 
@@ -93,7 +93,7 @@ describe("createHandoffService", () => {
     expect(result.handoffPath.startsWith(dir)).toBe(true);
     // 新会话：id 已切换并落盘
     expect(ctx.currentId).not.toBe("会话_x");
-    const saved = await conversationRepository().read(ctx.currentId!);
+    const saved = await (await conversationStore()).read(ctx.currentId!);
     expect(saved).toBeTruthy();
     expect(saved!.messages.length).toBe(1);
   });

@@ -75,7 +75,7 @@ describe("readProjectMcpConfig", () => {
 describe("MCP 作用域化读写", () => {
   it("mcpConfigPath 返回各作用域路径", () => {
     expect(config.mcpConfigPath("global")).toBe(config.MCP_CONFIG_FILE);
-    expect(config.mcpConfigPath("project")).toBe(config.PROJECT_MCP_CONFIG_FILE);
+    expect(config.mcpConfigPath("project")).toBe(config.projectDirs().mcpConfig);
   });
 
   it("按显式路径读写，且自动创建父目录", async () => {
@@ -136,5 +136,31 @@ describe("readConfig 顺带完成升级迁移", () => {
 
     const cfg = JSON.parse(await fs.readFile(join(testDir, "config.json"), "utf-8"));
     expect("defaultModel" in cfg).toBe(false);
+  });
+});
+
+describe("projectDirs（cwd 是参数，不是模块求值快照）", () => {
+  // 曾经是 7 个 `export const PROJECT_* = join(process.cwd(), …)`：模块求值那一刻就把
+  // 启动目录焊死，之后换目录（测试换临时根、将来服务端一个进程服务多个工作区）
+  // 全部悄悄落到启动时的那个目录里 —— 不报错，只是写错地方。
+  it("传入不同 cwd → 拿到各自的路径（互不影响）", () => {
+    const a = config.projectDirs("/work/proj-a");
+    const b = config.projectDirs("/work/proj-b");
+
+    expect(a.skills).toBe(join("/work/proj-a", ".ai-zen", "skills"));
+    expect(b.skills).toBe(join("/work/proj-b", ".ai-zen", "skills"));
+    expect(a.skills).not.toBe(b.skills);
+  });
+
+  it("三项项目级 MCP 配置都在同一个 cwd 下，顺序里的三处不会串", () => {
+    const dirs = config.projectDirs("/p");
+    expect(dirs.sharedMcpConfig).toBe(join("/p", ".mcp.json"));
+    expect(dirs.mcpConfig).toBe(join("/p", ".ai-zen", "mcp.json"));
+    expect(dirs.agentsMcpConfig).toBe(join("/p", ".agents", "mcp.json"));
+  });
+
+  it("不传参时取当前 cwd（组装根唯一一处读全局）", () => {
+    expect(config.projectDirs().root).toBe(join(process.cwd(), ".ai-zen"));
+    expect(config.projectDirs().handoffs).toBe(join(process.cwd(), ".ai-zen", "handoffs"));
   });
 });

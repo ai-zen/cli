@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { workspaceIdFor } from "@ai-zen/agents-server";
 
 // ==================== Helpers ====================
 
@@ -67,7 +68,6 @@ interface SetupOptions {
 function setupConfigDir(aizDir: string, options: SetupOptions = {}): void {
   const { apiKey = "sk-test-fake-key", baseUrl = "https://api.deepseek.com/v1" } = options;
 
-  mkdirSync(join(aizDir, "cli", "conversations"), { recursive: true });
   mkdirSync(join(aizDir, "agents"), { recursive: true });
   mkdirSync(join(aizDir, "sub-agents"), { recursive: true });
 
@@ -269,8 +269,8 @@ describe("E2E: 真实 API 对话（纯 stdio）", () => {
     const result = await runCli(["--save", "说'好'就行"], undefined, { AI_ZEN_DIR: aizDir });
     expect(result.exitCode).toBe(0);
 
-    // 断言至少有一个对话存档文件
-    const convDir = join(aizDir, "cli", "conversations");
+    // 断言至少有一个对话存档文件（会话落在**当前工作区**的目录下）
+    const convDir = join(aizDir, "workspaces", workspaceIdFor(process.cwd()), "conversations");
     const { readdirSync } = await import("node:fs");
     expect(readdirSync(convDir).length).toBeGreaterThan(0);
   }, 60000);

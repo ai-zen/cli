@@ -23,7 +23,7 @@ import {
   parseCommandArgs,
   type CommandName,
 } from "../../conversation-commands/registry.js";
-import { conversationExists, conversationRepository, listConversations } from "../../conversation-repository.js";
+import { conversationExists, conversationStore, listConversations } from "../../conversation-repository.js";
 import { mcpConfigOrEmpty, readConfig, readMcpConfig, readReasoningPresets, saveConfig } from "../../config.js";
 import { resetScope } from "../../agent-creator.js";
 import { switchModel } from "../../model-switch.js";
@@ -199,7 +199,7 @@ const cmdLoad: CommandHandler = async ({ push, rows, exit, pick }) => {
     push(t("cmd.load.cancelled"));
     return;
   }
-  const conversation = await conversationRepository().read(choice);
+  const conversation = await (await conversationStore()).read(choice);
   if (!conversation) {
     push(t("cmd.load.readFailed", { id: choice }), "error");
     return;

@@ -8,7 +8,7 @@ import {
   persistConversation,
   generateConversationId,
 } from "./conversation-repository.js";
-import { PROJECT_HANDOFFS_DIR } from "./config.js";
+import { projectDirs } from "./config.js";
 import { listSkillDirs } from "./agent-creator.js";
 import type { ConversationContext } from "./types.js";
 import { t } from "./i18n/index.js";
@@ -40,7 +40,7 @@ export function createHandoffService(
 
   return new HandoffService({
     // 交接文档落在项目内，便于随仓库共享与评审
-    handoffDir: options.handoffDir ?? PROJECT_HANDOFFS_DIR,
+    handoffDir: options.handoffDir ?? projectDirs().handoffs,
     // CLI 采用物理剔除模式：迁移后不保留历史消息，仅保留系统提示 + 交接断点
     strategy: "prune",
     // 交接模板的唯一真相源：磁盘上的 handoff Skill（出厂随 SDK 释放，可被项目级覆盖）
@@ -99,7 +99,6 @@ export function createHandoffService(
           id,
           agentId: ctx.agentId,
           messages: hctx.agent.messages,
-          cwd: process.cwd(),
         });
       } catch (err: any) {
         log(t("handoff.persistFailed", { error: err?.message ?? err }));
