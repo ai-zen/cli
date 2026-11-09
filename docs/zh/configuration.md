@@ -21,7 +21,7 @@ outline: deep
 | `AI_ZEN_DIR` | `~/.ai-zen`（或 `$AI_ZEN_DIR`） | 共享根目录 |
 | `CLI_DIR` | `$AI_ZEN_DIR/cli` | CLI 运行时目录 |
 | `CONFIG_FILE` | `$AI_ZEN_DIR/config.json` | 全局配置（CLI/Desktop 共享） |
-| `CONVERSATIONS_DIR` | `$AI_ZEN_DIR/cli/conversations` | 对话记录 |
+| （无常量） | `$AI_ZEN_DIR/workspaces` | 会话存档根（每个工作区一份，`session-store.ts` 现拼） |
 | `AGENTS_DIR` | `$AI_ZEN_DIR/agents` | Agent 定义（共享） |
 | `SUB_AGENTS_DIR` | `$AI_ZEN_DIR/sub-agents` | SubAgent 定义（共享） |
 | `SKILLS_DIR` | `$AI_ZEN_DIR/skills` | Skill 目录（共享） |
@@ -69,7 +69,8 @@ outline: deep
   "defaultMigrationModel": "deepseek-flash",
   "maxToolOutput": 32768,
   "abortedMessageStrategy": "keep",
-  "abortedToolRoundStrategy": "fill"
+  "abortedToolRoundStrategy": "fill",
+  "autoRefreshTools": "inner-loop-start"
 }
 ```
 
@@ -82,6 +83,7 @@ outline: deep
 - 旧字段 `maxContextTokens` / `maxContextChars` / `reasoning` 会在启动时自动迁移（前两者折成 `tokenThresholds`，`reasoning` 换成 `reasoningPreset`），无需手改；迁移只在检测到差异时写盘一次。
 - `defaultImageModel` / `defaultAgent` / `defaultMigrationModel`：其余默认项。
 - `abortedMessageStrategy`（`keep` / `drop`）与 `abortedToolRoundStrategy`（`fill` / `drop`）：**中断策略**。前者决定被中断时模型已输出的思考 / 正文是否留在上下文（出厂 `keep`：下一轮接着半截往下说；`drop` 则不发给模型）；后者决定被中断 / 结果不完整的工具轮次怎么归一（出厂 `fill`：整轮保留并给未完成结果补原因，`tool_calls` 与结果必须配对；`drop` 则整轮出列）。缺字段或写了非法值时，启动会补成出厂默认。配置中心「默认项」里可直接切换；它只在**建 Agent** 时读取，改完关掉配置中心会自动重建会话生效（也可手动 `/reload`）。
+- `autoRefreshTools`（`inner-loop-start` / `outer-loop-start` / `off`）：**工具清单刷新时机**。一次刷新会重新发现 MCP server、Skill 与用户工具，所以这是「开销 / 时效」的取舍：`inner-loop-start`（出厂）在**每次请求前**刷，会话中新装的能力下一次请求就能用（旧版即如此）；`outer-loop-start` 整个回合开头刷一次，开销最小，新能力下一轮生效；`off` 不自动刷，只有 `/reload` 生效。同样在配置中心「默认项」里切换，也是建 Agent 时才读。
 - **模型不在 `config.json` 里指定**：它写在 Agent 定义的 `modelId` 上（见下节）。旧版的 `config.defaultModel` 已在升级时自动搬迁到默认 Agent 并从配置中删除。
 
 ## Agent 定义（`agents/<id>.json`）
@@ -106,9 +108,11 @@ outline: deep
 ```
 ~/.ai-zen/                    ← 共享根（AI_ZEN_DIR）
 ├── cli/                      ← CLI 运行时数据
-│   ├── conversations/        ← CLI 对话
-│   ├── last-session.json     ← 「上一轮会话 id」指针
 │   └── preferences.json      ← CLI 本地偏好（界面语言等）
+├── workspaces/<workspaceId>/ ← 会话（按工作区隔离，CLI/Desktop 共享）
+│   ├── workspace.json        ← 这个工作区对应的原始路径
+│   ├── sessions/<id>.json    ← 会话存档
+│   └── last-session.json     ← 「本工作区上一轮会话」指针
 ├── config.json               ← 全局配置（端点、模型等，CLI/Desktop 共享）
 ├── agents/                   ← Agent 定义（共享）
 │   ├── default.json

@@ -166,7 +166,7 @@ key input="" flags=[pageUp] raw=false
 
 ### 会话恢复
 
-每个会话都会在对话过程中**直接落盘为独立文件**（`cli/conversations/<id>.json`），不再有单独的草稿存储。一个指针文件（`cli/last-session.json`）记录**上一轮会话 id**；下次启动 `ai` 会**自动续接该会话**，接着上次继续。
+每轮对话结束（`turn.end` 之前）就会把会话写入**工作区**存档：`workspaces/<workspaceId>/sessions/<id>.json`，同目录的 `last-session.json` 记录**上一轮会话 id**；下次启动 `ai` 会**自动续接该会话**。本地部署时工作区由你敲 `ai` 的目录决定（没有就建、有就复用），客户端与服务端分居两机时由服务端的 `--workspace` 决定。旧版的 `cli/conversations/` 会在首次启动时自动搬迁。
 
 ### 界面语言（中文 / English）
 
@@ -315,9 +315,11 @@ ai hook uninstall
 ~/.ai-zen/                    ← 共享根（AI_ZEN_DIR）
 ├── config.json               ← 端点与模型配置（与其他 AI-Zen 客户端共享）
 ├── cli/                      ← CLI 运行时数据
-│   ├── conversations/        ← CLI 对话记录
-│   ├── last-session.json     ← 「上一轮会话 id」指针
 │   └── preferences.json      ← CLI 本地偏好（界面语言等）
+├── workspaces/<workspaceId>/ ← 会话（按工作区隔离，CLI/Desktop 共享）
+│   ├── workspace.json        ← 这个工作区对应的原始路径
+│   ├── sessions/<id>.json    ← 会话存档
+│   └── last-session.json     ← 「本工作区上一轮会话」指针
 ├── agents/                   ← Agent 定义（共享）
 │   ├── default.json          ← 默认 Agent（首次运行自动创建）
 │   └── my-custom-agent.json

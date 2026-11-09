@@ -12,7 +12,7 @@ Configuration is stored under the shared root directory (determined by `AI_ZEN_D
 
 - **Global config**: `$AI_ZEN_DIR/config.json` (default `~/.ai-zen/config.json` when `AI_ZEN_DIR` is not set).
 
-> The config directory is **shared** with other AI-Zen clients: the config file lives in the shared root (`CONFIG_FILE = join(AI_ZEN_DIR, "config.json")` in `src/config.ts`), while `~/.ai-zen/cli/` holds CLI runtime data such as `conversations/`, `last-session.json` (the "last session id" pointer) and `preferences.json` (CLI-local preferences such as the interface language).
+> The config directory is **shared** with other AI-Zen clients: the config file lives in the shared root (`CONFIG_FILE = join(AI_ZEN_DIR, "config.json")` in `src/config.ts`), while `~/.ai-zen/cli/` holds only CLI-local runtime data such as `preferences.json` (the interface language). **Sessions belong to a workspace** and live under `~/.ai-zen/workspaces/<workspaceId>/` (the old `cli/conversations/` plus the per-cwd pointer are migrated on first launch).
 
 Key paths defined in `src/config.ts`:
 
@@ -21,7 +21,7 @@ Key paths defined in `src/config.ts`:
 | `AI_ZEN_DIR` | `~/.ai-zen` (or `$AI_ZEN_DIR`) | Shared root directory |
 | `CLI_DIR` | `$AI_ZEN_DIR/cli` | CLI runtime directory |
 | `CONFIG_FILE` | `$AI_ZEN_DIR/config.json` | Global config (shared by CLI/Desktop) |
-| `CONVERSATIONS_DIR` | `$AI_ZEN_DIR/cli/conversations` | Conversation records |
+| (no constant) | `$AI_ZEN_DIR/workspaces` | Session archives, one per workspace (built on demand in `session-store.ts`) |
 | `AGENTS_DIR` | `$AI_ZEN_DIR/agents` | Agent definitions (shared) |
 | `SUB_AGENTS_DIR` | `$AI_ZEN_DIR/sub-agents` | SubAgent definitions (shared) |
 | `SKILLS_DIR` | `$AI_ZEN_DIR/skills` | Skill directory (shared) |
@@ -69,7 +69,8 @@ Key paths defined in `src/config.ts`:
   "defaultMigrationModel": "deepseek-flash",
   "maxToolOutput": 32768,
   "abortedMessageStrategy": "keep",
-  "abortedToolRoundStrategy": "fill"
+  "abortedToolRoundStrategy": "fill",
+  "autoRefreshTools": "inner-loop-start"
 }
 ```
 
@@ -106,9 +107,11 @@ Each Agent binds its model in its own definition file — this is the **single s
 ```
 ~/.ai-zen/                    ← Shared root (AI_ZEN_DIR)
 ├── cli/                      ← CLI runtime data
-│   ├── conversations/        ← CLI conversations
-│   ├── last-session.json     ← Pointer to the last session id
 │   └── preferences.json      ← CLI-local preferences (interface language, etc.)
+├── workspaces/<workspaceId>/ ← Sessions (per workspace, shared by CLI/Desktop)
+│   ├── workspace.json        ← The original path this workspace stands for
+│   ├── sessions/<id>.json    ← Session archive
+│   └── last-session.json     ← Pointer to this workspace's last session
 ├── config.json               ← Global config (endpoints, models, etc., shared by CLI/Desktop)
 ├── agents/                   ← Agent definitions (shared)
 │   ├── default.json

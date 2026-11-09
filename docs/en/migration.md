@@ -94,7 +94,7 @@ When `usage.prompt_tokens` exceeds the model's `tokenThresholds.handoff`, the SD
 - **Write via a separate agent** (`summary`) — a single independent generation over the serialized history; faster and cheaper, but does not verify files;
 - **Don't hand off** — skip this round (same as `Esc`). History is untouched; the prompt appears again after the next response while usage stays over the threshold.
 
-Non-interactive environments (pipes, redirects, e2e scripts) have no picker: they migrate with the default executor, without blocking and without extra output.
+**If nobody can answer, nothing is migrated.** In non-interactive environments (pipes, redirects, e2e scripts), when the client has already gone away, or when the wait times out (5 minutes), the server takes the fallback: it **skips this migration** (with a notice saying so) instead of picking an executor on the user's behalf. History is untouched, and if usage still exceeds the `handoff` soft line the question comes back after the next reply. The real safety net is the `guard` hard line: exceed it before a request and the turn is interrupted.
 
 ## Migration chain
 

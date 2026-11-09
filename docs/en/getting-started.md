@@ -51,6 +51,8 @@ The CLI has two **non-mixing** run modes, chosen automatically from the launch a
 
 In pure stdio mode, logs / progress / errors all go to **stderr**; stdout carries the result only (no ANSI / emoji / spinner). Exit code is `0` on success and non-zero on failure; nothing is persisted by default (use `--save` to keep a conversation archive).
 
+**The workspace follows your directory.** When the server and the CLI are on the same machine (the default — the CLI starts a local daemon for you), the directory you type `ai` in **is** the session's workspace: created on first use, then resumed from that workspace's last conversation. Deploy the server elsewhere and it flips: the client sends no directory at all, and the workspace is whatever the server was started with (`--workspace`, or its own working directory).
+
 Two modifiers refine this: `--tui` forces the interactive UI (the arguments are auto-sent as the first message; in a non-TTY environment it fails instead of degrading to pipe mode), and `--new` starts a **fresh conversation** instead of resuming the last one in this directory (TUI only; ignored on the stdio path, where a run is always a one-off session).
 
 ## Quick example
@@ -105,8 +107,8 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 | `/editor` | Compose a long message in your editor |
 | `/clear` | Clear the screen |
 | `/config` | Open the configuration center (model / endpoints) |
-| `/model` | Switch model (writes to config) |
-| `/agent` | Switch the primary agent (rebuilds the session) |
+| `/model` | Switch model (written to the agent definition; the agent is rebuilt in place, messages and draft kept) |
+| `/agent` | Switch the primary agent (same conversation, messages kept) |
 | `/reload` | Refresh the runtime (rediscovers tools / MCP) |
 | `/update` | Upgrade the CLI to the newest published release (highest semver across all dist-tags; shows each step and offers to restart into the new version) |
 | `/mcp` | Manage MCP servers (add / remove / edit / toggle) |

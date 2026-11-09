@@ -27,7 +27,7 @@ When collaborating with AI in a bare terminal, you often have to manually switch
 - **Skill**: reusable skills defined via `SKILL.md`, loaded contextually and delegatable to a Skill sub-agent.
 - **MCP support**: connect MCP servers over stdio / HTTP / SSE transports, with multi-level config merging.
 - **Task handoff & migration**: the original agent stops and writes a handoff document to `.ai-zen/handoffs/` (verified with its own tools), then optionally clears history and starts a new session from it. An interactive executor picker (self / summary / skip) appears when the context limit is hit; `/handoff` writes the document without switching sessions, `/migrate` does both.
-- **Session recovery**: every conversation is persisted as its own file in real time, and a pointer records the "last session id"; the last session is resumed automatically on the next launch.
+- **Session recovery**: every turn is written to the workspace archive (before `turn.end`) and the "last session id" pointer is updated, so the next launch resumes it. A turn still running when you quit finishes on the server, which then reclaims the session via the keep-alive set — coming back re-hydrates it from the archive with nothing missing.
 - **Shell fallback hook**: `ai hook install` forwards unrecognized terminal commands **into the interactive UI** (the original command is auto-sent as the first message, always in a fresh conversation).
 
 ## Documentation navigation

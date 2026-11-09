@@ -166,7 +166,7 @@ On first launch, if the endpoint bound to the selected model has no API Key yet,
 
 ### Session Recovery
 
-Every conversation is persisted directly as its own file (`cli/conversations/<id>.json`) while you chat — there is no separate draft store. A single pointer (`cli/last-session.json`) remembers the **last session id**; next time you start `ai`, that session is **resumed automatically** so you pick up where you left off.
+Every turn is written to the **workspace** archive before `turn.end` (`workspaces/<workspaceId>/sessions/<id>.json`), and `last-session.json` next to it remembers the **last session id**; next time you start `ai`, that session is **resumed automatically**. With the server on the same machine the workspace is simply the directory you typed `ai` in (created on first use, reused afterwards); with the server on another machine it is whatever the server was started with (`--workspace`). The old `cli/conversations/` location is migrated on first launch.
 
 ### UI language (Chinese / English)
 
@@ -315,9 +315,11 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
 ~/.ai-zen/                    ← Shared root (AI_ZEN_DIR)
 ├── config.json               ← Endpoints & models (shared with other AI-Zen clients)
 ├── cli/                      ← CLI runtime data
-│   ├── conversations/        ← CLI conversations
-│   ├── last-session.json     ← Pointer to the last session id
 │   └── preferences.json      ← CLI-local preferences (interface language, etc.)
+├── workspaces/<workspaceId>/ ← Sessions (per workspace, shared by CLI/Desktop)
+│   ├── workspace.json        ← The original path this workspace stands for
+│   ├── sessions/<id>.json    ← Session archive
+│   └── last-session.json     ← Pointer to this workspace's last session
 ├── agents/                   ← Agent definitions (shared)
 │   ├── default.json          ← Default agent (created on first run)
 │   └── my-custom-agent.json
