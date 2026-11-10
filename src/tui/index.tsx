@@ -12,6 +12,8 @@
 import { render, useApp, type Instance } from "ink";
 import { resolveModel, type AppConfig } from "@ai-zen/agents-sdk";
 import { createConfigPort } from "../server-client/index.js";
+// 类型从 `agents-store.ts` 转出（那里只剩词汇表）：首启凭据屏要把**服务端那**一份定义快照递下去
+import type { AgentStore } from "../agents-store.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
 import { Chat } from "./screens/index.js";
@@ -110,21 +112,35 @@ function mount(node: Parameters<typeof render>[0]): Promise<unknown> {
  * 首启凭据门 —— 所选模型绑定的端点缺 API Key 时，先弹出 Ink 原生输入屏。
  *
  * 输入完成（或放弃）后退出该屏，把结果回传给 `mount()` 的返回值。
+ *
+ * ## 为什么它必须注入 `agentStore`
+ *
+ * 这个屏也能按 `a` 走进 Agent 定义编辑，而「定义写到哪里」由 `agentStore` 决定。
+ * 不传的后果不是报错，是**写到错的地方**：`config-wizard/engine.ts` 曾经的缺省是
+ * `createAgentStore([], [])` → `AgentRepository(AGENTS_DIR)`，而 `AGENTS_DIR` 是**客户端**
+ * 本机的 `~/.ai-zen/agents/`；后端 Agent 用的是服务端那份，于是「改好了」是假的。
+ * 现在缺省换成一个会报错的只读空快照（宁可写不进去，不要写错地方），而这里就是
+ * 那个「必须传真的」的挂载点之一。
  */
 function CredentialGate({
   config,
   configPath,
   endpointId,
+  agentStore,
 }: {
   config: AppConfig;
   configPath: string;
   endpointId: string;
+  /** Agent / Sub-agent 定义快照（服务端那一份，`configPort.readAgentStore()`） */
+  agentStore: AgentStore;
 }) {
   const { exit } = useApp();
   return (
     <ConfigWizard
       config={config}
       configPath={configPath}
+      // 定义从服务端读、写到服务端：这个屏上的「Agent 定义」不是本机文件
+      agentStore={agentStore}
       onboarding
       closeOnSave
       initialStep={{ kind: "edit", field: "apiKey", endpointId }}
@@ -149,8 +165,17 @@ async function ensureCredential(modelId: string): Promise<boolean> {
   const credential = resolveCredential(config, modelId);
   if (!credential || credential.configured) return true;
 
+  // 定义快照也来自**服务端**（它只有真要开屏时才读一次）：凭据屏里可以进 Agent 定义编辑，
+  // 而那条路的写入必须落在 Agent 实际用的那一份上。
+  const agentStore = await configPort.readAgentStore();
+
   const result = (await mount(
-    <CredentialGate config={config} configPath={path} endpointId={credential.endpointId} />,
+    <CredentialGate
+      config={config}
+      configPath={path}
+      endpointId={credential.endpointId}
+      agentStore={agentStore}
+    />,
   )) as WizardCloseResult | undefined;
   return Boolean(result?.dirty);
 }

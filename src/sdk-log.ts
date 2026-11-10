@@ -23,7 +23,7 @@
  * （模块顶层 `const log = getLogger()` 这类快照），换 logger 是救不回来的 —— 那属于
  * SDK 侧的接线问题，须在 SDK 里改为运行时取 logger，见对应 commit。
  *
- * 注意 stdio 模式不需要本模块：`stdio-runner.ts` 已把日志改道 stderr —— 那里 stdout
+ * 注意 stdio 模式不需要本模块：`stdio.ts` 已把日志改道 stderr —— 那里 stdout
  * 只留给结果，日志本身是有用的。本模块只服务「界面被占用」的 TUI。
  */
 

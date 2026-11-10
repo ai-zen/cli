@@ -1,8 +1,17 @@
 /**
- * 远程对话会话 —— TUI 的「纯客户端」实现。
+ * 会话层 —— 一段会话的客户端实现（**纯客户端**：Agent 在服务端跑）。
  *
  * 屏幕上的一切都从服务端来：消息走 `session.snapshot` 与事件，存档/交接/迁移走方法调用。
  * 本进程**不跑 Agent、不碰会话文件、不读 Skill** —— 它只需要一条到服务端的连接。
+ *
+ * ## 为什么它不在 `tui/` 里
+ *
+ * 它曾经是 `tui/remote-chat-session.ts`，而纯 stdio 模式的 `stdio.ts` 反过来 import 它 ——
+ * 于是「`tui/` 不是叶子」这条病只在运行期靠一句注释维持：“这条链上今天恰好没有 React”。
+ * 搬出来之后这件事变成结构事实：`dist/stdio.js` 的 import 图里一个 `tui/` 路径都没有
+ * （判据是产物图，不是路径 grep：`scripts/check-imports.mjs`）。
+ *
+ * 契约（屏幕与命令层只认的那一面）在 `session/types.ts`，本文件是实现。
  *
  * ## 三处与服务端分工有关的细节
  *
@@ -83,38 +92,39 @@
 import { AgentNS, sumUsage } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 import {
+  EVENT_METHODS,
   MAX_FRAME_BYTES,
+  SERVER_EVENTS,
   SESSION_EVENTS,
-  SESSION_METHODS,
   type MessageContent,
   type ModelLevel,
+  type ModelParams,
   type PhaseInfo,
   type ServerEvent,
   type SessionQuestionEvent,
   type SessionSnapshotResult,
+  type WorkspaceFileEntry,
 } from "@ai-zen/agents-server";
-import type { ClipboardImage } from "../clipboard.js";
-import { t } from "../i18n/index.js";
-import { createConfigPort, type ConfigPort } from "../server-client/index.js";
-import { clientWorkspacePath } from "../server-client/index.js";
+import type { ClipboardImage } from "./clipboard.js";
+import { t } from "./i18n/index.js";
+import { createConfigPort, type ConfigPort } from "./server-client/index.js";
+import { clientWorkspacePath } from "./server-client/index.js";
 // 合并规则（「本地增量 vs 服务端快照」）只有一份，住在 `@ai-zen/agents-client` 里：
 // 两个前端都在同一个时序压力下做同一件事，各写一遍就会在「宁可重复也不吞字」这类
 // 边界上分叉。所以这里只引用包里的实现与类型，不再留本地副本。
-import { mergeStreamedSnapshot, type StreamedAssistant } from "../server-client/index.js";
-import { RemoteSessions } from "../server-client/index.js";
-import type { ServerClient } from "../server-client/index.js";
-import { buildUserContent } from "../user-content.js";
-import { CLI_VERSION } from "../version.js";
+import { mergeStreamedSnapshot, type StreamedAssistant } from "./server-client/index.js";
+import { RemoteSessions } from "./server-client/index.js";
+import type { ServerClient } from "./server-client/index.js";
+import { buildUserContent } from "./user-content.js";
 import type {
   ChatSessionLike,
   ChatSessionNotifier,
   ChatSessionOptions,
   SubAgentView,
-} from "./chat-session.js";
-import type { PathEntry } from "./mention.js";
-import { noticeText } from "./notice-text.js";
+} from "./session/types.js";
+import { noticeText } from "./session-notice.js";
 import { stripCwdNote } from "./text.js";
-import { TokenRateMeter, type RateSample } from "./token-rate.js";
+import { TokenRateMeter, type RateSample } from "./session-rate.js";
 
 /**
  * 重连的最多次数（含第一次尝试）。
@@ -153,13 +163,13 @@ export interface RemoteChatSessionDeps {
  * `create()` 与默认的重连走**同一个函数**：重连要接的是同一个服务端，两处各写一份
  * 「怎么建连」，迟早会漂（一处带了 clientInfo、另一处忘了）。
  *
- * 纯 stdio 模式也走这一条（`stdio-runner.ts`）：一次性调用与 TUI 用的是同一条链路，
+ * 纯 stdio 模式也走这一条（`stdio.ts`）：一次性调用与 TUI 用的是同一条链路，
  * 不存在「另一种建连方式」。
  *
  * 实现就在 `server-client/index.ts`（那里把 `AI_ZEN_DIR` / `CLIENT_INFO` 一次绑好）——
- * 这里只是把它挂在本模块的对外面上，`stdio-runner.ts` 一直是这么 import 的。
+ * 这里只是把它挂在本模块的对外面上，`stdio.ts` 一直是这么 import 的。
  */
-import { connectToServer } from "../server-client/index.js";
+import { connectToServer } from "./server-client/index.js";
 export { connectToServer };
 
 /** 开一段远程会话需要的最小输入 */
@@ -239,6 +249,8 @@ export class RemoteChatSession implements ChatSessionLike {
   private readonly offs: Array<() => void> = [];
   /** 「连接断了」的订阅；`dispose()` 先摘掉它，否则主动关闭会被当成断线去重连 */
   private offClose: (() => void) | null = null;
+  /** 已经显式 `close()` 过：`dispose()` 不再重复发一帧 */
+  private closed = false;
   /** 重连进行中（单飞：多个断线信号同时到达只跑一次） */
   private reconnecting = false;
   /** 已经 `dispose()`：此后任何断线信号都不该再触发重连 */
@@ -341,7 +353,13 @@ export class RemoteChatSession implements ChatSessionLike {
     deps: RemoteChatSessionDeps = {},
   ): Promise<RemoteChatSession> {
     const sessions = new RemoteSessions(client);
-    await sessions.watch();
+    /**
+     * `events.watch` 是**连接级**订阅（服务端按连接登记推送），所以它不属于会话门面
+     * （P3 把 `RemoteSessions.watch()` 删了：它是唯一一条与「哪一段会话」无关的方法）。
+     * 客户端拿到的是一根裸连接，所以这里直接发那一帧 —— 与旧 `RemoteSessions.watch()`
+     * 逐字相同，只是不再绕一趟门面。
+     */
+    await client.call(EVENT_METHODS.watch);
 
     /**
      * 工作区在**这一处**解析，且只解析这一处。
@@ -485,13 +503,24 @@ export class RemoteChatSession implements ChatSessionLike {
 
   async reset(): Promise<string | null> {
     const hasContent = this.currentMessages.some((message) => message.role === AgentNS.Role.User);
+    /**
+     * 三步的顺序是这一整个方法的内容：**先归档 → 再开新的 → 最后关旧的**。
+     *
+     *  · 归档必须在关之前：`session.close` 是**当场回收**（服务端把活会话连同它手上的
+     *    Agent / MCP 连接一起放掉）。先关再存就是拿一个已经不存在的 id 去写盘；
+     *  · 开新的必须在关旧的之前：`open` 可能失败（配置有毛病时连 Agent 都装不起来）。
+     *    万一它挂了，旧这一段必须还在——用户还能接着用，而不是“`/new` 了一下，
+     *    两段会话都没了”；
+     *  · 关旧的必须真的发出去：不关的话，旧会话因为**连接上持有者还在**而一直活到宽限期，
+     *    于是连按十次 `/new` 就同时养着十段活会话（内存峰值线性增长到宽限期才回落）。
+     */
     const archivedId = hasContent ? await this.save() : null;
 
     // 用 `this.path`（服务端规范化后的工作区路径）而不是客户端 cwd：`/new` 是「同一个
     // 工作区里换一段会话」，换到客户端进程的目录就等于替服务端换了地方
     const opened = await this.sessions.open({ path: this.path, agentId: this.agentId });
-    // 旧的这段：我不再看着它了（它已经落过盘，服务端会当场或跑完就收）
-    await this.releaseKeepAlive(this.sessionId);
+    // 旧的这段：我不再看着它了（存档已写好，随时装得回来）
+    await this.closeSession(this.sessionId);
     this.sessionId = opened.sessionId;
     this.clearSubAgents();
     this.currentMessages = [];
@@ -523,6 +552,22 @@ export class RemoteChatSession implements ChatSessionLike {
     this.clearSubAgents();
     this.applySnapshot(snapshot);
     this.notifier.onChange(true);
+  }
+
+  /**
+   * 换**这一段会话**的模型（`session.model.set`）。
+   *
+   * 写入面已经从 `ConfigPort` 搬回 `RemoteSessions.modelSet`（P3 / D6）：作用对象是
+   * 一段会话的动作就不该挂在「配置面」上。这里只转发，不自己刷屏 —— 屏幕靠调用方
+   * 随后的 `reload()` 拿新快照（与 `/think` 同一个节奏）。
+   */
+  async setModel(modelId: string): Promise<void> {
+    await this.sessions.modelSet(this.sessionId, modelId);
+  }
+
+  /** 改**这一段会话**的模型参数（`null` = 清掉这一层覆盖）；同样只转发 */
+  async setModelParams(params: ModelParams | null): Promise<void> {
+    await this.sessions.modelParamsSet(this.sessionId, params);
   }
 
   async handoff(mode?: HandoffMode): Promise<string> {
@@ -588,8 +633,23 @@ export class RemoteChatSession implements ChatSessionLike {
    * 形状两端逐字对齐（`{ path, dir }`，路径相对工作区根、`/` 分隔、目录条目带
    * `dir: true`），所以这里不做映射：多一层搬运只会多一处会漂的翻译。
    */
-  async listWorkspaceFiles(): Promise<PathEntry[]> {
+  async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
     return (await this.sessions.files(this.workspaceId)).entries;
+  }
+
+  /**
+   * 把这段会话交还给服务端（**当场回收**，不等宽限期）。
+   *
+   * 一次性调用（`ai "…"`）跑完就调它：那个进程马上就会退出，而会话的寿命判据是
+   * 「连接上有没有持有者」—— 不显式关的话，一次管道调用就往常驻守护进程里留一段活会话。
+   *
+   * 重复调不会再发帧（`closed` 一旦置位，`dispose()` 也跟着安静下来）：多发的帧只是
+   * 多一次往返，而 `session.close` 本来就是幂等的（服务端回 `closed:false`）。
+   */
+  async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    await this.closeSession(this.sessionId);
   }
 
   dispose(): void {
@@ -606,25 +666,34 @@ export class RemoteChatSession implements ChatSessionLike {
     // 挂着的 `send()` 不能永远悬着：连接没了，本轮只能算结束
     this.resolveTurn();
     /**
-     * 我走了 → 这段会话移出保活区（服务端会「跑完就收」或当场收）。
+     * 我走了 → 显式 `session.close` 这一段。
      *
-     * 不等回执：这是退出路径，卡在这里就是「按了 Ctrl+C 却退不出去」。帧已经写出去，
-     * 落不到也就是**多留一段会话在内存里**（存档早在每轮收尾时写好了）；下一轮守护进程
-     * 重启即回收。而正常切换（`/new`、`/load`）走的是 `reset()` / 新的实例，那两处是 await 的。
+     * 这是 `/load` 那条路（`exit({ load })` → 整个对话屏卸载 → 本方法）与 Ctrl+C 的
+     * 共同出口，而**不关就漏**：会话的寿命判据是「连接上有没有持有者」，删掉保活声明
+     * 之后只剩这一条 —— 连接还没断的瞬间，服务端认为这段会话仍有人在看它。
+     *
+     * 不等回执：这是退出路径，卡在这里就是「按了 Ctrl+C 却退不出去」。帧写不出去也就是
+     * 多留一段会话在内存里（存档早在每轮收尾时写好了），而紧接着的 `client.close()`
+     * 本身也会让「持有者消失」这个信号生效 —— 那正是删掉保活声明时所依据的那条理由：
+     * 崩溃的进程发不出帧，而 socket 消失是内核保证的。
      */
-    void this.releaseKeepAlive(this.sessionId);
+    void this.close();
     this.client.close();
   }
 
   /**
-   * 把一段会话移出保活区（幂等，吞掉所有失败）。
+   * 显式关掉一段会话（幂等，吞掉所有失败）。
+   *
+   * `session.close` 是「我不看这段了」的**唯一**显式表达（协议里那三种表达已经收成
+   * 一种：另外两条是「持有者消失」与宽限期）。它换来的是**当场回收**：会话手上的 Agent、
+   * MCP 连接、内存里的消息全部立即放掉，不必等宽限期。
    *
    * 失败不报：这只关系「服务端要不要回收它」。会话已经被别的路径回收掉（`unknown-session`）
    * 是常态 —— 那时目的已经达成了。
    */
-  private async releaseKeepAlive(sessionId: string): Promise<void> {
+  private async closeSession(sessionId: string): Promise<void> {
     try {
-      await this.sessions.keepAliveSet(sessionId, false);
+      await this.sessions.close(sessionId);
     } catch {
       // 见上：不在就不在，没什么要说的
     }
@@ -807,9 +876,15 @@ export class RemoteChatSession implements ChatSessionLike {
       this.notifier.onNotice(noticeText(event.code, event.params), toneOf(event.level));
     });
 
-    // 全局通知不属于任何会话：切会话也不该消失，所以不过滤 sessionId
+    /**
+     * 服务端级通知（不属于任何一段会话，比如「MCP 不可用」「存档目录挂了」）。
+     *
+     * 它曾经叫 `global.notice` 并且**住在 `SESSION_EVENTS` 里** —— 一张叫「会话事件」的
+     * 表里装了一条与 id 无关的东西，于是每个客户端都得自己判「这条该不该按 sessionId 过滤」。
+     * P1 把它拆进 `SERVER_EVENTS`：名字与归属对上了，这里也就不必（也不该）再过 sessionId。
+     */
     offs.push(
-      client.on(SESSION_EVENTS.globalNotice, (event) => {
+      client.on(SERVER_EVENTS.notice, (event) => {
         this.notifier.onNotice(noticeText(event.code, event.params), toneOf(event.level));
       }),
     );
@@ -1110,7 +1185,7 @@ export class RemoteChatSession implements ChatSessionLike {
     // 手上的连接原封不动（还是那条断掉的），不会留下半接上的状态。
     let snapshot: SessionSnapshotResult;
     try {
-      await sessions.watch();
+      await client.call(EVENT_METHODS.watch);
       // 接回**同一段**会话：活着就接上（Agent 与 MCP 连接都还在），盘上有就装回来。
       // 用的 id 是**此刻**的 `this.sessionId` —— 断线期间若它变了（自动迁移），
       // 接回来的就应该是新的那段，而不是一个已经不在的旧 id。

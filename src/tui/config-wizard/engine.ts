@@ -8,7 +8,6 @@ import {
   AgentStore,
   AgentKind,
   findAgentDefinition,
-  createAgentStore,
 } from "../../agents-store.js";
 import { findEndpoint, findMcpServer, findModel } from "../../config-editor.js";
 import {
@@ -61,6 +60,28 @@ export interface WizardContext extends WizardEngine {
   props: ConfigWizardProps;
 }
 
+/**
+ * 没有注入 Agent 仓储时的**空快照**（只读）。
+ *
+ * 它曾经是一个会写盘的缺省（`createAgentStore([], [])` → `AgentRepository(AGENTS_DIR)`），
+ * 而 `AGENTS_DIR` 是**客户端本机**的 `~/.ai-zen/agents/`：首启凭据屏（`CredentialGate` 没传
+ * `agentStore`）上的「改 Agent 定义」就会把定义写进客户端自己那台机器，而 Agent 实际用的
+ * 是服务端那份 —— 界面说改好了，跑起来还是旧的旧档位（错得很安静）。
+ *
+ * 现在每个挂载点都必须注入真的那一份（`ConfigPort.readAgentStore()`）；漏了就在这报错，
+ * 而不是静静写到错的地方。“写不进去”比“写错了地方”安全得多。
+ */
+const EMPTY_AGENT_STORE: AgentStore = {
+  agents: [],
+  subAgents: [],
+  save: async () => {
+    throw new Error(t("wiz.agentStoreMissing"));
+  },
+  remove: async () => {
+    throw new Error(t("wiz.agentStoreMissing"));
+  },
+};
+
 export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   const [config, setConfig] = useState(props.config);
   const [step, setStep] = useState<WizardStep>(props.initialStep ?? { kind: "menu" });
@@ -73,9 +94,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
       paths: { global: "", project: "" },
     },
   );
-  const [store, setStore] = useState<AgentStore>(
-    () => props.agentStore ?? createAgentStore([], []),
-  );
+  const [store, setStore] = useState<AgentStore>(() => props.agentStore ?? EMPTY_AGENT_STORE);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 

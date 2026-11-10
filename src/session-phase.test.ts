@@ -7,8 +7,8 @@
  */
 
 import { describe, it, expect, afterEach } from "vitest";
-import { phaseLabel } from "./phase-label.js";
-import { DEFAULT_LOCALE, setLocale } from "../i18n/index.js";
+import { phaseLabel } from "./session-phase.js";
+import { DEFAULT_LOCALE, setLocale } from "./i18n/index.js";
 
 afterEach(() => setLocale(DEFAULT_LOCALE));
 

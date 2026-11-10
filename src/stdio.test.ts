@@ -23,9 +23,10 @@ import {
   type AgentLike,
   type ModelLevel,
 } from "@ai-zen/agents-server";
+import { AgentNS } from "@ai-zen/agents-core";
 import { SocketServerClient } from "./server-client/index.js";
 import type { ClientInfo } from "./server-client/index.js";
-import { mergePrompt, extractText, runStdio } from "./stdio-runner.js";
+import { mergePrompt, extractText, runStdio } from "./stdio.js";
 
 describe("mergePrompt", () => {
   it("仅有指令", () => {
@@ -89,7 +90,9 @@ const clientInfo: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
  */
 class FakeAgent implements AgentLike {
   messages: any[] = [{ role: "system", content: "你是助手" }];
-  lastUsage: unknown = undefined;
+  // 协议把用量从 `unknown` 收成了具名类型（D12）：假件必须照实声明，否则它证明不了
+  // 「客户端读的是 `Usage`」这件事 —— 那正是 `unknown` 时代漏掉的东西。
+  lastUsage: AgentNS.Usage | undefined = undefined;
   /** 三级解析的档位（真件由 SDK 的 `createAgent` 给；假件照抄这一位） */
   modelLevel: ModelLevel = "agent";
   definition = { messages: [] as any[] };

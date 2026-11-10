@@ -26,7 +26,7 @@ const NEXT_VERSION = `${Number(CLI_VERSION.split(".")[0]) + 1}.0.0-alpha.99`;
 /** 比当前版本旧的版本（1.x 之后一直成立） */
 const OLDER_VERSION = "0.9.0";
 import { runCommand, type ChatCommandHost } from "./chat-commands.js";
-import type { ChatSessionLike } from "../chat-session.js";
+import type { ChatSessionLike } from "../../session/types.js";
 import type { ConfigPort } from "../../server-client/index.js";
 
 const state = vi.hoisted(() => ({

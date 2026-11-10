@@ -323,4 +323,9 @@ export const zh: Record<string, string> = {
   "vendor.moonshot": "Moonshot（Kimi）",
   "vendor.dashscope": "阿里云百炼（DashScope）",
   "vendor.openaiCompatible": "OpenAI 兼容端点",
+
+  // ---------- 配置中心的 Agent 仓储 ----------
+  // 只在「向导被挂载但没注入 Agent 仓储」时出现。它不是给用户看的日常提示，而是把
+  // 「你少注入了」这件事说清楚 —— 以前那种情况会静静写到客户端本机 ~/.ai-zen/agents/。
+  "wiz.agentStoreMissing": "内部错误：配置向导没有拿到 Agent 仓储（不能读写客户端本机的定义）",
 };

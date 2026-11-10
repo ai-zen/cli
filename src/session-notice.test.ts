@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { setLocale } from "../i18n/index.js";
-import { noticeText } from "./notice-text.js";
+import { setLocale } from "./i18n/index.js";
+import { noticeText } from "./session-notice.js";
 
 /**
  * 通知码 → 文案：客户端这一侧的唯一定义处。

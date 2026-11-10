@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { IDLE_RATE, MIN_SPAN_MS, TokenRateMeter, deltaText, estimateTokens } from "./token-rate.js";
+import {
+  IDLE_RATE,
+  MIN_SPAN_MS,
+  TokenRateMeter,
+  deltaText,
+  estimateTokens,
+} from "./session-rate.js";
 
 describe("estimateTokens（按字符估算）", () => {
   it("空文本为零", () => {

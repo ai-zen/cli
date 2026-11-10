@@ -1,7 +1,7 @@
 // 斜杠命令执行器 —— 表驱动
 //
 // 命令的**元数据**（名字 / 别名 / 说明 / 是否阻塞输入）在
-// `session-commands/registry.ts`；**执行体**在本文件末尾的 `HANDLERS` 表里。
+// `commands/registry.ts`；**执行体**在本文件末尾的 `HANDLERS` 表里。
 // 两者以 `Record<CommandName, CommandHandler>` 绑定，于是「新增命令忘了写处理器」
 // 是编译错误（此前是 557 行 switch，漏一个分支只会在运行时落到「未知命令」）。
 //
@@ -15,13 +15,14 @@ import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SelectItem } from "../components.js";
-import { type ChatSessionLike, stripCwdNote } from "../chat-session.js";
+import { type ChatSessionLike } from "../../session/types.js";
+import { stripCwdNote } from "../../text.js";
 import {
   canonicalCommandName,
   matchCommandHints,
   parseCommandArgs,
   type CommandName,
-} from "../../session-commands/registry.js";
+} from "../../commands/registry.js";
 // 配置的读与写统一走**配置面**（`ConfigPort`），它永远开向服务端。命令层不再自己吃盘 ——
 // 否则「界面说改好了」和「服务端 Agent 实际用的那份配置」会各说各话（客户端搬到另一台
 // 机器上时错得很安静）。
@@ -46,7 +47,7 @@ import { persistLocale } from "../../i18n/preferences.js";
 import { CLI_VERSION } from "../../version.js";
 import { compareVersions, pickNewest } from "../../version-compare.js";
 import { WizardStep } from "../config-wizard/index.js";
-import { truncate } from "./render.js";
+import { truncate } from "../../text.js";
 import { STATUS_BAR_LINES, pickerLines } from "./layout.js";
 import { usableFrameRows } from "../text.js";
 import { chooseHandoffMode } from "./handoff-choice.js";
@@ -427,7 +428,7 @@ const cmdModel: CommandHandler = async ({ session, push, args, pick, config }) =
     //   agent   → Agent 定义的 `modelId`（影响所有用它的会话；顺带清空思考参数）
     //   global  → `config.json` 的 `defaultModel`（只在 Agent 没绑模型时兜底）
     // 命令层不再「读定义 → 改字段 → 写回」：思考参数重置、窄方法写盘这些规则只该有一份实现。
-    if (selection.scope === "session") await config.setSessionModel(session.currentId, chosen);
+    if (selection.scope === "session") await session.setModel(chosen);
     else if (selection.scope === "agent") await config.setModel(session.agentId, chosen);
     else await config.setDefaultModel(chosen);
 
@@ -906,7 +907,7 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
       // 模型是本段会话换的，参数写进定义既影响别的会话、在这一段又根本不生效。
       // `null` = 清掉这一层的覆盖（服务端把它当「跟随模型出厂参数」）。
       const params = effortParams({ presets, model, effort });
-      await config.setSessionModelParams(session.currentId, params ?? null);
+      await session.setModelParams(params ?? null);
       // 状态栏先跟上：此刻读不到服务端存档里的那份，就用刚算出来的这一份
       setEffortView(describeEffortView(model, presets, params ? { modelParams: params } : null));
       await session.reload();

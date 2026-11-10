@@ -6,11 +6,11 @@
  * 落到「连接中…」还是「Connecting…」是客户端的事 —— TUI 用中文、桌面端用英文、
  * 将来两端同时连一个服务时也不会互相污染。
  *
- * 同一条规矩在 `session-commands/registry.ts` 里已经用过一次（存 `descriptionKey`
+ * 同一条规矩在 `commands/registry.ts` 里已经用过一次（存 `descriptionKey`
  * 而不是文案），理由一致：文案一旦进了服务层，语言就成了进程级全局状态。
  */
 
-import { t } from "../i18n/index.js";
+import { t } from "./i18n/index.js";
 import type { PhaseInfo } from "@ai-zen/agents-server";
 
 /** 阶段对应的提示文案 */

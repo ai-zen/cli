@@ -5,7 +5,7 @@ import { resolveInvocation } from "./mode.js";
 import { CLIENT_INFO } from "./server-client/index.js";
 import { readServerStatus } from "./server-client/index.js";
 import { AI_ZEN_DIR } from "./config.js";
-import { runStdio } from "./stdio-runner.js";
+import { runStdio } from "./stdio.js";
 import { CLI_VERSION } from "./version.js";
 import { initLocale } from "./i18n/preferences.js";
 import { t } from "./i18n/index.js";

@@ -147,7 +147,13 @@ export interface ConfigWizardProps {
   agents?: { id: string; name: string }[];
   /** MCP 配置初始快照（全局 + 项目）；缺省视为两个空配置 */
   mcp?: McpSnapshot;
-  /** Agent / Sub-agent 定义仓储（缺省为空快照 + 真实文件读写） */
+  /**
+   * Agent / Sub-agent 定义仓储（`ConfigPort.readAgentStore()` 的那一份）。
+   *
+   * **每个挂载点都必须传**：缺省不再是「空快照 + 真实文件读写」，而是一个**会报错**的
+   * 只读空快照（`engine.ts` 的 `EMPTY_AGENT_STORE`）。原因写在那里：旧缺省真的会写
+   * 客户端本机 `~/.ai-zen/agents/*.json`，而后端 Agent 用的是服务端那份。
+   */
   agentStore?: AgentStore;
   /** 持久化配置（通常是 `saveConfig`） */
   onSave: (config: AppConfig) => Promise<void>;

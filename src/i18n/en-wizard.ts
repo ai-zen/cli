@@ -337,4 +337,8 @@ export const en: Record<string, string> = {
   "vendor.moonshot": "Moonshot (Kimi)",
   "vendor.dashscope": "Alibaba Cloud Bailian (DashScope)",
   "vendor.openaiCompatible": "OpenAI-compatible endpoint",
+
+  // ---------- config wizard: agent store ----------
+  "wiz.agentStoreMissing":
+    "Internal error: the config wizard got no agent store (it must not touch local definitions)",
 };

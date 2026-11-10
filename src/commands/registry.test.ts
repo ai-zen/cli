@@ -12,7 +12,7 @@ import {
   parseCommandInput,
 } from "./registry.js";
 import { setLocale } from "../i18n/index.js";
-import { displayWidth } from "../tui/text.js";
+import { displayWidth } from "../text.js";
 
 // 命令说明已 i18n 化：这些用例断言中文文案，显式锁定语言（不依赖宿主 LANG）
 beforeEach(() => setLocale("zh"));

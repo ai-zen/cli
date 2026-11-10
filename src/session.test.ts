@@ -24,20 +24,20 @@ import {
   type ModelLevel,
 } from "@ai-zen/agents-server";
 import { AgentNS } from "@ai-zen/agents-core";
-import { RemoteSessions } from "../server-client/index.js";
-import { SocketServerClient } from "../server-client/index.js";
-import type { ServerClient } from "../server-client/index.js";
+import { RemoteSessions } from "./server-client/index.js";
+import { SocketServerClient } from "./server-client/index.js";
+import type { ServerClient } from "./server-client/index.js";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
-import { setLocale } from "../i18n/index.js";
-import { useTempAiZenDir } from "../test-support/temp-dir.js";
-import { RemoteChatSession, type RemoteChatSessionDeps } from "./remote-chat-session.js";
-import { clientWorkspacePath } from "../server-client/index.js";
-import type { ConfigPort } from "../server-client/index.js";
-import type { ChatSessionNotifier } from "./chat-session.js";
+import { setLocale } from "./i18n/index.js";
+import { useTempAiZenDir } from "./test-support/temp-dir.js";
+import { RemoteChatSession, type RemoteChatSessionDeps } from "./session.js";
+import { clientWorkspacePath } from "./server-client/index.js";
+import type { ConfigPort } from "./server-client/index.js";
+import type { ChatSessionNotifier } from "./session/types.js";
 
 class FakeAgent implements AgentLike {
   messages: any[] = [];
-  lastUsage: unknown = undefined;
+  lastUsage: AgentNS.Usage | undefined = undefined;
   /** 三级解析的档位（真件由 SDK 的 `createAgent` 给；假件照抄这一位） */
   modelLevel: ModelLevel = "agent";
   /** 交接要用的那几面（真件是 SDK 的 `SdkAgent`）；无 write 工具 → 走摘要模式 */
@@ -131,8 +131,6 @@ const testConfigPort: ConfigPort = {
     ({ agents: [], subAgents: [], save: async () => {}, remove: async () => {} }) as never,
   setModel: async () => {},
   setDefaultAgent: async () => {},
-  setSessionModel: async () => {},
-  setSessionModelParams: async () => {},
   setDefaultModel: async () => {},
 };
 
@@ -1066,7 +1064,7 @@ describe("RemoteChatSession：用量口径", () => {
   });
 });
 
-describe("RemoteChatSession：换 Agent 与保活区", () => {
+describe("RemoteChatSession：换 Agent 与会话回收", () => {
   it("setAgent：换 Agent、消息一条不丢、会话的 agentId 跟着变", async () => {
     const opened = await open();
     agent.messages = [{ role: "user", content: "在聊" }] as never;
@@ -1077,14 +1075,14 @@ describe("RemoteChatSession：换 Agent 与保活区", () => {
 
     expect(opened.agentId).toBe("coder");
     expect(opened.messages).toHaveLength(1);
-    // 服务端那侧的会话身份也换了（`session.list` 的 keepAlive 之外就看这个）
+    // 服务端那侧的会话身份也换了（`session.list` 里那条 `live` 记录上的 `agentId`）
     const live = await new RemoteSessions(await startServer()).list(workspaceId);
     expect(live.sessions.find((item) => item.sessionId === opened.currentId)!.agentId).toBe(
       "coder",
     );
   });
 
-  it("/new（reset）之后旧会话移出保活区：服务端当场回收，存档还在", async () => {
+  it("/new（reset）之后旧会话被 session.close 当场回收，存档还在", async () => {
     const opened = await open();
     agent.messages = [{ role: "user", content: "第一段" }] as never;
     await opened.reload();
@@ -1105,7 +1103,7 @@ describe("RemoteChatSession：换 Agent 与保活区", () => {
     expect(await store.read(previous)).not.toBeNull();
   });
 
-  it("keepAlive.set off + 空闲 → 当场回收；`attach` 能从存档把它装回来", async () => {
+  it("session.close + 空闲 → 当场回收；`attach` 能从存档把它装回来", async () => {
     const opened = await open();
     agent.messages = [{ role: "user", content: "聊过一句" }] as never;
     await opened.reload();
@@ -1114,7 +1112,10 @@ describe("RemoteChatSession：换 Agent 与保活区", () => {
     await opened.save(); // 落盘（每轮收尾也会写，这里让用例自足）
 
     const sessions = new RemoteSessions(await startServer());
-    expect(await sessions.keepAliveSet(id, false)).toEqual({ sessionId: id, keepAlive: false });
+    // 会话寿命只剩这一条显式表达（保活声明在 P2 删了）：「我不看这段了 → 当场回收」
+    expect(await sessions.close(id)).toEqual({ closed: true });
+    // 幂等：再关一次不是错误（这一段已经不在了）
+    expect(await sessions.close(id)).toEqual({ closed: false });
 
     // 活会话没了（存档还在，所以只看活会话）……
     expect(

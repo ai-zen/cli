@@ -7,7 +7,7 @@ import { Box, Text } from "ink";
 import { useInput } from "ink";
 import { theme } from "./theme.js";
 import { clipWidth, displayWidth } from "./text.js";
-import type { RateSample } from "./token-rate.js";
+import type { RateSample } from "../session-rate.js";
 import { packSegments, type StatusSegment } from "./status-segments.js";
 import { t } from "../i18n/index.js";
 

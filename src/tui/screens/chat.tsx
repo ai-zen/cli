@@ -5,8 +5,8 @@ import { spawn } from "node:child_process";
 import { disableMouseTracking } from "../mouse.js";
 import { setSdkNoticeSink } from "../../sdk-log.js";
 import { keyDebug } from "../key-debug.js";
-import type { RateSample } from "../token-rate.js";
-import { phaseLabel } from "../phase-label.js";
+import type { RateSample } from "../../session-rate.js";
+import { phaseLabel } from "../../session-phase.js";
 import type { PhaseInfo } from "@ai-zen/agents-server";
 import { AgentNS } from "@ai-zen/agents-core";
 import { theme } from "../theme.js";
@@ -24,14 +24,14 @@ import {
   type ChatSessionLike,
   type ChatSessionNotifier,
   type ChatSessionOptions,
-} from "../chat-session.js";
-import { createRemoteChatSession } from "../remote-chat-session.js";
+} from "../../session/types.js";
+import { createRemoteChatSession } from "../../session.js";
 import {
   CommandHint,
   commandBlocksInput,
   matchCommandHints,
   parseCommandInput,
-} from "../../session-commands/registry.js";
+} from "../../commands/registry.js";
 import { createConfigPort, type ConfigPort } from "../../server-client/index.js";
 import { ConfigWizard } from "../config-wizard/index.js";
 import { computeInputCursorPosition, inputWindow } from "./input.js";

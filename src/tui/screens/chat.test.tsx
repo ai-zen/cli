@@ -110,10 +110,6 @@ const fakePort = (config: any = fakeConfig()) =>
     readAgentStore: vi.fn(async () => fakeAgentStore()),
     setModel: vi.fn(async (_agentId: string, _modelId: string) => {}),
     setDefaultAgent: vi.fn(async (_agentId: string) => {}),
-    setSessionModel: vi.fn(async (_sessionId: string, _modelId: string) => {}),
-    setSessionModelParams: vi.fn(
-      async (_sessionId: string, _modelParams: Record<string, unknown> | null) => {},
-    ),
     setDefaultModel: vi.fn(async (_modelId: string) => {}),
   }) satisfies ConfigPort;
 
@@ -127,7 +123,7 @@ const clipboardMock = vi.hoisted(() => ({
 
 import { Chat } from "./chat.js";
 import type { ConfigPort } from "../../server-client/index.js";
-import { getCommandHints } from "../../session-commands/registry.js";
+import { getCommandHints } from "../../commands/registry.js";
 import type { ClipboardTextResult } from "../../clipboard.js";
 
 /** 等 effect / Promise / FrameBuffer 合帧跑完（合帧间隔 60ms） */

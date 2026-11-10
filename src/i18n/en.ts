@@ -173,7 +173,6 @@ export const en: Record<string, string> = {
   "cmd.save.overwrite": "A conversation named {id} already exists. Overwrite it?",
   "cmd.save.cancelled": "Save cancelled",
   "cmd.load.tooMany": "Pick a conversation to load (showing the latest {n})",
-  "cmd.load.readFailed": "Conversation not found or unreadable: {id}",
   "cmd.handoff.unknownMode": "Unknown mode: {who} (use self / summary)",
   "cmd.handoff.done": "Handoff document created: {path}",
   "cmd.handoff.failed": "Failed to write the handoff document: {error}",
@@ -224,8 +223,6 @@ export const en: Record<string, string> = {
   // 会话级那条路写的是会话存档（不碰 Agent 定义），所以文案不提 Agent
   "effort.summarySession":
     "Reasoning effort set to {label} · written to this session (model {model})",
-  "modelSwitch.err.modelMissing": 'Model "{id}" does not exist',
-  "modelSwitch.err.agentMissing": 'Agent "{id}" does not exist',
   "modelSwitch.resetHint": " · reasoning effort reset to the model default",
   "modelSwitch.summary": 'Switched model: {name} ({id}) · written to agent "{agent}"{hint}',
   "agentSwitch.err.noModel": "no model bound",
@@ -286,5 +283,4 @@ export const en: Record<string, string> = {
 
   // ---------- Shared leftovers ----------
   "agent.subAgentTaskParam": "Full task description",
-  "app.mkdirFailed": "⚠️  Cannot create the directory: {dir} ({error})",
 };

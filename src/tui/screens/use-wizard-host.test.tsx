@@ -27,7 +27,6 @@ const { calls, fakeConfig, fakeAgents } = vi.hoisted(() => {
 // 让它们读到这里的假配置。改成注入读取器，边界只在这个文件里。
 
 import { useWizardHost } from "./use-wizard-host.js";
-import { createAgentStore } from "../../agents-store.js";
 
 /** 可替换的读配置实现：用例按需改它，代替原来的 `vi.mocked(readConfig)` */
 let readConfigImpl: () => Promise<any> = async () => fakeConfig();
@@ -62,7 +61,15 @@ function Probe({ hasSession }: { hasSession: boolean }) {
       }),
       readMcpConfig: (scope?: "global" | "project") => readMcpImpl(scope ?? "global"),
       readReasoningPresets: async () => ({}),
-      readAgentStore: async () => createAgentStore(fakeAgents().agents as any, []),
+      // 假件就地写成对象字面量：`agents-store.ts` 里曾经那个 `createAgentStore()`
+      // 会真的写本机 `~/.ai-zen/agents/*.json`，它在生产里可达，所以删了；
+      // 测试要的只是「快照 + 两个写操作」这个形状（三行）。
+      readAgentStore: async () => ({
+        agents: fakeAgents().agents as any,
+        subAgents: [],
+        save: async () => {},
+        remove: async () => {},
+      }),
       saveConfig: async () => {},
       writeMcpConfig: async () => {},
       setModel: async () => {},

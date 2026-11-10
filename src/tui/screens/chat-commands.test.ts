@@ -8,7 +8,7 @@ import { describe, expect, it, vi, beforeEach, afterAll } from "vitest";
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AgentDefinition, AppConfig, Model, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { runCommand, type ChatCommandHost } from "./chat-commands.js";
-import type { ChatSessionLike } from "../chat-session.js";
+import type { ChatSessionLike } from "../../session/types.js";
 import type { AgentStore } from "../../agents-store.js";
 import type { ConfigPort } from "../../server-client/index.js";
 import { useTempAiZenDir } from "../../test-support/temp-dir.js";
@@ -156,8 +156,6 @@ function fakeConfigPort(overrides: Partial<ConfigPort> = {}): ConfigPort {
     readAgentStore: vi.fn(async () => fakeAgentStore([agentDefinition("default", "m1")])),
     setModel: vi.fn(async () => {}),
     setDefaultAgent: vi.fn(async () => {}),
-    setSessionModel: vi.fn(async () => {}),
-    setSessionModelParams: vi.fn(async () => {}),
     setDefaultModel: vi.fn(async () => {}),
     ...overrides,
   };
@@ -424,12 +422,12 @@ describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
     const reload = vi.fn(async () => {});
     const setSessionModel = vi.fn(async () => {});
     const setModel = vi.fn(async () => {});
-    const { host, notices } = createHost({ reload }, { setSessionModel, setModel });
+    const { host, notices } = createHost({ reload, setModel: setSessionModel }, { setModel });
 
     await runCommand("model", "/model m2", host);
 
     // 会话当前在 m1 上（见 createHost），目标是 m2
-    expect(setSessionModel).toHaveBeenCalledWith("chat_now", "m2");
+    expect(setSessionModel).toHaveBeenCalledWith("m2");
     // 会话级覆盖不该顺手改 Agent 定义（那会波及所有用它的会话）
     expect(setModel).not.toHaveBeenCalled();
     expect(reload).toHaveBeenCalledTimes(1);
@@ -453,7 +451,7 @@ describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
     const reload = vi.fn(async () => {});
     const setModel = vi.fn(async () => {});
     const setSessionModel = vi.fn(async () => {});
-    const { host, notices } = createHost({ reload }, { setModel, setSessionModel });
+    const { host, notices } = createHost({ reload, setModel: setSessionModel }, { setModel });
 
     await runCommand("model", "/model --agent m2", host);
 
@@ -486,8 +484,8 @@ describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
     const setModel = vi.fn(async () => {});
     const setSessionModel = vi.fn(async () => {});
     const { host, notices } = createHost(
-      { reload },
-      { setDefaultModel, setModel, setSessionModel },
+      { reload, setModel: setSessionModel },
+      { setDefaultModel, setModel },
     );
 
     await runCommand("model", "/model --global m2", host);
@@ -508,8 +506,8 @@ describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
     const setSessionModel = vi.fn(async () => {});
     const setDefaultModel = vi.fn(async () => {});
     const { host, notices } = createHost(
-      { reload },
-      { setModel, setSessionModel, setDefaultModel },
+      { reload, setModel: setSessionModel },
+      { setModel, setDefaultModel },
     );
 
     // m3 挂在没配 Key 的端点上
@@ -528,7 +526,7 @@ describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
   it("未知模型：三档都不写，只报错", async () => {
     const setModel = vi.fn(async () => {});
     const setSessionModel = vi.fn(async () => {});
-    const { host, notices } = createHost({}, { setModel, setSessionModel });
+    const { host, notices } = createHost({ setModel: setSessionModel }, { setModel });
 
     await runCommand("model", "/model -a nope", host);
 
@@ -541,7 +539,7 @@ describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
 
   it("选择器：三档共用同一个，标题标明「改哪一档」与「当前生效的是哪一档」", async () => {
     const setSessionModel = vi.fn(async () => {});
-    const { host, notices } = createHost({}, { setSessionModel });
+    const { host, notices } = createHost({ setModel: setSessionModel });
     const titles: string[] = [];
     // 接管选择器：记下标题并选「模型二」
     (host as any).setPickerState = (next: any) => {
@@ -566,7 +564,7 @@ describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
       }),
     ]);
     // 三档共用同一个选择器，选中之后各写各的那一份
-    expect(setSessionModel).toHaveBeenCalledWith("chat_now", "m2");
+    expect(setSessionModel).toHaveBeenCalledWith("m2");
     expect(texts(notices)).toContain(
       t("cmd.model.done", { scope: t("cmd.model.scope.global"), name: "模型二", id: "m2" }),
     );
@@ -575,7 +573,7 @@ describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
   it("会话级短路：说清模型其实来自哪一档（而不是「已经是会话级模型」）", async () => {
     const setSessionModel = vi.fn(async () => {});
     // 生效模型 m1 来自 Agent 定义（`modelLevel: "agent"`），用户 `/model m1`
-    const { host, notices } = createHost({}, { setSessionModel });
+    const { host, notices } = createHost({ setModel: setSessionModel });
 
     await runCommand("model", "/model m1", host);
 
@@ -725,16 +723,13 @@ describe("/think：写哪一层跟着「模型来自哪一级」走", () => {
     const setSessionModelParams = vi.fn(async () => {});
     const { store, save } = spyStore([agentDefinition("default", "m1")]);
     const { host, config, session, notices } = createHost(
-      { modelId: "m2", modelLevel: "session" },
-      {
-        readAgentStore: vi.fn(async () => store),
-        setSessionModelParams,
-      },
+      { modelId: "m2", modelLevel: "session", setModelParams: setSessionModelParams },
+      { readAgentStore: vi.fn(async () => store) },
     );
 
     await runCommand("think", "/think high", host);
 
-    expect(setSessionModelParams).toHaveBeenCalledWith("chat_now", { reasoning_effort: "high" });
+    expect(setSessionModelParams).toHaveBeenCalledWith({ reasoning_effort: "high" });
     // 会话级这条路连定义都不用读：它不是要改的对象
     expect(config.readAgentStore).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
@@ -751,14 +746,15 @@ describe("/think：写哪一层跟着「模型来自哪一级」走", () => {
 
   it("session 档 + `/think default`：写 `null`（清掉这一层的覆盖、回到模型出厂参数）", async () => {
     const setSessionModelParams = vi.fn(async () => {});
-    const { host } = createHost(
-      { modelId: "m2", modelLevel: "session" },
-      { setSessionModelParams },
-    );
+    const { host } = createHost({
+      modelId: "m2",
+      modelLevel: "session",
+      setModelParams: setSessionModelParams,
+    });
 
     await runCommand("think", "/think default", host);
 
-    expect(setSessionModelParams).toHaveBeenCalledWith("chat_now", null);
+    expect(setSessionModelParams).toHaveBeenCalledWith(null);
   });
 
   it("agent 档：写 Agent 定义（改造前的行为，逐字不变）", async () => {
@@ -766,8 +762,8 @@ describe("/think：写哪一层跟着「模型来自哪一级」走", () => {
     const setSessionModelParams = vi.fn(async () => {});
     const { host, session } = createHost(
       // 生效模型来自定义：modelLevel 保持默认的 agent
-      { modelId: "m1" },
-      { readAgentStore: vi.fn(async () => store), setSessionModelParams },
+      { modelId: "m1", setModelParams: setSessionModelParams },
+      { readAgentStore: vi.fn(async () => store) },
     );
 
     await runCommand("think", "/think high", host);
@@ -784,8 +780,8 @@ describe("/think：写哪一层跟着「模型来自哪一级」走", () => {
     const setSessionModelParams = vi.fn(async () => {});
     const { store, save } = spyStore([agentDefinition("default", "")]);
     const { host, session, notices } = createHost(
-      { modelId: "m2", modelLevel: "global" },
-      { readAgentStore: vi.fn(async () => store), setSessionModelParams },
+      { modelId: "m2", modelLevel: "global", setModelParams: setSessionModelParams },
+      { readAgentStore: vi.fn(async () => store) },
     );
 
     await runCommand("think", "/think high", host);

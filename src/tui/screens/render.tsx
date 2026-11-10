@@ -1,8 +1,17 @@
 // 行渲染（Ink 组件）—— RLine → <Text>
+//
+// `truncate` 已搬到 `src/text.ts`（纯文本度量，零 UI 依赖）：命令层要按字素簇截断
+// `/load` 的预览与 `/back` 的标签，而它为了这 6 行把 ink 拖进了自己的依赖图 ——
+// 实测 `dist/tui/screens/chat-commands.js` 的 24 文件图里，ink 与 react/jsx-runtime
+// **只有**「从本文件 import truncate」这一条来源。
+//
+// 这里**转出**（而不是让调用点改 import）：本文件自己的渲染路径也在用它，而既有调用点
+// 写的是 `from "./render.js"`—— 改一堆 import 没有收益，也不会让图更干净。
 import { Text } from "ink";
 import { theme } from "../theme.js";
 import { RLine, type LineKind } from "./lines.js";
-import { graphemes } from "../text.js";
+
+export { truncate } from "../../text.js";
 
 /** 行 kind → 基础色（分段渲染时作默认色；`undefined` = 终端默认前景色） */
 function baseColor(kind: LineKind): string | undefined {
@@ -109,13 +118,4 @@ export function LineView({ line }: { line: RLine }) {
     default:
       return <Text>{line.text}</Text>;
   }
-}
-
-/** 单行化文本（表格 / 列表项用）：折叠空白并按**字素簇**截断 */
-export function truncate(text: string, max: number): string {
-  const single = text.replace(/\s+/g, " ").trim();
-  // 按簇而不是按 UTF-16 code unit 切：`slice` 会把 emoji / ZWJ 序列劈成两半，
-  // 屏幕上显示为一个孤立代理项（一个方框）。`/back` 的标签与 `/load` 的预览都走这里。
-  const chars = graphemes(single);
-  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : single;
 }

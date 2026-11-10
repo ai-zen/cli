@@ -20,9 +20,7 @@
  * 这正是「配置即事实」的含义：表只是写配置那一刻的模板。
  */
 
-import { AgentRepository } from "@ai-zen/agents-sdk";
 import type { AgentDefinition, AppConfig, Model } from "@ai-zen/agents-sdk";
-import { AGENTS_DIR } from "./config.js";
 import { t } from "./i18n/index.js";
 import {
   levelsOf,
@@ -163,9 +161,17 @@ export interface SetAgentEffortOptions {
   modelId?: string;
   /** 目标档位；`null` 表示清除思考参数、恢复跟随模型默认 */
   effort: string | null;
-  /** 注入用（测试） */
-  readAgent?: (agentId: string) => Promise<AgentDefinition | null>;
-  writeAgent?: (definition: AgentDefinition) => Promise<void>;
+  /**
+   * 读 Agent 定义。**必填**（曾经有缺省：本地 `AgentRepository(AGENTS_DIR).read()`）。
+   *
+   * 那个缺省是一条**写进本机磁盘**的路径：会话跑在服务端时，`AGENTS_DIR` 是客户端自己那台
+   * 机器的 `~/.ai-zen/agents/`，读到的既不是 Agent 实际用的定义，写回去也到不了服务端 ——
+   * 界面说「改好了」，请求里还是旧档位（错得很安静）。所以这里只保留一个**注入点**，
+   * 由调用方决定「定义从哪来」（命令层递的是 `config.readAgentStore()` / `store.save`）。
+   */
+  readAgent: (agentId: string) => Promise<AgentDefinition | null>;
+  /** 写 Agent 定义。**必填**，理由同上（写入比读取更危险：它会在不经意间写脏本机文件） */
+  writeAgent: (definition: AgentDefinition) => Promise<void>;
   now?: Date;
 }
 
@@ -257,14 +263,9 @@ export function effortLabelText(effort: string | null): string {
 export async function setAgentEffort(
   options: SetAgentEffortOptions,
 ): Promise<SetAgentEffortResult> {
-  const { config, presets, effort } = options;
+  const { config, presets, effort, readAgent, writeAgent } = options;
   const agentId = options.agentId || "default";
   const now = options.now ?? new Date();
-
-  const readAgent = options.readAgent ?? ((id: string) => new AgentRepository(AGENTS_DIR).read(id));
-  const writeAgent =
-    options.writeAgent ??
-    ((definition: AgentDefinition) => new AgentRepository(AGENTS_DIR).write(definition));
 
   const definition = await readAgent(agentId);
   if (!definition) throw new Error(t("effort.err.agentMissing", { id: agentId }));

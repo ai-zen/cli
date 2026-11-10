@@ -1,8 +1,14 @@
 /**
  * 对话会话的对外契约 —— 「能渲染、能发话、能存档的一段会话」。
  *
- * 屏幕（`screens/chat.tsx`）与命令层（`screens/chat-commands.ts`）只认这一面，不认实现：
+ * 屏幕（`tui/screens/chat.tsx`）与命令层（`tui/screens/chat-commands.ts`）只认这一面，不认实现：
  * 这是「传输自由」在界面层的落点 —— 换源时屏幕上的东西一行不动，屏幕不知道 Agent 跑在哪。
+ *
+ * ## 为什么它在 `session/types.ts` 而不在 `session.ts`
+ *
+ * 契约与实现迟早要分开走：屏幕只要「能读的消息 / 能下的命令」，而实现（连接、重连、
+ * 流式拼接、子 Agent 栏目）都只属于它自己。分开之后，「谁在 import 实现」是一眼可数的：
+ * 今天只有 `stdio.ts` 与屏幕。
  *
  * ## 这里为什么只剩契约
  *
@@ -13,17 +19,17 @@
  * 拖着、只有它在用的三个模块（`session-persist-plugin` / `auto-migrate-confirm` /
  * `handoff-service`）。要找那份实现，看 git 历史（删除前它在 2026-11 的提交里）。
  *
- * 现在唯一的实现是 `remote-chat-session.ts`（纯客户端，Agent 在服务端跑）。
+ * 现在唯一的实现是 `../session.ts`（纯客户端，Agent 在服务端跑）。
  */
 
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
-import type { ModelLevel, PhaseInfo } from "@ai-zen/agents-server";
+// 类型一律从 `@ai-zen/agents-client` 取（它把协议包原样转出）：CLI 只认那一个包，
+// 而 `PhaseInfo` / `ModelLevel` / `WorkspaceFileEntry` 都是**线上形状**，不是某个实现的内部类型。
+import type { ModelLevel, ModelParams, PhaseInfo, WorkspaceFileEntry } from "@ai-zen/agents-client";
 import type { ClipboardImage } from "../clipboard.js";
 import type { ConfigPort } from "../server-client/index.js";
-import type { PathEntry } from "./mention.js";
-import type { RateSample } from "./token-rate.js";
-import { stripCwdNote } from "./text.js";
+import type { RateSample } from "../session-rate.js";
 
 export interface ChatSessionLike {
   /** 用哪个 Agent（会话的父级是工作区，Agent 决定能力与模型） */
@@ -73,6 +79,22 @@ export interface ChatSessionLike {
    * —— 于是界面说「已切换」，实际跑的仍是旧 Agent。
    */
   setAgent(agentId: string): Promise<void>;
+  /**
+   * 换**这一段会话**的模型（`session.model.set`）：只改本段的覆盖，**不动 Agent 定义**。
+   *
+   * 为什么它在会话契约里而不是配置面：这三档（会话 / 定义 / 全局兜底）的写路径一直都有，
+   * 但「会话级」那一条的**作用对象是一段会话**。它曾经挂在 `ConfigPort` 上（读起来像配置），
+   * 于是同一个动作在门面（`RemoteSessions.modelSet`）与端口里各有一份拼参的地方。
+   * 判据只有一条：作用对象是不是某一段会话。
+   */
+  setModel(modelId: string): Promise<void>;
+  /**
+   * 改**这一段会话**的模型参数（`session.modelParams.set`）；`null` = 清掉这一层的覆盖。
+   *
+   * 与 {@link setModel} 分开：两者是同一级的两份事实，但「换模型」会连带清掉参数
+   * （新模型不一定接受旧参数），而改参数不该动模型。
+   */
+  setModelParams(params: ModelParams | null): Promise<void>;
   /** `/migrate`：交接 + 开新会话；返回交接文档路径 */
   migrate(mode?: HandoffMode): Promise<string>;
   /** `/handoff`：只产出交接文档，不动会话；返回文档路径 */
@@ -93,7 +115,7 @@ export interface ChatSessionLike {
    * 为什么它在会话契约里：清单必须来自**会话真正跑在哪个目录**——那目录属于服务端，
    * `workspace.files` 扫的就是那边的磁盘。屏幕只负责过滤与插入。
    */
-  listWorkspaceFiles(): Promise<PathEntry[]>;
+  listWorkspaceFiles(): Promise<WorkspaceFileEntry[]>;
   /** 释放资源（卸监听 / 断连接） */
   dispose(): void;
 }
@@ -168,6 +190,3 @@ export interface ChatSessionOptions {
    */
   requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
 }
-
-/** 去掉 CwdTrackerPlugin 追加在用户消息末尾的工作目录提示（转发自 ./text.js） */
-export { stripCwdNote };

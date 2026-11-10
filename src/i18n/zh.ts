@@ -169,7 +169,6 @@ export const zh: Record<string, string> = {
   "cmd.save.overwrite": "已存在同名对话 {id}，覆盖吗？",
   "cmd.save.cancelled": "已取消保存",
   "cmd.load.tooMany": "选择要加载的对话（仅显示最近 {n} 条）",
-  "cmd.load.readFailed": "对话不存在或读取失败：{id}",
   "cmd.handoff.unknownMode": "未知的执行者：{who}（可选 self / summary）",
   "cmd.handoff.done": "交接文档已生成：{path}",
   "cmd.handoff.failed": "编写交接文档失败：{error}",
@@ -217,8 +216,6 @@ export const zh: Record<string, string> = {
   "effort.summary": "思考强度已设为 {label} · 写入 Agent「{id}」（模型 {model}）",
   // 会话级那条路写的是会话存档（不碰 Agent 定义），所以文案不提 Agent
   "effort.summarySession": "思考强度已设为 {label} · 写入本段会话（模型 {model}）",
-  "modelSwitch.err.modelMissing": '模型 "{id}" 不存在',
-  "modelSwitch.err.agentMissing": 'Agent "{id}" 不存在',
   "modelSwitch.resetHint": " · 思考强度已重置为模型默认",
   "modelSwitch.summary": "已切换模型：{name}（{id}）· 已写入 Agent「{agent}」{hint}",
   "agentSwitch.err.noModel": "未绑定模型",
@@ -275,5 +272,4 @@ export const zh: Record<string, string> = {
 
   // ---------- 其他共用 ----------
   "agent.subAgentTaskParam": "完整的任务描述",
-  "app.mkdirFailed": "⚠️  无法创建目录: {dir}（{error}）",
 };

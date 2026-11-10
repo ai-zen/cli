@@ -32,8 +32,12 @@
  * 本文件被 `index.ts` **静态** import，而 `index.ts` 里 `process.env.NODE_ENV ||= "production"`
  * 那一行要等模块体求值才执行（ESM 的静态 import 在它之前求值）。所以这条 import 链上
  * **不许出现 React / Ink**：DEV 版 reconciler 的 `performance.measure()` 缓冲无界增长，长会话
- * 会把堆顶爆（见 index.ts 顶部那段）。`remote-chat-session.ts` 只依赖 config / server-client /
- * i18n，不碰 React，可以安全地静态引；将来往它的依赖里加界面组件时，得先回来读这段。
+ * 会把堆顶爆（见 index.ts 顶部那段）。
+ *
+ * 这条约束以前只靠一句注释维持（「现在的依赖里恰好没有 React」），现在它是个**结构事实**：
+ * 会话层已从 `tui/` 搬到 `session.ts`，于是 `dist/stdio.js` 的 import 图里一个 `tui/`
+ * 路径都没有。判据是产物图（`node scripts/check-imports.mjs dist/stdio.js --forbid tui/`），
+ * 不是路径 grep —— grep 改个 import 写法就绿了。
  *
  * ## 提问没人答
  *
@@ -47,8 +51,8 @@ import { setLogger } from "@ai-zen/agents-sdk";
 import { createRemoteConfigPort, type ConfigPort } from "./server-client/index.js";
 import { RemoteSessions } from "./server-client/index.js";
 import type { ServerClient } from "./server-client/index.js";
-import type { ChatSessionNotifier } from "./tui/chat-session.js";
-import { RemoteChatSession, connectToServer } from "./tui/remote-chat-session.js";
+import type { ChatSessionNotifier } from "./session/types.js";
+import { RemoteChatSession, connectToServer } from "./session.js";
 
 export interface StdioRunOptions {
   /** 位置参数拼接而成的指令（可空，此时全部内容来自 stdin） */
@@ -134,8 +138,25 @@ export function extractText(content: AgentNS.MessageContent | undefined): string
   return parts.join("\n");
 }
 
-/** 运行一次纯 stdio 对话，返回进程退出码 */
-export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}): Promise<number> {
+/**
+ * 关掉这次一次性调用的会话（幂等，吞掉所有失败）。
+ *
+ * 单独成函数是因为它只在 `finally` 里用，而那里不能抛：`finally` 里抛出去会把
+ * 已经在返回路上的退出码顶成未处理错误（用户看到一行栈，而不是模型答案）。
+ * 会话已经被服务端回收掉（`unknown-session`）是常态——那时目的已经达成了。
+ */
+async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
+  try {
+    await session?.close();
+  } catch {
+    // 见上：不在就不在，没什么要说的
+  }
+}
+
+/** 运行一次纯 stdio 对话，返回进程退出码 */ export async function runStdio(
+  options: StdioRunOptions,
+  deps: StdioRunDeps = {},
+): Promise<number> {
   const { instruction, save } = options;
   const writeErr = deps.writeErr ?? logStderr;
   const writeOut = deps.writeOut ?? writeStdout;
@@ -224,16 +245,27 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
     return 1;
   } finally {
     /**
-     * 收干净只有一步：`dispose()`。
+     * 收干净的第一步是 **`session.close()`**（此刻本轮已收尾、会话空闲，服务端收到就当场回收）。
      *
-     * 它先给服务端发一帧「这段我不要了」（`session.keepAlive.set { on:false }`）再关连接。
-     * 此刻本轮已收尾、会话空闲，服务端收到就**当场回收**（`keepAliveSet` 内部直接调
-     * `close()`）—— 所以不需要再单独发一次 `session.close`：那是同一条路径，多一帧、
-     * 多一次往返，而且它紧跟的那次 `client.close()` 会让它基本落不了地。
+     * 这一帧是「一次性调用不往常驻服务端留垃圾」的全部保障。它以前不需要：那时有一条
+     * 客户端上报的**保活声明**（`session.keepAlive.set { on:false }`），`dispose()` 顺手
+     * 按一下，服务端也就当场回收，所以当时那句注释写的是「不需要再单独发 session.close」。
+     * （历史账：上面那个方法名是**已经删掉**的那第三条表达，此处保留它，是因为下一个读到
+     * 「为什么以前不用发 close」的人需要知道那条被删的东西到底叫什么。§4 的门禁只扫
+     * `src/` 的**代码行**，而这一行整行是注释。）
+     * P2 把那条声明删掉之后，会话寿命只剩一条规则：**连接上有持有者 → 活着；持有者没了
+     * → 宽限期后回收；`session.close` → 立刻回收。** 于是不发这一帧的后果不是「差不多」：
+     * 每跑一次 `ai "…"`，守护进程里就多一段活会话（连同它的 Agent、MCP 连接、全量消息）
+     * 待到宽限期 —— 在 shell 里高频调用是**真泄漏**。
      *
-     * 发不出去也不抛：进程马上就要退出，能说的事都已经说过（旧版同样是「不 flush 任何
-     * 东西」——写不进去就是没人要）。
+     * 顺序必须是「先 close、后断连接」：反过来这一帧就发不出去了（连接已关，调用直接拒），
+     * 只能退化成等宽限期 —— 而那正是这一帧要避开的。
+     *
+     * 失败不抛：进程马上就要退出，能说的事都已经说过（旧版同样是「不 flush 任何东西」——
+     * 写不进去就是没人要）。会话要么刚落过盘（`--save`）、要么本来就 `persist:false`，
+     * 所以发不出去只是推迟回收，不会丢东西。
      */
+    await closeQuietly(session);
     session?.dispose();
     /**
      * 连接**一定要**断。
