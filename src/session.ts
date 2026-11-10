@@ -26,15 +26,20 @@
  *   · **退出**：尽力而为（不 await）。连接随后就关，那帧可能落不了地 —— 既有取舍：把每个
  *     Ctrl+C 变成一个网络往返更糟，而崩溃能发出的帧本来就是零。
  *
- * 换 id 的四个动作（`saveAs` / `migrate` / `reload` / `setAgent`）一律走 channel：包里那几个
- * 方法自己会 `applyIdChanged` + 重取快照，自己改 id 就是 P4a 之前那个错（在旧 id 上等一个
- * 永远不来的 `turn.end`）。所以本文件一次都不直接赋值会话 id。
+ * **会话动作一律走 channel**（不管是换 id 的还是不换的）：
+ *   · 换 id 的四个（`saveAs` / `migrate` / `reload` / `setAgent`）包里自己会 `applyIdChanged`
+ *     + 重取快照，自己改 id 就是 P4a 之前那个错（在旧 id 上等一个永远不来的 `turn.end`）；
+ *   · 会话级的模型动作两个（`setModel` / `setModelParams`）不换 id，但包里也会把返回的快照
+ *     对齐屏幕（`modelId` / `apiModel` / `modelParams` 当场变成屏幕上的事实）。
+ * 所以本文件一次都不直接赋值会话 id，也**不再现取门面**：P4b 时代那两处「现取一次
+ * `RemoteSessions`」是包里还没这两个方法时的临时写法，现在通路就在 channel 上 —— 绕过去
+ * 的代价是「当前 id」与「门面」在应用里成了一个会漂的配对（重连换了连接之后，两者指向的
+ * 可以不是同一条）。
  */
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 import {
   MAX_FRAME_BYTES,
-  RemoteSessions,
   SessionChannel,
   clientWorkspacePath,
   createConfigPort,
@@ -99,14 +104,6 @@ export class RemoteChatSession implements ChatSessionLike {
   private channel: SessionChannel;
   /** 换 channel 时要解掉的上一条状态订阅 */
   private offStream: (() => void) | null = null;
-  /**
-   * 客户端**希望**会话跑在哪个目录（`open` 的入参，不是服务端规范化的结果）。
-   *
-   * 只为一件事存在：`/new` 要在**同一个工作区**里开新会话。包里的规范化路径不对外
-   * （`SessionChannel` 没有 `path` 出口），而把客户端 cwd 再算一次就是第二份会漂的答案 ——
-   * 所以记的是「当初说了什么」。远端（不说）时它是 `undefined`，`/new` 照旧不说。
-   */
-  private requestedPath: string | undefined;
   /** 在等的那一轮（`waitForTurn()` 靠它落地）；只在「受理了一轮」到「它结束」之间非空 */
   private pendingTurnId: number | null = null;
   /** 已经报过的那条失败（`state.failure` 会一直躺在状态里，同一条只进一次通知栏） */
@@ -147,10 +144,15 @@ export class RemoteChatSession implements ChatSessionLike {
   ): Promise<RemoteChatSession> {
     const session = new RemoteChatSession(connection, input, notifier, deps);
     try {
-      // 客户端 cwd 只在**本地**服务端时才递上去（判据在包里的 `local-host.ts`）
+      /**
+       * 客户端 cwd 只在**本地**服务端时才递上去（判据在包里的 `local-host.ts`）。
+       *
+       * 递出去的是**意图**（「我想在这个目录开会话」），服务端规范化之后把答案写进
+       * `channel.path` —— `/new` 复用工作区时读的是那个答案，所以这里不再记一份
+       * 「当初说了什么」（P4b 时代包里没有 `path` 出口才只能记着意图）。
+       */
       const client = await connection.client();
       const path = input.path ?? clientWorkspacePath(client.address.host);
-      session.requestedPath = path;
       await session.channel.open({
         ...(path !== undefined ? { path } : {}),
         ...(input.agentId ? { agentId: input.agentId } : {}),
@@ -304,9 +306,30 @@ export class RemoteChatSession implements ChatSessionLike {
    * 为什么换一条新的 channel 而不是在同一条上再 `open()`：一段会话的 id 只在它自己那条通道
    * 里成立；换段就换通道 —— 这样旧的那段在关掉之前完整可读，新的一段从零开始（与「上一段
    * 跑到第几轮」有关的计数不该跟着走）。
+   *
+   * ## 新会话落在哪个工作区（D7 那句「包里给的是答案，不是意图」）
+   *
+   * 用 `channel.path`：它是 `open()` 之后服务端 `workspace.resolve` 回来的**规范化路径**，
+   * 也就是「这段会话真正跑在哪个目录」。P4b 时代包里没有这个出口，只能在应用里记「当初请求
+   * 的那个 path」—— 那只是**意图**：相对路径、带 `..`、末尾多一条斜杠，甚至两机部署时那个
+   * 路径在服务端压根不存在（客户端与服务端不是同一台机器）。拿意图去 `/new` 今天还能凑合
+   * （服务端会再规范化一次），但这是「让调用方误以为它是一份答案」的那类便宜，正好是
+   * P4c 要收掉的绕法 —— 有答案就不该再抱着意图。
    */
   async reset(): Promise<string | null> {
     const previous = this.channel;
+    /**
+     * 先取工作区路径再动任何东西：它在 `open()` 里由 `workspace.resolve` 写定，所以正常情况
+     * 一定有值。拿不到只有一种解释 —— 这条 channel 没走完 `open()`（本类的不变量被破了）。
+     *
+     * 这时**明确拒绝**，不兜底：客户端自己算一份（自己进程的 cwd 之类）就是第二份会漂的答案，
+     * 在远端部署时会静默落进服务端的另一个工作区。`/new` 失败好过悄悄换工作区。
+     * 位置放在 `save()` 之前：拒绝时不留下任何副作用，当前这段会话原样可用。
+     */
+    const path = previous.path;
+    if (path === undefined) {
+      throw new Error("reset: 服务端没有给出工作区路径（这段会话没有走完 open()）");
+    }
     const hasContent = previous.stream.state.messages.some(
       (message) => message.role === AgentNS.Role.User,
     );
@@ -315,7 +338,7 @@ export class RemoteChatSession implements ChatSessionLike {
     const next = this.newChannel();
     try {
       await next.open({
-        ...(this.requestedPath !== undefined ? { path: this.requestedPath } : {}),
+        path,
         // 同一个 Agent：`/new` 换的是会话，不是身份
         ...(previous.agentId ? { agentId: previous.agentId } : {}),
       });
@@ -345,18 +368,32 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   /**
-   * 换**这一段会话**的模型（`session.model.set`）；`modelParamsSet` 同理。
+   * 换**这一段会话**的模型（`session.model.set`）：写这一段存档的 `modelId` 并重建 Agent。
    *
-   * 包里没有对应方法（`SessionChannel` 覆的是生命周期与换 id 的那几个动作），所以直接问
-   * 门面 —— 参数拼装仍然只有 `RemoteSessions` 那一份，不是第二份实现。
+   * 走 `channel.setModel`（与 `saveAs` / `rollback` 同级），**不**自己现取 `RemoteSessions`
+   * 门面：门面是「按 id 说话」的无状态薄封装，它不知道「当前这一段是哪个 id」，而应用里那份
+   * 「当前 id」会漂（重连换了连接、`saveAs` / 自动迁移换了 id）。绕过去就得在两个会变的
+   * 东西之间维持一个配对 —— P4b 时代正是这么写的，现在包里补上了这个动作，绕法作废。
+   *
+   * 屏幕对齐**只靠这一句**：包里拿到快照就 `applySnapshot`（新的 `modelId` / `apiModel` /
+   * `modelParams` 立刻是屏幕上的事实），所以这里**不要**再补一次 `reload()` —— 那是多一个
+   * 往返、多一次「该重画了」，而屏幕上的东西一个字都不会多。`notifyChange` 只是把这次状态
+   * 跃变告诉界面（包里的 `applySnapshot` 不替应用决定什么时候上屏）。
    */
   async setModel(modelId: string): Promise<void> {
-    await (await this.sessionFacade()).modelSet(this.currentId, modelId);
+    await this.channel.setModel(modelId);
+    this.notifyChange(true);
   }
 
-  /** 改**这一段会话**的模型参数（`null` = 清掉这一层覆盖）；理由同上 */
+  /**
+   * 改**这一段会话**的模型参数（`session.modelParams.set`）；理由同 {@link setModel}。
+   *
+   * `null` 是**合法值**，语义是「清掉这一层覆盖」（回到模型出厂参数）—— 包里按 `params: null`
+   * 发出去，所以这里不能把它当成「调用方没给」而跳过。
+   */
   async setModelParams(params: ModelParams | null): Promise<void> {
-    await (await this.sessionFacade()).modelParamsSet(this.currentId, params);
+    await this.channel.setModelParams(params);
+    this.notifyChange(true);
   }
 
   async handoff(mode?: HandoffMode): Promise<string> {
@@ -425,11 +462,6 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   // ==================== 内部 ====================
-
-  /** 当前连接上的门面（只为那两个「不换 id 的会话级模型动作」；每次现取，别缓存） */
-  private async sessionFacade(): Promise<RemoteSessions> {
-    return new RemoteSessions(await this.connection.client());
-  }
 
   /**
    * 拼出这一条要发的内容：纯文本，或「文本 + 图片」内容块（与进程内模式同一段逻辑）。

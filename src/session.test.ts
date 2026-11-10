@@ -25,6 +25,7 @@ import {
 } from "@ai-zen/agents-server";
 import { AgentNS } from "@ai-zen/agents-core";
 import { RemoteSessions } from "./server-client/index.js";
+import type { ModelParams } from "./server-client/index.js";
 import { ServerConnection, SocketServerClient } from "./server-client/index.js";
 import type { ServerClient } from "./server-client/index.js";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
@@ -40,8 +41,18 @@ class FakeAgent implements AgentLike {
   lastUsage: AgentNS.Usage | undefined = undefined;
   /** 三级解析的档位（真件由 SDK 的 `createAgent` 给；假件照抄这一位） */
   modelLevel: ModelLevel = "agent";
-  /** 交接要用的那几面（真件是 SDK 的 `SdkAgent`）；无 write 工具 → 走摘要模式 */
-  definition = { messages: [] as any[], modelId: "test-model" };
+  /**
+   * 交接要用的那几面（真件是 SDK 的 `SdkAgent`）；无 write 工具 → 走摘要模式。
+   *
+   * 形状照抄真件：SDK 交给 Agent 的是**解析之后**的定义，服务端的快照就从这上面读
+   * `modelId` / `modelParams`（`modelIdOf` / `agentModelParamsOf`）。所以假件也必须由
+   * `createAgent` 把服务端递进来的这两个值抄上去 —— 否则「换完模型，快照里就是新模型」
+   * 永远测不出来：假件永远说 `test-model`。
+   */
+  definition: { messages: any[]; modelId: string; modelParams?: Record<string, unknown> } = {
+    messages: [] as any[],
+    modelId: "test-model",
+  };
   tools: Array<{ function?: { name?: string } }> = [];
   model = "test-model";
   modelConfig: Record<string, unknown> = {};
@@ -255,6 +266,16 @@ function newManager(): SessionManager {
        */
       if (agentClaimed) agent = new FakeAgent();
       agentClaimed = true;
+      // 真服务端这一跳会按 `input.modelId` / `input.modelParams` **重建** Agent，快照里的
+      // `modelId` / `modelParams` 就是从重建后的定义里读的（`modelIdOf` / `agentModelParamsOf`）。
+      // 不抄的话「换完模型快照里就是新模型」测的是假件的默认值，不是服务端的行为。
+      if (input.modelId) {
+        agent.model = input.modelId;
+        agent.definition.modelId = input.modelId;
+      }
+      // `null` / 没给 = 不带覆盖（与「从来没设过」同一条路），所以只有真给了才抄
+      if (input.modelParams == null) delete agent.definition.modelParams;
+      else agent.definition.modelParams = input.modelParams as Record<string, unknown>;
       return agent;
     },
     nextSessionId: () => `chat_${++counter}`,
@@ -724,6 +745,27 @@ describe("RemoteChatSession：存档与换 id 的方法", () => {
     expect(opened.messages).toEqual([]);
   });
 
+  it("/new 换会话不换工作区：复用的是**服务端给的那个答案**", async () => {
+    // 请求里带 `./`：规范化发生在服务端，客户端手上那份只是「意图」。`/new` 用的是答案
+    // （`channel.path`），所以新会话仍然落在同一个工作区、跑在同一个目录。
+    writeFileSync(join(workspaceDir, "only-here.txt"), "hi\n", "utf-8");
+    const opened = await open({ path: `${workspaceDir}/./` });
+    const sessions = new RemoteSessions(await startServer());
+    const before = (await sessions.snapshot(opened.currentId)).workspaceId;
+    // 服务端认定的就是那个目录（不是客户端自己推的 id）
+    expect(before).toBe(await workspaceIdOf(workspaceDir));
+
+    await opened.reset();
+
+    // 新会话的工作区身份还是同一个（不是「又算了一遍、恰好像」）
+    expect((await sessions.snapshot(opened.currentId)).workspaceId).toBe(before);
+    // 而且真的跑在那个目录：清单位于服务端磁盘
+    expect(await opened.listWorkspaceFiles()).toContainEqual({
+      path: "only-here.txt",
+      dir: false,
+    });
+  });
+
   it("handoff：不换 id，进度以本地文案进通知栏（服务端不产句子）", async () => {
     const opened = await open();
     agent.messages = [{ role: "user", content: "任务" }];
@@ -736,6 +778,50 @@ describe("RemoteChatSession：存档与换 id 的方法", () => {
     expect(text).toContain(path); // handoffPath
     // 枚举被翻译过：界面里不该出现裸的 self
     expect(text).not.toContain("（self）");
+  });
+});
+
+/**
+ * 会话级的模型动作（`/model` / `/think`）。
+ *
+ * 它们以前是应用里现取一次 `RemoteSessions` 门面调的 —— 包里补了
+ * `setModel` / `setModelParams` 之后改成走 channel：这样「当前这一段是哪个 id」与「接哪条
+ * 连接」不再是应用里两个会漂的来源。顺带钉住两件事：换完**立刻**是屏幕上的事实，且只
+ * 通知一次重画（再补一次 `reload()` 就是多一个往返、多一次通知，而屏幕上不会多一个字）。
+ */
+describe("RemoteChatSession：会话级模型动作（走 channel，不现取门面）", () => {
+  it("setModel：这一段会话的模型当场换成新的，且只通知一次重画", async () => {
+    const opened = await open();
+    const id = opened.currentId;
+    const redraws = changes;
+    const sessions = new RemoteSessions(await startServer());
+
+    await opened.setModel("alt-model");
+
+    // 不换 id：改的是**这一段会话**存档里的 modelId（别的会话、Agent 定义都不动）
+    expect(opened.currentId).toBe(id);
+    // 屏幕上的事实立刻是新的（包里 `setModel` 拿到快照就 `applySnapshot`）
+    expect(opened.modelId).toBe("alt-model");
+    // 服务端那一侧确实写了（不是客户端自己记一笔）
+    expect((await sessions.snapshot(id)).modelId).toBe("alt-model");
+    // 一次「该重画了」：再补一次 `reload()` 会变成两次，而屏幕上的字一个都不会变
+    expect(changes).toBe(redraws + 1);
+  });
+
+  it("setModelParams：`null` 是「清掉这一层覆盖」，不是「调用方没给」", async () => {
+    const opened = await open();
+    const id = opened.currentId;
+    const sessions = new RemoteSessions(await startServer());
+
+    await opened.setModelParams({ reasoning_effort: "high" } as ModelParams);
+    expect((await sessions.snapshot(id)).modelParams).toEqual({ reasoning_effort: "high" });
+    expect(opened.currentId).toBe(id);
+
+    // 清除：服务端那条覆盖真的没了（回到模型出厂参数），而不是把 `null` 当成「没给」跳过
+    await opened.setModelParams(null);
+    expect((await sessions.snapshot(id)).modelParams).toBeUndefined();
+    // 换参数不动模型
+    expect(opened.modelId).toBe("test-model");
   });
 });
 
