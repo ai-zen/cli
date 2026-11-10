@@ -210,7 +210,7 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 | `/update` | Upgrade the CLI to the newest published release (the highest semver across **all** dist-tags, so an alpha newer than `latest` wins; shows each step, then offers to restart into the new version) |
 | `/mcp` | Manage MCP servers (add / remove / edit / toggle; `/mcp global` and `/mcp project` pick a scope) |
 | `/lang` | Switch the interface language (`/lang zh`, `/lang en` set it explicitly; no argument toggles) |
-| `/think` `/effort` | Switch reasoning effort (`/think default` follows the model default) |
+| `/think` `/effort` | Switch reasoning effort (`/think default` follows the model default). It writes to **the layer the effective model came from**: session-level model → this session; definition-level model → the Agent definition; global fallback → refused (that layer has nowhere to keep params) |
 | `/key` | Set the endpoint API key (rebuilds the session on save) |
 | `/handoff` | Write a handoff document (keeps the session) |
 | `/migrate` | Hand off and start a new session |

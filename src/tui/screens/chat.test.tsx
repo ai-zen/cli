@@ -111,6 +111,9 @@ const fakePort = (config: any = fakeConfig()) =>
     setModel: vi.fn(async (_agentId: string, _modelId: string) => {}),
     setDefaultAgent: vi.fn(async (_agentId: string) => {}),
     setSessionModel: vi.fn(async (_sessionId: string, _modelId: string) => {}),
+    setSessionModelParams: vi.fn(
+      async (_sessionId: string, _modelParams: Record<string, unknown> | null) => {},
+    ),
     setDefaultModel: vi.fn(async (_modelId: string) => {}),
   }) satisfies ConfigPort;
 

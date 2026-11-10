@@ -122,6 +122,8 @@ export const zh: Record<string, string> = {
   "cmd.update.noVersion": "❌ {pkg} 在 registry 上没有可安装的版本",
   "cmd.think.followDefault": "跟随模型默认",
   "cmd.think.clearHint": "删除 Agent 上的思考参数",
+  // 参数跟着「模型来自哪一级」走：模型是本段会话换的时，参数也写在这一段
+  "cmd.think.clearHintSession": "删除本段会话上的思考参数",
   "cmd.think.cancelled": "已取消切换思考强度",
   "cmd.think.unchanged": "思考强度未变化",
   "cmd.help.title": "可用命令：",
@@ -153,6 +155,9 @@ export const zh: Record<string, string> = {
   "cmd.lang.unknown": "未知语言：{lang}（可选 zh / en，或不带参数切换）",
   "cmd.reload.failed": "刷新失败：{error}",
   "cmd.think.noModel": "Agent「{id}」未绑定模型，请用 /config 为它选择模型",
+  // 模型来自全局兜底时，没有任何一层可以放思考参数（全局那一级只有 defaultModel）
+  "cmd.think.globalLevel":
+    "当前模型来自全局兜底，没有可调的参数层：要调思考强度，先用 /model 把模型固定到会话或 Agent 定义上",
   "cmd.think.modelMissing": "模型 {id} 不存在，请用 /model 或 /config 检查",
   "cmd.think.notAdjustable":
     "模型 {id} 未关联可用的思考策略（缺 reasoningPreset，或策略表里没这一档），无法调整",
@@ -210,6 +215,8 @@ export const zh: Record<string, string> = {
   "effort.followDefault": "跟随模型默认",
   "effort.quoted": "「{label}」",
   "effort.summary": "思考强度已设为 {label} · 写入 Agent「{id}」（模型 {model}）",
+  // 会话级那条路写的是会话存档（不碰 Agent 定义），所以文案不提 Agent
+  "effort.summarySession": "思考强度已设为 {label} · 写入本段会话（模型 {model}）",
   "modelSwitch.err.modelMissing": '模型 "{id}" 不存在',
   "modelSwitch.err.agentMissing": 'Agent "{id}" 不存在',
   "modelSwitch.resetHint": " · 思考强度已重置为模型默认",

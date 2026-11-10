@@ -124,6 +124,8 @@ export const en: Record<string, string> = {
   "cmd.update.noVersion": "❌ {pkg} has no installable version on the registry",
   "cmd.think.followDefault": "Follow model default",
   "cmd.think.clearHint": "Remove the agent's reasoning params",
+  // 参数跟着「模型来自哪一级」走：模型是本段会话换的时，参数也写在这一段
+  "cmd.think.clearHintSession": "Remove this session's reasoning params",
   "cmd.think.cancelled": "Reasoning effort change cancelled",
   "cmd.think.unchanged": "Reasoning effort unchanged",
   "cmd.help.title": "Available commands:",
@@ -157,6 +159,9 @@ export const en: Record<string, string> = {
   "cmd.lang.unknown": "Unknown language: {lang} (use zh / en, or no argument to toggle)",
   "cmd.reload.failed": "Refresh failed: {error}",
   "cmd.think.noModel": 'Agent "{id}" has no model bound — pick one in /config',
+  // 模型来自全局兜底时，没有任何一层可以放思考参数（全局那一级只有 defaultModel）
+  "cmd.think.globalLevel":
+    "The model comes from the global fallback, which has no params layer to adjust — pin the model to this session or to the agent definition with /model first",
   "cmd.think.modelMissing": "Model {id} does not exist — check with /model or /config",
   "cmd.think.notAdjustable":
     "Model {id} has no usable reasoning preset (missing reasoningPreset, or the level is absent from the preset table), so it cannot be adjusted",
@@ -216,6 +221,9 @@ export const en: Record<string, string> = {
   "effort.followDefault": "follow the model default",
   "effort.quoted": '"{label}"',
   "effort.summary": 'Reasoning effort set to {label} · written to agent "{id}" (model {model})',
+  // 会话级那条路写的是会话存档（不碰 Agent 定义），所以文案不提 Agent
+  "effort.summarySession":
+    "Reasoning effort set to {label} · written to this session (model {model})",
   "modelSwitch.err.modelMissing": 'Model "{id}" does not exist',
   "modelSwitch.err.agentMissing": 'Agent "{id}" does not exist',
   "modelSwitch.resetHint": " · reasoning effort reset to the model default",

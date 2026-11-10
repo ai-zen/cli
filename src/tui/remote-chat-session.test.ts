@@ -137,6 +137,7 @@ const testConfigPort: ConfigPort = {
   setModel: async () => {},
   setDefaultAgent: async () => {},
   setSessionModel: async () => {},
+  setSessionModelParams: async () => {},
   setDefaultModel: async () => {},
 };
 

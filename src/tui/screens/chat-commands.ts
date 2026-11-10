@@ -9,7 +9,7 @@
 // 统一提供 —— 命令层不再自己解析命令名（与宿主是两套解析的问题已消除）。
 import type { Dispatch, SetStateAction } from "react";
 import { AgentNS } from "@ai-zen/agents-core";
-import type { HandoffMode } from "@ai-zen/agents-sdk";
+import type { AgentDefinition, HandoffMode } from "@ai-zen/agents-sdk";
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,10 +29,13 @@ import type { ConfigPort } from "../../server-client/config-port.js";
 // 留下的是**纯数据整形**：把读取结果转成配置 / 列表，不吃盘，故不经端口
 import { mcpConfigOrEmpty } from "../../config.js";
 import { checkAgentSwitch, listAgentChoices } from "../../agent-switch.js";
+import type { AgentStore } from "../../agents-store.js";
 import { parseMcpScope, pickStartScope } from "../../mcp-command.js";
 import {
   effortChoices,
   effortLabel,
+  effortLabelText,
+  effortParams,
   describeEffort,
   describeEffortView,
   setAgentEffort,
@@ -788,16 +791,40 @@ const cmdLang: CommandHandler = async ({ push, args, refreshLocale }) => {
   push(t("notice.languageChanged"));
 };
 
+/**
+ * `/think` —— 改思考强度，**写到「模型来自哪一级」那一层**（与 SDK 的 `resolveModelParams`
+ * 同一条规则，这是它的客户端投影）。
+ *
+ * 三档各写各的：
+ *   - `session`：模型是本段会话换的 → 参数也写本段会话（`session.modelParams.set`）；
+ *   - `agent`  ：模型来自 Agent 定义 → 写定义（`agent.save`，一直是这个行为）；
+ *   - `global` ：模型来自全局兜底 → **没有可写的一层**（全局那一级只有 `config.defaultModel`），
+ *     直接拒绝并说明：要调参数就把模型固定到会话或定义上。
+ *
+ * 两个容易错的地方，都用**生效模型**（`session.modelId`）而不是定义上的 `modelId`：
+ *   - 「未绑定模型」的误报：模型来自全局兜底时定义上本来就没有 `modelId`，拿定义去判会
+ *     报一句假的错；
+ *   - 档位列表：能选哪些档、每档写成什么参数都挂在模型上（`reasoningPreset`），拿定义上
+ *     那个模型算，会话级换过模型之后列出来的全是另一套档位。
+ */
 const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pick, config }) => {
   const appConfig = await config.readConfig();
   const presets = await config.readReasoningPresets();
-  const store = await config.readAgentStore();
-  const definition = store.agents.find((item) => item.id === session.agentId) ?? null;
-  const modelId = definition?.modelId;
+
+  const modelId = session.modelId;
   if (!modelId) {
     push(t("cmd.think.noModel", { id: session.agentId }), "error");
     return;
   }
+
+  // 参数跟着「模型来自哪一级」走；全局兜底那一级没有任何一层可以放参数，所以明确拒绝 ——
+  // 写到一个不生效的地方比报错更坏（用户会以为改成功了，请求里却还是旧参数）。
+  const level = session.modelLevel;
+  if (level === "global") {
+    push(t("cmd.think.globalLevel"), "error");
+    return;
+  }
+
   const model = (appConfig.models ?? []).find((item) => item.id === modelId);
   if (!model) {
     push(t("cmd.think.modelMissing", { id: modelId }), "error");
@@ -810,6 +837,22 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
     return;
   }
 
+  // 「Agent 定义」这一层：**只有模型来自定义时**才需要它（它既是要改的对象，也是「当前
+  // 档位」的来源）。会话级的参数在服务端存档里、客户端读不到（快照不返回参数）—— 那一档
+  // 既没有「当前」可标，也没有定义可改，所以这条路一个字节都不读定义。
+  let agentSide: { store: AgentStore; definition: AgentDefinition | null } | null = null;
+  if (level === "agent") {
+    const agentStore = await config.readAgentStore();
+    agentSide = {
+      store: agentStore,
+      definition: agentStore.agents.find((item) => item.id === session.agentId) ?? null,
+    };
+  }
+  /** 目标那一层写着的参数（读不到就没有）：只用于「当前档位」与置灰的显示 */
+  const currentParams = agentSide?.definition?.modelParams;
+  // 只展示目标那一层的参数（读不到就按「跟随模型默认」显示）
+  const shown = currentParams ? { modelParams: currentParams } : null;
+
   // 支持 `/think high` 直设、`/think default` 恢复跟随模型默认，无参时弹选择器
   let picked: string | undefined = args[0];
   if (picked !== undefined && picked !== "default" && !choices.includes(picked)) {
@@ -817,16 +860,13 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
     return;
   }
   if (!picked) {
-    // 「当前」指 Agent 定义上真正写着的那一档（模型默认参数不算，那是跟随状态）
-    const current = matchLevel(
-      presetFor(model.id, model.reasoningPreset, presets),
-      definition?.modelParams,
-    );
+    // 「当前」指目标那一层真正写着的那一档（模型默认参数不算，那是跟随状态）
+    const current = matchLevel(presetFor(model.id, model.reasoningPreset, presets), currentParams);
     const items: SelectItem<string>[] = [
       {
         label: `${t("cmd.think.followDefault")}${current ? "" : t("common.current")}`,
         value: "default",
-        hint: t("cmd.think.clearHint"),
+        hint: level === "session" ? t("cmd.think.clearHintSession") : t("cmd.think.clearHint"),
       },
       ...choices.map((value) => ({
         label: `${effortLabel(value)}${value === current ? t("common.current") : ""}`,
@@ -835,7 +875,7 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
       })),
     ];
     const choice = await pick(
-      t("cmd.think.title", { level: describeEffort(model, presets, definition) }),
+      t("cmd.think.title", { level: describeEffort(model, presets, shown) }),
       items,
     );
     if (choice == null) {
@@ -846,29 +886,50 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
   }
 
   const effort = picked === "default" ? null : (picked as string);
-  const agentLevel = matchLevel(
-    presetFor(model.id, model.reasoningPreset, presets),
-    definition?.modelParams,
-  );
-  const unchanged = effort === null ? agentLevel === undefined : agentLevel === effort;
-  if (unchanged) {
-    push(t("cmd.think.unchanged"));
-    return;
+  // 「没变化」只在能读到目标那一层的参数时才判得了：会话级读不到（存档在服务端），
+  // 这时直接写 —— 写同一个值没有任何副作用，比按别层的参数猜「没变」诚实。
+  if (agentSide) {
+    const agentLevel = matchLevel(
+      presetFor(model.id, model.reasoningPreset, presets),
+      currentParams,
+    );
+    const unchanged = effort === null ? agentLevel === undefined : agentLevel === effort;
+    if (unchanged) {
+      push(t("cmd.think.unchanged"));
+      return;
+    }
   }
 
   try {
+    if (!agentSide) {
+      // 会话级：参数写这一段会话（服务端写存档 + 重建 Agent），**不碰 Agent 定义** ——
+      // 模型是本段会话换的，参数写进定义既影响别的会话、在这一段又根本不生效。
+      // `null` = 清掉这一层的覆盖（服务端把它当「跟随模型出厂参数」）。
+      const params = effortParams({ presets, model, effort });
+      await config.setSessionModelParams(session.currentId, params ?? null);
+      // 状态栏先跟上：此刻读不到服务端存档里的那份，就用刚算出来的这一份
+      setEffortView(describeEffortView(model, presets, params ? { modelParams: params } : null));
+      await session.reload();
+      push(t("effort.summarySession", { label: effortLabelText(effort), model: model.id }));
+      return;
+    }
+
+    // 模型来自 Agent 定义：写定义（改造前唯一的路径，行为逐字不变）
+    const side = agentSide;
     const result = await setAgentEffort({
       config: appConfig,
       presets,
       agentId: session.agentId,
+      // 档位与补丁都按**生效模型**算（会话级覆盖 / 全局兜底时定义上的模型不是它在跑的那个）
+      modelId,
       effort,
       // 已读过定义，避免命令层与写入层各读一次盘
-      readAgent: async () => definition,
+      readAgent: async () => side.definition,
       // 写也必须回到**配置面的那一侧**：`setAgentEffort` 的缺省写入是本地
       // `AgentRepository(AGENTS_DIR).write()`，远程模式下那是客户端本机的文件 ——
       // 服务端看不到，于是「界面说改成功了，Agent 实际档位没变」。用刚才那份快照的
       // `save`（远程即 `agent.save`）才是同一份真相。
-      writeAgent: (next) => store.save("agent", next),
+      writeAgent: (next) => side.store.save("agent", next),
     });
     // 状态栏先跟上；档位要通过重建 Agent 才会进请求参数
     setEffortView(describeEffortView(result.model, presets, result.definition));

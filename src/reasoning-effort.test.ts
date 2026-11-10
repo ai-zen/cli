@@ -379,3 +379,48 @@ describe("写入后再读回：往返一致", () => {
     }
   });
 });
+
+/**
+ * 生效模型优先（`modelId` 选项）：档位与补丁必须按**实际在跑的那个模型**算。
+ *
+ * 场景是会话级换了模型：Agent 定义上还写着旧模型，而运行期用的是新模型。拿定义算的话，
+ * 列出来的档位、写下去的补丁都属于另一个模型（比如把 GLM 的 `zhipu-5.3` 档位写成 DeepSeek
+ * 的参数），端点直接 400。写的地方仍然是 Agent 定义（这条路只负责定义那一层）。
+ */
+describe("setAgentEffort：档位按生效模型算（modelId 选项）", () => {
+  it("生效模型与定义上的不同：按生效模型的档位写补丁", async () => {
+    // 定义绑的是 GLM，这一段会话换成了 DeepSeek
+    const definition = makeDefinition({ modelId: "glm-5.3" });
+    const writeAgent = vi.fn(async (_def: AgentDefinition) => {});
+
+    const result = await setAgentEffort({
+      config: makeConfig(),
+      presets: PRESETS,
+      agentId: "default",
+      modelId: "deepseek-flash",
+      effort: "off",
+      readAgent: async () => definition,
+      writeAgent,
+    });
+
+    // deepseek 策略的 off = `thinking.disabled`（GLM 策略里根本没有 off 这一档）
+    expect(writeAgent.mock.calls[0]![0].modelParams).toEqual({ thinking: { type: "disabled" } });
+    expect(result.model.id).toBe("deepseek-flash");
+  });
+
+  it("生效模型没有策略 → 报的是生效模型的错（不是定义上那个的）", async () => {
+    const definition = makeDefinition({ modelId: "deepseek-flash" });
+
+    await expect(
+      setAgentEffort({
+        config: makeConfig(),
+        presets: PRESETS,
+        agentId: "default",
+        modelId: "glm-4.7-flash", // 强制思考、没挂策略
+        effort: "high",
+        readAgent: async () => definition,
+        writeAgent: async () => {},
+      }),
+    ).rejects.toThrow(/glm-4\.7-flash/);
+  });
+});

@@ -1,13 +1,20 @@
 /**
  * 思考档位（reasoning level）—— CLI 侧读写
  *
- * ## 三层，边界很硬
+ * ## 三个层次，边界很硬
  *
  *   - **协议差异在策略表**（`~/.ai-zen/reasoning-presets.json`）：档位名 → 请求参数补丁，
  *     由这张 CLI 自有的表声明，模型用 `reasoningPreset` 引用它。
- *   - **档位值存在 Agent 定义**（`AgentDefinition.modelParams`）：**存的是展开后的参数**，
- *     不是档位名。于是「配置即事实」——运行期 SDK 只做一次浅合并，不查表、不推导。
- *   - **本模块只管 UI 语义**：列可选档位、把参数反查成档位名、写回 Agent 定义。
+ *   - **档位值存在「参数该待的那一层」**：参数跟着**模型来自哪一级**走（规则只在
+ *     SDK 的 `resolveModelParams` 一处）——
+ *       · 模型是 Agent 定义绑的（`level: "agent"`）→ 写 `AgentDefinition.modelParams`
+ *         （一直是这个行为）；
+ *       · 模型是本段会话换的（`level: "session"`）→ 写会话存档的 `modelParams`
+ *         （服务端 `session.modelParams.set`），**不碰定义**；
+ *       · 模型来自全局兜底（`level: "global"`）→ **没有可写的一层**，调用方拒绝。
+ *     **存的是展开后的参数**，不是档位名。于是「配置即事实」——运行期 SDK 只做一次浅合并，
+ *     不查表、不推导。
+ *   - **本模块只管 UI 语义**：列可选档位、把参数反查成档位名、算出该写进某一层的参数。
  *
  * 代价（刻意接受）：改了策略表**不会追溯**已配置的 Agent —— 它们存的是当时的参数。
  * 这正是「配置即事实」的含义：表只是写配置那一刻的模板。
@@ -70,10 +77,12 @@ export function isAdjustable(model?: Model | null, presets?: ReasoningPresets | 
 }
 
 /**
- * 生效中的模型参数 = 模型默认参数 + Agent 级覆盖（与 SDK 的合并语义一致，浅合并）。
+ * 生效中的模型参数 = 模型默认参数 + **目标那一层**的覆盖（与 SDK 的合并语义一致，浅合并）。
  *
  * 注意这里复刻的是**同一份事实**，不是另一套推导：状态栏显示的就是真正会发给 API 的
- * 那几个参数里匹配到的那一档。
+ * 那几个参数里匹配到的那一档。所以调用方必须把「模型来自哪一级」的那一份传进来 ——
+ * 会话级的参数在服务端存档里，客户端读不到，那种情况传 `null`，别拿定义那份顶替
+ * （混层的参数本来就不会发出去，显示了就是在撒谎）。
  */
 export function effectiveParams(
   model?: Model | null,
@@ -144,6 +153,14 @@ export interface SetAgentEffortOptions {
   presets: ReasoningPresets;
   /** 目标 Agent（缺省 default） */
   agentId?: string;
+  /**
+   * **生效**模型 id（三级解析之后的那个；会话级覆盖 / 全局兜底都算）。
+   *
+   * 不传则用定义上的 `modelId`（写定义那条路的老口径）。为什么要能传：参数写在哪一层
+   * 跟着模型来自哪一级走，而**能选哪些档位、档位写成什么参数**只能按生效模型算 —— 拿定义
+   * 上的模型算，会话级换了模型之后列出来的档位全是错的（把 A 的档位写成 B 的参数）。
+   */
+  modelId?: string;
   /** 目标档位；`null` 表示清除思考参数、恢复跟随模型默认 */
   effort: string | null;
   /** 注入用（测试） */
@@ -159,37 +176,35 @@ export interface SetAgentEffortResult {
   summary: string;
 }
 
+export interface EffortParamsOptions {
+  /** 思考策略表 */
+  presets: ReasoningPresets;
+  /** **生效**模型：决定能选哪些档、以及档位对应什么参数 */
+  model: Model;
+  /** 目标档位；`null` = 只剔除思考键（清掉覆盖） */
+  effort: string | null;
+  /**
+   * 目标层**已有**的参数。
+   *
+   * 剔除 + 合并都基于它：只认 `base` 里的非思考键，再叠上新档位的补丁。于是
+   * `max` → `off` 不会残留上一档的 `reasoning_effort`（那些键整张表都出现过）。
+   */
+  base?: Record<string, unknown> | null;
+}
+
 /**
- * 设置某 Agent 的思考档位：查表拿补丁 → 写进 `definition.modelParams`。
+ * 把档位展开成「某一层该写的参数」—— 写 Agent 定义与写会话存档**共用这一份**。
  *
- * 写入前先剔除「整张表出现过的键」，所以 `max` → `off` 不会残留上一档的
- * `reasoning_effort`；`effort: null` 就是剔除后若为空则删掉整个 `modelParams`。
+ * 为什么必须共用：两层的写入只是「写哪儿」不同，「写什么」必须一模一样 —— 否则同一个
+ * 档位在会话级和定义级会写成两套参数（一处留着上一档的键、一处不留）。
  *
- * 抛错场景：Agent 不存在、未绑定可用模型、模型未关联策略、策略里没有该档位。
- * 这些都属于「用户明确要求了一件做不到的事」，宁可报错也不要静默降级。
+ * 返回 `undefined` = 该层不该有参数（剔除完为空）：写定义时删掉 `modelParams`，写会话时
+ * 存 `null`。两者是同一句话：「这一层没有覆盖，跟随模型出厂参数」。
+ *
+ * 抛错场景都属于「用户明确要求了一件做不到的事」：模型没关联策略、策略里没这一档。
  */
-export async function setAgentEffort(
-  options: SetAgentEffortOptions,
-): Promise<SetAgentEffortResult> {
-  const { config, presets, effort } = options;
-  const agentId = options.agentId || "default";
-  const now = options.now ?? new Date();
-
-  const readAgent = options.readAgent ?? ((id: string) => new AgentRepository(AGENTS_DIR).read(id));
-  const writeAgent =
-    options.writeAgent ??
-    ((definition: AgentDefinition) => new AgentRepository(AGENTS_DIR).write(definition));
-
-  const definition = await readAgent(agentId);
-  if (!definition) throw new Error(t("effort.err.agentMissing", { id: agentId }));
-
-  const modelId = definition.modelId;
-  if (!modelId) {
-    throw new Error(t("effort.err.noModel", { id: agentId }));
-  }
-  const model = (config.models ?? []).find((item) => item.id === modelId);
-  if (!model) throw new Error(t("effort.err.modelMissing", { id: modelId }));
-
+export function effortParams(options: EffortParamsOptions): Record<string, unknown> | undefined {
+  const { presets, model, effort } = options;
   const preset = presetOf(model, presets);
   const allowed = levelsOf(preset);
   if (allowed.length === 0) {
@@ -210,24 +225,69 @@ export async function setAgentEffort(
   // 先剔除思考相关键，再合并新补丁（`null` 即只剔除）
   const owned = ownedKeys(presets);
   const params: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(definition.modelParams ?? {})) {
+  for (const [key, value] of Object.entries(options.base ?? {})) {
     if (!owned.has(key)) params[key] = value;
   }
   if (patch) Object.assign(params, patch);
 
+  return Object.keys(params).length > 0 ? params : undefined;
+}
+
+/**
+ * 档位的显示名（如「高」/ `high`）。
+ *
+ * 汇总文案与选择器都得说同一个词，所以收在这里：`setAgentEffort` 的 summary 与命令层
+ * （会话级写入）各拼一句不同的句子，但里面那个档位名必须是同一个函数算出来的。
+ */
+export function effortLabelText(effort: string | null): string {
+  return effort === null
+    ? t("effort.followDefault")
+    : t("effort.quoted", { label: effortLabel(effort) });
+}
+
+/**
+ * 设置某 Agent 的思考档位：查表拿补丁 → 写进 `definition.modelParams`。
+ *
+ * 这是**定义那一层**的写入（`level: "agent"`）。模型是本段会话换的、或者来自全局兜底时
+ * 不该走这里：参数跟着「模型来自哪一级」走，写错层等于写了一个不生效的地方（见文件头）。
+ *
+ * 抛错场景：Agent 不存在、未绑定可用模型、模型未关联策略、策略里没有该档位。
+ * 这些都属于「用户明确要求了一件做不到的事」，宁可报错也不要静默降级。
+ */
+export async function setAgentEffort(
+  options: SetAgentEffortOptions,
+): Promise<SetAgentEffortResult> {
+  const { config, presets, effort } = options;
+  const agentId = options.agentId || "default";
+  const now = options.now ?? new Date();
+
+  const readAgent = options.readAgent ?? ((id: string) => new AgentRepository(AGENTS_DIR).read(id));
+  const writeAgent =
+    options.writeAgent ??
+    ((definition: AgentDefinition) => new AgentRepository(AGENTS_DIR).write(definition));
+
+  const definition = await readAgent(agentId);
+  if (!definition) throw new Error(t("effort.err.agentMissing", { id: agentId }));
+
+  // 生效模型优先：会话级覆盖 / 全局兜底时，定义上的 `modelId` 不是实际在跑的那个。
+  const modelId = options.modelId ?? definition.modelId;
+  if (!modelId) {
+    throw new Error(t("effort.err.noModel", { id: agentId }));
+  }
+  const model = (config.models ?? []).find((item) => item.id === modelId);
+  if (!model) throw new Error(t("effort.err.modelMissing", { id: modelId }));
+
+  const params = effortParams({ presets, model, effort, base: definition.modelParams });
+
   const next: AgentDefinition = { ...definition, updatedAt: now.toISOString() };
-  if (Object.keys(params).length > 0) next.modelParams = params;
+  if (params) next.modelParams = params;
   else delete next.modelParams;
 
   await writeAgent(next);
 
-  const label =
-    effort === null
-      ? t("effort.followDefault")
-      : t("effort.quoted", { label: effortLabel(effort) });
   return {
     definition: next,
     model,
-    summary: t("effort.summary", { label, id: agentId, model: model.id }),
+    summary: t("effort.summary", { label: effortLabelText(effort), id: agentId, model: model.id }),
   };
 }

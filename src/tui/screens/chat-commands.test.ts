@@ -157,6 +157,7 @@ function fakeConfigPort(overrides: Partial<ConfigPort> = {}): ConfigPort {
     setModel: vi.fn(async () => {}),
     setDefaultAgent: vi.fn(async () => {}),
     setSessionModel: vi.fn(async () => {}),
+    setSessionModelParams: vi.fn(async () => {}),
     setDefaultModel: vi.fn(async () => {}),
     ...overrides,
   };
@@ -697,5 +698,133 @@ describe("/agent：走 session.setAgent，不重挂载", () => {
     expect(setDefaultAgent).toHaveBeenCalledWith("coder");
     expect(setAgent).not.toHaveBeenCalled();
     expect(host.exit).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `/think` 三档分流：参数写到**模型来自那一级**（与 SDK 的 `resolveModelParams` 同一条规则）。
+ *
+ * 三档各写各的：
+ *   - `session` → 会话级（`setSessionModelParams`），不碰 Agent 定义；
+ *   - `agent`   → Agent 定义（`store.save`），与改造前的行为逐字一致；
+ *   - `global`  → 没有可写的一层，**明确拒绝**。
+ *
+ * 另外钉住两处曾经按定义算的毛病：模型来自全局兜底时误报「未绑定模型」、档位列表按定义上
+ * 的模型算（换了模型之后列出来的是另一套档位）。
+ */
+describe("/think：写哪一层跟着「模型来自哪一级」走", () => {
+  const texts = (notices: Array<{ text: string }>) => notices.map((n) => n.text).join("\n");
+
+  /** 一个带 spy 的 Agent 定义存储（写没写定义，看它） */
+  const spyStore = (agents: AgentDefinition[]) => {
+    const save = vi.fn(async () => {});
+    return { store: { agents, subAgents: [], save, remove: async () => {} } as AgentStore, save };
+  };
+
+  it("session 档：写会话级（`setSessionModelParams`），Agent 定义一个字不动", async () => {
+    const setSessionModelParams = vi.fn(async () => {});
+    const { store, save } = spyStore([agentDefinition("default", "m1")]);
+    const { host, config, session, notices } = createHost(
+      { modelId: "m2", modelLevel: "session" },
+      {
+        readAgentStore: vi.fn(async () => store),
+        setSessionModelParams,
+      },
+    );
+
+    await runCommand("think", "/think high", host);
+
+    expect(setSessionModelParams).toHaveBeenCalledWith("chat_now", { reasoning_effort: "high" });
+    // 会话级这条路连定义都不用读：它不是要改的对象
+    expect(config.readAgentStore).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(config.setModel).not.toHaveBeenCalled();
+    // 档位要通过重建 Agent 才会进请求参数
+    expect(session.reload).toHaveBeenCalled();
+    expect(texts(notices)).toBe(
+      t("effort.summarySession", {
+        label: t("effort.quoted", { label: t("effort.high") }),
+        model: "m2",
+      }),
+    );
+  });
+
+  it("session 档 + `/think default`：写 `null`（清掉这一层的覆盖、回到模型出厂参数）", async () => {
+    const setSessionModelParams = vi.fn(async () => {});
+    const { host } = createHost(
+      { modelId: "m2", modelLevel: "session" },
+      { setSessionModelParams },
+    );
+
+    await runCommand("think", "/think default", host);
+
+    expect(setSessionModelParams).toHaveBeenCalledWith("chat_now", null);
+  });
+
+  it("agent 档：写 Agent 定义（改造前的行为，逐字不变）", async () => {
+    const { store, save } = spyStore([agentDefinition("default", "m1")]);
+    const setSessionModelParams = vi.fn(async () => {});
+    const { host, session } = createHost(
+      // 生效模型来自定义：modelLevel 保持默认的 agent
+      { modelId: "m1" },
+      { readAgentStore: vi.fn(async () => store), setSessionModelParams },
+    );
+
+    await runCommand("think", "/think high", host);
+
+    expect(save).toHaveBeenCalledWith(
+      "agent",
+      expect.objectContaining({ id: "default", modelParams: { reasoning_effort: "high" } }),
+    );
+    expect(setSessionModelParams).not.toHaveBeenCalled();
+    expect(session.reload).toHaveBeenCalled();
+  });
+
+  it("global 档：明确拒绝 —— 全局兜底那一级没有可放的参数层", async () => {
+    const setSessionModelParams = vi.fn(async () => {});
+    const { store, save } = spyStore([agentDefinition("default", "")]);
+    const { host, session, notices } = createHost(
+      { modelId: "m2", modelLevel: "global" },
+      { readAgentStore: vi.fn(async () => store), setSessionModelParams },
+    );
+
+    await runCommand("think", "/think high", host);
+
+    // 不再误报「Agent 未绑定模型」：生效模型明明有（来自 `config.defaultModel`）
+    expect(texts(notices)).toBe(t("cmd.think.globalLevel"));
+    expect(setSessionModelParams).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(session.reload).not.toHaveBeenCalled();
+  });
+
+  it("档位列表按**生效**模型算：会话级换了模型之后，列的是新模型的档位", async () => {
+    // 生效模型是两个档（on / off），定义上那个是 low / high —— 拿定义算会列错表
+    const config: AppConfig = {
+      ...BASE_CONFIG,
+      models: [
+        ...BASE_CONFIG.models,
+        { ...model("m-onoff", "开关模型", "ep-main"), reasoningPreset: "onoff" },
+      ],
+    };
+    const presets: ReasoningPresets = {
+      ...PRESETS,
+      onoff: {
+        levels: {
+          off: { thinking: { type: "disabled" } },
+          on: { thinking: { type: "enabled" } },
+        },
+      },
+    };
+    const { host, notices } = createHost(
+      { modelId: "m-onoff", modelLevel: "session" },
+      {
+        readConfig: vi.fn(async () => config),
+        readReasoningPresets: vi.fn(async () => presets),
+      },
+    );
+
+    await runCommand("think", "/think turbo", host);
+
+    expect(texts(notices)).toBe(t("cmd.think.unknown", { level: "turbo", options: "off / on" }));
   });
 });

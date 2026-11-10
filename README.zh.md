@@ -212,7 +212,7 @@ key input="" flags=[pageUp] raw=false
 | `/update` | 升级 CLI 到最新发布版（在**全部** dist-tags 里挑 semver 最大的那个，alpha 比 `latest` 新就用 alpha；逐步骤显示进度，装完可一键重启到新版本） |
 | `/mcp` | 管理 MCP 服务器（增删改 / 启停；`/mcp global`、`/mcp project` 指定作用域） |
 | `/lang` | 切换界面语言（`/lang zh`、`/lang en` 直指定，不带参数则切换） |
-| `/think` `/effort` | 切换思考强度（`/think default` 跟随模型默认） |
+| `/think` `/effort` | 切换思考强度（`/think default` 跟随模型默认）。写进**生效模型来自的那一层**：会话级模型写本段会话，定义级模型写 Agent 定义；全局兜底没有可写的一层，明确拒绝 |
 | `/key` | 设置端点 API Key（保存后重建会话） |
 | `/handoff` | 生成交接文档（不切换会话） |
 | `/migrate` | 交接并开启新会话 |

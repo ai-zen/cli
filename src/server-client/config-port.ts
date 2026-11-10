@@ -40,6 +40,7 @@ import {
   type ConfigSaveParams,
   type ConfigSetDefaultAgentParams,
   type ConfigSetDefaultModelParams,
+  type SessionModelParamsSetParams,
   type SessionModelSetParams,
   type WorkspaceResolveResult,
 } from "@ai-zen/agents-server";
@@ -102,6 +103,20 @@ export interface ConfigPort {
    * 就只能靠参数开关分叉，调用方得猜自己改的是哪一份。
    */
   setSessionModel(sessionId: string, modelId: string): Promise<void>;
+  /**
+   * 写**这一段会话**的模型参数覆盖（`session.modelParams.set`）。
+   *
+   * 为什么需要它与 {@link setSessionModel} 并存：参数跟着「模型来自哪一级」走。模型是本段
+   * 会话换的，参数就必须也写在这一段（写进定义会影响别的会话，而且那一层的参数在本段会话
+   * 根本不生效）。`null` = 清掉覆盖、回到模型出厂参数。
+   *
+   * 形状交给服务端当**不透明载荷**存（与存档里的 `messages` 同一口径）：这里只负责把算好
+   * 的参数送上去。
+   */
+  setSessionModelParams(
+    sessionId: string,
+    modelParams: Record<string, unknown> | null,
+  ): Promise<void>;
   /**
    * 换**全局兜底模型**（`config.defaultModel`）—— 三级解析的最后一级。
    *
@@ -326,6 +341,16 @@ export function createRemoteConfigPort(deps: RemoteConfigPortDeps = {}): ConfigP
     setSessionModel: async (sessionId, modelId) => {
       const params: SessionModelSetParams = { sessionId, modelId };
       await call(SESSION_METHODS.modelSet, params);
+    },
+
+    /**
+     * 写这一段会话的模型参数（服务端 `session.modelParams.set`）：写存档、重建 Agent。
+     *
+     * 同样不取快照：紧接着的 `session.reload()` 会再要一份（它同时刷新消息与状态栏）。
+     */
+    setSessionModelParams: async (sessionId, modelParams) => {
+      const params: SessionModelParamsSetParams = { sessionId, modelParams };
+      await call(SESSION_METHODS.modelParamsSet, params);
     },
 
     /** 换全局兜底模型：一条窄方法，**不**读整份再写回（见接口上的注释） */

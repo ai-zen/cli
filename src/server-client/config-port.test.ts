@@ -430,3 +430,30 @@ describe("createRemoteConfigPort：连接的懒建与重建（注入假连接）
     expect(calls[0]!.params).toEqual({ scope: "global" });
   });
 });
+
+/**
+ * `setSessionModelParams`：会话级**参数**写入走哪条线上方法。
+ *
+ * 与 `session.model.set` 分开钉一句：两者是同一级的两份事实，写混了就是「换模型顺手清了
+ * 参数」或「改参数把模型也改了」—— 而后者在 `/think` 里完全看不出来。
+ */
+describe("createRemoteConfigPort：会话级模型参数（session.modelParams.set）", () => {
+  it("参数原样递上去，线上的方法名是协议里那一份；`null`（清掉覆盖）照传", async () => {
+    const calls: RecordedCall[] = [];
+    const port = createRemoteConfigPort({ connect: async () => fakeClient(calls) });
+
+    await port.setSessionModelParams("chat_1", { reasoning_effort: "high" });
+    await port.setSessionModelParams("chat_1", null);
+
+    expect(calls).toEqual([
+      {
+        method: SESSION_METHODS.modelParamsSet,
+        params: { sessionId: "chat_1", modelParams: { reasoning_effort: "high" } },
+      },
+      {
+        method: SESSION_METHODS.modelParamsSet,
+        params: { sessionId: "chat_1", modelParams: null },
+      },
+    ]);
+  });
+});
