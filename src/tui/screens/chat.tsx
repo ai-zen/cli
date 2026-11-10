@@ -7,7 +7,7 @@ import { setSdkNoticeSink } from "../../sdk-log.js";
 import { keyDebug } from "../key-debug.js";
 import type { RateSample } from "../../session-rate.js";
 import { phaseLabel } from "../../session-phase.js";
-import type { PhaseInfo } from "@ai-zen/agents-server";
+import type { PhaseInfo } from "@ai-zen/agents-protocol";
 import { AgentNS } from "@ai-zen/agents-core";
 import { theme } from "../theme.js";
 import {

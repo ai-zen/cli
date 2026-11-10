@@ -51,7 +51,6 @@ import { setLogger } from "@ai-zen/agents-sdk";
 import {
   createConfigPort,
   createServerConnection,
-  RemoteSessions,
   type ConfigPort,
   type ServerConnection,
 } from "./server-client/index.js";
@@ -186,9 +185,6 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
   const connection = deps.connection ?? createServerConnection();
   let session: RemoteChatSession | null = null;
   try {
-    const client = await connection.client();
-    const sessions = new RemoteSessions(client);
-
     /**
      * 用哪个 Agent 也问服务端（`AppConfig.defaultAgent`，缺省 `default`）。
      *
@@ -247,8 +243,12 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
     if (save) {
       // 归档这次一次性调用：写档，但**不**挪「本工作区上一轮会话」指针 ——
       // 否则连跑几条 `cat … | ai --save` 之后，下次 `ai` 会续接到最后一条管道结果上。
-      const saved = await sessions.save(session.currentId, { setAsLast: false });
-      writeErr(`Saved conversation: ${saved.sessionId}`);
+      //
+      // 走 `session.save`（即 channel）而不是现取 `RemoteSessions` 门面：门面是「按 id 说话」
+      // 的无状态薄封装，它不知道「当前这一段是哪个 id」，而应用里那份「当前 id」会漂
+      // （重连换了连接、存档换了键）。包里补上了 `setAsLast` 透传之后，绕法作废。
+      const saved = await session.save({ setAsLast: false });
+      writeErr(`Saved conversation: ${saved}`);
     }
 
     // 结果：仅此一处写入 stdout

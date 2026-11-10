@@ -401,14 +401,16 @@ describe("picker 条数上限（只用宿主给的数）", () => {
  * `/model` 现在有**三档作用级别**：默认改会话（`session.model.set`）、`-a` 改 Agent 定义
  * （`agent.model.set`，`/model` 从前的意思）、`-g` 改全局兜底（`config.defaultModel`）。
  *
- * 另一条关键回归是**生效方式**：写完之后靠 `session.reload()`（服务端按新事实重建 Agent、
- * 保留消息），不再是 `exit({ restart: true })` 重挂载整个对话屏 —— 重挂载会把整屏刷一遍、
- * 还会丢掉用户正在写的输入草稿。
+ * 另一条关键回归是**生效方式**：写完之后不再 `exit({ restart: true })` 重挂载整个对话屏
+ * （重挂载会把整屏刷一遍、还会丢掉用户正在写的输入草稿），而是靠 `session.reload()` 让服务端
+ * 按新事实重建 Agent（保留消息）。但它**只有两档需要**：`-a` / `-g` 走 `agent.save` /
+ * `config.json`，没有 `applySnapshot`；会话级走 `channel.setModel`，包里拿到快照就对齐屏幕，
+ * 再补一次 reload 就是多一个往返 + 多一次通知。
  */
-describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
+describe("/model：三档作用级别各自的写路径（只有两档还要 reload）", () => {
   const texts = (notices: Array<{ text: string }>) => notices.map((n) => n.text).join("\n");
 
-  it("默认（会话级）：setSessionModel(currentId, 目标) → reload，且不 exit({restart:true})", async () => {
+  it("默认（会话级）：setModel(目标)，不跟 reload，也不 exit({restart:true})", async () => {
     const reload = vi.fn(async () => {});
     const setSessionModel = vi.fn(async () => {});
     const setModel = vi.fn(async () => {});
@@ -420,13 +422,11 @@ describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
     expect(setSessionModel).toHaveBeenCalledWith("m2");
     // 会话级覆盖不该顺手改 Agent 定义（那会波及所有用它的会话）
     expect(setModel).not.toHaveBeenCalled();
-    expect(reload).toHaveBeenCalledTimes(1);
+    // 会话级走 `channel.setModel`：包里自己 `applySnapshot`，再 reload 是白跑一个往返
+    // （真机上「只通知一次重画」的证据在 session.test.ts 的 `/model`（命令层）那条）
+    expect(reload).not.toHaveBeenCalled();
     // 不再重挂载屏幕：模型变了不需要重建整个界面
     expect(host.exit).not.toHaveBeenCalled();
-    // 先写、再让服务端按它重建 Agent（顺序反了就是重建出旧模型）
-    expect(setSessionModel.mock.invocationCallOrder[0]!).toBeLessThan(
-      reload.mock.invocationCallOrder[0]!,
-    );
     expect(notices.at(-1)).toEqual({
       text: t("cmd.model.done", {
         scope: t("cmd.model.scope.session"),
@@ -447,6 +447,8 @@ describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
 
     expect(setModel).toHaveBeenCalledWith("default", "m2");
     expect(setSessionModel).not.toHaveBeenCalled();
+    // 定义层那条**必须**reload：它走 `agent.save`，不经 channel 的模型动作，
+    // 没有 `applySnapshot` —— 不重建 Agent，这一轮请求里就还是旧模型
     expect(reload).toHaveBeenCalledTimes(1);
     expect(notices.at(-1)).toEqual({
       text: t("modelSwitch.summary", {
@@ -722,8 +724,10 @@ describe("/think：写哪一层跟着「模型来自哪一级」走", () => {
     expect(config.readAgentStore).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
     expect(config.setModel).not.toHaveBeenCalled();
-    // 档位要通过重建 Agent 才会进请求参数
-    expect(session.reload).toHaveBeenCalled();
+    // 会话级这条**不**reload：`channel.setModelParams` 自己 `applySnapshot`，档位当场就是
+    // 屏幕上的事实（再多跑一个往返不会多出一个字）。真机上的证据见 session.test.ts 的
+    // `/think`（命令层，会话级）那条。
+    expect(session.reload).not.toHaveBeenCalled();
     expect(texts(notices)).toBe(
       t("effort.summarySession", {
         label: t("effort.quoted", { label: t("effort.high") }),
@@ -761,6 +765,8 @@ describe("/think：写哪一层跟着「模型来自哪一级」走", () => {
       expect.objectContaining({ id: "default", modelParams: { reasoning_effort: "high" } }),
     );
     expect(setSessionModelParams).not.toHaveBeenCalled();
+    // 定义档那条**必须**reload：它走 `store.save`（`agent.save`），不经 channel 的参数动作，
+    // 没有 `applySnapshot` —— 参数要点进请求，只能靠服务端重建 Agent。
     expect(session.reload).toHaveBeenCalled();
   });
 

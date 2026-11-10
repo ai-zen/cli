@@ -448,13 +448,17 @@ const cmdModel: CommandHandler = async ({ session, push, args, pick, config }) =
     else if (selection.scope === "agent") await config.setModel(session.agentId, chosen);
     else await config.setDefaultModel(chosen);
 
-    // 之后让这一段会话按新事实重建（服务端 `session.reload`：保留消息、快照回最新状态）。
-    // 三档都要走这一步：会话级与全局兜底改完之后，当前这段会话的 Agent 也还停在旧模型上，
-    // 而状态栏的 `modelId` 只有拿到新快照才会更新。
+    // 之后**只有其中两档**还要再重建一次这段会话 —— 分界线是「谁写的这一笔」：
+    //   - 会话级走 `channel.setModel`，包里拿到回执里的快照就 `applySnapshot`：新的
+    //     `modelId` / `apiModel` / `modelParams` 当场就是屏幕上的事实。这里再补一次
+    //     `reload()` 只是**多一个往返、多一次「该重画了」**，而屏幕上一个字都不会变；
+    //   - `-a` 走 `agent.save`（`config.setModel` → `agent.model.set`）、`-g` 写
+    //     `config.defaultModel`：两条都**不经过** channel 的模型动作，没有 `applySnapshot`，
+    //     这段活着的会话仍跑在旧模型上，状态栏的 `modelId` 也只能靠新快照才会更新。
     //
     // 这里**刻意不再 `exit({ restart: true })`**：模型变了不需要重挂载整个对话屏 ——
     // 重启会把整屏刷一遍，还会丢掉用户正在写的输入草稿。
-    await session.reload();
+    if (selection.scope !== "session") await session.reload();
 
     if (selection.scope === "agent") {
       // 写进定义那条会顺带清空思考参数，所以它的提示要说明「思考强度已重置」；
@@ -926,7 +930,8 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
       await session.setModelParams(params ?? null);
       // 状态栏先跟上：此刻读不到服务端存档里的那份，就用刚算出来的这一份
       setEffortView(describeEffortView(model, presets, params ? { modelParams: params } : null));
-      await session.reload();
+      // 与 `/model` 的会话级同一条理由：`channel.setModelParams` 自己就 `applySnapshot`，
+      // 档位当场就是屏幕上的事实，再补一次 `reload()` 只是多一个往返、多一次通知。
       push(t("effort.summarySession", { label: effortLabelText(effort), model: model.id }));
       return;
     }

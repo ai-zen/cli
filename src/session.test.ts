@@ -28,7 +28,8 @@ import { RemoteSessions } from "./server-client/index.js";
 import type { ModelParams } from "./server-client/index.js";
 import { ServerConnection, SocketServerClient } from "./server-client/index.js";
 import type { ServerClient } from "./server-client/index.js";
-import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
+import type { AutoMigrateTriggerInfo, AppConfig, HandoffMode, ReasoningPresets } from "@ai-zen/agents-sdk";
+import { runCommand, type ChatCommandHost } from "./commands/handlers.js";
 import { setLocale } from "./i18n/index.js";
 import { useTempAiZenDir } from "./test-support/temp-dir.js";
 import { RemoteChatSession } from "./session.js";
@@ -146,6 +147,72 @@ const testConfigPort: ConfigPort = {
   setDefaultAgent: async () => {},
   setDefaultModel: async () => {},
 };
+
+/**
+ * `/model` / `/think` 读的那份配置面：两个模型同端点、都带 Key，策略表有两档。
+ *
+ * 与 `testConfigPort` 分开是因为它答的是**另一个问题** —— 上面那个只为图片链路提供
+ * 端点能力，而这两条命令要的是「可切换的模型列表 + 可选的思考档位」。
+ */
+const commandConfig: ConfigPort = {
+  ...testConfigPort,
+  readConfig: async () =>
+    ({
+      endpoints: [{ id: "e", name: "E", baseUrl: "http://127.0.0.1:9/v1", apiKey: "k" }],
+      models: [
+        {
+          id: "test-model",
+          name: "Test",
+          endpointId: "e",
+          tokenThresholds: { handoff: 1000, guard: 2000 },
+          reasoningPreset: "effort",
+        },
+        {
+          id: "alt-model",
+          name: "Alt",
+          endpointId: "e",
+          tokenThresholds: { handoff: 1000, guard: 2000 },
+          reasoningPreset: "effort",
+        },
+      ],
+      defaultAgent: "default",
+      version: 4,
+    }) as AppConfig,
+  readReasoningPresets: async () =>
+    ({
+      effort: { levels: { low: { reasoning_effort: "low" }, high: { reasoning_effort: "high" } } },
+    }) as ReasoningPresets,
+};
+
+/**
+ * 命令层的宿主假件（只造 `/model` / `/think` 会碰到的口子）。
+ *
+ * 会话是**真件**（真 socket + 真服务端 + 真存档）：这两条用例要断言的正是「写完之后状态里
+ * 是什么」，而那份状态只能由包里的 `applySnapshot` 产生 —— 假会话上断言等于自问自答。
+ * 要假的只有界面那几个回调与配置面。
+ */
+function commandHost(opened: RemoteChatSession, config: ConfigPort): ChatCommandHost {
+  return {
+    session: opened,
+    config,
+    notice: (text, tone) => notices.push({ text, tone: tone ?? "info" }),
+    clearTranscript: () => {},
+    rows: 24,
+    exit: () => {},
+    suspendTerminal: async (fn) => {
+      await fn();
+    },
+    openWizard: async () => {},
+    openKeyEditor: async () => {},
+    doExit: () => {},
+    restartProcess: async () => {},
+    pick: async () => null,
+    confirm: async () => false,
+    setInputText: () => {},
+    setEffortView: () => {},
+    refreshLocale: () => {},
+  };
+}
 
 const notifier: ChatSessionNotifier = {
   onChange: () => {
@@ -273,6 +340,15 @@ function newManager(): SessionManager {
         agent.model = input.modelId;
         agent.definition.modelId = input.modelId;
       }
+      /**
+       * 档位也照真件抄：`input.modelId` 只在**会话级覆盖**存在时才会从服务端递下来
+       * （`SessionManager` 只把 `session.modelId` 塞进 `createAgent` 的入参），所以它一出现，
+       * 真件的 `resolveModel` 就会把档位解析成 `session`。
+       *
+       * 不抄的话假件永远说 `agent`，而 `/think` 的写路径正是按它分叉的 —— 会话级那条
+       * 会永远进不了用例。
+       */
+      agent.modelLevel = input.modelId ? "session" : "agent";
       // `null` / 没给 = 不带覆盖（与「从来没设过」同一条路），所以只有真给了才抄
       if (input.modelParams == null) delete agent.definition.modelParams;
       else agent.definition.modelParams = input.modelParams as Record<string, unknown>;
@@ -822,6 +898,53 @@ describe("RemoteChatSession：会话级模型动作（走 channel，不现取门
     expect((await sessions.snapshot(id)).modelParams).toBeUndefined();
     // 换参数不动模型
     expect(opened.modelId).toBe("test-model");
+  });
+
+  /**
+   * 命令层那一层：`/model` 换完模型**不要**再补一次 `reload()`。
+   *
+   * 上面那条钉的是 `session.setModel` 自己不 reload；这条钉的是**调用方**也没补 ——
+   * `commands/handlers.ts` 的 `/model` 曾经在写完三档之后无条件跟一句 `session.reload()`。
+   * P4c 起包里自己 `applySnapshot`，那一句就成了「多一个往返 + 多一次通知，屏幕上不多一个字」；
+   * 而 `-a` / `-g` 两档仍需要它（它们走 `agent.save` / `config.json`，没有那份快照）。
+   *
+   * 判据就两条：状态里的 `modelId` 当场是新的，且「该重画了」只多一次。
+   */
+  it("`/model`（命令层，会话级）：modelId 当场是新的，且只通知一次重画", async () => {
+    const opened = await open();
+    const id = opened.currentId;
+    const redraws = changes;
+    const sessions = new RemoteSessions(await startServer());
+
+    await runCommand("model", "/model alt-model", commandHost(opened, commandConfig));
+
+    expect(opened.modelId).toBe("alt-model");
+    // 跟一句 `reload()` 就会变成两次，而屏幕上的字一个都不会变
+    expect(changes).toBe(redraws + 1);
+    // 服务端那一侧真的写了（不是客户端自己记一笔）
+    expect((await sessions.snapshot(id)).modelId).toBe("alt-model");
+  });
+
+  /**
+   * 同上，换到 `/think` 的**会话级**那条写路径（`session.modelParams.set`）。
+   *
+   * 先 `/model alt-model` 把档位换到会话级：`/think` 的参数跟着「模型来自哪一级」走，
+   * 而 Agent 定义那个分支走 `agent.save`，**必须**保留 `reload()`（参数得靠重建 Agent 才进请求）。
+   */
+  it("`/think`（命令层，会话级）：参数当场写进这一段，且只通知一次重画", async () => {
+    const opened = await open();
+    const id = opened.currentId;
+    const sessions = new RemoteSessions(await startServer());
+    await runCommand("model", "/model alt-model", commandHost(opened, commandConfig));
+    // 档位是服务端解析的结果：会话级覆盖生效之后它就是 `session`
+    expect(opened.modelLevel).toBe("session");
+    const redraws = changes;
+
+    await runCommand("think", "/think high", commandHost(opened, commandConfig));
+
+    // 跟一句 `reload()` 就会变成两次（与 /model 同一条理由：包里 setModelParams 自己对齐快照）
+    expect(changes).toBe(redraws + 1);
+    expect((await sessions.snapshot(id)).modelParams).toEqual({ reasoning_effort: "high" });
   });
 });
 

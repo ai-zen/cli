@@ -14,6 +14,9 @@ importers:
       '@ai-zen/agents-core':
         specifier: ^4.5.5
         version: 4.5.5(ws@8.22.0)(zod@4.5.4)
+      '@ai-zen/agents-protocol':
+        specifier: link:../agents/packages/protocol
+        version: link:../agents/packages/protocol
       '@ai-zen/agents-sdk':
         specifier: link:../agents/packages/sdk
         version: link:../agents/packages/sdk

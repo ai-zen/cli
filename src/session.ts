@@ -415,8 +415,20 @@ export class RemoteChatSession implements ChatSessionLike {
     return stripCwdNote(await this.channel.rollback(index));
   }
 
-  async save(): Promise<string> {
-    return await this.channel.save();
+  /**
+   * 落盘当前会话（缺省同时把它设成本工作区的「上一轮会话」）。
+   *
+   * `setAsLast: false` 是**一次性调用的归档**（`ai "…" --save`）：stdio 要写档但不挪续接
+   * 指针 —— 否则连跑几条 `cat … | ai --save` 之后，下次 `ai` 会续接到最后一条管道结果上。
+   * 选项原样透传给 channel：只有它知道「当前这一段是哪个 id」，而 `RemoteSessions` 是
+   * 「按 id 说话」的无状态门面 —— 那正是 stdio 以前绕道门面的原因（P4c 时包里还没有
+   * 这个选项，现在有了）。
+   *
+   * 对外契约（`ChatSessionLike.save`）仍然是无参形态：缺省行为不变，选项只是「这一段会话」
+   * 的附带能力，不往界面上扩散。
+   */
+  async save(options?: { setAsLast?: boolean }): Promise<string> {
+    return await this.channel.save(options);
   }
 
   async saveAs(id: string): Promise<string> {

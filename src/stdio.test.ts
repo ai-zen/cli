@@ -10,7 +10,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readdirSync, rmSync, existsSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  existsSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -22,6 +30,9 @@ import {
   SessionManager,
   type AgentLike,
   type ModelLevel,
+  // 与服务端同一个算法（`defaultWorkspacePath: dir` 就是按它算 id 的）：这条用例要在**跑之前**
+  // 就把指针摆好，而那时临时目录里还没有 `workspaces/` 可以让本地那个按目录反查的助手去数。
+  workspaceIdFor as serverWorkspaceIdFor,
 } from "@ai-zen/agents-server";
 import { AgentNS } from "@ai-zen/agents-core";
 import { ServerConnection, SocketServerClient } from "./server-client/index.js";
@@ -270,6 +281,27 @@ describe("runStdio：一次性调用（真 socket + 真存档）", () => {
     expect(result.stderr).toContain("Saved conversation: chat_stdio");
     // 存档写完之后答案照旧只出现在 stdout
     expect(result.stdout).toBe("答复\n");
+  });
+
+  it("`--save` 不挪**已存在的**指针（不是「碰巧还没指针」）", async () => {
+    // 目录要在跑之前就摆好：要断言的是「已经存在的指针没被顶掉」，而不是「没新建文件」。
+    // 工作区是哪个：服务端是**本地**（loopback）时，会话跑在客户端递上去的 cwd 里，
+    // 所以 id 由 `process.cwd()` 算 —— 与会话层用例里那条「本地取 cwd」是同一条规则。
+    const root = join(dir, "workspaces", serverWorkspaceIdFor(process.cwd()));
+    mkdirSync(root, { recursive: true });
+    const pointer = join(root, "last-session.json");
+    writeFileSync(
+      pointer,
+      JSON.stringify({ version: 1, id: "chat_prev", updatedAt: "2024-01-01T00:00:00.000Z" }),
+      "utf-8",
+    );
+
+    const result = await run({ instruction: "留一份", save: true });
+
+    expect(result.code).toBe(0);
+    // 自己的档写了（`chat_stdio`），但「本工作区上一轮会话」仍然指着上一轮那段
+    expect(savedSessions()).toHaveLength(1);
+    expect(JSON.parse(readFileSync(pointer, "utf-8")).id).toBe("chat_prev");
   });
 
   it("模型报错：stdout 为空、错误走 stderr、退出码 1", async () => {
