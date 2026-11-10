@@ -1,17 +1,11 @@
 // 行渲染（Ink 组件）—— RLine → <Text>
 //
-// `truncate` 已搬到 `src/text.ts`（纯文本度量，零 UI 依赖）：命令层要按字素簇截断
-// `/load` 的预览与 `/back` 的标签，而它为了这 6 行把 ink 拖进了自己的依赖图 ——
-// 实测 `dist/tui/screens/chat-commands.js` 的 24 文件图里，ink 与 react/jsx-runtime
-// **只有**「从本文件 import truncate」这一条来源。
-//
-// 这里**转出**（而不是让调用点改 import）：本文件自己的渲染路径也在用它，而既有调用点
-// 写的是 `from "./render.js"`—— 改一堆 import 没有收益，也不会让图更干净。
+// 纯文本度量（`truncate` / `graphemes` / `clusterWidth`）在 `src/text.ts`：它零 UI 依赖，
+// 所以命令层直接吃 `text.js`。本文件第一行就是 `import { Text } from "ink"`，只要有一个
+// 命令层模块走本文件，`dist/commands/*.js` 的图上就会多出 ink 与 react/jsx-runtime。
 import { Text } from "ink";
 import { theme } from "../theme.js";
 import { RLine, type LineKind } from "./lines.js";
-
-export { truncate } from "../../text.js";
 
 /** 行 kind → 基础色（分段渲染时作默认色；`undefined` = 终端默认前景色） */
 function baseColor(kind: LineKind): string | undefined {

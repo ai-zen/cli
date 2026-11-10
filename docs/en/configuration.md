@@ -12,7 +12,7 @@ Configuration is stored under the shared root directory (determined by `AI_ZEN_D
 
 - **Global config**: `$AI_ZEN_DIR/config.json` (default `~/.ai-zen/config.json` when `AI_ZEN_DIR` is not set).
 
-> The config directory is **shared** with other AI-Zen clients: the config file lives in the shared root (`CONFIG_FILE = join(AI_ZEN_DIR, "config.json")` in `src/config.ts`), while `~/.ai-zen/cli/` holds only CLI-local runtime data such as `preferences.json` (the interface language). **Sessions belong to a workspace** and live under `~/.ai-zen/workspaces/<workspaceId>/` (the old `cli/conversations/` plus the per-cwd pointer are migrated on first launch).
+> The config directory is **shared** with other AI-Zen clients: the config file lives in the shared root (`CONFIG_FILE = join(AI_ZEN_DIR, "config.json")` in `src/config.ts`), while `~/.ai-zen/cli/` holds only CLI-local preferences such as `preferences.json` (the interface language). **Sessions belong to a workspace** and live under `~/.ai-zen/workspaces/<workspaceId>/`.
 
 Key paths defined in `src/config.ts`:
 

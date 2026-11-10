@@ -26,9 +26,8 @@
  *   ├── tools/                    ← 用户工具（共享）
  *   ├── mcp.json                  ← MCP 配置（共享）
  *   ├── mcp-oauth/                ← MCP OAuth token（共享）
- *   └── cli/                      ← CLI 的旧存档位置（**只剩迁移用**：会话已搬到 workspaces/）
- *       ├── conversations/        ← （旧）对话记录，启动时搬进 workspaces/<id>/ 后删除
- *       └── last-session.json     ← （旧）按 cwd 分键的续接指针，同上
+ *   └── cli/                      ← CLI 本地运行时数据
+ *       └── preferences.json      ← 界面语言等偏好（不值钱的东西）
  *
  *   ~/.ai-zen/workspaces/<workspaceId>/   ← 会话真正的位置（CLI / 桌面端共享）
  *   ├── workspace.json            ← 该工作区对应的原始路径（哈希不可逆，得留凭据）

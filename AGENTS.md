@@ -63,7 +63,7 @@ src/
     registry.ts    命令元数据（名字 / 别名 / 说明 / 是否阻塞输入）
     types.ts       命令层与覆盖层共享的词汇（SelectItem / 交接方式三选一 / 向导入口步）
     handlers.ts    19 条命令的执行体（表驱动）
-    index.ts       出口：只导 runCommand 与公共类型（同时也是产物图门禁的入口）
+    index.ts       出口：只导 runCommand（同时也是产物图门禁的入口）
   tui/             只管渲染与输入（ink）：组件、屏幕、布局、主题、配置向导
 ```
 
@@ -73,14 +73,16 @@ src/
 `tui/` 里**可以** import 外面的东西（它是最上层），反之绝对不行。两个方向不对称，这是「叶子」
 这个词在这里的全部含义。
 
-## 四条门禁各守什么
+## 五条门禁各守什么
 
-`npm run test:all` 按顺序跑这四个，任何一个红了都不算过：
+`npm run test:all` 按顺序跑这五条，任何一条红了都不算过（顺序也是理由：前两条最便宜，
+先跑）：
 
 | 命令 | 守的是什么 | 红了通常意味着 |
 |---|---|---|
-| `tsc --noEmit -p tsconfig.test.json` | 类型（含用例的类型级断言） | 契约改了没同步；用例期望的字段没了 |
-| `vitest run` | 行为（789+ 例） | 行为回归；**用例数下降必须能解释**（测的是被删掉的旧实现？） |
+| `tsc --noEmit -p tsconfig.test.json` | 类型（含用例的类型级断言）+ **未使用符号**（`noUnusedLocals` / `noUnusedParameters` 已开） | 契约改了没同步；用例期望的字段没了；留了一个没人读的 import 或只写不读的变量 |
+| `npm run format:check` | 格式（`.prettierrc` 是唯一约定） | 有人手写成 100 列以上、或被编辑器/工具重排过 —— 跑 `npm run format` 就好，别手工对 |
+| `vitest run` | 行为（800 例） | 行为回归；**用例数下降必须能解释**（测的是被删掉的旧实现？） |
 | `npm run build` + `npm run check:imports` | **产物 import 图**：三个入口（`commands/index.js` / `session.js` / `stdio.js`）的运行期依赖里不许有 `ink`、`react`、`./tui/` | 有人在「不该有 UI」的层里用了 UI，或者为了一个纯函数把带 ink 的模块拖了进来 |
 | `vitest run --config vitest.e2e.config.ts` | 真进程 + 真服务端（`dist/index.js` 跑起来） | 组装根改了（连接从哪来、模式分发）；只有真跑才看得见 |
 

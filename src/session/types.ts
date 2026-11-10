@@ -24,15 +24,19 @@
 
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
-// 类型一律从 `@ai-zen/agents-client` 取（它把协议包原样转出）：CLI 只认那一个包，
-// 而 `PhaseInfo` / `ModelLevel` / `WorkspaceFileEntry` 都是**线上形状**，不是某个实现的内部类型。
+// 协议形状从 `@ai-zen/agents-protocol` 取，门面形状从 `@ai-zen/agents-client` 取
+//
+// 两者不是两条依赖路线（client 把 protocol 原样转出，选哪个都能编译）：分开写是为了让
+// 「这个类型属于**线上契约**」在 import 那一行就看得见 —— `PhaseInfo` / `ModelLevel` /
+// `ModelParams` / `WorkspaceFileEntry` 都是两端约定的数据，不是某个实现的内部类型；
+// 而 `ServerConnection` 是门面（客户端怎么连服务端），它只属于 `agents-client`。
 import type {
   ModelLevel,
   ModelParams,
   PhaseInfo,
-  ServerConnection,
   WorkspaceFileEntry,
-} from "@ai-zen/agents-client";
+} from "@ai-zen/agents-protocol";
+import type { ServerConnection } from "@ai-zen/agents-client";
 import type { ClipboardImage } from "../clipboard.js";
 import type { ConfigPort } from "../server-client/index.js";
 import type { RateSample } from "../session-rate.js";
@@ -73,7 +77,7 @@ export interface ChatSessionLike {
   /**
    * 发一轮（**受理即返回**：拿到 `turnId` 就回来，过程走事件）。
    *
-   * 与 {@link waitForTurn} 分两半是协议的形状，不是风格：`turn.end` 可能**先于**这条调用的
+   * 与 {@link waitForTurn} 分两半是协议的形状，不是风格：`session-turn-end` 可能**先于**这条调用的
    * 回执落地（事件是推的），合成一个 promise 就得在实现里再记一份「已收尾的轮次」才能不挂死。
    *
    * 同步拒绝（服务端忙 / 连接已断）不进事件通道：那是「这轮没发出去」，实现自己报给通知栏，
@@ -83,7 +87,7 @@ export interface ChatSessionLike {
   /**
    * 等**最近发出去的那一轮**结束（界面用它包 `busy` 与输入禁用）。
    *
-   * 为什么它是会话契约的一部分而不是让界面自己等：`turn.end` 的到达时机与「重连后发现服务端
+   * 为什么它是会话契约的一部分而不是让界面自己等：`session-turn-end` 的到达时机与「重连后发现服务端
    * 已经空闲」是同一个判据的两条路（后者意味着那一轮在断线期间跑完了），而“哪一轮在飞”只有
    * 会话层知道。界面自己等就只能等一个它编出来的条件。
    *

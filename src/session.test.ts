@@ -401,7 +401,7 @@ const reconnectToNextServer = async (): Promise<ServerClient> => {
  *
  * 生产的连接归组装根（一个进程一条）；用例要的是一条能指向「另一个端口」的：
  * 第一次 `client()` 交出已经连好的那条，之后交给 `reconnect`。
- * 这样 `SessionConnection` 的三条不变式（查活 / 单飞 / 重放 `events.watch`）在用例里
+ * 这样 `SessionConnection` 的三条不变式（查活 / 单飞 / 重新订阅 `events.watch`）在用例里
  * 跑的就是**生产那份实现**，而不是测试自己又写一遍。
  */
 function connectionFor(
@@ -954,7 +954,7 @@ describe("RemoteChatSession：会话级模型动作（走 channel，不现取门
 });
 
 describe("RemoteChatSession：服务端在一轮内部换 id（自动迁移）", () => {
-  it("跟着换 id 并重取消息，send 才能等到新 id 上的 turn.end", async () => {
+  it("跟着换 id 并重取消息，send 才能等到新 id 上的 session-turn-end", async () => {
     const opened = await open();
     agent.messages = [{ role: "user", content: "旧任务" }];
 
@@ -977,28 +977,27 @@ describe("RemoteChatSession：服务端在一轮内部换 id（自动迁移）",
 
 // ==================== 自动迁移：交接方式由用户选 ====================
 //
-// 这条往返（`session.question` → 选择器 → `session.answer`）的**客户端一半已经接好**：
-// `RemoteChatSession.answerQuestion` 收到问题后会弹 `requestMode` 并把结果送回去，没有
-// `requestMode` 则立刻回 `self`（见那里的注释）。
+// 这一条往返横跨三方，缺一条用例都证明不了链路是通的：
 //
-// 但**服务端那一半还没就绪**：`SessionAgentFactory` 现在不给 `AutoMigratePlugin` 传
-// `resolveMode`（那里的注释写的就是「远程模式暂时不问‘用哪种方式’：协议里还没有
-// ‘向客户端提问’的往返」），所以服务端永远走默认执行者、一条 `session.question` 都不发；
-// `SESSION_EVENTS.question` / `SESSION_METHODS.answer` 也还没从 `@ai-zen/agents-server`
-// 导出。**没有问题可答，用例无法真跑**，所以三条都是 `it.skip`。
+//   服务端插件侧：`AutoMigratePlugin` 触发 → 注入的 `resolveMode`
+//     → `QuestionBroker.askHandoffMode` → 发 `SESSION_EVENTS.question`；
+//   客户端：`RemoteChatSession.answerQuestion` 弹 `requestMode` 选择器
+//     → 回 `SESSION_METHODS.answer`；
+//   服务端：拿到 mode 才真正迁移。
 //
-// 为什么不用 `vi.mock` 硬凑：要断言的是「真 socket 上的一问一答，然后迁移照用户选的方式
-// 执行」。凭空塞一条事件只能证明自己会写 handler，证明不了服务端真的停在那里等答复。
+// 三样东西都已落地：协议面（`@ai-zen/agents-protocol` 的 `SESSION_EVENTS.question` /
+// `SESSION_METHODS.answer`）、服务端（`SessionAgentFactory` 把 `resolveMode` 交给
+// `AutoMigratePlugin`）、客户端（`answerQuestion`）。所以下面三条走**真 socket、真服务端**
+// 跑，没有一条是占位的。
 //
-// 等服务端补上 `resolveMode` + `session.question` / `session.answer` 后，把三个 `it.skip`
-// 改回 `it` 即可 —— 驱动方式用的是服务端**已有**的那个入口（`SessionManager.autoMigrate`，
-// 上一个 describe 已经在用）；若服务端改成别的注入点，这里跟着换。
+// 为什么不用 `vi.mock` 硬凑：要断言的是「服务端真的停在那里等答复，然后按用户选的方式
+// 迁移」。凭空塞一条事件只能证明自己会写 handler，证明不了对面会等。
 
 describe("RemoteChatSession：自动迁移的交接方式由用户选", () => {
   /**
    * 自动迁移的提问发生在**服务端注入给 Agent 的 `resolveMode`** 里（SDK 的
    * `AutoMigratePlugin` 在触发时调它），不在 `autoMigrate` 里 —— 所以用例从这一头驱动，
-   * 与真链路同构：`resolveMode(info)` → 服务端发 `session.question` → 客户端答 →
+   * 与真链路同构：`resolveMode(info)` → 服务端发 `session-question` → 客户端答 →
    * 服务端拿到 mode 后才 `autoMigrate(mode)`。
    */
   const trigger = () => {
@@ -1042,7 +1041,7 @@ describe("RemoteChatSession：自动迁移的交接方式由用户选", () => {
 });
 
 /**
- * 假子 Agent：带事件总线（服务端会订阅它并转成带 `subAgentId` 的 `message.delta`）。
+ * 假子 Agent：带事件总线（服务端会订阅它并转成带 `subAgentId` 的 `chunk-parsed`）。
  *
  * 形状跟 `FakeAgent` 同一个思路 —— 测试就是服务端那侧的「SDK」，手动驱动时序。
  */
@@ -1066,17 +1065,21 @@ function makeSubAgent() {
 }
 
 /**
- * 整条链路的用例 —— **等**服务端把子 Agent 协议落地（当前 `@ai-zen/agents-server` 里还没有）：
+ * 子 Agent 栏目的整条链路。
  *
- *   1. `SESSION_EVENTS.subAgentStarted` / `subAgentEnded`（`session.subAgent.started/ended`）；
- *   2. `MessageDeltaEvent.subAgentId?`；
+ * 协议面与服务端那一半都已落地，所以下面几条是真跑的：
+ *
+ *   1. `AGENT_EVENTS.subAgentStart` / `subAgentEnd`（`sub-agent-start` / `sub-agent-end`）；
+ *   2. `AgentChunkParsedEvent.subAgentId?`；
  *   3. `SESSION_METHODS.subAgentSnapshot`（`session.subAgent.snapshot`）；
  *   4. `SESSION_NOTICE_CODES.subAgentFailed`；
- *   5. `SessionManager` 把 SDK 的 `sub-agent-start` / `sub-agent-end` / 子 Agent 的
- *      `chunk-parsed` 翻译成上面这些（假 Agent 已经能 `fire()`，`SessionManager.createAgent`
- *      是注入的，所以服务端一接上这些用例就能真跑）。
+ *   5. 服务端的 `EventBridge` 把 SDK 的 `sub-agent-start` / `sub-agent-end` / 子 Agent 的
+ *      `chunk-parsed` 翻译成上面这些。
+ *
+ * 驱动方式是假子 Agent 直接 `fire()`，而不是桩掉事件：`SessionManager.createAgent` 是注入的，
+ * 所以「假的只是 SDK 那一侧」，服务端到客户端这段走的是真链路。
  */
-describe("RemoteChatSession：子 Agent 栏目（等服务端协议）", () => {
+describe("RemoteChatSession：子 Agent 栏目", () => {
   it("started 给出 index / id：标签按服务端编号出现，快照把已有消息填上", async () => {
     const opened = await open();
     const subAgent = makeSubAgent();
@@ -1154,14 +1157,14 @@ describe("RemoteChatSession：子 Agent 栏目（等服务端协议）", () => {
 
     subAgent.events.fire("error", new Error("boom"));
 
-    // `subAgentFailed`（通知）与 `subAgentEnded`（状态）是**两帧**：通知先到、状态随后到。
+    // `subAgentFailed`（通知）与 `subAgentEnd`（状态）是**两帧**：通知先到、状态随后到。
     // 只等通知就断言状态，会在两帧之间读到还在跑的 `running`（机器一忙就红）。
     await waitUntil(() => opened.subAgents[0]?.status === "failed");
     expect(notices[0]).toEqual({ text: "boom", tone: "error" });
     expect(opened.subAgents[0]!.status).toBe("failed");
   });
 
-  it("只活当前一轮：turn.end 清空列表", async () => {
+  it("只活当前一轮：session-turn-end 清空列表", async () => {
     const opened = await open();
     const pending = opened.send("统计一下").then(() => opened.waitForTurn());
     await waitUntil(() => agent.sent.length === 1);
@@ -1250,7 +1253,7 @@ describe("RemoteChatSession：断线重连", () => {
     await opened.save(); // 新服务端只能从盘上把这段会话装回来
 
     const sending = watch(opened.send("长任务").then(() => opened.waitForTurn()));
-    // 回执到了、这一轮在跑：假 Agent **不** fire finally —— 那个 turn.end 就丢在断线里
+    // 回执到了、这一轮在跑：假 Agent **不** fire finally —— 那条 session-turn-end 就丢在断线里
     await waitUntil(() => agent.sent.length === 1);
 
     nextServer.settle(await restartServer());
@@ -1429,7 +1432,7 @@ describe("RemoteChatSession：换 Agent 与会话回收", () => {
     await opened.save(); // 落盘（每轮收尾也会写，这里让用例自足）
 
     const sessions = new RemoteSessions(await startServer());
-    // 会话寿命只剩这一条显式表达（保活声明在 P2 删了）：「我不看这段了 → 当场回收」
+    // 会话寿命只剩这一条显式表达：「我不看这段了 → 当场回收」
     expect(await sessions.close(id)).toEqual({ closed: true });
     // 幂等：再关一次不是错误（这一段已经不在了）
     expect(await sessions.close(id)).toEqual({ closed: false });

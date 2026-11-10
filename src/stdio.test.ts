@@ -97,7 +97,7 @@ const clientInfo: ClientInfo = { name: "@ai-zen/cli", version: "0.0.0-test" };
 
 /**
  * 假 Agent：`send()` 当场把这一轮的消息写好，再按 SDK 的顺序发事件
- * （`open` → 正文 → `finally`），于是服务端的收尾、落盘、`turn.end` 全都真跑一遍。
+ * （`open` → 正文 → `finally`），于是服务端的收尾、落盘、`session-turn-end` 全都真跑一遍。
  */
 class FakeAgent implements AgentLike {
   messages: any[] = [{ role: "system", content: "你是助手" }];

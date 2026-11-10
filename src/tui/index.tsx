@@ -128,11 +128,9 @@ function mount(node: Parameters<typeof render>[0]): Promise<unknown> {
  * ## 为什么它必须注入 `agentStore`
  *
  * 这个屏也能按 `a` 走进 Agent 定义编辑，而「定义写到哪里」由 `agentStore` 决定。
- * 不传的后果不是报错，是**写到错的地方**：`config-wizard/engine.ts` 曾经的缺省是
- * `createAgentStore([], [])` → `AgentRepository(AGENTS_DIR)`，而 `AGENTS_DIR` 是**客户端**
- * 本机的 `~/.ai-zen/agents/`；后端 Agent 用的是服务端那份，于是「改好了」是假的。
- * 现在缺省换成一个会报错的只读空快照（宁可写不进去，不要写错地方），而这里就是
- * 那个「必须传真的」的挂载点之一。
+ * 不传的后果不是报错，是**写到错的地方**：缺省的只读空快照写入时会报错，而 Agent 定义住在
+ * **服务端** —— 落进客户端本机的 `~/.ai-zen/agents/` 就是「改好了」的假象，后端 Agent
+ * 用的是服务端那份。所以这里就是那个「必须传真的」的挂载点之一。
  */
 function CredentialGate({
   config,

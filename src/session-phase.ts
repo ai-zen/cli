@@ -2,7 +2,7 @@
  * 生成阶段的**文案**层（中英由词典决定，这里只做分发）。
  *
  * 状态机本身（六态判定、谁还在跑）在 `@ai-zen/agents-server` 的
- * `service/progress/PhaseTracker`：服务端只发事实（`{ kind, tools }`），
+ * `lib/phase.ts`（`PhaseTracker`）：服务端只发事实（`{ kind, tools }`），
  * 落到「连接中…」还是「Connecting…」是客户端的事 —— TUI 用中文、桌面端用英文、
  * 将来两端同时连一个服务时也不会互相污染。
  *

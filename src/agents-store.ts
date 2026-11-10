@@ -6,21 +6,8 @@
  * 定义的真相在**服务端**：客户端经 `ConfigPort.readAgentStore()` 拿一份快照
  * （`AgentStore`：`agents` / `subAgents` + 两个写操作），写走 `agent.save` / `agent.remove`。
  *
- * 曾经这里还有三样东西，现在都删了：
- *
- *   - `readAgentStore()`（直读 `~/.ai-zen/agents`，附带一次性的 `reasoningEffort` →
- *     `modelParams` 迁移）—— 配置面搬到服务端后失去调用方，而那份迁移归**持有定义的那一侧**；
- *   - `agentDir(kind)` 与两处目录常量 —— 只有下面那个函数在用；
- *   - `createAgentStore(agents, subAgents)` —— 自述「只给假件与测试用」，却在**生产**
- *     `src/` 里，而且它的 `save` / `remove` 真的会写 `~/.ai-zen/agents/*.json`。它不是
- *     死代码：`config-wizard/engine.ts` 的 `props.agentStore ?? createAgentStore([], [])`
- *     在**首启凭据屏**上是可达的生产路径（`CredentialGate` 当年没传 `agentStore`），于是
- *     「改 Agent 定义」会写进客户端自己那台机器 —— 而后端 Agent 用的是服务端那份。
- *     所以它不是「删掉」，是**先堵住那条缺省**（凭据屏改为注入 `configPort.readAgentStore()`），
- *     再删。测试要假件就在自己的用例文件里写一个对象字面量，那本来就是三行的事。
- *
- * 留下的是三件纯函数：`kind` 词表分派、显示名、按 id 查定义。它们不需要 IO，也不需要
- * 「目录在哪」这个客户端根本答不对的问题。
+ * 所以本文件只有三件纯函数：`kind` 词表分派、显示名、按 id 查定义。它们不需要 IO，
+ * 也不需要「目录在哪」这个客户端根本答不对的问题 —— 两机部署时那个目录在服务端那台机器上。
  */
 
 import type { AgentDefinition } from "@ai-zen/agents-sdk";

@@ -168,7 +168,7 @@ On first launch, if the endpoint bound to the selected model has no API Key yet,
 
 ### Session Recovery
 
-Every turn is written to the **workspace** archive before `turn.end` (`workspaces/<workspaceId>/sessions/<id>.json`), and `last-session.json` next to it remembers the **last session id**; next time you start `ai`, that session is **resumed automatically**. With the server on the same machine the workspace is simply the directory you typed `ai` in (created on first use, reused afterwards); with the server on another machine it is whatever the server was started with (`--workspace`). The old `cli/conversations/` location is migrated on first launch. One-off stdio runs (`ai "…"`) are the exception: they are **not** archived and never move the pointer — `--save` archives that single run without touching the pointer either.
+Every turn is written to the **workspace** archive before `session-turn-end` (`workspaces/<workspaceId>/sessions/<id>.json`), and `last-session.json` next to it remembers the **last session id**; next time you start `ai`, that session is **resumed automatically**. With the server on the same machine the workspace is simply the directory you typed `ai` in (created on first use, reused afterwards); with the server on another machine it is whatever the server was started with (`--workspace`). One-off stdio runs (`ai "…"`) are the exception: they are **not** archived and never move the pointer — `--save` archives that single run without touching the pointer either.
 
 ### UI language (Chinese / English)
 

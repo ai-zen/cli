@@ -17,7 +17,7 @@
  *
  * ## `session.close` 的三个时机（D5 × D8，正确性）
  *
- * 保活声明删掉之后「持有者」是唯一的活命判据，而 D8 让连接**不再随界面卸载消失** ——
+ * 「持有者」是唯一的活命判据，而 D8 让连接**不再随界面卸载消失** ——
  *「切走一段会话」于是对服务端完全不可见。三条铁律：
  *   · **`reset()`（`/new`）**：先归档 → 再开新的 → **最后**关旧的（先关再存是拿不存在的 id
  *     写盘；先关旧的再开新的，`open` 一失败两段都没了）；
@@ -28,7 +28,7 @@
  *
  * **会话动作一律走 channel**（不管是换 id 的还是不换的）：
  *   · 换 id 的四个（`saveAs` / `migrate` / `reload` / `setAgent`）包里自己会 `applyIdChanged`
- *     + 重取快照，自己改 id 就是 P4a 之前那个错（在旧 id 上等一个永远不来的 `turn.end`）；
+ *     + 重取快照，自己改 id 就是 P4a 之前那个错（在旧 id 上等一个永远不来的 `session-turn-end`）；
  *   · 会话级的模型动作两个（`setModel` / `setModelParams`）不换 id，但包里也会把返回的快照
  *     对齐屏幕（`modelId` / `apiModel` / `modelParams` 当场变成屏幕上的事实）。
  * 所以本文件一次都不直接赋值会话 id，也**不再现取门面**：P4b 时代那两处「现取一次
@@ -272,7 +272,7 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   /**
-   * 等**最近发出去的那一轮**结束。落定判据在包里（`turn.end` 到了，或重连后发现服务端已
+   * 等**最近发出去的那一轮**结束。落定判据在包里（`session-turn-end` 到了，或重连后发现服务端已
    * 空闲 —— 两条走同一条收尾路径），所以这里只管等。
    *
    * 连不回来时包会 reject（那一轮不可能再结束了，而界面必须能恢复输入）。失败原因**通常
@@ -296,7 +296,7 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   abort(): void {
-    // 取消是「请求服务端停」：`session.cancel` 掐掉本轮与进行中的交接，随后 `turn.end` 到达
+    // 取消是「请求服务端停」：`session.cancel` 掐掉本轮与进行中的交接，随后 `session-turn-end` 到达
     void this.channel.abort();
   }
 
@@ -403,7 +403,7 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   async migrate(mode?: HandoffMode): Promise<string> {
-    // 换 id 归 channel（`adopt`）：不跟着换，这一轮的 `turn.end` 会从新 id 上来，
+    // 换 id 归 channel（`adopt`）：不跟着换，这一轮的 `session-turn-end` 会从新 id 上来，
     // 状态机还在旧 id 上等 —— 界面永久卡在「生成中」
     const path = await this.channel.migrate(mode);
     this.notifyChange(true);

@@ -1,9 +1,16 @@
-// 命令层回归：会话内容被「物理剔除」后，转录显示起点必须跟着重置。
+// 命令层回归：19 条命令的执行体（表驱动）在**假宿主 + 假端口**上的行为。
 //
-// `/migrate` 走 `prune` 策略，把 `agent.messages` 砍到「系统提示 + 交接断点」（1~2 条）。
-// 若 `transcriptFrom` 仍停在旧值，`messages.slice(transcriptFrom)` 恒为空 —— 迁移成功、
-// 上下文里有内容，但屏幕一片空白。这类「状态与显示起点脱节」的 bug 只有真机才看得见，
-// 所以在这里用最小 host 假件把它钉住。
+// 这一层最容易错的地方是「写错层 / 写错地方」，而它错得很安静 —— 界面说「改好了」，请求里
+// 还是旧的，或者迁移成功了屏幕却一片空白。所以这份文件钉的主要是四类：
+//
+//   · `/model` 与 `/think` 的**三档作用级别**（会话级 / Agent 定义 / 全局兜底）各自写到哪一层，
+//     以及写完之后谁需要 `reload`、谁不需要；
+//   · `/save` 的命名与重名二次确认（静默覆盖会让另一份对话凭空消失）；
+//   · `/migrate` / `/new` 之后转录显示起点必须跟着重置（`messages` 变短、`transcriptFrom`
+//     没动 → `slice()` 恒为空，屏幕一片空白）；
+//   · 配置一律从宿主给的 `ConfigPort` 读，**不**读本机磁盘。
+//
+// 真存档 / 真落盘 / 真迁移的行为不在这里重复覆盖，它们在服务端用例里。
 import { describe, expect, it, vi, beforeEach, afterAll } from "vitest";
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AgentDefinition, AppConfig, Model, ReasoningPresets } from "@ai-zen/agents-sdk";

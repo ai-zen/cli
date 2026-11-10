@@ -63,12 +63,10 @@ export interface WizardContext extends WizardEngine {
 /**
  * 没有注入 Agent 仓储时的**空快照**（只读）。
  *
- * 它曾经是一个会写盘的缺省（`createAgentStore([], [])` → `AgentRepository(AGENTS_DIR)`），
- * 而 `AGENTS_DIR` 是**客户端本机**的 `~/.ai-zen/agents/`：首启凭据屏（`CredentialGate` 没传
- * `agentStore`）上的「改 Agent 定义」就会把定义写进客户端自己那台机器，而 Agent 实际用的
- * 是服务端那份 —— 界面说改好了，跑起来还是旧的旧档位（错得很安静）。
+ * 缺省刻意是只读的：写入时直接报错。Agent 定义住在**服务端**，落进客户端本机的
+ * `~/.ai-zen/agents/` 就是「界面说改好了，跑起来还是旧的」—— 错得很安静。
  *
- * 现在每个挂载点都必须注入真的那一份（`ConfigPort.readAgentStore()`）；漏了就在这报错，
+ * 所以每个挂载点都必须注入真的那一份（`ConfigPort.readAgentStore()`）；漏了就在这报错，
  * 而不是静静写到错的地方。“写不进去”比“写错了地方”安全得多。
  */
 const EMPTY_AGENT_STORE: AgentStore = {

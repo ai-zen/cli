@@ -2,7 +2,7 @@
  * 阶段文案测试。
  *
  * 状态机（六态判定 / 谁还在跑）的测试跟着状态机走，现在在
- * `agents/packages/server/src/service/progress/PhaseTracker.test.ts`；
+ * `agents/packages/server/src/lib/phase.test.ts`；
  * 这里只断言「事实 → 人话」这一层。
  */
 

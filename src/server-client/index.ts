@@ -42,8 +42,8 @@ export { CLIENT_INFO };
 /**
  * 拉起（或连上）服务端的一条裸连接。
  *
- * 生产几乎不用它了（要用就用 {@link createServerConnection}：它还带「断了自建 + 重放
- * `events.watch`」）。保留是因为「只要一条连接、不要那层壳」的场景仍然存在：
+ * 生产几乎不用它了（要用就用 {@link createServerConnection}：它还带「断了自建 + 重新订阅
+ * 事件」）。保留是因为「只要一条连接、不要那层壳」的场景仍然存在：
  * e2e 用例直接 `SocketServerClient.connect` 到自己的 Daemon，`ensure-server` 的探活也是。
  */
 export async function connectToServer(): Promise<ServerClient> {

@@ -61,9 +61,7 @@ function Probe({ hasSession }: { hasSession: boolean }) {
       }),
       readMcpConfig: (scope?: "global" | "project") => readMcpImpl(scope ?? "global"),
       readReasoningPresets: async () => ({}),
-      // 假件就地写成对象字面量：`agents-store.ts` 里曾经那个 `createAgentStore()`
-      // 会真的写本机 `~/.ai-zen/agents/*.json`，它在生产里可达，所以删了；
-      // 测试要的只是「快照 + 两个写操作」这个形状（三行）。
+      // 假件就地写成对象字面量：测试要的只是「快照 + 两个写操作」这个形状（三行）。
       readAgentStore: async () => ({
         agents: fakeAgents().agents as any,
         subAgents: [],

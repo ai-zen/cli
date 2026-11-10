@@ -725,7 +725,7 @@ export function Chat(props: ChatScreenProps) {
     setBusy(true);
     try {
       // 两半：`send` 拿到 `turnId` 就回（与包里 `channel.send` 同语义），`waitForTurn` 才是
-      // 「这一轮结束了」。`turn.end` 可能比 `send` 的回执先到，所以这两句不能合成一句
+      // 「这一轮结束了」。`session-turn-end` 可能比 `send` 的回执先到，所以这两句不能合成一句
       //（合成的那种写法就得到会话层里再记一份「已收尾的轮次」）。
       await sessionRef.current!.send(trimmed, images);
       await sessionRef.current!.waitForTurn();

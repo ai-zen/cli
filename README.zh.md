@@ -168,7 +168,7 @@ key input="" flags=[pageUp] raw=false
 
 ### 会话恢复
 
-每轮对话结束（`turn.end` 之前）就会把会话写入**工作区**存档：`workspaces/<workspaceId>/sessions/<id>.json`，同目录的 `last-session.json` 记录**上一轮会话 id**；下次启动 `ai` 会**自动续接该会话**。本地部署时工作区由你敲 `ai` 的目录决定（没有就建、有就复用），客户端与服务端分居两机时由服务端的 `--workspace` 决定。旧版的 `cli/conversations/` 会在首次启动时自动搬迁。
+每轮对话结束（`session-turn-end` 之前）就会把会话写入**工作区**存档：`workspaces/<workspaceId>/sessions/<id>.json`，同目录的 `last-session.json` 记录**上一轮会话 id**；下次启动 `ai` 会**自动续接该会话**。本地部署时工作区由你敲 `ai` 的目录决定（没有就建、有就复用），客户端与服务端分居两机时由服务端的 `--workspace` 决定。
 
 纯 stdio 的一次性调用（`ai "…"`、`cat f | ai`）是唯一的例外：**既不写存档、也不动指针**（它们不属于这个工作区的对话历史）；`--save` 只把那一次运行归档，指针同样不动。
 

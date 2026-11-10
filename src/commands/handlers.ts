@@ -8,10 +8,10 @@
  *
  * ## 为什么它在 `src/commands/` 而不在 `tui/screens/`
  *
- * 命令层不是渲染：它不吃键盘、不画帧，只「根据命令名做一件事」。它曾经住在 `tui/` 里，而
- * 那带来一条**只靠运气成立**的边界：只要这条链上恰好没有人把某个 ink 组件用在值位置，
- * `dist/commands/index.js` 的依赖图里就没有 ink。四条越界一并改掉：
- *   · `truncate` 改吃 `text.js`（以前从 `screens/render.js` 拿，而那文件第一行就是 ink）；
+ * 命令层不是渲染：它不吃键盘、不画帧，只「根据命令名做一件事」。放进 `tui/` 会让这条边界
+ * **只靠运气成立** —— 只要这条链上恰好没有人把某个 ink 组件用在值位置，`dist/commands/index.js`
+ * 的依赖图里就没有 ink。四条越界一并堵住：
+ *   · `truncate` 吃 `text.js`（`screens/render.js` 第一行就是 ink，从那儿拿就把 ink 拖进命令层）；
  *   · `STATUS_BAR_LINES` / `pickerLines` / `usableFrameRows` 是**终端行数**概念，留在渲染层：
  *     命令层只需要知道「选择器能放几条」，那个数由 `ChatCommandHost.rows` 给；
  *   · `WizardStep` / `SelectItem` 改成**结构上的共享词汇**（`./types.js`），不再靠一条指向

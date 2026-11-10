@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "ink-testing-library";
 import { Box } from "ink";
 import { StatusBar, statusBarRows, BottomMenu, SelectList } from "./components.js";
-import { truncate } from "./screens/render.js";
+import { truncate } from "../text.js";
 import {
   displayWidth,
   messageToLines,
