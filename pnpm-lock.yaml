@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@ai-zen/agents-client':
+        specifier: link:../agents/packages/client
+        version: link:../agents/packages/client
       '@ai-zen/agents-core':
         specifier: ^4.5.5
         version: 4.5.5(ws@8.22.0)(zod@4.5.4)

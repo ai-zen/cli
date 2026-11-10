@@ -126,7 +126,7 @@ const clipboardMock = vi.hoisted(() => ({
 }));
 
 import { Chat } from "./chat.js";
-import type { ConfigPort } from "../../server-client/config-port.js";
+import type { ConfigPort } from "../../server-client/index.js";
 import { getCommandHints } from "../../session-commands/registry.js";
 import type { ClipboardTextResult } from "../../clipboard.js";
 

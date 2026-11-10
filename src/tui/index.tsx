@@ -11,7 +11,7 @@
 
 import { render, useApp, type Instance } from "ink";
 import { resolveModel, type AppConfig } from "@ai-zen/agents-sdk";
-import { createRemoteConfigPort } from "../server-client/config-port.js";
+import { createConfigPort } from "../server-client/index.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
 import { Chat } from "./screens/index.js";
@@ -34,7 +34,7 @@ const CLEAR_SCREEN = "\x1b[2J\x1b[H\x1b[?25h";
  * 为什么是远程实现：启动预检读的是「**服务端**用哪份配置、Agent 绑的哪个模型」。
  * 读本机磁盘在两端不同机时必然错误 —— 预检通过、实际请求仍然缺 Key（或反之）。
  */
-const configPort = createRemoteConfigPort();
+const configPort = createConfigPort();
 
 /**
  * 告别并终止进程。

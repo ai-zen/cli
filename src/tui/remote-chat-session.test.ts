@@ -24,20 +24,15 @@ import {
   type ModelLevel,
 } from "@ai-zen/agents-server";
 import { AgentNS } from "@ai-zen/agents-core";
-import { RemoteSessions } from "../server-client/sessions.js";
-import { SocketServerClient } from "../server-client/socket-server-client.js";
-import type { ServerClient } from "../server-client/types.js";
+import { RemoteSessions } from "../server-client/index.js";
+import { SocketServerClient } from "../server-client/index.js";
+import type { ServerClient } from "../server-client/index.js";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 import { setLocale } from "../i18n/index.js";
 import { useTempAiZenDir } from "../test-support/temp-dir.js";
-import {
-  RemoteChatSession,
-  mergeSubAgentSnapshot,
-  type RemoteChatSessionDeps,
-  type SubAgentStream,
-} from "./remote-chat-session.js";
-import { clientWorkspacePath } from "../server-client/local-host.js";
-import type { ConfigPort } from "../server-client/config-port.js";
+import { RemoteChatSession, type RemoteChatSessionDeps } from "./remote-chat-session.js";
+import { clientWorkspacePath } from "../server-client/index.js";
+import type { ConfigPort } from "../server-client/index.js";
 import type { ChatSessionNotifier } from "./chat-session.js";
 
 class FakeAgent implements AgentLike {
@@ -750,83 +745,6 @@ describe("RemoteChatSession：自动迁移的交接方式由用户选", () => {
     ]);
     // 兜底是「什么都不做」：交接类问题的 fallback 就是 null（不替用户选 self 迁移）
     expect(choice).toBeNull();
-  });
-});
-
-describe("子 Agent：快照与增量的合并（竞态）", () => {
-  const assistant = (content: string) =>
-    ({ role: AgentNS.Role.Assistant, content }) as unknown as AgentNS.Message;
-  const user = (content: string) =>
-    ({ role: AgentNS.Role.User, content }) as unknown as AgentNS.Message;
-  const tool = (content: string) =>
-    ({ role: AgentNS.Role.Tool, tool_call_id: "t1", content }) as unknown as AgentNS.Message;
-  /** 本地已经拼出来的那条临时消息（就是 `applySubAgentDelta` 累积的那个状态） */
-  const streamOf = (text: string, reasoning = ""): SubAgentStream => {
-    const message = assistant(text);
-    if (reasoning) message.reasoning_content = reasoning;
-    return { message, text, reasoning };
-  };
-
-  it("本地还没有增量：结果就是快照（started 时最常见）", () => {
-    const snapshot = [user("任务")];
-    const merged = mergeSubAgentSnapshot(snapshot, null);
-
-    expect(merged.messages).toEqual(snapshot);
-    expect(merged.stream).toBeNull();
-  });
-
-  it("快照晚于第一批增量：已经拼出来的正文不丢，也不多出一条", () => {
-    // 服务端那份里是**空占位**（core 在开始流式前就把 assistant 消息 append 进了 messages），
-    // 本地已经拼出半句「答」—— 无脑覆盖就会把这半句摸掉
-    const snapshot = [user("任务"), assistant("")];
-    const merged = mergeSubAgentSnapshot(snapshot, streamOf("答", "想"));
-
-    expect(merged.messages).toHaveLength(2);
-    expect(merged.messages[1]!.content).toBe("答");
-    expect(merged.messages[1]!.reasoning_content).toBe("想");
-    // 之后的增量继续拼在**同一条**上（否则屏幕上会凭空多出一条消息）
-    expect(merged.stream!.message).toBe(merged.messages[1]);
-  });
-
-  it("快照那份比本地旧：取信息多的那份（本地只多不少）", () => {
-    const snapshot = [user("任务"), assistant("答")];
-    const merged = mergeSubAgentSnapshot(snapshot, streamOf("答完了"));
-
-    expect(merged.messages).toHaveLength(2);
-    expect(merged.messages[1]!.content).toBe("答完了");
-  });
-
-  it("服务端已经收下这段（当前没有在流的 assistant）：不重复追加", () => {
-    // 本地累计的「先想」已经在快照里了，而快照末尾是工具结果（下一段还没开始）
-    const merged = mergeSubAgentSnapshot(
-      [user("任务"), assistant("先想"), tool("结果")],
-      streamOf("先想"),
-    );
-
-    expect(merged.messages).toHaveLength(3);
-    // 临时消息丢掉：之后的增量重新起一条（否则会接在已收尾的旧消息后面）
-    expect(merged.stream).toBeNull();
-  });
-
-  it("快照之后才开的新一段：只接上多出来的尾巴", () => {
-    const merged = mergeSubAgentSnapshot(
-      [user("任务"), assistant("先想"), tool("结果")],
-      streamOf("先想结论"),
-    );
-
-    expect(merged.messages).toHaveLength(4);
-    expect(merged.messages[3]!.content).toBe("结论");
-    expect(merged.stream!.message).toBe(merged.messages[3]);
-  });
-
-  it("对不上任何一段时宁重不丢：整段追加，不静默吞字", () => {
-    const merged = mergeSubAgentSnapshot(
-      [user("任务"), assistant("旧内容"), tool("结果")],
-      streamOf("新内容"),
-    );
-
-    expect(merged.messages).toHaveLength(4);
-    expect(merged.messages[3]!.content).toBe("新内容");
   });
 });
 

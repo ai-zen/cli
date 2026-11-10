@@ -8,7 +8,7 @@
  * ## 这里只剩「词汇表 + 数据整形」
  *
  * 读写**不在**客户端：Agent 定义的真相在服务端，客户端经 `ConfigPort.readAgentStore()`
- * 拿快照 + 两个写操作（`server-client/config-port.ts`）。本模块保留的是三样东西：
+ * 拿快照 + 两个写操作（`@ai-zen/agents-client` 的 `ConfigPort`）。本模块保留的是三样东西：
  * 两处目录常量（仅本进程布局用）、`kind` 词表与分派、以及给假件/测试用的
  * `createAgentStore()`。
  *
@@ -21,8 +21,17 @@ import { AgentRepository } from "@ai-zen/agents-sdk";
 import type { AgentDefinition } from "@ai-zen/agents-sdk";
 import { AGENTS_DIR, SUB_AGENTS_DIR } from "./config.js";
 
-/** Agent 定义的类型：顶层 Agent / 子 Agent */
-export type AgentKind = "agent" | "subagent";
+/**
+ * 两个「词汇表」类型在 `@ai-zen/agents-client` 里：
+ *
+ *   - `AgentKind` 就是协议里的 `AgentKind`（`agent.*` 方法的 `kind` 参数）；
+ *   - `AgentStore` 是 `ConfigPort.readAgentStore()` 的返回形状。
+ *
+ * 以前它们各自定义在本文件 —— 于是「客户端从服务端拿回来的那份」与「本文件这伤」
+ * 是两个类型，只靠形状碰巧一致。包一层转出后，本文件只剩「目录与数据整形」。
+ */
+import type { AgentKind, AgentStore } from "@ai-zen/agents-client";
+export type { AgentKind, AgentStore };
 
 /** 某个 kind 对应的定义目录 */
 export function agentDir(kind: AgentKind): string {
@@ -37,14 +46,6 @@ export function agentDir(kind: AgentKind): string {
  */
 export function agentKindLabel(kind: AgentKind): string {
   return kind === "agent" ? "Agent" : "Sub-agent";
-}
-
-/** 「Agent 定义」管理用的仓储：快照 + 写 / 删操作 */
-export interface AgentStore {
-  agents: AgentDefinition[];
-  subAgents: AgentDefinition[];
-  save: (kind: AgentKind, def: AgentDefinition) => Promise<void>;
-  remove: (kind: AgentKind, id: string) => Promise<void>;
 }
 
 /** 取某 kind 的定义列表 */

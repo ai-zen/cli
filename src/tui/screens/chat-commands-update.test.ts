@@ -27,7 +27,7 @@ const NEXT_VERSION = `${Number(CLI_VERSION.split(".")[0]) + 1}.0.0-alpha.99`;
 const OLDER_VERSION = "0.9.0";
 import { runCommand, type ChatCommandHost } from "./chat-commands.js";
 import type { ChatSessionLike } from "../chat-session.js";
-import type { ConfigPort } from "../../server-client/config-port.js";
+import type { ConfigPort } from "../../server-client/index.js";
 
 const state = vi.hoisted(() => ({
   /** `npm view <pkg> dist-tags --json` 的 stdout */

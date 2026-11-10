@@ -34,6 +34,7 @@
   "author": "LZQCN",
   "license": "MIT",
   "dependencies": {
+    "@ai-zen/agents-client": "link:../agents/packages/client",
     "@ai-zen/agents-core": "^4.5.5",
     "@ai-zen/agents-sdk": "link:../agents/packages/sdk",
     "@ai-zen/agents-server": "link:../agents/packages/server",

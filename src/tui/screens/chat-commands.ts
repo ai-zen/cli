@@ -25,7 +25,7 @@ import {
 // 配置的读与写统一走**配置面**（`ConfigPort`），它永远开向服务端。命令层不再自己吃盘 ——
 // 否则「界面说改好了」和「服务端 Agent 实际用的那份配置」会各说各话（客户端搬到另一台
 // 机器上时错得很安静）。
-import type { ConfigPort } from "../../server-client/config-port.js";
+import type { ConfigPort } from "../../server-client/index.js";
 // 留下的是**纯数据整形**：把读取结果转成配置 / 列表，不吃盘，故不经端口
 import { mcpConfigOrEmpty } from "../../config.js";
 import { checkAgentSwitch, listAgentChoices } from "../../agent-switch.js";

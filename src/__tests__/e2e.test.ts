@@ -4,7 +4,7 @@ import { existsSync, readFileSync, rmSync, mkdirSync, writeFileSync } from "node
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readDescriptor, workspaceIdFor } from "@ai-zen/agents-server";
-import { SocketServerClient } from "../server-client/socket-server-client.js";
+import { SocketServerClient } from "../server-client/index.js";
 import { startFakeLlm, type FakeLlm } from "@ai-zen/agents-testing";
 
 // ==================== Helpers ====================

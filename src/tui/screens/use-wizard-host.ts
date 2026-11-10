@@ -11,7 +11,7 @@ import { useRef, useState } from "react";
 import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { mcpConfigOrEmpty, type McpConfig, type McpScope } from "../../config.js";
 import type { AgentStore } from "../../agents-store.js";
-import type { ConfigPort } from "../../server-client/config-port.js";
+import type { ConfigPort } from "../../server-client/index.js";
 import { resolveCredential } from "../../config-editor.js";
 import type { McpSnapshot, WizardCloseResult, WizardStep } from "../config-wizard/index.js";
 import { t } from "../../i18n/index.js";

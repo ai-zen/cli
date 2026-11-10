@@ -59,8 +59,9 @@
  * 栏目里的东西全**由服务端给**：`session.subAgent.started` 说「来了一个，序号是几、
  * id 是什么」，`message.delta` 带 `subAgentId` 时属于它，`session.subAgent.ended`
  * 收尾。客户端只做两件事：把增量拼到那个子 Agent 自己的临时消息上（让屏幕能滚），
- * 以及拉一次 `session.subAgent.snapshot` 把已有内容补齐 —— 合并规则见
- * {@link mergeSubAgentSnapshot}（那里也是唯一需要处理竞态的地方）。
+ * 以及拉一次 `session.subAgent.snapshot` 把已有内容补齐。合并规则**不在本仓**：直接用
+ * `@ai-zen/agents-client` 的 {@link mergeStreamedSnapshot}（CLI 与桌面端共用同一份实现，
+ * 见包里 `stream-merge.ts`；那里也是唯一需要处理竞态的地方）。
  *
  * ## 按阈值自动迁移：服务端提问、客户端选择（`session.question` / `session.answer`）
  *
@@ -93,14 +94,15 @@ import {
   type SessionSnapshotResult,
 } from "@ai-zen/agents-server";
 import type { ClipboardImage } from "../clipboard.js";
-import { AI_ZEN_DIR } from "../config.js";
 import { t } from "../i18n/index.js";
-import { CLIENT_INFO } from "../server-client/client-info.js";
-import { ensureServer } from "../server-client/ensure-server.js";
-import { clientWorkspacePath } from "../server-client/local-host.js";
-import { createRemoteConfigPort, type ConfigPort } from "../server-client/config-port.js";
-import { RemoteSessions } from "../server-client/sessions.js";
-import type { ServerClient } from "../server-client/types.js";
+import { createConfigPort, type ConfigPort } from "../server-client/index.js";
+import { clientWorkspacePath } from "../server-client/index.js";
+// 合并规则（「本地增量 vs 服务端快照」）只有一份，住在 `@ai-zen/agents-client` 里：
+// 两个前端都在同一个时序压力下做同一件事，各写一遍就会在「宁可重复也不吞字」这类
+// 边界上分叉。所以这里只引用包里的实现与类型，不再留本地副本。
+import { mergeStreamedSnapshot, type StreamedAssistant } from "../server-client/index.js";
+import { RemoteSessions } from "../server-client/index.js";
+import type { ServerClient } from "../server-client/index.js";
 import { buildUserContent } from "../user-content.js";
 import { CLI_VERSION } from "../version.js";
 import type {
@@ -113,103 +115,6 @@ import type { PathEntry } from "./mention.js";
 import { noticeText } from "./notice-text.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, type RateSample } from "./token-rate.js";
-
-/**
- * 子 Agent 的本地拼接状态（一个子 Agent 一条）。
- *
- * 与主 Agent 的 `streaming` 同形状、同策略：增量先拼在一条临时消息上让屏幕能滚起来，
- * 权威内容以服务端快照为准。差别只在「一个子 Agent 从 `started` 到 `turn.end` 只拼一条」：
- * 这期间它可能有多轮 assistant（工具调用），拆成多条会让输出断成几段，而主 Agent 那边
- * 也是这么拼的 —— 一轮收尾时整份清空，不存在「拼错了要修」的问题。
- */
-export interface SubAgentStream {
-  /** 临时消息：同时也是 `SubAgentView.messages` 里的那一条（增量就地改它，屏幕才跟得上） */
-  message: AgentNS.Message;
-  /** 累计正文（= `message.content`，单独存一份，省得每次从联合类型里往外捞） */
-  text: string;
-  /** 累计推理内容（推理模型才有） */
-  reasoning: string;
-}
-
-/**
- * 把服务端快照与本地已拼出的增量合并成一份消息列表 —— 「快照与增量怎么合并」的唯一实现。
- *
- * ## 为什么不能直接拿快照替换
- *
- * `session.subAgent.started` 一到就去要快照，但这个往返可能比第一批 `message.delta` 还慢
- * （子任务越小越明显）。`view.messages = snapshot.messages` 会把这几片已经上屏的正文换回
- * 快照那一刻的旧内容 —— 屏幕上是「答案忽然短了一截」，而且本轮不会再补上。
- * 反过来，快照里的东西也不能丢：工具调用、已完成的 assistant 消息只有服务端有。
- *
- * ## 为什么「本地更全」是安全的假设
- *
- * 同一条连接上的帧是有序的：快照是服务端处理请求那一刻的**副本**，之后到达的增量只存在
- * 于本地。所以合并方向永远是「取信息多的那份」，不必担心本地这份更旧。
- *
- * ## 规则
- *
- * 1. 本地没有增量 → 直接用快照（大多数情况：`started` 时子 Agent 还没吐字）。
- * 2. 快照末尾那条 assistant 的正文是本地累计正文的**前缀** → 它们是同一段（core 在流式
- *    开始前就把占位消息追加进了 `messages`，之后就地改它）。取本地的（更全），并让后续
- *    增量继续拼在这一条上 —— 否则同一段会被拆成两条消息在屏幕上闪。
- * 3. 否则快照末尾不是「正在拼的那一段」：用「服务端已知 assistant 正文按序拼接」对齐，只接
- *    上多出来的尾巴 ——
- *      · 本地以它开头：那截尾巴是快照序列化之后才到的新一段，接在后面；
- *      · 本地是它的结尾：这一段服务端已经收下了（内容块形态的 assistant 落在这一支），丢掉本地；
- *      · 都对不上：宁可重复也不吞字 —— 重复看得见，吞了是静默丢内容。
- *
- * 导出只为单测：这条竞态靠真 socket 复现不了（要凑时序），而它恰恰是最容易写错的地方。
- */
-export function mergeSubAgentSnapshot(
-  snapshot: readonly AgentNS.Message[],
-  stream: SubAgentStream | null,
-): { messages: AgentNS.Message[]; stream: SubAgentStream | null } {
-  const base = [...snapshot];
-  if (!stream || (!stream.text && !stream.reasoning)) return { messages: base, stream };
-
-  const tail = base.at(-1);
-  const tailText =
-    tail && tail.role === AgentNS.Role.Assistant && typeof tail.content === "string"
-      ? tail.content
-      : null;
-
-  // 规则 2：同一段，本地更全
-  if (tailText !== null && stream.text.startsWith(tailText)) {
-    const merged = withAssistantText(tail!, stream.text, stream.reasoning);
-    base[base.length - 1] = merged;
-    return { messages: base, stream: { ...stream, message: merged } };
-  }
-
-  // 规则 3：对齐「服务端已知的 assistant 正文」，只接上多出来的那截
-  const confirmed = base
-    .filter(
-      (message) => message.role === AgentNS.Role.Assistant && typeof message.content === "string",
-    )
-    .map((message) => message.content as string)
-    .join("");
-  if (confirmed.endsWith(stream.text)) return { messages: base, stream: null };
-
-  const rest = stream.text.startsWith(confirmed)
-    ? stream.text.slice(confirmed.length)
-    : stream.text;
-  const appended = withAssistantText(
-    { role: AgentNS.Role.Assistant, content: "" } as AgentNS.Message,
-    rest,
-    stream.reasoning,
-  );
-  return { messages: [...base, appended], stream: { ...stream, message: appended, text: rest } };
-}
-
-/** 写一条 assistant 消息的正文/推理，其余字段（`tool_calls` 等）原样保留 */
-function withAssistantText(
-  message: AgentNS.Message,
-  text: string,
-  reasoning: string,
-): AgentNS.Message {
-  const next = { ...message, role: AgentNS.Role.Assistant, content: text } as AgentNS.Message;
-  if (reasoning) next.reasoning_content = reasoning;
-  return next;
-}
 
 /**
  * 重连的最多次数（含第一次尝试）。
@@ -250,11 +155,12 @@ export interface RemoteChatSessionDeps {
  *
  * 纯 stdio 模式也走这一条（`stdio-runner.ts`）：一次性调用与 TUI 用的是同一条链路，
  * 不存在「另一种建连方式」。
+ *
+ * 实现就在 `server-client/index.ts`（那里把 `AI_ZEN_DIR` / `CLIENT_INFO` 一次绑好）——
+ * 这里只是把它挂在本模块的对外面上，`stdio-runner.ts` 一直是这么 import 的。
  */
-export async function connectToServer(): Promise<ServerClient> {
-  const { client } = await ensureServer({ aiZenDir: AI_ZEN_DIR, clientInfo: CLIENT_INFO });
-  return client;
-}
+import { connectToServer } from "../server-client/index.js";
+export { connectToServer };
 
 /** 开一段远程会话需要的最小输入 */
 export interface OpenRemoteSessionInput {
@@ -381,8 +287,8 @@ export class RemoteChatSession implements ChatSessionLike {
    * 服务端知道（它才是分配方）。
    */
   private subAgentViews: SubAgentView[] = [];
-  /** 子 Agent id → 它正在拼的临时消息（见 {@link SubAgentStream}） */
-  private readonly subAgentStreams = new Map<string, SubAgentStream>();
+  /** 子 Agent id → 它正在拼的临时消息（形状与规则都来自包里的 {@link StreamedAssistant}） */
+  private readonly subAgentStreams = new Map<string, StreamedAssistant>();
 
   private constructor(
     client: ServerClient,
@@ -498,7 +404,7 @@ export class RemoteChatSession implements ChatSessionLike {
       },
       notifier,
       deps.reconnect ?? connectToServer,
-      deps.config ?? createRemoteConfigPort(),
+      deps.config ?? createConfigPort(),
     );
     // 续接时的历史也在这份快照里：服务端 `session.create` 已经把存档消息装进了 Agent，
     // 客户端不搬、不拼，屏幕上的第一条都来自服务端。
@@ -832,7 +738,7 @@ export class RemoteChatSession implements ChatSessionLike {
       });
       // 立刻拉一次快照：`started` 说明它已经在跑，服务端此刻可能已经有内容（任务描述、
       // 上一轮工具调用）。首次通常只是一条空占位，但这一下让「中途接上连接」与「增量先于
-      // 快照到达」都收敛到同一份数据上（合并规则见 `mergeSubAgentSnapshot`）。
+      // 快照到达」都收敛到同一份数据上（合并规则见包里的 `mergeStreamedSnapshot`）。
       //
       // 失败不升级成通知：这次拉取只是「把已有内容补上」，增量照样拼、`turn.end` 照样清，
       // 连接真断了会有别的信号。
@@ -1002,7 +908,7 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   /**
-   * 拉一次子 Agent 快照并合并进视图（合并规则见 {@link mergeSubAgentSnapshot}）。
+   * 拉一次子 Agent 快照并合并进视图（合并规则见包里的 {@link mergeStreamedSnapshot}）。
    *
    * 换会话时列表已经被清空，所以迟到的快照自然落空 —— 不必再比一次 `sessionId`。
    */
@@ -1013,7 +919,7 @@ export class RemoteChatSession implements ChatSessionLike {
     const view = this.subAgentViews.find((item) => item.id === subAgentId);
     if (!view) return;
 
-    const merged = mergeSubAgentSnapshot(
+    const merged = mergeStreamedSnapshot(
       snapshot.messages as AgentNS.Message[],
       this.subAgentStreams.get(subAgentId) ?? null,
     );

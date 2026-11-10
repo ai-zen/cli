@@ -23,8 +23,8 @@ import {
   type AgentLike,
   type ModelLevel,
 } from "@ai-zen/agents-server";
-import { SocketServerClient } from "./server-client/socket-server-client.js";
-import type { ClientInfo } from "./server-client/types.js";
+import { SocketServerClient } from "./server-client/index.js";
+import type { ClientInfo } from "./server-client/index.js";
 import { mergePrompt, extractText, runStdio } from "./stdio-runner.js";
 
 describe("mergePrompt", () => {

@@ -2,8 +2,8 @@
 
 import { installHook, uninstallHook } from "./hook.js";
 import { resolveInvocation } from "./mode.js";
-import { CLIENT_INFO } from "./server-client/client-info.js";
-import { readServerStatus } from "./server-client/status.js";
+import { CLIENT_INFO } from "./server-client/index.js";
+import { readServerStatus } from "./server-client/index.js";
 import { AI_ZEN_DIR } from "./config.js";
 import { runStdio } from "./stdio-runner.js";
 import { CLI_VERSION } from "./version.js";

@@ -32,7 +32,7 @@ import {
   matchCommandHints,
   parseCommandInput,
 } from "../../session-commands/registry.js";
-import { createRemoteConfigPort, type ConfigPort } from "../../server-client/config-port.js";
+import { createConfigPort, type ConfigPort } from "../../server-client/index.js";
 import { ConfigWizard } from "../config-wizard/index.js";
 import { computeInputCursorPosition, inputWindow } from "./input.js";
 import { AGENT_TABS_LINES, computeChatLayout } from "./layout.js";
@@ -104,7 +104,7 @@ export interface ChatDeps {
 let defaultConfigPort: ConfigPort | undefined;
 
 function remoteConfigPort(): ConfigPort {
-  defaultConfigPort ??= createRemoteConfigPort();
+  defaultConfigPort ??= createConfigPort();
   return defaultConfigPort;
 }
 

@@ -20,7 +20,7 @@ import { AgentNS } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 import type { ModelLevel, PhaseInfo } from "@ai-zen/agents-server";
 import type { ClipboardImage } from "../clipboard.js";
-import type { ConfigPort } from "../server-client/config-port.js";
+import type { ConfigPort } from "../server-client/index.js";
 import type { PathEntry } from "./mention.js";
 import type { RateSample } from "./token-rate.js";
 import { stripCwdNote } from "./text.js";

@@ -44,9 +44,9 @@
 
 import { AgentNS } from "@ai-zen/agents-core";
 import { setLogger } from "@ai-zen/agents-sdk";
-import { createRemoteConfigPort, type ConfigPort } from "./server-client/config-port.js";
-import { RemoteSessions } from "./server-client/sessions.js";
-import type { ServerClient } from "./server-client/types.js";
+import { createRemoteConfigPort, type ConfigPort } from "./server-client/index.js";
+import { RemoteSessions } from "./server-client/index.js";
+import type { ServerClient } from "./server-client/index.js";
 import type { ChatSessionNotifier } from "./tui/chat-session.js";
 import { RemoteChatSession, connectToServer } from "./tui/remote-chat-session.js";
 

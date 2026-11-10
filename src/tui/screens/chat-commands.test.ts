@@ -10,7 +10,7 @@ import type { AgentDefinition, AppConfig, Model, ReasoningPresets } from "@ai-ze
 import { runCommand, type ChatCommandHost } from "./chat-commands.js";
 import type { ChatSessionLike } from "../chat-session.js";
 import type { AgentStore } from "../../agents-store.js";
-import type { ConfigPort } from "../../server-client/config-port.js";
+import type { ConfigPort } from "../../server-client/index.js";
 import { useTempAiZenDir } from "../../test-support/temp-dir.js";
 import { setLocale, t } from "../../i18n/index.js";
 import { computeChatLayout } from "./layout.js";

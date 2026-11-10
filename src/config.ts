@@ -4,7 +4,7 @@
  * ## 为什么不再有读写
  *
  * 读配置、写配置、初始化配置目录（`~/.ai-zen` 下的 `config.json` / 默认 Agent / 策略表）
- * 全是**服务端**的事：真相在那边，读写经 `ConfigPort`（`server-client/config-port.ts`）
+ * 全是**服务端**的事：真相在那边，读写经 `ConfigPort`（`@ai-zen/agents-client`）
  * 走 `config.*` / `agent.*`。客户端本地那套实现（`readConfig` / `saveConfig` /
  * `readMcpConfig` / `writeMcpConfig` / `ensureConfigDir`）曾经还在，作为「忘了注入」时的
  * 缺省值 —— 那正是最坏的一种：静默读客户端本机、写却写到服务端，界面上一切正常。
@@ -185,59 +185,34 @@ export function refreshPaths(): void {
   MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
 }
 
-// ==================== MCP 配置读写 ====================
-
-/** MCP 配置的作用域：全局（~/.ai-zen/mcp.json） / 项目（<cwd>/.ai-zen/mcp.json） */
-export type McpScope = "global" | "project";
+// ==================== MCP 配置的形状 ====================
 
 /**
- * 单个 MCP 服务器条目（业界标准字段，外加保留未知字段）。
- * 与 SDK `discoverMcpServers` 的解析一致：`type` 缺省时按 command/url 推断，`disabled: true` 会被跳过。
+ * MCP 配置的**词汇表**已在 `@ai-zen/agents-client` 里（`mcp.ts`）—— 那是客户端唯一的
+ * 一份：读写它的两端（服务端落盘、客户端整形）必须共用同一份字段表，抄两份迟早对不上。
+ *
+ * 本文件只留**路径**（`mcpConfigPath()`）：目录布局是某个进程自己的本地事实，两端本来
+ * 就不该相同（两机部署时客户端的 `~/.ai-zen/mcp.json` 与服务端那份不是一个文件）。
+ *
+ * 仍然在这里转出类型，是因为 CLI 里 `import { McpConfig } from "./config.js"` 的写法
+ * 铺得很开，而那些调用点关心的就是「词汇表 + 路径」这一对。
  */
-export interface McpServerEntry {
-  /** 传输方式，业界标准字段名 `type`（与 SDK normalizeConfig 一致，缺省按 command/url 推断） */
-  type?: "stdio" | "http" | "sse";
-  /** 是否禁用（true 时 SDK 会跳过该服务器） */
-  disabled?: boolean;
-  /** 描述（供 load_mcp 呈现给 LLM，非连接必需） */
-  description?: string;
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  url?: string;
-  headers?: Record<string, string>;
-  /** OAuth 配置（本 CLI 暂不单独编辑，读写时原样保留） */
-  oauth?: Record<string, unknown>;
-  /** 其它未知字段原样保留，避免写回时丢字段（如 oauth 展开字段、厂商扩展） */
-  [key: string]: unknown;
-}
+export type {
+  McpConfig,
+  McpReadResult,
+  McpScope,
+  McpServerEntry,
+  McpServersMap,
+} from "@ai-zen/agents-client";
 
-export interface McpServersMap {
-  [name: string]: McpServerEntry;
-}
-
-export interface McpConfig {
-  /** 业界标准 mcpServers 顶层字段（与 SDK @ai-zen/agents-sdk 保持一致） */
-  mcpServers: McpServersMap;
-}
+// 只取两个形状进来用（路径函数与空配置回落要拿它们做参数/返回类型）。
+// 上面 block 只负责**转出**，不建立本地绑定。
+import type { McpConfig, McpReadResult, McpScope } from "@ai-zen/agents-client";
 
 /** 作用域对应的 mcp.json 路径 */
 export function mcpConfigPath(scope: McpScope): string {
   return scope === "project" ? projectDirs().mcpConfig : MCP_CONFIG_FILE;
 }
-
-/**
- * 读一份 mcp.json 的结果 —— 与协议里的 `ConfigMcpGetResult` 同形。
- *
- * 「文件不存在」与「读取 / 解析失败」必须分开：前者是正常的空配置，后者是文件已损坏。
- * 以前两者都返回 `{ mcpServers: {} }`，于是损坏的文件在配置中心里看起来「没有服务器」，
- * 用户一保存就把原内容整个覆盖掉 —— 静默丢数据。
- *
- * `path` 是**那个文件在服务端的位置**（客户端只负责把它印在编辑屏上）：客户端的
- * `~/.ai-zen/mcp.json` 与服务端那份不是一个文件，两机部署时更可能根本不存在。
- */
-export type McpReadResult =
-  { ok: true; config: McpConfig; path: string } | { ok: false; error: string; path: string };
 
 /** 读失败时按空配置继续（仅用于「读来只为做判断」的场景；界面上要显示损坏由编辑屏负责） */
 export function mcpConfigOrEmpty(result: McpReadResult): McpConfig {
