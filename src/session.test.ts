@@ -28,7 +28,12 @@ import { RemoteSessions } from "./server-client/index.js";
 import type { ModelParams } from "./server-client/index.js";
 import { ServerConnection, SocketServerClient } from "./server-client/index.js";
 import type { ServerClient } from "./server-client/index.js";
-import type { AutoMigrateTriggerInfo, AppConfig, HandoffMode, ReasoningPresets } from "@ai-zen/agents-sdk";
+import type {
+  AutoMigrateTriggerInfo,
+  AppConfig,
+  HandoffMode,
+  ReasoningPresets,
+} from "@ai-zen/agents-sdk";
 import { runCommand, type ChatCommandHost } from "./commands/handlers.js";
 import { setLocale } from "./i18n/index.js";
 import { useTempAiZenDir } from "./test-support/temp-dir.js";
@@ -501,12 +506,9 @@ async function open(
   const connected = await startServer();
   const connection = connectionFor(connected, deps.reconnect ?? reconnectToNextServer);
   sessionConnection = connection;
-  session = await RemoteChatSession.open(
-    connection,
-    { path: workspaceDir, ...input },
-    notifier,
-    { config: deps.config ?? testConfigPort },
-  );
+  session = await RemoteChatSession.open(connection, { path: workspaceDir, ...input }, notifier, {
+    config: deps.config ?? testConfigPort,
+  });
   return session;
 }
 
@@ -675,9 +677,12 @@ describe("RemoteChatSession：send 的语义与进程内一致", () => {
     let finished = false;
 
     // 一轮 = `send()`（受理即回）+ `waitForTurn()`（等它真的结束）—— 与界面手里那对同形
-    const pending = opened.send("你好").then(() => opened.waitForTurn()).then(() => {
-      finished = true;
-    });
+    const pending = opened
+      .send("你好")
+      .then(() => opened.waitForTurn())
+      .then(() => {
+        finished = true;
+      });
     // 回执已到、但这一轮还在跑：此时不该 resolve
     await waitUntil(() => agent.sent.length === 1);
     expect(finished).toBe(false);

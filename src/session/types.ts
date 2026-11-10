@@ -26,7 +26,13 @@ import { AgentNS } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 // 类型一律从 `@ai-zen/agents-client` 取（它把协议包原样转出）：CLI 只认那一个包，
 // 而 `PhaseInfo` / `ModelLevel` / `WorkspaceFileEntry` 都是**线上形状**，不是某个实现的内部类型。
-import type { ModelLevel, ModelParams, PhaseInfo, ServerConnection, WorkspaceFileEntry } from "@ai-zen/agents-client";
+import type {
+  ModelLevel,
+  ModelParams,
+  PhaseInfo,
+  ServerConnection,
+  WorkspaceFileEntry,
+} from "@ai-zen/agents-client";
 import type { ClipboardImage } from "../clipboard.js";
 import type { ConfigPort } from "../server-client/index.js";
 import type { RateSample } from "../session-rate.js";

@@ -12,7 +12,13 @@
  */
 
 export { runCommand, parseHandoffMode, parseHandoffSelection } from "./handlers.js";
-export type { ChatCommandHost, CommandContext, HandoffSelection, ModelScope, ModelSelection } from "./handlers.js";
+export type {
+  ChatCommandHost,
+  CommandContext,
+  HandoffSelection,
+  ModelScope,
+  ModelSelection,
+} from "./handlers.js";
 export { parseModelSelection } from "./handlers.js";
 export { HANDOFF_SKIP, handoffModeItems, toHandoffMode } from "./types.js";
 export type { SelectItem, WizardEntryStep } from "./types.js";

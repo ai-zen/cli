@@ -988,7 +988,8 @@ const cmdHandoff: CommandHandler = async ({ session, push, args, pick }) => {
     return;
   }
   // 未显式指定执行者时三选一（与自动迁移统一）；显式 `/handoff self|summary` 则直接采用
-  const chosen = handoff.mode ?? toHandoffMode(await pick(t("cmd.handoff.title"), handoffModeItems()));
+  const chosen =
+    handoff.mode ?? toHandoffMode(await pick(t("cmd.handoff.title"), handoffModeItems()));
   if (chosen == null) {
     push(t("cmd.handoff.cancelled"));
     return;
@@ -1018,7 +1019,8 @@ const cmdMigrate: CommandHandler = async ({ session, push, args, pick, clearTran
     return;
   }
   // 与原 yes/no 确认统一为三选一：选「不交接」即取消本次迁移
-  const chosen = handoff.mode ?? toHandoffMode(await pick(t("cmd.migrate.title"), handoffModeItems()));
+  const chosen =
+    handoff.mode ?? toHandoffMode(await pick(t("cmd.migrate.title"), handoffModeItems()));
   if (chosen == null) {
     push(t("cmd.migrate.cancelled"));
     return;

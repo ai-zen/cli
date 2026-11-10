@@ -215,11 +215,7 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
       },
     };
 
-    session = await RemoteChatSession.open(
-      connection,
-      { agentId, persist: false },
-      notifier,
-    );
+    session = await RemoteChatSession.open(connection, { agentId, persist: false }, notifier);
 
     /**
      * 一轮 = `send()`（受理即回，拿到 `turnId`）+ `waitForTurn()`（等它真的结束）：
