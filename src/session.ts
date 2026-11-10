@@ -1,120 +1,56 @@
 /**
  * 会话层 —— 一段会话的客户端实现（**纯客户端**：Agent 在服务端跑）。
  *
- * 屏幕上的一切都从服务端来：消息走 `session.snapshot` 与事件，存档/交接/迁移走方法调用。
- * 本进程**不跑 Agent、不碰会话文件、不读 Skill** —— 它只需要一条到服务端的连接。
+ * 它只做三件事：**连接**（借一条进程级连接，不建也不关）、**命令族**（`ChatSessionLike` 那
+ * 21 个成员，大多是一行转发）、**把状态交给界面**（`SessionStream.state` 就是那些只读字段的
+ * 来源）。状态机与重连**不在这里**：包里的 `SessionStream`（纯）与 `SessionChannel`（脏）
+ * 是唯一实现，三个前端共用 —— 在这里再写一遍的代价不是行数而是漂移。
  *
- * ## 为什么它不在 `tui/` 里
+ * ## 三件包里不管、必须留在这里的事
  *
- * 它曾经是 `tui/remote-chat-session.ts`，而纯 stdio 模式的 `stdio.ts` 反过来 import 它 ——
- * 于是「`tui/` 不是叶子」这条病只在运行期靠一句注释维持：“这条链上今天恰好没有 React”。
- * 搬出来之后这件事变成结构事实：`dist/stdio.js` 的 import 图里一个 `tui/` 路径都没有
- * （判据是产物图，不是路径 grep：`scripts/check-imports.mjs`）。
+ * 1. **失败要能被用户看见**：包里只给 `state.failure = {code, message}`（不产句子、也不认识
+ *    通知栏），这里把它映回 `notifier.onNotice` —— 渲染层零改动，失败不会变成静默。
+ * 2. **带图提交要用 `apiModel`**（实发名）：`buildUserContent` 靠它反查端点与视觉能力，读成
+ *    `modelId`（配置里的身份）在有别名时会把本来能带的图静默降级成纯文本。
+ * 3. **等一轮结束的原语**（`waitForTurn`）：包里的 `send()` 立刻返回 `turnId`，而界面用
+ *    `busy` 包住输入禁用，靠的是「这一轮真的结束了」（D7：别删掉它让界面自己等）。
  *
- * 契约（屏幕与命令层只认的那一面）在 `session/types.ts`，本文件是实现。
+ * ## `session.close` 的三个时机（D5 × D8，正确性）
  *
- * ## 三处与服务端分工有关的细节
+ * 保活声明删掉之后「持有者」是唯一的活命判据，而 D8 让连接**不再随界面卸载消失** ——
+ *「切走一段会话」于是对服务端完全不可见。三条铁律：
+ *   · **`reset()`（`/new`）**：先归档 → 再开新的 → **最后**关旧的（先关再存是拿不存在的 id
+ *     写盘；先关旧的再开新的，`open` 一失败两段都没了）；
+ *   · **重挂载（`/load`、`/clear`、`/back`）**：旧会话由**新实例接管前的 `dispose()`** 关 ——
+ *     不发这一帧，内存峰值随 `/load` 次数线性增长到宽限期；
+ *   · **退出**：尽力而为（不 await）。连接随后就关，那帧可能落不了地 —— 既有取舍：把每个
+ *     Ctrl+C 变成一个网络往返更糟，而崩溃能发出的帧本来就是零。
  *
- * 1. **`send()` 等到本轮结束才 resolve**。服务端的 `session.send` 是「立刻回 `turnId`、
- *    过程走事件」，而界面用 `await send()` 包着 busy 状态与输入禁用。所以这里把它等成
- *    语义上的一轮：拿到回执后挂起，直到同一 `turnId` 的 `turn.end` 到达。
- * 2. **正文靠事件拼、结束后用快照纠正**。增量（`message.delta`）拼出一个临时 assistant
- *    消息让屏幕能滚起来；`turn.end` 一到就重新要一份 `snapshot`，用服务端那份替换本地
- *    —— 客户端只做「暂时的不准确」，不做第二份真相。
- * 3. **换 id 的方法（`migrate` / `saveAs`）以返回值里的 `sessionId` 为准**。服务端在旧
- *    id 上收尾、再把活会话挪到新键；客户端拿到响应后立刻跟着换，之后的事件才过滤得上。
- *
- * ## 工作区：本地取客户端 cwd，远端归服务端
- *
- * 工作目录到底该由谁决定，取决于服务端在哪台机器上：
- *
- *   · **本地**（连的是 loopback）—— 用**客户端**的 `process.cwd()`。这是使用者的实际
- *     意图：「我在这个项目里敲 `ai`，会话就该跑在这个项目里」，也才能「复用或新建这个
- *     目录的工作区 → 接着它最后一段对话」。客户端递的是「我希望是这里」，路径仍由服务端
- *     规范化，本类持有的 `this.path` 也永远是那个返回值（`reset()` 再开新会话时还在同一个
- *     工作区里，靠的就是它）；
- *   · **远端**（非 loopback）—— 不上送，用服务端自己的默认工作区。客户端把自己进程的目录
- *     送上去，等于让客户端替服务端决定会话跑在哪：那个目录在服务端很可能不存在。
- *
- * `@` 补全的清单（`listWorkspaceFiles`）与续接（`resume` → `session.last`）都跟着工作区
- * 走，所以它们不需要再各自判断一次「本地还是远端」。
- *
- * ## 断线重连（透明恢复，不是一个新的交互）
- *
- * Wi-Fi 抖一下、服务端重启一次，连接就没了；而**会话的存活期比连接长** —— 服务端那一轮
- * 可能还在跑。所以客户端要做的是「接回去」，不是把界面弄死：重建连接（`ensureServer` +
- * `connect`）→ 重新 `events.watch()` → `session.attach` 接回原会话 → 拉一次快照对齐屏幕。
- *
- * 三件事定死了它的形状：
- *
- * 1. **在飞的那一轮不能永远挂着**。界面用 `await send()` 包着 busy 状态与输入禁用，而
- *    `await` 的落定靠的是同一 `turnId` 的 `turn.end`。断线时那条 socket 上的一切都扔了，
- *    `turn.end` 可能就丢在里面 —— promise 永不落定 = 永久卡在「生成中」，比直接报错更糟。
- *    判据是重连后那份快照：`phase !== null` 说明服务端还在跑（事件会继续来，接着等）；
- *    `phase === null` 说明服务端已经空闲，那一轮在我们不在线的时候结束了，快照里的消息
- *    就是这一轮的结果 —— 用**与 `turn.end` 完全相同**的那条收尾路径落定（同一套
- *    `lastEndedTurn` / `resolveTurn`，不另造一套“重连专用”的状态机）。
- * 2. **重连有终点**。最多三次（间隔递增），全失败就回到“连接断了”的既有行为：在飞的
- *    调用以连接错误失败、之后的调用也失败。不无限重试、不静默吞掉 —— 连不上这件事最终
- *    必须走到既有的错误通道上。
- * 3. **不新增任何用户可见文案**。重连是透明恢复：成功不弹「已重连」，失败沿用原来的
- *    错误通道。任何提示都是交互变化，而这次只做“别死掉”。
- *
- * 另外两条边界：主动 `dispose()` 不重连（那是我们自己关的）；多个信号同时触发只跑一次
- * 重连（单飞），否则会同时开出好几条连接、几条都往上 `attach`。
- *
- * ## 子 Agent 栏目（Agent 标签页）
- *
- * 栏目里的东西全**由服务端给**：`session.subAgent.started` 说「来了一个，序号是几、
- * id 是什么」，`message.delta` 带 `subAgentId` 时属于它，`session.subAgent.ended`
- * 收尾。客户端只做两件事：把增量拼到那个子 Agent 自己的临时消息上（让屏幕能滚），
- * 以及拉一次 `session.subAgent.snapshot` 把已有内容补齐。合并规则**不在本仓**：直接用
- * `@ai-zen/agents-client` 的 {@link mergeStreamedSnapshot}（CLI 与桌面端共用同一份实现，
- * 见包里 `stream-merge.ts`；那里也是唯一需要处理竞态的地方）。
- *
- * ## 按阈值自动迁移：服务端提问、客户端选择（`session.question` / `session.answer`）
- *
- * 迁移**何时**发生由服务端判（阈值挂在模型上，`AutoMigratePlugin` 在一轮内部触发），
- * 但「用哪种方式交接」是**用户**的决定 —— 这件事搬不到服务端去，那边没有界面。所以
- * 协议里是一问一答：服务端发 `session.question`（带上触发时的用量），客户端弹与手动
- * `/migrate`、`/handoff` **同一个**选择器（`requestMode`），再用 `session.answer` 把
- * `self` / `summary` / `null`（不交接）送回去。
- *
- * 关键约束：**每条问题都必须有人回答**，没有「不回答」这个选项。服务端等不到答复会一直
- * 等到超时（分钟级），而那一轮正卡在迁移里 —— 用户看到的是「卡住了」。所以有
- * `requestMode` 就走选择器；没有（无头 / 测试）立刻回默认执行者 `self`。
- *
- * ## 现在还没有的一样（协议里就没有，不是 bug）
- *
- * 图片粘贴。界面上是「说清楚」而不是静默丢弃：带图提交会明确提示本次只发了文字。
+ * 换 id 的四个动作（`saveAs` / `migrate` / `reload` / `setAgent`）一律走 channel：包里那几个
+ * 方法自己会 `applyIdChanged` + 重取快照，自己改 id 就是 P4a 之前那个错（在旧 id 上等一个
+ * 永远不来的 `turn.end`）。所以本文件一次都不直接赋值会话 id。
  */
-
-import { AgentNS, sumUsage } from "@ai-zen/agents-core";
+import { AgentNS } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 import {
-  EVENT_METHODS,
   MAX_FRAME_BYTES,
-  SERVER_EVENTS,
-  SESSION_EVENTS,
+  RemoteSessions,
+  SessionChannel,
+  clientWorkspacePath,
+  createConfigPort,
+  type ChannelNoticePayload,
+  type ConfigPort,
   type MessageContent,
   type ModelLevel,
   type ModelParams,
   type PhaseInfo,
-  type ServerEvent,
   type SessionQuestionEvent,
-  type SessionSnapshotResult,
+  type SessionStreamState,
+  type ServerConnection,
   type WorkspaceFileEntry,
-} from "@ai-zen/agents-server";
+} from "./server-client/index.js";
 import type { ClipboardImage } from "./clipboard.js";
 import { t } from "./i18n/index.js";
-import { createConfigPort, type ConfigPort } from "./server-client/index.js";
-import { clientWorkspacePath } from "./server-client/index.js";
-// 合并规则（「本地增量 vs 服务端快照」）只有一份，住在 `@ai-zen/agents-client` 里：
-// 两个前端都在同一个时序压力下做同一件事，各写一遍就会在「宁可重复也不吞字」这类
-// 边界上分叉。所以这里只引用包里的实现与类型，不再留本地副本。
-import { mergeStreamedSnapshot, type StreamedAssistant } from "./server-client/index.js";
-import { RemoteSessions } from "./server-client/index.js";
-import type { ServerClient } from "./server-client/index.js";
 import { buildUserContent } from "./user-content.js";
 import type {
   ChatSessionLike,
@@ -126,591 +62,380 @@ import { noticeText } from "./session-notice.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, type RateSample } from "./session-rate.js";
 
-/**
- * 重连的最多次数（含第一次尝试）。
- *
- * **三次就是终点**：连接断了无非两种 —— 网络抖一下（几百毫秒就回来），或服务端重启
- * （`ensureServer` 会把它拉起来，通常一两秒）。三次足够覆盖这两种；再多只是让用户对着
- * 卡住的界面干等，而连不上这件事最终必须让人看见（走既有错误通道）。
- */
-const MAX_RECONNECT_ATTEMPTS = 3;
-
-/** 第 `i` 次**重试**之前等多久（`i=0` 对应第 2 次尝试）：递增，给抖动的网络与服务端重启留时间 */
-const RECONNECT_BACKOFF_MS = [100, 300] as const;
-
-/**
- * 重连要重建的东西（可注入）。
- *
- * 抽成一个函数是因为「怎么建一条连接」在生产里只有一种答案（`ensureServer` + `connect`，
- * 与 {@link RemoteChatSession.create} 走同一段），而测试要把它指到另一个端口上 —— 注入
- * 比 `vi.mock` 干净，也不会串到别的文件。
- */
+/** 会话层的注入点 —— **只剩配置面**（连接归组装根、重连归包里的 `SessionChannel`） */
 export interface RemoteChatSessionDeps {
-  /** 重建一条到服务端的连接；缺省是 {@link connectToServer} */
-  reconnect?: () => Promise<ServerClient>;
   /**
    * 配置面（拼图片内容块要读**服务端**的端点 / 视觉能力）。
    *
-   * 缺省自建一个远程端口：本进程里它与 TUI 用的那个是同一类对象（懒连接），多一个
-   * 也只会在真要发图时才建连。注入是为了测试（别连真服务端）。
+   * 缺省由传进来的那条 `connection` 派生一个（同一条连接上的第二个端口是免费的）；
+   * 注入只为了测试（不碰真配置根）。
    */
   config?: ConfigPort;
 }
 
 /**
- * 建一条到服务端的连接（没有就把它拉起来）。
+ * 开一段会话的输入：**就是会话契约那一份**去掉已经单独递进来的两样（连接 / 配置面）。
  *
- * `create()` 与默认的重连走**同一个函数**：重连要接的是同一个服务端，两处各写一份
- * 「怎么建连」，迟早会漂（一处带了 clientInfo、另一处忘了）。
- *
- * 纯 stdio 模式也走这一条（`stdio.ts`）：一次性调用与 TUI 用的是同一条链路，
- * 不存在「另一种建连方式」。
- *
- * 实现就在 `server-client/index.ts`（那里把 `AI_ZEN_DIR` / `CLIENT_INFO` 一次绑好）——
- * 这里只是把它挂在本模块的对外面上，`stdio.ts` 一直是这么 import 的。
+ * 不另立一个平行类型：多一份"这里也有 agentId / sessionId / resume"的定义，就会多一处漂 ——
+ * 而它们本来就是同一组意图。
  */
-import { connectToServer } from "./server-client/index.js";
-export { connectToServer };
-
-/** 开一段远程会话需要的最小输入 */
-export interface OpenRemoteSessionInput {
-  /**
-   * 明确指定工作目录。**一般不要给**：本地由 {@link clientWorkspacePath} 自动取客户端 cwd，
-   * 远端则用服务端默认目录。
-   *
-   * 给了也只是「我希望是这里」，路径仍由服务端规范化 —— 客户端手上那份是**它自己**
-   * 那边的路径，两机部署时服务端不一定有那个目录。留这个口子只因为「换个目录再开一段」
-   * 确实存在（测试也用它）。
-   */
-  path?: string;
-  agentId?: string;
-  /** 续接已有存档：只给 id，消息由服务端从存档装 */
-  sessionId?: string;
-  /**
-   * 续接本工作区的「上一轮会话」（有就接着，没有就开新的）。
-   *
-   * 与 `ChatSessionOptions.resume` 同一个口径：这是**意图**，不是数据。哪一段是
-   * 「上一轮」只存在于服务端（指针 + 存档），客户端自己去读就是又一份会漂的真相。
-   * 给了明确的 `sessionId` 时以它为准（用户已经指名道姓了）。
-   */
-  resume?: boolean;
-  /**
-   * 这段会话要不要进工作区存档（缺省 `true`）。
-   *
-   * 只有 stdio 的一次性调用传 `false`：`ai "…"` 那一轮不属于工作区的历史，不该在
-   * `sessions/` 里留痕、也不该把续接指针挪过去。TUI / `/new` 都不传（默认落盘）。
-   */
-  persist?: boolean;
-  /**
-   * 自动迁移时的执行者选择 —— `ChatSessionOptions.requestMode` 的透传。
-   *
-   * 透传而不是另起一套：这条回调就是屏幕层那个「交接方式三选一」选择器（与手动
-   * `/migrate`、`/handoff` 共用），自动迁移只是**换了个触发者来问同一句话**。
-   * 不给 = 没有人能问用户（无头 / 测试），见 {@link RemoteChatSession.answerQuestion}。
-   */
-  requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
-}
+export type OpenRemoteSessionInput = Omit<ChatSessionOptions, "connection" | "config">;
 
 export class RemoteChatSession implements ChatSessionLike {
-  /**
-   * 当前 Agent —— **可变**：`setAgent` 会让它变（契约里仍只声明只读，对屏幕而言它就是只读的）。
-   */
-  agentId: string;
-  /**
-   * 工作区路径 —— **服务端规范化后**的那个（`workspace.resolve` 的返回值）。
-   *
-   * `/new` 要在同一个工作区里开新会话：路径若取自客户端进程的 cwd，远程部署时就会
-   * 在服务端开出一个不相干的目录。
-   */
-  private readonly path: string;
-  /** 当前连接（**可变**：断线后重连会换一条新的，见 {@link reconnect}） */
-  private client: ServerClient;
-  /** 方法门面，永远跟着 {@link client} 一起换 */
-  private sessions: RemoteSessions;
+  private readonly connection: ServerConnection;
   private readonly notifier: ChatSessionNotifier;
   /**
    * 自动迁移时「问用户用哪种方式交接」的回调（缺省 = 没人能问）。
    *
-   * 与 `ChatSessionOptions.requestMode` 是**同一个**回调对象：TUI 传的就是那个与手动
-   * `/migrate`、`/handoff` 共用的选择器，所以自动这条路径上不存在第二套文案。
+   * 与 `ChatSessionOptions.requestMode` 是**同一个**对象：TUI 传的就是那个与手动 `/migrate`、
+   * `/handoff` 共用的三选一选择器，所以自动这条路径上没有第二套文案。
    */
   private readonly requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
-  /** 重建连接（生产 = `ensureServer` + `connect`；测试注入另一个端口） */
-  private readonly reconnectFn: () => Promise<ServerClient>;
-  /**
-   * 配置面：拼图片内容块时按**服务端**的端点能力判断（走 Files API 还是内联）。
-   *
-   * 曾经读的是客户端本机的配置文件 —— 旧版进程内模式那是对的（客户端就是运行方），
-   * 现在会话跑在服务端，那是**另一份**配置：两机部署或客户端没配过时必然判断错。
-   */
+  /** 配置面：拼图片内容块时按**服务端**的端点能力判断（客户端本机那份是另一份事实） */
   private readonly configPort: ConfigPort;
   private readonly rate = new TokenRateMeter();
-  /** 事件订阅的解绑函数（`wire()` 每次都产出一整组，重连时整组换掉） */
-  private readonly offs: Array<() => void> = [];
-  /** 「连接断了」的订阅；`dispose()` 先摘掉它，否则主动关闭会被当成断线去重连 */
-  private offClose: (() => void) | null = null;
-  /** 已经显式 `close()` 过：`dispose()` 不再重复发一帧 */
+
+  /** 这一段的 I/O（订阅 / 请求 / 重连）：`/new` 会整条换掉，所以不是 readonly */
+  private channel: SessionChannel;
+  /** 换 channel 时要解掉的上一条状态订阅 */
+  private offStream: (() => void) | null = null;
+  /**
+   * 客户端**希望**会话跑在哪个目录（`open` 的入参，不是服务端规范化的结果）。
+   *
+   * 只为一件事存在：`/new` 要在**同一个工作区**里开新会话。包里的规范化路径不对外
+   * （`SessionChannel` 没有 `path` 出口），而把客户端 cwd 再算一次就是第二份会漂的答案 ——
+   * 所以记的是「当初说了什么」。远端（不说）时它是 `undefined`，`/new` 照旧不说。
+   */
+  private requestedPath: string | undefined;
+  /** 在等的那一轮（`waitForTurn()` 靠它落地）；只在「受理了一轮」到「它结束」之间非空 */
+  private pendingTurnId: number | null = null;
+  /** 已经报过的那条失败（`state.failure` 会一直躺在状态里，同一条只进一次通知栏） */
+  private reportedFailure: SessionStreamState["failure"] | null = null;
+  /** 速率表正在计的这一轮（收尾时定格一次，别每帧都算） */
+  private rateRunning = false;
+  /** 已经显式 `close()` 过：不重复发那一帧 */
   private closed = false;
-  /** 重连进行中（单飞：多个断线信号同时到达只跑一次） */
-  private reconnecting = false;
-  /** 已经 `dispose()`：此后任何断线信号都不该再触发重连 */
+  /** 已经 `dispose()`：此后不再往界面上推任何东西 */
   private disposed = false;
 
-  private sessionId: string;
-  private workspaceId: string;
-  private modelIdValue = "";
-  /**
-   * 生效模型的档位（服务端解析结果的一手透传）。
-   *
-   * 初值只是「首次快照到达前」的占位：构造完立刻会 `snapshot` 一次把它盖掉，
-   * 而界面在那之前不渲染模型信息。
-   */
-  private modelLevelValue: ModelLevel = "agent";
-  /** 实发模型名：拼图片内容块时按它反查端点与视觉能力（`file_id` 是端点维度资源） */
-  private apiModelValue = "";
-  /** 服务端给的权威消息（事件期间的增量也追加在这里，收尾时整体换成快照） */
-  private currentMessages: AgentNS.Message[] = [];
-  /** 正在流式累积的那条 assistant 消息；不在生成中时 `null` */
-  private streaming: { message: AgentNS.Message; text: string; reasoning: string } | null = null;
-  private currentPhase: PhaseInfo | null = null;
-  private lastUsageValue: AgentNS.Usage | undefined;
-  /**
-   * 本轮等待中的 `turn.end`（`send()` 的 promise 靠它落地）。
-   *
-   * `reject` 给重连失败用：连不回来时这一轮只能以**连接错误**失败（语义第 3 条），
-   * 不能让 promise 永远悬着。
-   */
-  private pendingTurn: {
-    turnId: number;
-    resolve: () => void;
-    reject: (error: Error) => void;
-  } | null = null;
-  /** 最近一次收到的 `turn.end` 的轮次：挡住「事件比回执先到」那种竞态 */
-  private lastEndedTurn = 0;
-  /**
-   * 本次会话出现过的子 Agent（按 `session.subAgent.started` 的顺序）。
-   *
-   * **只活当前这一轮**：`turn.end` 一到就清空（见 {@link finishTurn}），与进程内实现
-   * `send()` 的 `finally` 等价 —— 那一轮内循环已经结束，子 Agent 只剩历史价值，留着
-   * 只会白占一行。换会话（`reset` / `reload` / `migrate` / `session.idChanged`）同样清空。
-   *
-   * 注意这里**没有本地计数器**：`id` 与 `index` 都是服务端在 `started` 里给的（`index`
-   * 本轮从 1 起）。客户端自己数就会多出第二份会漂的答案，而「哪个是子AGENT2」只有
-   * 服务端知道（它才是分配方）。
-   */
-  private subAgentViews: SubAgentView[] = [];
-  /** 子 Agent id → 它正在拼的临时消息（形状与规则都来自包里的 {@link StreamedAssistant}） */
-  private readonly subAgentStreams = new Map<string, StreamedAssistant>();
-
   private constructor(
-    client: ServerClient,
-    sessions: RemoteSessions,
-    input: {
-      path: string;
-      agentId: string;
-      sessionId: string;
-      workspaceId: string;
-      requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
-    },
+    connection: ServerConnection,
+    input: OpenRemoteSessionInput,
     notifier: ChatSessionNotifier,
-    reconnect: () => Promise<ServerClient>,
-    configPort: ConfigPort,
+    deps: RemoteChatSessionDeps,
   ) {
-    this.client = client;
-    this.sessions = sessions;
+    this.connection = connection;
     this.notifier = notifier;
-    this.reconnectFn = reconnect;
-    this.configPort = configPort;
-    this.path = input.path;
-    this.agentId = input.agentId;
-    this.sessionId = input.sessionId;
-    this.workspaceId = input.workspaceId;
-    // 必须在 `wire()` 之前定下：订阅 `session.question` 的那一刻就要知道「谁来回答」
     this.requestMode = input.requestMode;
-    this.offs.push(...this.wire(client));
-    this.offClose = client.onClose(() => this.handleClose());
+    this.configPort = deps.config ?? createConfigPort(connection);
+    this.channel = this.newChannel();
+    this.useChannel(this.channel);
   }
 
   /**
-   * 连接服务端并打开（或续接）一段会话。
+   * 借一条现成的连接开（或续接）一段会话。
    *
-   * `watch()` 必须在 `open()` 之前：`open` 之后服务端可能立刻推 `session.phase`，
-   * 订阅晚一步就会漏掉开头的阶段（屏幕停在上一个状态不动）。
+   * 连接的生命周期**归调用方**（TUI：`tui/index.tsx` 那个模块级实例；stdio：这个入口自己造
+   * 的那一个），本类既不建也不关。三处顺序在包里的 `channel.open()`：先订阅再 `attach`
+   * （否则漏掉开头的 `phase`）、`events.watch` 先于 `attach`、最后拉一次快照。
    */
-  static async create(
+  static async open(
+    connection: ServerConnection,
     input: OpenRemoteSessionInput,
     notifier: ChatSessionNotifier,
     deps: RemoteChatSessionDeps = {},
   ): Promise<RemoteChatSession> {
-    return await RemoteChatSession.openWith(await connectToServer(), input, notifier, deps);
-  }
-
-  /** 用一条已有连接开会话（测试注入连接用；`create` 是它的「自备连接」版本） */
-  static async openWith(
-    client: ServerClient,
-    input: OpenRemoteSessionInput,
-    notifier: ChatSessionNotifier,
-    deps: RemoteChatSessionDeps = {},
-  ): Promise<RemoteChatSession> {
-    const sessions = new RemoteSessions(client);
-    /**
-     * `events.watch` 是**连接级**订阅（服务端按连接登记推送），所以它不属于会话门面
-     * （P3 把 `RemoteSessions.watch()` 删了：它是唯一一条与「哪一段会话」无关的方法）。
-     * 客户端拿到的是一根裸连接，所以这里直接发那一帧 —— 与旧 `RemoteSessions.watch()`
-     * 逐字相同，只是不再绕一趟门面。
-     */
-    await client.call(EVENT_METHODS.watch);
-
-    /**
-     * 工作区在**这一处**解析，且只解析这一处。
-     *
-     * `sessions.open()` 门面内部也会 `resolveWorkspace`，但那用的是我们递给它的
-     * `workspace.path`（已规范化，幂等）；真正需要对齐的是「问 `last` 的工作区」与
-     * 「开会话的工作区」——分两处各解析一次，就多出两个能漂的答案。所以顺序是：
-     * 解析一次 → 用它的 id 问上一轮 → 用它的 path 开会话。
-     *
-     * 路径的取舍只有这一行：明确给的就用，否则本地（loopback）才递客户端 cwd。
-     * 递过去之后以服务端的返回值为准（`resolve` 就是「你说的那个目录，规范成什么样」）。
-     */
-    const requestedPath = input.path ?? clientWorkspacePath(client.address.host);
-    const workspace = await sessions.resolveWorkspace(requestedPath);
-
-    /**
-     * 续接：`resume` 只是意图，**哪一段是上一轮**只有服务端知道（`session.last`）。
-     *
-     * 明确的 `sessionId` 永远优先：`/load` 已经指定了具体那一段，再拿指针覆盖它
-     * 就成了「悄悄换了用户点的东西」。
-     */
-    const lastId =
-      input.sessionId || input.resume !== true
-        ? null
-        : (await sessions.last(workspace.workspaceId)).sessionId;
-    const sessionId = input.sessionId ?? lastId ?? undefined;
-
-    /**
-     * 有明确目标 id（用户点的 `/load`，或 `session.last` 指的上一轮）就走 `attach`，
-     * 否则才 `open` 一段新的。
-     *
-     * 为什么不能一律 `open`：那段会话很可能**还在服务端活着**（上次 TUI 只是断开了
-     * 连接，Agent 与 MCP 连接都没销毁），而 `open`/`create` 对活着的 id 是「拒绝」
-     * （不静默顶掉正在跑的会话）。于是「接着上次」会撞在 `session-exists` 上 ——
-     * 用户看到的是「打不开自己上一轮会话」。`attach` 的语义就是「这段我要接上」。
-     */
-    const opened = sessionId
-      ? await sessions.attach({
-          workspaceId: workspace.workspaceId,
-          // 递回**服务端规范化后的**路径：两处说的是同一个工作区
-          path: workspace.path,
-          sessionId,
-          ...(input.agentId ? { agentId: input.agentId } : {}),
-        })
-      : await sessions.open({
-          path: workspace.path,
-          ...(input.agentId ? { agentId: input.agentId } : {}),
-          ...(input.persist !== undefined ? { persist: input.persist } : {}),
-        });
-
-    const session = new RemoteChatSession(
-      client,
-      sessions,
-      {
-        path: workspace.path,
-        agentId: opened.agentId,
-        sessionId: opened.sessionId,
-        workspaceId: workspace.workspaceId,
-        requestMode: input.requestMode,
-      },
-      notifier,
-      deps.reconnect ?? connectToServer,
-      deps.config ?? createConfigPort(),
-    );
-    // 续接时的历史也在这份快照里：服务端 `session.create` 已经把存档消息装进了 Agent，
-    // 客户端不搬、不拼，屏幕上的第一条都来自服务端。
-    session.applySnapshot(await sessions.snapshot(opened.sessionId));
+    const session = new RemoteChatSession(connection, input, notifier, deps);
+    try {
+      // 客户端 cwd 只在**本地**服务端时才递上去（判据在包里的 `local-host.ts`）
+      const client = await connection.client();
+      const path = input.path ?? clientWorkspacePath(client.address.host);
+      session.requestedPath = path;
+      await session.channel.open({
+        ...(path !== undefined ? { path } : {}),
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.resume !== undefined ? { resume: input.resume } : {}),
+        ...(input.persist !== undefined ? { persist: input.persist } : {}),
+      });
+    } catch (error) {
+      // 半开的那条 channel 也要摘干净（它的 `onClose` 订阅会跟着实例一起活）
+      await session.channel.close().catch(() => {});
+      throw error;
+    }
     return session;
   }
 
-  // ==================== 对外面（ChatSessionLike） ====================
-
-  get modelId(): string {
-    return this.modelIdValue;
+  /**
+   * 造一条新的 channel（同一连接、同一套策略）。
+   *
+   * 四个回调各答一件应用才知道的事：有没有人能回答服务端的提问、机器码怎么变成句子、
+   * 屏幕该不该重画、原始增量怎么喂给速率表（速率是纯展示口径，不属于状态机）。
+   */
+  private newChannel(): SessionChannel {
+    return new SessionChannel({
+      connection: this.connection,
+      policy: {
+        answerQuestion: (event) => this.answerQuestion(event),
+        onNotice: (payload) => this.forwardNotice(payload),
+        onChange: (immediate) => this.notifyChange(immediate),
+        onDelta: (event) => {
+          // 子 Agent 的 token 也是真从网络来的，一起算；流末 chunk 带真实产物 token 数，
+          // 用它校准（只靠字符估算会偏，中文尤其明显）
+          this.rate.addDelta(event.text + event.reasoning);
+          this.rate.addExact(event.usage?.completionTokens);
+        },
+      },
+    });
   }
 
-  get modelLevel(): ModelLevel {
-    return this.modelLevelValue;
-  }
-
-  get currentId(): string {
-    return this.sessionId;
-  }
-
-  get messages(): AgentNS.Message[] {
-    return this.currentMessages;
+  /** 换用一条 channel：解掉旧订阅、挂上新的（`/new` 的唯一换法） */
+  private useChannel(channel: SessionChannel): void {
+    this.channel = channel;
+    this.offStream?.();
+    this.offStream = channel.stream.onChange((state) => this.onStreamState(state));
   }
 
   /**
-   * 本次会话已出现的子 Agent（按出现顺序）。
+   * 状态机每次变更时补的两件事。
    *
-   * 屏幕每帧现取（`session?.subAgents ?? []`），所以这里返回活数组即可：清空、追加都
-   * 会被下一次渲染看到，不需要额外的信号渠道。
+   * 顺序上它**先于**那次「该重画了」：包里 `finishTurn()` 是先 `settle` 再 `failTurn` 再
+   * `notify`，所以失败在这里报出去时，屏幕还没被要求重画 —— 用户看到错误与看到结果同一帧。
    */
-  get subAgents(): readonly SubAgentView[] {
-    return this.subAgentViews;
-  }
-
-  get lastUsage(): AgentNS.Usage | undefined {
-    return this.lastUsageValue;
-  }
-
-  get totalUsage(): AgentNS.Usage {
-    return sumUsage(this.currentMessages);
-  }
-
-  get phase(): PhaseInfo | null {
-    return this.currentPhase;
-  }
-
-  get rateSample(): RateSample {
-    return this.rate.snapshot();
-  }
-
-  async send(input: string, images: readonly ClipboardImage[] = []): Promise<void> {
-    this.rate.begin();
-    try {
-      const content = await this.buildContent(input, images);
-      if (content === null) return; // 图片全被降级/过滤，且已给过说明
-      const { turnId } = await this.sessions.send(this.sessionId, content);
-      await this.waitForTurn(turnId);
-    } catch (error: any) {
-      /**
-       * `session.send` 的**同步拒绝**（`turn-busy` / `handoff-in-flight` / 连接已断）
-       * 不走事件通道 —— 没人接住就是未处理的 rejection，Node 默认会因此终止进程，
-       * 界面连「这轮没发出去」都来不及说。
-       *
-       * 出口与进程内实现一致：错误进通知栏，`send()` 正常返回（那边也是 catch 后
-       * `onNotice(error.message)` 再 `finally` 收尾）。不是新文案，也不是兜底。
-       */
-      this.notifier.onNotice(error?.message ?? String(error), "error");
-    } finally {
+  private onStreamState(state: SessionStreamState): void {
+    if (this.disposed) return;
+    if (state.failure && state.failure !== this.reportedFailure) {
+      this.reportedFailure = state.failure;
+      this.notifier.onNotice(state.failure.message, "error");
+    }
+    // 这一轮结束了：速率定格（`live` → 本轮平均），与旧实现 `finishTurn` 同一时机
+    if (this.rateRunning && state.status !== "streaming") {
+      this.rateRunning = false;
       this.rate.finish();
     }
   }
 
-  abort(): void {
-    // 取消是「请求服务端停」：`session.cancel` 会掐本轮请求与进行中的交接，随后 `turn.end` 到达
-    void this.sessions.cancel(this.sessionId).catch(() => {});
+  // ==================== 对外面（ChatSessionLike） ====================
+
+  get agentId(): string {
+    return this.channel.agentId;
+  }
+  get modelId(): string {
+    return this.channel.stream.state.modelId;
+  }
+  get modelLevel(): ModelLevel {
+    return this.channel.stream.state.modelLevel;
+  }
+  get currentId(): string {
+    return this.channel.stream.state.sessionId;
+  }
+  get messages(): AgentNS.Message[] {
+    return this.channel.stream.state.messages;
+  }
+  /**
+   * 本轮出现过的子 Agent。屏幕每帧现取，所以直接给状态里那份 —— 状态每次变更都是**新对象**
+   * （`SessionStream.commit` 的约定），React 那边照样看得出变化。
+   */
+  get subAgents(): readonly SubAgentView[] {
+    return this.channel.stream.state.subAgents;
+  }
+  get lastUsage(): AgentNS.Usage | undefined {
+    return this.channel.stream.state.lastUsage;
+  }
+  get totalUsage(): AgentNS.Usage {
+    return this.channel.stream.state.totalUsage;
+  }
+  get phase(): PhaseInfo | null {
+    return this.channel.stream.state.phase;
+  }
+  get rateSample(): RateSample {
+    return this.rate.snapshot();
+  }
+  /** 发一轮（**受理即回**：拿到 `turnId` 就返回）；等它结束用 {@link waitForTurn} */
+  async send(input: string, images: readonly ClipboardImage[] = []): Promise<void> {
+    try {
+      const content = await this.buildContent(input, images);
+      if (content === null) return; // 图片全被降级/过滤，且已给过说明
+      this.rate.begin();
+      this.rateRunning = true;
+      this.pendingTurnId = await this.channel.send(content);
+    } catch (error: any) {
+      this.rateRunning = false;
+      this.rate.finish();
+      // `turn-busy` / `handoff-in-flight` / 连接已断：那是「这轮没发出去」，包成「本轮失败」
+      // 只会让界面以为它跑过。也不能抛 —— 调用方那些 await 周围没有 catch，未处理 rejection
+      // 会直接杀掉进程。
+      this.notifier.onNotice(error?.message ?? String(error), "error");
+    }
   }
 
-  async reset(): Promise<string | null> {
-    const hasContent = this.currentMessages.some((message) => message.role === AgentNS.Role.User);
-    /**
-     * 三步的顺序是这一整个方法的内容：**先归档 → 再开新的 → 最后关旧的**。
-     *
-     *  · 归档必须在关之前：`session.close` 是**当场回收**（服务端把活会话连同它手上的
-     *    Agent / MCP 连接一起放掉）。先关再存就是拿一个已经不存在的 id 去写盘；
-     *  · 开新的必须在关旧的之前：`open` 可能失败（配置有毛病时连 Agent 都装不起来）。
-     *    万一它挂了，旧这一段必须还在——用户还能接着用，而不是“`/new` 了一下，
-     *    两段会话都没了”；
-     *  · 关旧的必须真的发出去：不关的话，旧会话因为**连接上持有者还在**而一直活到宽限期，
-     *    于是连按十次 `/new` 就同时养着十段活会话（内存峰值线性增长到宽限期才回落）。
-     */
-    const archivedId = hasContent ? await this.save() : null;
+  /**
+   * 等**最近发出去的那一轮**结束。落定判据在包里（`turn.end` 到了，或重连后发现服务端已
+   * 空闲 —— 两条走同一条收尾路径），所以这里只管等。
+   *
+   * 连不回来时包会 reject（那一轮不可能再结束了，而界面必须能恢复输入）。失败原因**通常
+   * 已经由 `state.failure` 报过**（包在 reject 前先 `failTurn`），所以只在状态里没有这条时
+   * 补报 —— 同一件事说两遍会让通知栏看起来像出了两个错。
+   */
+  async waitForTurn(): Promise<void> {
+    const turnId = this.pendingTurnId;
+    if (turnId == null) return;
+    const channel = this.channel;
+    try {
+      await channel.waitForTurn(turnId);
+    } catch (error: any) {
+      const text = error?.message ?? String(error);
+      if (channel.stream.state.failure?.message !== text) {
+        this.notifier.onNotice(text, "error");
+      }
+    } finally {
+      if (this.pendingTurnId === turnId) this.pendingTurnId = null;
+    }
+  }
 
-    // 用 `this.path`（服务端规范化后的工作区路径）而不是客户端 cwd：`/new` 是「同一个
-    // 工作区里换一段会话」，换到客户端进程的目录就等于替服务端换了地方
-    const opened = await this.sessions.open({ path: this.path, agentId: this.agentId });
-    // 旧的这段：我不再看着它了（存档已写好，随时装得回来）
-    await this.closeSession(this.sessionId);
-    this.sessionId = opened.sessionId;
-    this.clearSubAgents();
-    this.currentMessages = [];
-    this.streaming = null;
-    this.currentPhase = null;
-    this.lastUsageValue = undefined;
-    this.notifier.onChange(true);
+  abort(): void {
+    // 取消是「请求服务端停」：`session.cancel` 掐掉本轮与进行中的交接，随后 `turn.end` 到达
+    void this.channel.abort();
+  }
+
+  /**
+   * `/new`：先归档当前对话（有内容才存），再开一段新的，**最后**关掉旧的（三步顺序见文件头）。
+   *
+   * 为什么换一条新的 channel 而不是在同一条上再 `open()`：一段会话的 id 只在它自己那条通道
+   * 里成立；换段就换通道 —— 这样旧的那段在关掉之前完整可读，新的一段从零开始（与「上一段
+   * 跑到第几轮」有关的计数不该跟着走）。
+   */
+  async reset(): Promise<string | null> {
+    const previous = this.channel;
+    const hasContent = previous.stream.state.messages.some(
+      (message) => message.role === AgentNS.Role.User,
+    );
+    const archivedId = hasContent ? await previous.save() : null;
+
+    const next = this.newChannel();
+    try {
+      await next.open({
+        ...(this.requestedPath !== undefined ? { path: this.requestedPath } : {}),
+        // 同一个 Agent：`/new` 换的是会话，不是身份
+        ...(previous.agentId ? { agentId: previous.agentId } : {}),
+      });
+    } catch (error) {
+      // 新的没开出来：旧的原样留着（`this.channel` 还没换）
+      await next.close().catch(() => {});
+      throw error;
+    }
+
+    this.useChannel(next);
+    this.rate.reset();
+    this.pendingTurnId = null;
+    await previous.close();
+    this.notifyChange(true);
     return archivedId;
   }
 
   async reload(): Promise<void> {
-    // 重建 Agent 之后旧的子 Agent 已经不属于它了（与进程内实现 `reload()` 同步）
-    this.clearSubAgents();
-    this.applySnapshot(await this.sessions.reload(this.sessionId));
-    this.notifier.onChange(true);
+    await this.channel.reload();
+    this.notifyChange(true);
   }
 
-  /**
-   * 换 Agent：服务端按新定义重建、保留消息、**更新会话的 `agentId` 并落盘**。
-   *
-   * 拿到快照后整屏对齐（模型变了、阈值也变了），与 `reload()` 同一个形状；差别只在于
-   * `agentId` 跟着换 —— 而 `agentId` 是这个类自己的字段，必须同步（状态栏、`/think`、
-   * `/model` 都读它）。
-   */
+  /** 换 Agent：服务端按新定义重建、保留消息、更新会话的 `agentId`（`agentId` 也归 channel 记） */
   async setAgent(agentId: string): Promise<void> {
-    const snapshot = await this.sessions.setAgent(this.sessionId, agentId);
-    this.agentId = snapshot.agentId;
-    // 换了 Agent：子 Agent 属于旧底座（与服务端 `setAgent` 里的清空对应）
-    this.clearSubAgents();
-    this.applySnapshot(snapshot);
-    this.notifier.onChange(true);
+    await this.channel.setAgent(agentId);
+    this.notifyChange(true);
   }
 
   /**
-   * 换**这一段会话**的模型（`session.model.set`）。
+   * 换**这一段会话**的模型（`session.model.set`）；`modelParamsSet` 同理。
    *
-   * 写入面已经从 `ConfigPort` 搬回 `RemoteSessions.modelSet`（P3 / D6）：作用对象是
-   * 一段会话的动作就不该挂在「配置面」上。这里只转发，不自己刷屏 —— 屏幕靠调用方
-   * 随后的 `reload()` 拿新快照（与 `/think` 同一个节奏）。
+   * 包里没有对应方法（`SessionChannel` 覆的是生命周期与换 id 的那几个动作），所以直接问
+   * 门面 —— 参数拼装仍然只有 `RemoteSessions` 那一份，不是第二份实现。
    */
   async setModel(modelId: string): Promise<void> {
-    await this.sessions.modelSet(this.sessionId, modelId);
+    await (await this.sessionFacade()).modelSet(this.currentId, modelId);
   }
 
-  /** 改**这一段会话**的模型参数（`null` = 清掉这一层覆盖）；同样只转发 */
+  /** 改**这一段会话**的模型参数（`null` = 清掉这一层覆盖）；理由同上 */
   async setModelParams(params: ModelParams | null): Promise<void> {
-    await this.sessions.modelParamsSet(this.sessionId, params);
+    await (await this.sessionFacade()).modelParamsSet(this.currentId, params);
   }
 
   async handoff(mode?: HandoffMode): Promise<string> {
-    const result = await this.sessions.handoff(this.sessionId, mode);
-    this.applyMessages(result.messages);
-    this.notifier.onChange(true);
-    return result.handoffPath;
+    const path = await this.channel.handoff(mode);
+    this.notifyChange(true);
+    return path;
   }
 
   async migrate(mode?: HandoffMode): Promise<string> {
-    const result = await this.sessions.migrate(this.sessionId, mode);
-    // 先换 id：换完之后旧 id 的事件一律过滤掉，新会话的事件才接得上
-    this.sessionId = result.sessionId;
-    // 会话换了，栏目里那些是旧会话的子 Agent（与进程内实现 `migrate()` 同步）
-    this.clearSubAgents();
-    this.currentPhase = null;
-    this.applyMessages(result.messages);
-    this.notifier.onChange(true);
-    return result.handoffPath;
+    // 换 id 归 channel（`adopt`）：不跟着换，这一轮的 `turn.end` 会从新 id 上来，
+    // 状态机还在旧 id 上等 —— 界面永久卡在「生成中」
+    const path = await this.channel.migrate(mode);
+    this.notifyChange(true);
+    return path;
   }
 
+  /** 撤回；服务端给原文，工作目录备注由客户端剥（那是客户端自己拼进去的） */
   async rollbackTo(index: number): Promise<string> {
-    const result = await this.sessions.rollback(this.sessionId, index);
-    this.applyMessages(result.messages);
-    this.notifier.onChange(true);
-    // 服务端给原文，工作目录备注由客户端剥（那是客户端自己拼进去的）
-    return stripCwdNote(result.prompt);
+    return stripCwdNote(await this.channel.rollback(index));
   }
 
   async save(): Promise<string> {
-    return (await this.sessions.save(this.sessionId)).sessionId;
+    return await this.channel.save();
   }
 
   async saveAs(id: string): Promise<string> {
-    this.sessionId = (await this.sessions.saveAs(this.sessionId, id)).sessionId;
-    return this.sessionId;
+    return await this.channel.saveAs(id);
   }
 
-  /**
-   * 本工作区可续接的会话（`/load` 选择器与 `exists` 用）。
-   *
-   * 服务端回的是合并清单（存档 ∪ 活会话，带 title/条数/活否）：TUI 只拿 id——
-   * 选择器按 id 命名、判断“这段在不在”也只看 id。标题要等 TUI 真正展示它才有意义，
-   * 那一步没做之前不要在这里先造一个没用上的字段。
-   */
+  /** 本工作区可续接的会话（`/load` 与 `exists` 用）：服务端回合并清单，这里只留 id */
   async listSaved(): Promise<Array<{ id: string }>> {
-    return (await this.sessions.list(this.workspaceId)).sessions.map((entry) => ({
-      id: entry.sessionId,
-    }));
+    return (await this.channel.listSaved()).map((entry) => ({ id: entry.sessionId }));
   }
 
   async exists(id: string): Promise<boolean> {
-    return (await this.listSaved()).some((ref) => ref.id === id);
+    return await this.channel.exists(id);
   }
 
   /**
-   * 本工作区的文件清单（`@` 补全用）—— 问服务端要（`workspace.files`）。
-   *
-   * 清单必须来自**会话真正跑在哪个目录**：那是服务端的磁盘事实（Agent 的 cwd、工具读
-   * 相对路径的基准都在那边）。扫客户端自己的 cwd，在「TUI 连远端服务端」这种形态下会
-   * 列出另一台机器上的文件 —— 用户选中一个路径送过去，服务端根本没有那个文件。
-   *
-   * 形状两端逐字对齐（`{ path, dir }`，路径相对工作区根、`/` 分隔、目录条目带
-   * `dir: true`），所以这里不做映射：多一层搬运只会多一处会漂的翻译。
+   * 本工作区的文件清单（`@` 补全用）—— 问服务端要：清单必须来自**会话真正跑在哪个目录**，
+   * 扫客户端自己的 cwd 在两机部署时列的是另一台机器的文件。
    */
   async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
-    return (await this.sessions.files(this.workspaceId)).entries;
+    return await this.channel.listWorkspaceFiles();
   }
 
-  /**
-   * 把这段会话交还给服务端（**当场回收**，不等宽限期）。
-   *
-   * 一次性调用（`ai "…"`）跑完就调它：那个进程马上就会退出，而会话的寿命判据是
-   * 「连接上有没有持有者」—— 不显式关的话，一次管道调用就往常驻守护进程里留一段活会话。
-   *
-   * 重复调不会再发帧（`closed` 一旦置位，`dispose()` 也跟着安静下来）：多发的帧只是
-   * 多一次往返，而 `session.close` 本来就是幂等的（服务端回 `closed:false`）。
-   */
+  /** 把这段会话交还给服务端（**当场回收**）；重复调不再发帧（`session.close` 本身是幂等的） */
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    await this.closeSession(this.sessionId);
-  }
-
-  dispose(): void {
-    /**
-     * 先标记 `disposed` 并摘掉「连接断了」的订阅，再关连接。
-     *
-     * 顺序不能反：`client.close()` 自己也会发一条「断了」，订阅还在就会把**主动退出**
-     * 当成断线去重连 —— 用户按了 Ctrl+C，后台却还在拉连接，还会把会话重新 attach 上去。
-     */
-    this.disposed = true;
-    this.offClose?.();
-    this.offClose = null;
-    for (const off of this.offs.splice(0)) off();
-    // 挂着的 `send()` 不能永远悬着：连接没了，本轮只能算结束
-    this.resolveTurn();
-    /**
-     * 我走了 → 显式 `session.close` 这一段。
-     *
-     * 这是 `/load` 那条路（`exit({ load })` → 整个对话屏卸载 → 本方法）与 Ctrl+C 的
-     * 共同出口，而**不关就漏**：会话的寿命判据是「连接上有没有持有者」，删掉保活声明
-     * 之后只剩这一条 —— 连接还没断的瞬间，服务端认为这段会话仍有人在看它。
-     *
-     * 不等回执：这是退出路径，卡在这里就是「按了 Ctrl+C 却退不出去」。帧写不出去也就是
-     * 多留一段会话在内存里（存档早在每轮收尾时写好了），而紧接着的 `client.close()`
-     * 本身也会让「持有者消失」这个信号生效 —— 那正是删掉保活声明时所依据的那条理由：
-     * 崩溃的进程发不出帧，而 socket 消失是内核保证的。
-     */
-    void this.close();
-    this.client.close();
+    await this.channel.close();
   }
 
   /**
-   * 显式关掉一段会话（幂等，吞掉所有失败）。
+   * 卸载这一段（`chat.tsx` 的 effect cleanup、`stdio` 的收尾、Ctrl+C 的共同出口）。
    *
-   * `session.close` 是「我不看这段了」的**唯一**显式表达（协议里那三种表达已经收成
-   * 一种：另外两条是「持有者消失」与宽限期）。它换来的是**当场回收**：会话手上的 Agent、
-   * MCP 连接、内存里的消息全部立即放掉，不必等宽限期。
-   *
-   * 失败不报：这只关系「服务端要不要回收它」。会话已经被别的路径回收掉（`unknown-session`）
-   * 是常态 —— 那时目的已经达成了。
+   * 先置 `disposed` 再关：之后不会再重连（channel 自己也会摘掉「断了」的订阅），也不再往
+   * 界面上推任何东西。`session.close` **不 await** —— 理由与代价见文件头「退出」那一条。
    */
-  private async closeSession(sessionId: string): Promise<void> {
-    try {
-      await this.sessions.close(sessionId);
-    } catch {
-      // 见上：不在就不在，没什么要说的
-    }
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.offStream?.();
+    this.offStream = null;
+    void this.close();
   }
 
   // ==================== 内部 ====================
 
+  /** 当前连接上的门面（只为那两个「不换 id 的会话级模型动作」；每次现取，别缓存） */
+  private async sessionFacade(): Promise<RemoteSessions> {
+    return new RemoteSessions(await this.connection.client());
+  }
+
   /**
-   * 拼出这一条要发的内容：纯文本，或「文本 + 图片」内容块。
+   * 拼出这一条要发的内容：纯文本，或「文本 + 图片」内容块（与进程内模式同一段逻辑）。
    *
-   * 与进程内模式走**同一段**逻辑（`buildUserContent`）：内联还是 Files API 的
-   * `file_id`、模型支不支持视觉，都按**实发模型名**反查端点 —— 那是端点维度的事，
-   * 换一份实现就会漂。
-   *
-   * 唯一的远程约束是帧大小：内容块里的图片是 base64 内联的，一张 20MB 的图编码后
-   * 远超单帧上限，而超限帧会让服务端直接判协议错误、**断掉整条连接**。所以这里先量
-   * 一下：装不下就发文字（用户至少把话说出去了），并明确告知图片没带上。
+   * 唯一的远程约束是帧大小：图片是 base64 内联的，超限帧会让服务端判协议错误、**断掉整条
+   * 连接**。所以先量一下：装不下就发文字，并明确告知图片没带上。
    *
    * @returns 要发的内容；`null` = 什么都不发（已给过说明）
    */
@@ -723,14 +448,13 @@ export class RemoteChatSession implements ChatSessionLike {
     const { content, warnings } = await buildUserContent({
       text: input,
       images,
-      // 端点 / 视觉能力从**服务端**那份配置反查（见 `configPort` 的注释）
       config: await this.configPort.readConfig(),
-      apiModelName: this.apiModelValue || undefined,
+      // **实发**模型名（不是配置里的身份）：起过别名时两者不同，读错了会把带图提交静默降级
+      apiModelName: this.channel.stream.state.apiModel || undefined,
     });
     for (const warning of warnings) this.notifier.onNotice(warning, "info");
 
-    // 降级成纯文本（一张图都没转成功）：文字照发
-    if (typeof content === "string") return content;
+    if (typeof content === "string") return content; // 一张图都没转成功：文字照发
 
     const bytes = Buffer.byteLength(JSON.stringify(content), "utf-8");
     if (bytes > MAX_FRAME_BYTES) {
@@ -744,569 +468,32 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   /**
-   * 订阅事件并按 `sessionId` 过滤；**返回这一整组订阅的解绑函数**。
+   * 服务端提问 → 用户（或兜底）。
    *
-   * 过滤不是可选优化：同一条连接可以先后服务好几段会话（`/load`、`/migrate` 换了 id），
-   * 不过滤就会把上一段会话的事件拼进当前这段。
-   *
-   * 之所以**可重复调用、且把解绑函数交回给调用方**：断线后旧连接上的一切订阅都废了，
-   * 重连必须在新连接上重新 `on` 一遍。这里不直接往 `this.offs` 里塞，是为了让重连能
-   * 「先在新连接上订好、整段恢复成功再换上去」（见 {@link commit}）—— 半途失败时不会
-   * 留下一批指向一条已关连接的死订阅。
+   * 包里已经把两条降级写好了：**没注入**（无头 / 测试）与**回调抛错**都回服务端给的
+   * `fallback`。这里只补一件包里做不到的事：把协议里的「问题」翻译成选择器要的两个数。
+   * 分派留在应用侧是因为「哪一类问题弹哪个选择器」是界面决定；不认识的 kind 一律回
+   * `fallback` —— 沉默的代价不是「等一会儿」，服务端要等满超时才降级，那一轮就卡在迁移里。
    */
-  private wire(client: ServerClient): Array<() => void> {
-    const offs: Array<() => void> = [];
-    const mine = <E extends ServerEvent["event"]>(
-      event: E,
-      handler: (payload: Extract<ServerEvent, { event: E }>) => void,
-    ) => {
-      offs.push(
-        client.on(event, (payload) => {
-          if ((payload as { sessionId?: string }).sessionId !== this.sessionId) return;
-          handler(payload);
-        }),
-      );
-    };
-
-    mine(SESSION_EVENTS.phase, (event) => {
-      this.currentPhase = event.phase;
-      // 每个 chunk 都会带一条 phase：走合帧，别把渲染压到每片一次；回到空闲才立即上屏
-      this.notifier.onChange(event.phase === null);
-    });
-
-    mine(SESSION_EVENTS.delta, (event) => {
-      // 子 Agent 的 token 也是真从网络来的，速率里算上（进程内实现的 `onSubChunk` 同样计）
-      this.rate.addDelta(event.text + event.reasoning);
-      // 流末 chunk 带真实产物 token 数：状态栏的 tok/s 用它校准（只有字符估算会偏，
-      // 中文尤其明显 —— 旧版进程内实现也是这么做的）
-      this.rate.addExact(event.usage?.completionTokens);
-      if (event.subAgentId) {
-        // 带 `subAgentId` 的增量属于那个子 Agent：拼到它自己的临时消息上，**不碰**主会话的
-        // 拼接状态（`streaming`），也不改 `phase` —— 子 Agent 的流是工具内部的事，主阶段
-        // 此刻应停在「等待 xxx 返回」（与进程内实现同一条规矩：子 Agent 的增量不推进主阶段）。
-        this.applySubAgentDelta(event.subAgentId, event.text, event.reasoning);
-      } else if (event.text || event.reasoning) {
-        // 只带用量的收尾 chunk 不拼正文（拼了会在转录里多出一条空消息）
-        this.applyDelta(event.text, event.reasoning);
-      }
-      this.notifier.onChange(false);
-    });
-
-    /**
-     * 子 Agent 开工：标签上多一个「子AGENT{n}」。
-     *
-     * `index` / `subAgentId` 都用服务端给的：序号是本轮内从 1 起（`started` 携带），
-     * id 是稳定值（React key 与选中态都靠它，不能每轮重编）。
-     */
-    mine(SESSION_EVENTS.subAgentStarted, (event) => {
-      this.subAgentViews.push({
-        id: event.subAgentId,
-        index: event.index,
-        messages: [],
-        status: "running",
-      });
-      // 立刻拉一次快照：`started` 说明它已经在跑，服务端此刻可能已经有内容（任务描述、
-      // 上一轮工具调用）。首次通常只是一条空占位，但这一下让「中途接上连接」与「增量先于
-      // 快照到达」都收敛到同一份数据上（合并规则见包里的 `mergeStreamedSnapshot`）。
-      //
-      // 失败不升级成通知：这次拉取只是「把已有内容补上」，增量照样拼、`turn.end` 照样清，
-      // 连接真断了会有别的信号。
-      void this.syncSubAgent(event.subAgentId).catch(() => {});
-      // 标签立刻上屏（「它开跑了」这件事不该等一个往返）：此刻内容是空的，增量一到就填
-      this.notifier.onChange(true);
-    });
-
-    /** 子 Agent 收尾：只改状态（正文由增量与快照负责，这里不再拉一次） */
-    mine(SESSION_EVENTS.subAgentEnded, (event) => {
-      const view = this.subAgentViews.find((item) => item.id === event.subAgentId);
-      if (!view) return;
-      // **failed 不能被 done 覆盖**：core 的 `onSubAgentEnd` 在 `finally` 里分发，出错的那次
-      // 也照样会来一条 end —— 无脑覆盖会把 ✖ 擦成 ✓，用户以为子任务成功了。
-      if (!(view.status === "failed" && event.status === "done")) view.status = event.status;
-      this.notifier.onChange(true);
-    });
-
-    mine(SESSION_EVENTS.turnEnd, (event) => {
-      void this.finishTurn(event.turnId, event.error?.message);
-    });
-
-    /**
-     * 服务端提问（自动迁移的「交接方式三选一」）。
-     *
-     * 这里只**发起**回答、不等结果：这条事件在一轮内部到达，服务端此刻正停在迁移上等
-     * 答复，把界面卡在这个 await 里毫无好处。`answerQuestion` 负责所有分支，这里不判断。
-     *
-     * 回答失败不升级成通知：这一问只是「迁移用哪种方式」的优化，服务端有超时兜底，
-     * 而弹一条错误只会让用户以为迁移坏了 —— 这条路径上不新增任何文案。
-     */
-    mine(SESSION_EVENTS.question, (event) => {
-      void this.answerQuestion(event).catch(() => {});
-    });
-
-    /**
-     * 服务端换 id（迁移 / 另存为 / **一轮进行中的自动迁移**）。
-     *
-     * 这里没有 `mine()` 那层 `sessionId` 过滤：这条事件的载荷说的是「`from` 那段会话
-     * 现在叫 `sessionId` 了」，旧 id 已经不存在，用 `from` 认领。
-     * 不跟着换的后果很硬：自动迁移发生在一轮内部，客户端会在旧 id 上等一个永远不会到的
-     * `turn.end`，界面就永久卡在「生成中」。
-     */
-    offs.push(
-      client.on(SESSION_EVENTS.idChanged, (event) => {
-        if (event.from !== this.sessionId) return;
-        this.sessionId = event.sessionId;
-        // 换了会话，Agent 栏目里那些就是上一段会话的东西了（同 `migrate()` 的清空）
-        this.clearSubAgents();
-        // 迁移已经把历史剔成「模板 + 断点」：屏幕上的那份已经作废，重取一次
-        void this.syncFromServer()
-          .catch(() => {})
-          .finally(() => this.notifier.onChange(true));
-      }),
-    );
-
-    /**
-     * 对话内通知（包括子 Agent 出错时的 `subAgentFailed`）。
-     *
-     * 一律走「code → 本地词典」这条路：服务端只给 `{ code, params }`，不给句子。
-     * `subAgentFailed` 的模板只是把 `params.message` 原样吐出来 —— 与今天进程内实现
-     * 直接把 `error.message` 推上通知栏**逐字一致**，所以这里不必为它单开一条分支
-     * （多一条分支就多一处会与词典说不同话的地方）。
-     */
-    mine(SESSION_EVENTS.notice, (event) => {
-      this.notifier.onNotice(noticeText(event.code, event.params), toneOf(event.level));
-    });
-
-    /**
-     * 服务端级通知（不属于任何一段会话，比如「MCP 不可用」「存档目录挂了」）。
-     *
-     * 它曾经叫 `global.notice` 并且**住在 `SESSION_EVENTS` 里** —— 一张叫「会话事件」的
-     * 表里装了一条与 id 无关的东西，于是每个客户端都得自己判「这条该不该按 sessionId 过滤」。
-     * P1 把它拆进 `SERVER_EVENTS`：名字与归属对上了，这里也就不必（也不该）再过 sessionId。
-     */
-    offs.push(
-      client.on(SERVER_EVENTS.notice, (event) => {
-        this.notifier.onNotice(noticeText(event.code, event.params), toneOf(event.level));
-      }),
-    );
-
-    return offs;
-  }
-
-  /**
-   * 回答服务端的「用哪种方式交接」：把 `self` / `summary` / `null`（不交接）送回去。
-   *
-   * 三条规矩：
-   *
-   * 1. **有 `requestMode` 就问用户**。传进去的就是触发时的两个数（`AutoMigrateTriggerInfo`
-   *    的形状），选择器的文案要用它们说「用了多少 / 阈值多少」。
-   * 2. **没有 `requestMode` 就立刻回 `self`**（默认执行者）。无头 / 测试里没有人能回答，
-   *    而**沉默的代价不是「等一会儿」**：服务端要等满超时才降级，那一轮就一直卡在迁移里。
-   *    所以这条支路必须主动答，不能什么都不做。
-   * 3. **不抛、不提示**。连接断了或服务端回 `answered: false`，都由调用方的 `.catch` 吞掉：
-   *    服务端有超时兜底，客户端这边没有任何需要用户知道的事。
-   *
-   * 选择器自己抛错时按「没人能回答」处理（回 `self`）：面板被别的交互拆掉、渲染异常都会
-   * 走到这里，而它同样不该让这一轮干等 —— 与第 2 条是同一条降级，不是另造一种行为。
-   */
-  private async answerQuestion(event: SessionQuestionEvent): Promise<void> {
-    const choice = await this.answerChoice(event);
-    await this.sessions.answer(this.sessionId, event.questionId, choice);
-  }
-
-  /**
-   * 按 `kind` 分派「怎么答」，返回要送回去的选项 id。
-   *
-   * 一张表就是协议「客户端可按 `kind` 扩展」那半边的实现：新增一类问题时，这里加一个
-   * case + 一个选择器；**不认识的 kind 一律回服务端给的 `fallback`** —— 那一轮正卡在
-   * 提问上等答复，沉默的代价是「界面看起来卡住了」，而不是「这个功能没实现」。
-   *
-   * 选择器自己抛错（面板被别的交互拆掉、渲染异常）同样按「没人能回答」处理，回到
-   * `fallback`：与「没有 requestMode」是同一条降级，不是另造一种行为。
-   */
-  private async answerChoice(event: SessionQuestionEvent): Promise<string | null> {
-    switch (event.kind) {
-      case "handoff-mode": {
-        // 没有能问的人（无头 / 测试）→ 服务端给的兜底
-        if (!this.requestMode) return event.fallback;
-        const info = {
-          promptTokens: Number(event.params.promptTokens ?? 0),
-          handoffTokens: Number(event.params.handoffTokens ?? 0),
-        };
-        try {
-          return await this.requestMode(info);
-        } catch {
-          return event.fallback;
-        }
-      }
-      default:
-        return event.fallback;
-    }
-  }
-
-  /**
-   * 清空 Agent 栏目。
-   *
-   * 调用点对应进程内实现的每一处 `clearSubAgents()`：`turn.end`（= 那边的 `send()` 收尾）、
-   * `reset` / `reload` / `migrate`、以及 `session.idChanged`（自动迁移换会话）。
-   * 远程侧没有“计数器”要归零：`id` 与 `index` 都是服务端给的，清掉列表就够。
-   */
-  private clearSubAgents(): void {
-    this.subAgentViews = [];
-    this.subAgentStreams.clear();
-  }
-
-  /**
-   * 子 Agent 的增量：拼到**它自己**的临时消息上。
-   *
-   * 与 `applyDelta` 是同一套拼接策略（临时消息 + 快照纠正），但**状态完全不共享**：
-   * 主会话的 `streaming` / `currentMessages` / `lastEndedTurn` 一个都不碰 —— 共享就会让
-   * 主会话里凭空多出子 Agent 的正文，或者把主会话的临时消息提前收尾。
-   */
-  private applySubAgentDelta(subAgentId: string, text: string, reasoning: string): void {
-    const view = this.subAgentViews.find((item) => item.id === subAgentId);
-    // 没有 `started` 就没有这个标签（`index` 是服务端在 started 里给的，客户端编不出来）。
-    // 严格按 sessionId 过滤后这只会发生在「中途接上连接」时，而那时快照才是数据的来源。
-    if (!view) return;
-
-    let stream = this.subAgentStreams.get(subAgentId);
-    if (!stream) {
-      const message = { role: AgentNS.Role.Assistant, content: "" } as AgentNS.Message;
-      stream = { message, text: "", reasoning: "" };
-      this.subAgentStreams.set(subAgentId, stream);
-      view.messages.push(message);
-    }
-    stream.text += text;
-    stream.reasoning += reasoning;
-    // 就地改这两个字段：屏幕读的是同一个对象，不必每次新建一条消息
-    stream.message.content = stream.text;
-    if (stream.reasoning) stream.message.reasoning_content = stream.reasoning;
-  }
-
-  /**
-   * 拉一次子 Agent 快照并合并进视图（合并规则见包里的 {@link mergeStreamedSnapshot}）。
-   *
-   * 换会话时列表已经被清空，所以迟到的快照自然落空 —— 不必再比一次 `sessionId`。
-   */
-  private async syncSubAgent(subAgentId: string): Promise<void> {
-    // 只用到 `messages`：`index` / `status` 已经由 `started` / `ended` 事件给过，
-    // 同一份事实不在这条路上读第二遍（否则两个来源说法不同时得二选一，又多一处判定）。
-    const snapshot = await this.sessions.subAgentSnapshot(this.sessionId, subAgentId);
-    const view = this.subAgentViews.find((item) => item.id === subAgentId);
-    if (!view) return;
-
-    const merged = mergeStreamedSnapshot(
-      snapshot.messages as AgentNS.Message[],
-      this.subAgentStreams.get(subAgentId) ?? null,
-    );
-    view.messages = merged.messages;
-    if (merged.stream) this.subAgentStreams.set(subAgentId, merged.stream);
-    else this.subAgentStreams.delete(subAgentId);
-  }
-
-  /** 增量落到一条**暂时的** assistant 消息上（`turn.end` 之后会被快照替换掉） */
-  private applyDelta(text: string, reasoning: string): void {
-    if (!this.streaming) {
-      const message = { role: AgentNS.Role.Assistant, content: "" } as AgentNS.Message;
-      this.streaming = { message, text: "", reasoning: "" };
-      this.currentMessages.push(message);
-    }
-    const streaming = this.streaming;
-    streaming.text += text;
-    streaming.reasoning += reasoning;
-    // 就地改这两个字段：屏幕读的是同一个对象，不必每次新建一条消息
-    streaming.message.content = streaming.text;
-    if (streaming.reasoning) {
-      (streaming.message as unknown as { reasoning_content?: string }).reasoning_content =
-        streaming.reasoning;
-    }
-  }
-
-  /**
-   * 一轮收尾：用快照换成服务端那份权威结果。
-   *
-   * 为什么不自己把流拼完整：工具调用、思考内容、`omit` 标记、用量都只有服务端有；
-   * 客户端拼出来的只是一个「能滚动的近似」，回合结束后必须被真件替换掉。
-   *
-   * `known` = 手上已经有一份**刚刚才拉的**快照（重连后那一份）：再用它一次，不再为了
-   * 收尾多跑一个往返（那个往返还可能拿回“下一轮已经开了”的更新状态，把这里的判定搅乱）。
-   *
-   * ## `lastEndedTurn` 为什么在末尾才置位
-   *
-   * 它是 `send()` 那个 `await` 的"已收尾"判据，所以只有**消息真的换成快照之后**才算数：
-   * 开头就置位的话，一轮非常短时（`turn.end` 比 `session.send` 的**回执**先到）`send()`
-   * 会立刻返回，而这里那份快照还在路上 —— 调用方紧接着读 `messages` 拿到的是空数组
-   * （实测：stdio 会因此打印「模型没回答」，TUI 的那条用量用例也会间歇红）。
-   */
-  private async finishTurn(
-    turnId: number,
-    failure?: string,
-    known?: SessionSnapshotResult,
-  ): Promise<void> {
-    this.streaming = null;
-    // 本轮内循环（含全部委派）已结束：子 Agent 只剩历史价值，栏目随之消失 —— 与进程内
-    // 实现 `send()` 的 `finally` 等价（中止 / 出错也走到这里，不留残影）。
-    // 放在取快照之前：快照只描述主会话，栏目不该被它带着复活。
-    this.clearSubAgents();
-    this.currentPhase = null;
-    this.rate.finish();
-    try {
-      this.applySnapshot(known ?? (await this.sessions.snapshot(this.sessionId)));
-    } catch {
-      // 拿不到快照（服务端刚重启 / 连接断了）：本地那份仍然可读，下一轮还会再同步
-    }
-    if (failure) this.notifier.onNotice(failure, "error");
-    // 消息已经是服务端那份了：此刻起「这一轮已收尾」才对 `send()` 成立
-    this.lastEndedTurn = Math.max(this.lastEndedTurn, turnId);
-    this.resolveTurn(turnId);
-    this.notifier.onChange(true);
-  }
-
-  /**
-   * 等这一轮结束。
-   *
-   * 事件可能**比回执先到**（`session.send` 先推 `connecting` 再回 `turnId`，一轮太快时
-   * 连 `turn.end` 都可能在回执之前落地），所以先看 `lastEndedTurn` 再挂 promise。
-   *
-   * 这里**不**去要快照“补一下”：快照是回合开始前的状态，它的回执若晚于第一批增量
-   * 到达，就会把已经拼出来的正文抹掉（本地列表被整个换掉，而流式那条已经不在里面）。
-   * 快照只在一个地方用：真正的 `turn.end`（见 `finishTurn`）。
-   */
-  private async waitForTurn(turnId: number): Promise<void> {
-    if (this.lastEndedTurn >= turnId) return;
-    // 从判断到挂 promise 之间没有 await：中间不会被事件插进来
-    await new Promise<void>((resolve, reject) => {
-      this.pendingTurn = { turnId, resolve, reject };
+  private async answerQuestion(event: SessionQuestionEvent): Promise<string | null> {
+    if (event.kind !== "handoff-mode" || !this.requestMode) return event.fallback;
+    return await this.requestMode({
+      promptTokens: Number(event.params.promptTokens ?? 0),
+      handoffTokens: Number(event.params.handoffTokens ?? 0),
     });
   }
 
-  /** 唤醒等待中的 `send()`；带 turnId 时只唤醒它自己等的那一轮 */
-  private resolveTurn(turnId?: number): void {
-    if (turnId !== undefined && this.pendingTurn && this.pendingTurn.turnId !== turnId) return;
-    const pending = this.pendingTurn;
-    this.pendingTurn = null;
-    pending?.resolve();
+  /** 服务端的机器码 → CLI 词典里的句子（服务端一句自然语言都不产） */
+  private forwardNotice(payload: ChannelNoticePayload): void {
+    if (this.disposed) return;
+    this.notifier.onNotice(noticeText(payload.code, payload.params), toneOf(payload.level));
   }
 
-  /**
-   * 让等着的 `send()` 以错失败。
-   *
-   * 用于“连不回来”这条路径：那一轮的 `turn.end` 已经不可能到达了，而 `send()` 的 promise
-   * 不能永远悬着（界面靠它恢复输入）。错误走的就是既有的那条渠道 —— 与 socket 断开时
-   * `failAll` 拒掉在飞调用的错误同一口径，不新造一套。
-   *
-   * 只动 `pendingTurn`：本地消息、阶段一概不碰（今天的断线也是这个结果，不额外做“收拾”）。
-   */
-  private failPendingTurn(error: Error): void {
-    const pending = this.pendingTurn;
-    this.pendingTurn = null;
-    pending?.reject(error);
+  /** 「屏幕该重画了」；卸载之后一律不再推（那一代的 `notifier` 已经没人听了） */
+  private notifyChange(immediate: boolean): void {
+    if (this.disposed) return;
+    this.notifier.onChange(immediate);
   }
-
-  // ==================== 断线重连 ====================
-
-  /**
-   * 连接断了的唯一入口。
-   *
-   * 三个不重连的理由：
-   *   · `disposed`：是我们自己关的（`dispose()` 已先摘掉这个订阅，这里是第二道口子）；
-   *   · `reconnecting`：上一次重连还没跑完（单飞）—— 多个信号同时到达不能开出几条连接；
-   *   · 会话已结束（服务端回 `session-missing`）：重试只会一直撞同一堵墙，见 {@link reconnect}。
-   *
-   * 会话换了 id（`/migrate`、自动迁移）**不是**不重连的理由，而是“别接错门”：
-   * `attach` 用的是此刻的 `this.sessionId`（重连后才读），所以接的永远是当前这一段。
-   */
-  private handleClose(): void {
-    if (this.disposed || this.reconnecting) return;
-    void this.reconnect();
-  }
-
-  /**
-   * 重建连接并把会话接回来：最多 {@link MAX_RECONNECT_ATTEMPTS} 次，失败就走既有错误通道。
-   *
-   * 每一次“尝试”都是完整的一段：建连 → `watch()` → `attach()` → 快照（见 {@link restore}）。
-   * 半途失败（连接建不起来、`watch` 被拒）算这次失败，接着试；`session-missing` 不一样，
-   * 那是**服务端说这段会话没了**（存档被删、服务端换了台实例）—— 再试三次也是同一个答案。
-   */
-  private async reconnect(): Promise<void> {
-    if (this.reconnecting || this.disposed) return;
-    this.reconnecting = true;
-    try {
-      for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
-        if (attempt > 1) {
-          await new Promise<void>((resolve) =>
-            setTimeout(resolve, RECONNECT_BACKOFF_MS[attempt - 2] ?? 0),
-          );
-        }
-        // 等待期间用户退出了：不再拉连接，也不再往界面上推任何东西
-        if (this.disposed) return;
-        const outcome = await this.restore();
-        if (outcome.status === "ok") return;
-        if (outcome.status === "gone") {
-          // 会话已经结束：重连没有意义。在飞的那一轮以服务端给的原话失败
-          this.failPendingTurn(outcome.error);
-          return;
-        }
-        // 连上之前用户退出了（`dispose()` 发生在 await 期间）：不再重试
-        if (this.disposed) return;
-      }
-      // 三次都没接上：保持今天的行为 —— 在飞的调用以连接错误失败，之后的调用同样失败
-      // （`this.client` 仍是那条断掉的连接，`call()` 会直接拒）。不无限重试、不静默吞掉。
-      this.failPendingTurn(connectionLostError(this.client));
-    } finally {
-      this.reconnecting = false;
-    }
-  }
-
-  /**
-   * 在新连接上把会话接回来：订阅 → `watch()` → `attach()` → 一次快照对齐屏幕。
-   *
-   * 两处顺序是必须的：
-   *  · **订阅先于 `attach`**：接上之后服务端可能立刻推事件（`phase` 最先），晚一步就会漏掉
-   *    开头那几条 —— 与 `create` 里 `watch()` 先于 `open()` 同一个理由；
-   *  · **整段成功才换上去**（{@link commit}）：半途失败时 `this.client` 仍是那条断掉的
-   *    连接，“断了就用不了”这条语义不被半成品污染。
-   */
-  private async restore(): Promise<RestoreOutcome> {
-    let client: ServerClient;
-    try {
-      client = await this.reconnectFn();
-    } catch {
-      return { status: "retry" };
-    }
-    if (this.disposed) {
-      client.close();
-      return { status: "retry" };
-    }
-
-    const sessions = new RemoteSessions(client);
-    const offs = this.wire(client);
-
-    // 阶段一：只在这条**新**连接上做事。任何一步失败都算这次尝试失败，
-    // 手上的连接原封不动（还是那条断掉的），不会留下半接上的状态。
-    let snapshot: SessionSnapshotResult;
-    try {
-      await client.call(EVENT_METHODS.watch);
-      // 接回**同一段**会话：活着就接上（Agent 与 MCP 连接都还在），盘上有就装回来。
-      // 用的 id 是**此刻**的 `this.sessionId` —— 断线期间若它变了（自动迁移），
-      // 接回来的就应该是新的那段，而不是一个已经不在的旧 id。
-      await sessions.attach({
-        workspaceId: this.workspaceId,
-        sessionId: this.sessionId,
-        path: this.path,
-        agentId: this.agentId,
-      });
-      snapshot = await sessions.snapshot(this.sessionId);
-    } catch (error) {
-      for (const off of offs) off();
-      client.close();
-      return isSessionGoneError(error)
-        ? { status: "gone", error: error as Error }
-        : { status: "retry" };
-    }
-
-    // 快照拿到之后、换上去之前它断了（或用户在这期间退出了）：当这次没接上，把新连接关掉。
-    // 换上去的话「断了」的订阅永远等不到通知（`failAll` 已经跑完了），那才是真正的死局。
-    if (client.closed || this.disposed) {
-      for (const off of offs) off();
-      client.close();
-      return { status: "retry" };
-    }
-
-    // 阶段二：换成新连接，然后落定屏幕。能走到这里说明已经接上了 —— 这一段再出错也不该
-    // 把刚接上的连接扔掉重试（那只会把同一件事再错一遍）。
-    this.commit(client, sessions, offs);
-    this.applySnapshot(snapshot);
-    /**
-     * 子 Agent 栏目清空 —— 与 `turn.end` 时同一动作。
-     *
-     * 服务端只保留**当前一轮**的子 Agent，而断线期间那些 `started` / `ended` 全丢在
-     * 断掉的那条 socket 上了：留着它们就是留一份永远不会再更新的残影。
-     */
-    this.clearSubAgents();
-
-    if (snapshot.phase === null) {
-      /**
-       * 服务端已经空闲：那一轮的 `turn.end` 丢在断线里了。
-       *
-       * 用**与真事件完全相同**的那条收尾路径（`finishTurn`：同一套 `lastEndedTurn` /
-       * `resolveTurn` / 清栏目），只是快照用刚拿到的那份 —— 它就是这一轮的结果，
-       * 按成功落定。
-       *
-       * `turnId` 取两者较大值：服务端重启后轮次计数从 0 重来（`snapshot.turnId` 可能
-       * 比我们等的那一轮小），而“服务端已空闲”意味着**我们等的那一轮已经结束** ——
-       * 落定它才是目的，不能让一个重启过的计数器把 `send()` 永远挂着。
-       */
-      const turnId = Math.max(snapshot.turnId, this.pendingTurn?.turnId ?? 0);
-      await this.finishTurn(turnId, undefined, snapshot);
-    } else {
-      // 服务端还在跑这一轮：事件会继续来，接着等（不落定、不猜结果）
-      this.notifier.onChange(true);
-    }
-    return { status: "ok" };
-  }
-
-  /**
-   * 换成新连接：旧连接的解绑函数与“断了”的订阅全部作废，换上新的一套。
-   *
-   * 旧订阅必须在这里解掉：它们指向一条已经 destroy 的 socket，留着不但没用，还会让
-   * `this.offs` 越积越长（每次重连多一组）。
-   */
-  private commit(client: ServerClient, sessions: RemoteSessions, offs: Array<() => void>): void {
-    this.offClose?.();
-    for (const off of this.offs.splice(0)) off();
-    this.client = client;
-    this.sessions = sessions;
-    this.offs.push(...offs);
-    this.offClose = client.onClose(() => this.handleClose());
-  }
-
-  private applySnapshot(snapshot: SessionSnapshotResult): void {
-    this.applyMessages(snapshot.messages);
-    this.currentPhase = snapshot.phase;
-    this.modelIdValue = snapshot.modelId;
-    this.modelLevelValue = snapshot.modelLevel;
-    this.apiModelValue = snapshot.apiModel;
-    this.lastUsageValue = snapshot.lastUsage as AgentNS.Usage | undefined;
-  }
-
-  private async syncFromServer(): Promise<void> {
-    this.applySnapshot(await this.sessions.snapshot(this.sessionId));
-  }
-
-  private applyMessages(messages: unknown[]): void {
-    this.currentMessages = [...(messages as AgentNS.Message[])];
-  }
-}
-
-/** 一次重连尝试的结果：接上了 / 会话已经没了（不重试）/ 这次没接上（还能再试） */
-type RestoreOutcome = { status: "ok" } | { status: "gone"; error: Error } | { status: "retry" };
-
-/**
- * 服务端说「没有这一段会话」。
- *
- * 客户端端口只把错误码拼进 `message`（`SocketServerClient` 的 `${code}: ${message}`），
- * 拿不到结构化的 `code`，所以这里只能认前缀 —— `session-missing` 是 `attach` 的答案，
- * `unknown-session` 是其它会话方法在会话消失后的答案，两者都意味同一件事：这段会话没了。
- */
-function isSessionGoneError(error: unknown): boolean {
-  // 优先看结构化 code（`SocketServerClient` 会把服务端的 code 挂到 error 上）；
-  // 拿不到 code 时才退回看 message 前缀 —— 那条只对自造错误成立。
-  const code = (error as { code?: unknown } | null)?.code;
-  if (typeof code === "string") return code === "session-missing" || code === "unknown-session";
-  const message = error instanceof Error ? error.message : String(error);
-  return message.startsWith("session-missing") || message.startsWith("unknown-session");
-}
-
-/**
- * “连接没了”的错误（沿用 socket 断开时那个形状：主机 + 端口）。
- *
- * 重连三次都失败时交给等着的 `send()`：这一轮已经不可能结束了，但界面必须能恢复输入，
- * 所以只能以错失败 —— 与今天连接断掉时在飞调用被拒是同一个错误通道。
- */
-function connectionLostError(client: ServerClient): Error {
-  return new Error(
-    `connection closed (${client.address.host}:${client.address.port}), reconnect failed`,
-  );
 }
 
 /** 通知语气：界面只分两档（普通 / 红），`warn` 归到红那一档 */
@@ -1315,31 +502,19 @@ function toneOf(level: "info" | "warn" | "error"): "info" | "error" {
 }
 
 /**
- * `ChatDeps.createSession` 的默认实现：连服务端（没有就拉起）并开一段会话。
+ * `ChatDeps.createSession` 的实现：借那**一条**连接开一段会话。
  *
- * **路径由 `openWith` 那一处决定**（本地递客户端 cwd、远端不说）：
- * 客户端把本机目录递给远端服务端，等于替它决定会话跑在哪 —— 那个目录在服务端很可能
- * 根本不存在（轻则开出一个不相干的新目录，重则直接失败）；而同一台机器上，用户的 cwd
- * 就是最准的意图（「我在这个项目里敲 `ai`」）。判据只有一条（`local-host.ts`）。
- *
- * `resume` / `sessionId` 原样透传：一个说「接着上次」，一个说「就这一段」，
- * 两者的优先级由 `openWith` 处理（明确的 id 优先）。
- *
- * `requestMode` 同样原样透传，但它透传的是**一个能力**而不是数据：屏幕层给了这个回调，
- * 说明「有人能回答自动迁移的那一问」；不给就别装作能问（走默认执行者，见 `answerQuestion`）。
- * 漏掉它 = 自动迁移的选择器在远程模式下永不出现 —— 这正是这条交互曾经丢失的原因。
+ * 有明确的会话 id 时**不递 agentId**：那段会话是谁跑的，存档里写着（服务端 `attach` 取
+ * `record.agentId`）。宿主手上那个是首次挂载时的快照，`/agent` 换过就旧了 —— 递上去只会
+ * 把存档里的真值顶掉。
  */
 export async function createRemoteChatSession(
   options: ChatSessionOptions,
   notifier: ChatSessionNotifier,
 ): Promise<ChatSessionLike> {
-  return await RemoteChatSession.create(
+  return await RemoteChatSession.open(
+    options.connection,
     {
-      /**
-       * 有明确的会话 id 时**不递 agentId**：那段会话是哪个 Agent 的，存档里写着
-       * （服务端 `attach` → `create` 取 `record.agentId`）。宿主手上的 `agentId` 是
-       * 首次挂载时的快照，`/agent` 换过之后它就旧了 —— 递上去只会把存档里的真值顶掉。
-       */
       agentId: options.sessionId ? undefined : options.agentId,
       sessionId: options.sessionId,
       resume: options.resume,

@@ -65,6 +65,9 @@ const { created, createFakeSession, fakeIndex } = vi.hoisted(() => {
         },
       ),
       abort: vi.fn(),
+      // 一轮 = `send()`（受理即回）+ `waitForTurn()`（等它结束）：假件里一轮同步就跑完了，
+      // 所以后者立即 resolve —— 断言看的是 `send` 有没有被叫、参数对不对。
+      waitForTurn: vi.fn(async () => {}),
       dispose: vi.fn(),
       reset: vi.fn(async () => null),
       reload: vi.fn(async () => undefined),
@@ -122,6 +125,7 @@ const clipboardMock = vi.hoisted(() => ({
 }));
 
 import { Chat } from "./chat.js";
+import { ServerConnection } from "../../server-client/index.js";
 import type { ConfigPort } from "../../server-client/index.js";
 import { getCommandHints } from "../../commands/registry.js";
 import type { ClipboardTextResult } from "../../clipboard.js";
@@ -187,6 +191,9 @@ const mount = (options: { initialInput?: string; resume?: boolean; port?: FakePo
       deps={{
         // 配置面是唯一入口，向导快照读取也由它派生（不再单独注入 wizardReaders）
         config: port,
+        // 屏幕不再有「自己造一条连接」的兜底：它只要一个能递下去的句柄。
+        // 真空的 `ServerConnection` 就够 —— `createSession` 是注入的假件，连接永不会被取用。
+        connection: new ServerConnection(),
         createSession: (async (sessionOptions: unknown, notifier: any) => {
           const session = createFakeSession(notifier);
           created.notifier = notifier;

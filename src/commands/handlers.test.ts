@@ -7,14 +7,12 @@
 import { describe, expect, it, vi, beforeEach, afterAll } from "vitest";
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AgentDefinition, AppConfig, Model, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { runCommand, type ChatCommandHost } from "./chat-commands.js";
-import type { ChatSessionLike } from "../../session/types.js";
-import type { AgentStore } from "../../agents-store.js";
-import type { ConfigPort } from "../../server-client/index.js";
-import { useTempAiZenDir } from "../../test-support/temp-dir.js";
-import { setLocale, t } from "../../i18n/index.js";
-import { computeChatLayout } from "./layout.js";
-import { usableFrameRows } from "../text.js";
+import { runCommand, type ChatCommandHost } from "./handlers.js";
+import type { ChatSessionLike } from "../session/types.js";
+import type { AgentStore } from "../agents-store.js";
+import type { ConfigPort } from "../server-client/index.js";
+import { useTempAiZenDir } from "../test-support/temp-dir.js";
+import { setLocale, t } from "../i18n/index.js";
 
 /**
  * 独立的临时 `AI_ZEN_DIR`。
@@ -71,8 +69,10 @@ function createHost(
     openWizard: vi.fn(async () => {}),
     openKeyEditor: vi.fn(async () => {}),
     doExit: vi.fn(async () => {}),
-    setPickerState: vi.fn(),
-    setConfirmState: vi.fn(),
+    // 覆盖层入口是两个**异步口**（命令层拿不到 React setter）：默认行为是「没人作答」，
+    // 需要作答的用例自己替换它们（见下面几个 capture* 助手）。
+    pick: vi.fn(async () => null),
+    confirm: vi.fn(async () => false),
     setInputText: vi.fn(),
     setEffortView: vi.fn(),
     refreshLocale: vi.fn(),
@@ -225,10 +225,7 @@ describe("/back：撤回后必须落盘", () => {
     };
     const { host } = createHost({ ...session });
     // 选择器直接作答：选「第二条」（它的 messages 下标为 2，列表里是最近在前，但 value 就是下标）
-    (host as any).setPickerState = (next: any) => {
-      const state = typeof next === "function" ? next(null) : next;
-      if (state) state.resolve("2");
-    };
+    host.pick = async () => "2";
 
     await runCommand("back", "/back", host);
 
@@ -253,11 +250,9 @@ describe("/save：支持指定名字 + 重名二次确认", () => {
   /** 接管确认框：记下问句并立即作答 */
   const captureConfirm = (host: ChatCommandHost, answer: boolean) => {
     const seen = { question: "" };
-    (host as any).setConfirmState = (next: any) => {
-      const state = typeof next === "function" ? next(null) : next;
-      if (!state) return;
-      seen.question = state.question;
-      state.resolve(answer);
+    host.confirm = async (question) => {
+      seen.question = question;
+      return answer;
     };
     return seen;
   };
@@ -267,7 +262,7 @@ describe("/save：支持指定名字 + 重名二次确认", () => {
     const { host, session, notices } = createHost();
     await runCommand("save", "/save", host);
     expect(session.save).toHaveBeenCalledTimes(1);
-    expect(host.setConfirmState).not.toHaveBeenCalled();
+    expect(host.confirm).not.toHaveBeenCalled();
     expect(texts(notices)).toContain("chat_saved");
   });
 
@@ -331,62 +326,58 @@ describe("/save：支持指定名字 + 重名二次确认", () => {
 
     await runCommand("save", "/save chat_now", host);
 
-    expect(host.setConfirmState).not.toHaveBeenCalled();
+    expect(host.confirm).not.toHaveBeenCalled();
     expect(session.saveAs).toHaveBeenCalledWith("chat_now");
   });
 });
 
 /**
- * 回归（PLAN L15）：picker 的条数上限少扣了 2 行。命令层用的是**原始终端行数**
- * （`rows`），而布局里 `usableFrameRows(rows) = rows - 1`；覆盖层占
- * `pickerLines(n) + STATUS_BAR_LINES`。旧的 `rows - 8` 让 n_max 多出 2 条，
- * 于是选择器会把状态栏顶出屏幕。
+ * 回归（PLAN L15）：选择器的条数上限。
+ *
+ * **换算搬走了**：`原始终端行数 → 能放几条候选` 是终端布局的事实（预留末行、覆盖层高、
+ * 状态栏高），公式与它的用例都在渲染层（`tui/screens/layout.ts` 的 `pickerCapacity`，用例见
+ * `tui/components-and-layout.test.tsx`）。命令层只认宿主给的那个数 —— 这条用例钉的就是这层
+ * 契约：给几条就最多列几条，多一条都不行（多一条 = 覆盖层把状态栏顶出屏幕）。
  */
-describe("picker 条数上限（不超出一帧）", () => {
-  const ROWS = 24;
-  /** 用布局自己的公式量一遍：这个条数放不放得下 */
-  const fits = (pickerItems: number): boolean =>
-    computeChatLayout({
-      columns: 80,
-      rows: ROWS,
-      transcript: [],
-      input: "",
-      busy: false,
-      hintCount: 0,
-      overlay: "picker",
-      pickerItems,
-    }).bottomLines <= usableFrameRows(ROWS);
-
+describe("picker 条数上限（只用宿主给的数）", () => {
   /** 接管选择器：只记条数 / 标签并立即作答（不真弹覆盖层），返回记录值 */
   const capturePick = (host: ChatCommandHost, answer: string | null) => {
     const seen = { count: 0, labels: [] as string[] };
-    (host as any).setPickerState = (next: any) => {
-      const state = typeof next === "function" ? next(null) : next;
-      if (!state) return;
-      seen.count = state.items.length;
-      seen.labels = state.items.map((item: any) => item.label);
-      state.resolve(answer);
+    host.pick = async (_title, items) => {
+      seen.count = items.length;
+      seen.labels = items.map((item) => item.label);
+      return answer;
     };
     return seen;
   };
 
-  it("/load：条数上限正好装进一帧（rows − 10）", async () => {
+  it("/load：条数不超过宿主给的容量", async () => {
     const { host, arrangeSaved } = createHost();
     for (let i = 0; i < 20; i += 1) {
       arrangeSaved(`chat_${String(i).padStart(2, "0")}`);
     }
-    (host as any).rows = ROWS;
+    // 宿主给的容量（渲染层用 `pickerCapacity(24)` 算出来是 14，这里只要一个确切的数）
+    host.rows = 7;
     const seen = capturePick(host, null);
 
     await runCommand("load", "/load", host);
 
-    expect(seen.count).toBe(ROWS - 10);
-    expect(fits(seen.count)).toBe(true);
-    // 对照：多一条就装不下（证明上界算对了，不是碰巧）
-    expect(fits(seen.count + 1)).toBe(false);
+    expect(seen.count).toBe(7);
     // 列表只显示会话文件名（id），不再解析首条消息当摘要
     expect(seen.labels.every((label) => /^chat_\d{2}$/.test(label))).toBe(true);
     expect(seen.labels.some((label) => label.includes("条"))).toBe(false);
+  });
+
+  it("/load：会话条数少于容量时全列出来", async () => {
+    const { host, arrangeSaved } = createHost();
+    arrangeSaved("chat_00");
+    arrangeSaved("chat_01");
+    host.rows = 7;
+    const seen = capturePick(host, null);
+
+    await runCommand("load", "/load", host);
+
+    expect(seen.count).toBe(2);
   });
 
   it("/back：条数上限同/load", async () => {
@@ -395,13 +386,12 @@ describe("picker 条数上限（不超出一帧）", () => {
       content: `第 ${i} 条`,
     }));
     const { host } = createHost({ messages, rollbackTo: vi.fn(() => "") });
-    (host as any).rows = ROWS;
+    host.rows = 7;
     const seen = capturePick(host, null);
 
     await runCommand("back", "/back", host);
 
-    expect(seen.count).toBe(ROWS - 10);
-    expect(fits(seen.count)).toBe(true);
+    expect(seen.count).toBe(7);
   });
 });
 
@@ -542,11 +532,9 @@ describe("/model：三档作用级别各自的写路径 + 会话重载", () => {
     const { host, notices } = createHost({ setModel: setSessionModel });
     const titles: string[] = [];
     // 接管选择器：记下标题并选「模型二」
-    (host as any).setPickerState = (next: any) => {
-      const state = typeof next === "function" ? next(null) : next;
-      if (!state) return;
-      titles.push(state.title);
-      state.resolve("m2");
+    host.pick = async (title) => {
+      titles.push(title);
+      return "m2";
     };
 
     // 不带参数 → 会话级的选择器；带作用级别但没给 id → 该档的选择器

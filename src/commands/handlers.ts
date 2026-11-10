@@ -1,37 +1,51 @@
-// 斜杠命令执行器 —— 表驱动
-//
-// 命令的**元数据**（名字 / 别名 / 说明 / 是否阻塞输入）在
-// `commands/registry.ts`；**执行体**在本文件末尾的 `HANDLERS` 表里。
-// 两者以 `Record<CommandName, CommandHandler>` 绑定，于是「新增命令忘了写处理器」
-// 是编译错误（此前是 557 行 switch，漏一个分支只会在运行时落到「未知命令」）。
-//
-// 每个处理器只做一件事，公共部分（参数解析、通知、选择器）由 `CommandContext`
-// 统一提供 —— 命令层不再自己解析命令名（与宿主是两套解析的问题已消除）。
-import type { Dispatch, SetStateAction } from "react";
+/**
+ * 斜杠命令执行器 —— 表驱动。
+ *
+ * 命令的**元数据**（名字 / 别名 / 说明 / 是否阻塞输入）在 `commands/registry.ts`；**执行体**
+ * 在本文件末尾的 `HANDLERS` 表里。两者以 `Record<CommandName, CommandHandler>` 绑定，于是
+ *「新增命令忘了写处理器」是编译错误（此前是 557 行 switch，漏一个分支只会在运行时落到
+ *「未知命令」）。
+ *
+ * ## 为什么它在 `src/commands/` 而不在 `tui/screens/`
+ *
+ * 命令层不是渲染：它不吃键盘、不画帧，只「根据命令名做一件事」。它曾经住在 `tui/` 里，而
+ * 那带来一条**只靠运气成立**的边界：只要这条链上恰好没有人把某个 ink 组件用在值位置，
+ * `dist/commands/index.js` 的依赖图里就没有 ink。四条越界一并改掉：
+ *   · `truncate` 改吃 `text.js`（以前从 `screens/render.js` 拿，而那文件第一行就是 ink）；
+ *   · `STATUS_BAR_LINES` / `pickerLines` / `usableFrameRows` 是**终端行数**概念，留在渲染层：
+ *     命令层只需要知道「选择器能放几条」，那个数由 `ChatCommandHost.rows` 给；
+ *   · `WizardStep` / `SelectItem` 改成**结构上的共享词汇**（`./types.js`），不再靠一条指向
+ *     `tui/config-wizard/index.js` 的 `import type`（那条今天靠 tsc 擦掉才绿，明天用在值位置
+ *     就静默进了 ink）；
+ *   · 原始 React setter（`setPickerState` / `setConfirmState`）改成 `pick()` / `confirm()`
+ *     两个 Promise —— 命令层不再持有「怎么上屏」这件事。
+ *
+ * 判据是**产物图**而不是路径 grep：`node scripts/check-imports.mjs dist/commands/index.js
+ * --forbid ink --forbid react --forbid ./tui/`。
+ */
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AgentDefinition, HandoffMode } from "@ai-zen/agents-sdk";
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SelectItem } from "../components.js";
-import { type ChatSessionLike } from "../../session/types.js";
-import { stripCwdNote } from "../../text.js";
+import { type ChatSessionLike } from "../session/types.js";
+import { stripCwdNote, truncate } from "../text.js";
 import {
   canonicalCommandName,
   matchCommandHints,
   parseCommandArgs,
   type CommandName,
-} from "../../commands/registry.js";
+} from "./registry.js";
 // 配置的读与写统一走**配置面**（`ConfigPort`），它永远开向服务端。命令层不再自己吃盘 ——
 // 否则「界面说改好了」和「服务端 Agent 实际用的那份配置」会各说各话（客户端搬到另一台
 // 机器上时错得很安静）。
-import type { ConfigPort } from "../../server-client/index.js";
+import type { ConfigPort } from "../server-client/index.js";
 // 留下的是**纯数据整形**：把读取结果转成配置 / 列表，不吃盘，故不经端口
-import { mcpConfigOrEmpty } from "../../config.js";
-import { checkAgentSwitch, listAgentChoices } from "../../agent-switch.js";
-import type { AgentStore } from "../../agents-store.js";
-import { parseMcpScope, pickStartScope } from "../../mcp-command.js";
+import { mcpConfigOrEmpty } from "../config.js";
+import { checkAgentSwitch, listAgentChoices } from "../agent-switch.js";
+import type { AgentStore } from "../agents-store.js";
+import { parseMcpScope, pickStartScope } from "../mcp-command.js";
 import {
   effortChoices,
   effortLabel,
@@ -40,18 +54,21 @@ import {
   describeEffort,
   describeEffortView,
   setAgentEffort,
-} from "../../reasoning-effort.js";
-import { matchLevel, presetFor } from "../../reasoning-presets.js";
-import { getLocale, t } from "../../i18n/index.js";
-import { persistLocale } from "../../i18n/preferences.js";
-import { CLI_VERSION } from "../../version.js";
-import { compareVersions, pickNewest } from "../../version-compare.js";
-import { WizardStep } from "../config-wizard/index.js";
-import { truncate } from "../../text.js";
-import { STATUS_BAR_LINES, pickerLines } from "./layout.js";
-import { usableFrameRows } from "../text.js";
-import { chooseHandoffMode } from "./handoff-choice.js";
+} from "../reasoning-effort.js";
+import { matchLevel, presetFor } from "../reasoning-presets.js";
+import { getLocale, t } from "../i18n/index.js";
+import { persistLocale } from "../i18n/preferences.js";
+import { CLI_VERSION } from "../version.js";
+import { compareVersions, pickNewest } from "../version-compare.js";
+import { handoffModeItems, toHandoffMode, type SelectItem, type WizardEntryStep } from "./types.js";
 
+/**
+ * 宿主（屏幕）提供给命令层的能力 —— **只留命令层真正用得上的那些**。
+ *
+ * 类型面里不许出现 `react`：那不只是「少一个 import」，而是这条边界唯一的硬判据 ——
+ * 一旦命令层能伸手拿到 setter，它就能把「弹个选择器」写成“改一块渲染状态”，而那条代码
+ * 在无头宿主（测试 / 将来的脚本模式）里根本跑不起来。
+ */
 export interface ChatCommandHost {
   session: ChatSessionLike;
   /**
@@ -72,10 +89,17 @@ export interface ChatCommandHost {
   notice: (text: string, tone?: "info" | "error") => void;
   /** 清屏（保留上下文）：把转录显示起点推到最新 */
   clearTranscript: () => void;
+  /**
+   * 选择器**能放几条**候选。
+   *
+   * 它曾经是「终端原始行数」，命令层再用布局公式（`usableFrameRows` / `pickerLines` /
+   * `STATUS_BAR_LINES`）自己换算 —— 那是把一个渲染概念拖进命令层，也是 ink 进的另一条门。
+   * 现在换算在渲染层（`tui/screens/layout.ts` 的 `pickerCapacity`），命令层只拿结果。
+   */
   rows: number;
   exit: (arg?: any) => void;
   suspendTerminal: (fn: () => void | Promise<void>) => Promise<void>;
-  openWizard: (step: WizardStep) => Promise<void>;
+  openWizard: (step: WizardEntryStep) => Promise<void>;
   openKeyEditor: () => Promise<void>;
   doExit: () => void;
   /**
@@ -86,16 +110,10 @@ export interface ChatCommandHost {
    * 由宿主决定，命令层只负责决定**什么时候**重启。
    */
   restartProcess: () => Promise<void>;
-  setPickerState: Dispatch<
-    SetStateAction<{
-      title: string;
-      items: SelectItem<string>[];
-      resolve: (value: string | null) => void;
-    } | null>
-  >;
-  setConfirmState: Dispatch<
-    SetStateAction<{ question: string; resolve: (value: boolean) => void } | null>
-  >;
+  /** 弹选择器并等用户作答（取消 / Esc 为 `null`）；覆盖层怎么画由宿主决定 */
+  pick: (title: string, items: SelectItem<string>[]) => Promise<string | null>;
+  /** 弹确认框并等用户作答（与 `pick` 同一套覆盖层，只是答案为 是/否） */
+  confirm: (question: string) => Promise<boolean>;
   setInputText: (text: string) => void;
   /** 更新状态栏的思考强度展示（`/think` 写入后由上层重取）；文案与置灰一起给，避免漂移 */
   setEffortView: (view: { text: string; dimmed: boolean } | null) => void;
@@ -196,10 +214,8 @@ const cmdSave: CommandHandler = async ({ session, push, args, confirm }) => {
 };
 
 const cmdLoad: CommandHandler = async ({ session, push, rows, exit, pick }) => {
-  // 条数上限：用布局自己的公式算，不留魔数 —— 命令层拿到的是**原始终端行数**，而
-  // 覆盖层能用的是 `usableFrameRows(rows) = rows - 1`；picker 自身占
-  // `pickerLines(n) + STATUS_BAR_LINES`。
-  const maxItems = Math.max(1, usableFrameRows(rows ?? 24) - (pickerLines(0) + STATUS_BAR_LINES));
+  // 条数上限 = 宿主说「选择器能放几条」（见 `ChatCommandHost.rows`：终端行数换算在渲染层）
+  const maxItems = Math.max(1, rows);
   const list = await session.listSaved();
   if (list.length === 0) {
     push(t("cmd.load.none"), "error");
@@ -242,7 +258,7 @@ const cmdBack: CommandHandler = async ({ session, push, rows, exit, pick }) => {
     return;
   }
   // 最近的在最前；仅展示最近的有限条，避免覆盖层高于终端（上界同 /load）
-  const maxItems = Math.max(1, usableFrameRows(rows ?? 24) - (pickerLines(0) + STATUS_BAR_LINES));
+  const maxItems = Math.max(1, rows);
   const items = allItems.reverse().slice(0, maxItems);
   const title =
     allItems.length > maxItems ? t("cmd.back.tooMany", { n: maxItems }) : t("cmd.back.title");
@@ -956,7 +972,7 @@ function isHandoffAborted(error: unknown): boolean {
   return (error as { code?: unknown } | null)?.code === "handoff-aborted";
 }
 
-const cmdHandoff: CommandHandler = async ({ session, push, args, setPickerState }) => {
+const cmdHandoff: CommandHandler = async ({ session, push, args, pick }) => {
   const handoff = parseHandoffSelection(args);
   if (handoff.invalid !== undefined) {
     push(t("cmd.handoff.unknownMode", { who: handoff.invalid }), "error");
@@ -967,7 +983,7 @@ const cmdHandoff: CommandHandler = async ({ session, push, args, setPickerState 
     return;
   }
   // 未显式指定执行者时三选一（与自动迁移统一）；显式 `/handoff self|summary` 则直接采用
-  const chosen = handoff.mode ?? (await chooseHandoffMode(setPickerState, t("cmd.handoff.title")));
+  const chosen = handoff.mode ?? toHandoffMode(await pick(t("cmd.handoff.title"), handoffModeItems()));
   if (chosen == null) {
     push(t("cmd.handoff.cancelled"));
     return;
@@ -986,13 +1002,7 @@ const cmdHandoff: CommandHandler = async ({ session, push, args, setPickerState 
   }
 };
 
-const cmdMigrate: CommandHandler = async ({
-  session,
-  push,
-  args,
-  setPickerState,
-  clearTranscript,
-}) => {
+const cmdMigrate: CommandHandler = async ({ session, push, args, pick, clearTranscript }) => {
   const handoff = parseHandoffSelection(args);
   if (handoff.invalid !== undefined) {
     push(t("cmd.handoff.unknownMode", { who: handoff.invalid }), "error");
@@ -1003,7 +1013,7 @@ const cmdMigrate: CommandHandler = async ({
     return;
   }
   // 与原 yes/no 确认统一为三选一：选「不交接」即取消本次迁移
-  const chosen = handoff.mode ?? (await chooseHandoffMode(setPickerState, t("cmd.migrate.title")));
+  const chosen = handoff.mode ?? toHandoffMode(await pick(t("cmd.migrate.title"), handoffModeItems()));
   if (chosen == null) {
     push(t("cmd.migrate.cancelled"));
     return;
@@ -1064,24 +1074,11 @@ const HANDLERS: Record<CommandName, CommandHandler> = {
   exit: cmdExit,
 };
 
-/** 组装执行上下文：参数解析、通知与选择器的统一入口 */
-function buildContext(name: CommandName, raw: string, host: ChatCommandHost): CommandContext {
-  return {
-    ...host,
-    name,
-    raw,
-    // 参数切分与命令名解析同源（registry 的 splitCommandInput），命令层不再自己切一遍
-    args: parseCommandArgs(raw),
-    push: (text, tone = "info") => host.notice(text, tone),
-    pick: (title, items) =>
-      new Promise<string | null>((resolve) => host.setPickerState({ title, items, resolve })),
-    confirm: (question) =>
-      new Promise<boolean>((resolve) => host.setConfirmState({ question, resolve })),
-  };
-}
-
 /**
  * 执行一条斜杠命令。
+ *
+ * 执行上下文就是宿主 + 解析出来的名字/参数/通知出口：`pick` / `confirm` 是宿主自己实现的
+ * 异步口（以前这里把两个 React setter 包成 Promise，命令层因此拿到了渲染状态）。
  *
  * @param name 命令名（含别名，大小写不敏感；由 `parseCommandInput()` 从输入里取出）
  * @param raw  原始输入（含 `/`），用于参数解析与错误回显
@@ -1092,5 +1089,13 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
     host.notice(t("cmd.unknown", { cmd: raw }), "error");
     return;
   }
-  await HANDLERS[canonical](buildContext(canonical, raw, host));
+  const context: CommandContext = {
+    ...host,
+    name: canonical,
+    raw,
+    // 参数切分与命令名解析同源（registry 的 parseCommandArgs），命令层不再自己切一遍
+    args: parseCommandArgs(raw),
+    push: (text, tone = "info") => host.notice(text, tone),
+  };
+  await HANDLERS[canonical](context);
 }

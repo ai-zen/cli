@@ -32,10 +32,10 @@ import {
   matchCommandHints,
   parseCommandInput,
 } from "../../commands/registry.js";
-import { createConfigPort, type ConfigPort } from "../../server-client/index.js";
+import { type ConfigPort, type ServerConnection } from "../../server-client/index.js";
 import { ConfigWizard } from "../config-wizard/index.js";
 import { computeInputCursorPosition, inputWindow } from "./input.js";
-import { AGENT_TABS_LINES, computeChatLayout } from "./layout.js";
+import { AGENT_TABS_LINES, computeChatLayout, pickerCapacity } from "./layout.js";
 import { FrameBuffer } from "./frame-buffer.js";
 import { LineView } from "./render.js";
 import { messageToLines, transcriptLines } from "./messages-view.js";
@@ -43,7 +43,7 @@ import { welcomeLines } from "./welcome.js";
 import { PickerOverlay, Confirm } from "./overlays.js";
 import { CursorInputRow, type CursorPosition } from "./input-row.js";
 import { chooseHandoffMode } from "./handoff-choice.js";
-import { runCommand } from "./chat-commands.js";
+import { runCommand } from "../../commands/index.js";
 import { describeEffortView } from "../../reasoning-effort.js";
 import { t } from "../../i18n/index.js";
 import { NoticeChannel, noticeLines, type Notice } from "./notice.js";
@@ -85,33 +85,28 @@ export type CreateChatSession = (
 export interface ChatDeps {
   /** 配置面的唯一入口：真相在服务端，客户端只是问它 */
   config: ConfigPort;
+  /** 进程级的那一条连接（D8）：屏幕自己**不建** —— 兜底一删，「两条连接」就只剩组装根一处可犯 */
+  connection: ServerConnection;
   createSession: CreateChatSession;
   readClipboardImage: typeof readClipboardImage;
   readClipboardText: typeof readClipboardText;
 }
 
 /**
- * 默认配置面：**远程**实现。
+ * 注入面：`config` / `connection` **必给**，其余可缺省。
  *
- * 为什么默认不是本地：TUI 已经是纯客户端，配置与 Agent 定义的真相在服务端。
- * 默认本地会让「界面上改的」和「Agent 实际跑的」变成两份互不相干的真相 ——
- * 界面显示成功、跑起来还是旧模型，错得很安静。
- * 测试或特殊场景由调用方经 `deps.config` 注入自己的实现。
- *
- * 为什么做成模块级单例而不是每次渲染新建：远程端口是懒连接的，每个组件实例各建一个
- * 就等于各连一条；而它一旦连上就是进程级共享的资源，本来也没有「每个屏幕一份」的理由。
+ * 那两个必给的东西曾经有兜底（模块级单例 `defaultConfigPort`）。兜底删掉的理由是：
+ * 「一个进程一条连接」只能由**组装根**保证（`tui/index.tsx` 建一个、往下传），
+ * 组件自己再造一个就等于两条 ——  Symptom 不是报错，而是「多一条 driver + 切会话重连」，
+ * 平时完全看不见。把它做成必填，漏传就是**编译**错误。
  */
-let defaultConfigPort: ConfigPort | undefined;
-
-function remoteConfigPort(): ConfigPort {
-  defaultConfigPort ??= createConfigPort();
-  return defaultConfigPort;
-}
+export type ChatDepsInput = Pick<ChatDeps, "config" | "connection"> &
+  Partial<Omit<ChatDeps, "config" | "connection">>;
 
 export interface ChatScreenProps {
   agentId?: string;
-  /** 依赖注入（测试用；缺省全部走真实实现） */
-  deps?: Partial<ChatDeps>;
+  /** 依赖注入（测试用；`createSession` / 剪贴板两个可缺省） */
+  deps: ChatDepsInput;
   messages?: AgentNS.Message[];
   sessionId?: string;
   /**
@@ -178,16 +173,20 @@ export function busySpinnerLabel(phase: PhaseInfo | null, command: string | null
 }
 
 export function Chat(props: ChatScreenProps) {
-  // 调用方注入了配置面就不去建远程端口：测试塞的是假端口，不该顺手连一次真服务端。
-  // `??` 的短路是有意为之，不是省事。
-  const configPort = props.deps?.config ?? remoteConfigPort();
+  /**
+   * 依赖：`config` / `connection` 由组装根注入（**没有兜底**），其余三项缺省走真实实现。
+   *
+   * 为什么那两个没有兜底：见 `ChatDepsInput` 的注释 —— 组件里再造一条连接是「一个进程
+   * 两条连接」这个病唯一还没堵住的入口。
+   */
   const deps: ChatDeps = {
-    config: configPort,
     createSession: createRemoteChatSession,
     readClipboardImage,
     readClipboardText,
     ...props.deps,
   };
+  /** 配置面（同一个实例也递给会话层，见 `ChatSessionOptions.config`） */
+  const configPort = deps.config;
   const { exit, suspendTerminal } = useApp();
   const { setCursorPosition } = useCursor();
   const { columns, rows } = useWindowSize();
@@ -202,25 +201,43 @@ export function Chat(props: ChatScreenProps) {
     resolvePicker,
   } = useChatOverlays();
   const sessionRef = useRef<ChatSessionLike | null>(null);
+  /**
+   * 会话实例（渲染期现取）。首帧为 `null`；创建那个 effect 把 `ready` 翻成 `true` 之后
+   * 就有值了 —— 屏幕上的每一个事实都是从这里**现取**的，不另存副本。
+   */
+  const session = sessionRef.current;
   const [bootError, setBootError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   /** 视口：滚动状态与翻页 / 按行 / 滚轮换算（唯一入口见 use-chat-viewport.ts） */
   const { viewTop, layoutRef, scrollByPage, scrollByLine, scrollByWheel, scrollToBottom } =
     useChatViewport();
 
-  /** 本轮是否在生成中（spinner / 输入禁用） */
+  /**
+   * 本轮是否在生成中（spinner / 输入禁用）。
+   *
+   * 为什么它**不能**从 `session.stream.state.status` 推：那个状态多活了两个瞬间之外的事 ——
+   * `failed` 在下一轮开始前一直是终态（推出 `busy` 就等于「失败之后输入框永久禁用」），
+   * 而**阻塞型命令**（`/update`、`/migrate`）根本没有一轮，它们也要拦输入。所以这里只留
+   * 这一个标志，且它只服务渲染（`busySpinnerLabel` / `layout.inputHeight` / 输入是否激活）。
+   */
   const [busy, setBusy] = useState(false);
   /** 正在执行的**阻塞型命令**名（`blocksInput: true` 的 `/update` / `/migrate` …），见 `busySpinnerLabel` */
   const [busyCommand, setBusyCommand] = useState<string | null>(null);
-  /** 生成速率快照（token/s）：生成中为实时值，结束后保留本轮平均 */
+  /**
+   * 生成速率快照（token/s）：生成中为实时值，结束后保留本轮平均。
+   *
+   * 它是**采样**而不是派生值（`rateSample` 得靠一个 250ms 的定时器读一次才会变），所以留一份
+   * state；来源仍然是会话（`session.rateSample`）。
+   */
   const [rate, setRate] = useState<RateSample | null>(null);
   /**
-   * 当前模型 id —— **从会话（即 Agent 定义）读**，不作为 prop 传入。
+   * 当前模型 id —— **从会话现取**（`stream.state.modelId` 的一手透传）。
    *
-   * 模型的唯一真相源是 `AgentDefinition.modelId`：所以状态栏、凭据检查、思考状态
-   * 与 SDK 实发请求用的永远是同一个值，不会出现「显示 A、实发 B」。
+   * 这里曾经是一个 `useState`，在创建会话时灌一次。它的代价不是多几行：`/model` 走
+   * `session.reload()` 之后快照已经换了模型，而屏幕上的那份还停在首挂载时的值 —— 状态栏
+   * 报的是一个已经不生效的模型。派生值就该现取。
    */
-  const [modelId, setModelId] = useState<string>("");
+  const modelId = session?.modelId ?? "";
 
   /**
    * 思考强度展示文案（关 / 低 / 中 / 高 / 最高 / 开 / —）。
@@ -404,6 +421,8 @@ export function Chat(props: ChatScreenProps) {
           // 消息**不在这里传**：远程实现只持有一个会话 id，内容由服务端快照给
           // （`props.messages` 仍用于本屏首帧渲染与 `/back` 的显示起点）
           sessionId: props.sessionId,
+          // 那**一条**连接（屏幕不自建）：会话层只借它说话，重连也归它
+          connection: deps.connection,
           // 配置面复用屏幕这一个：图片链路的端点能力要读服务端那份（见 `ChatSessionOptions.config`）
           config: deps.config,
           // 「接着上次」只是意图：接哪一段由会话实现去问（服务端存档 / 本地指针），屏幕不判断
@@ -423,7 +442,6 @@ export function Chat(props: ChatScreenProps) {
           return;
         }
         sessionRef.current = session;
-        setModelId(session.modelId);
         setReady(true);
         // 重挂载附带的提示只需展示一次（消费后置空，避免再次触发）
         if (initialNoticeRef.current) {
@@ -672,15 +690,20 @@ export function Chat(props: ChatScreenProps) {
           config: deps.config,
           notice: (text, tone) => noticeChannel.push(text, tone),
           clearTranscript,
-          rows: rows ?? 24,
+          // 选择器能放几条：终端行数 → 候选条数的换算在渲染层（`pickerCapacity`），
+          // 命令层只拿结果（它不该知道命令行数、状态栏、预留末行这些事）
+          rows: pickerCapacity(rows ?? 24),
           exit,
           suspendTerminal,
           openWizard,
           openKeyEditor,
           doExit,
           restartProcess,
-          setPickerState,
-          setConfirmState,
+          // 两个覆盖层入口：命令层拿到的是 Promise，不是 React setter（见 `ChatCommandHost`）
+          pick: (title, items) =>
+            new Promise<string | null>((resolve) => setPickerState({ title, items, resolve })),
+          confirm: (question) =>
+            new Promise<boolean>((resolve) => setConfirmState({ question, resolve })),
           setInputText,
           setEffortView,
           refreshLocale: () => bumpLocale((n) => n + 1),
@@ -701,7 +724,11 @@ export function Chat(props: ChatScreenProps) {
     setPendingUser({ text: trimmed, base, images });
     setBusy(true);
     try {
+      // 两半：`send` 拿到 `turnId` 就回（与包里 `channel.send` 同语义），`waitForTurn` 才是
+      // 「这一轮结束了」。`turn.end` 可能比 `send` 的回执先到，所以这两句不能合成一句
+      //（合成的那种写法就得到会话层里再记一份「已收尾的轮次」）。
       await sessionRef.current!.send(trimmed, images);
+      await sessionRef.current!.waitForTurn();
     } finally {
       setBusy(false);
       setPendingUser(null);
@@ -1070,7 +1097,6 @@ export function Chat(props: ChatScreenProps) {
     );
   }
 
-  const session = sessionRef.current;
   const lastTokens = session?.lastUsage?.total_tokens;
   const totalTokens = session?.totalUsage.total_tokens;
   const cols = columns ?? 80;

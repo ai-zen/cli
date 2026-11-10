@@ -1,7 +1,7 @@
 /**
  * 对话会话的对外契约 —— 「能渲染、能发话、能存档的一段会话」。
  *
- * 屏幕（`tui/screens/chat.tsx`）与命令层（`tui/screens/chat-commands.ts`）只认这一面，不认实现：
+ * 屏幕（`tui/screens/chat.tsx`）与命令层（`commands/handlers.ts`）只认这一面，不认实现：
  * 这是「传输自由」在界面层的落点 —— 换源时屏幕上的东西一行不动，屏幕不知道 Agent 跑在哪。
  *
  * ## 为什么它在 `session/types.ts` 而不在 `session.ts`
@@ -26,7 +26,7 @@ import { AgentNS } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 // 类型一律从 `@ai-zen/agents-client` 取（它把协议包原样转出）：CLI 只认那一个包，
 // 而 `PhaseInfo` / `ModelLevel` / `WorkspaceFileEntry` 都是**线上形状**，不是某个实现的内部类型。
-import type { ModelLevel, ModelParams, PhaseInfo, WorkspaceFileEntry } from "@ai-zen/agents-client";
+import type { ModelLevel, ModelParams, PhaseInfo, ServerConnection, WorkspaceFileEntry } from "@ai-zen/agents-client";
 import type { ClipboardImage } from "../clipboard.js";
 import type { ConfigPort } from "../server-client/index.js";
 import type { RateSample } from "../session-rate.js";
@@ -64,7 +64,27 @@ export interface ChatSessionLike {
   /** 生成速率快照（状态栏与 spinner 用） */
   readonly rateSample: RateSample;
 
+  /**
+   * 发一轮（**受理即返回**：拿到 `turnId` 就回来，过程走事件）。
+   *
+   * 与 {@link waitForTurn} 分两半是协议的形状，不是风格：`turn.end` 可能**先于**这条调用的
+   * 回执落地（事件是推的），合成一个 promise 就得在实现里再记一份「已收尾的轮次」才能不挂死。
+   *
+   * 同步拒绝（服务端忙 / 连接已断）不进事件通道：那是「这轮没发出去」，实现自己报给通知栏，
+   * promise 照常 resolve（让调用方以为「本轮失败」更糟）。
+   */
   send(input: string, images?: readonly ClipboardImage[]): Promise<void>;
+  /**
+   * 等**最近发出去的那一轮**结束（界面用它包 `busy` 与输入禁用）。
+   *
+   * 为什么它是会话契约的一部分而不是让界面自己等：`turn.end` 的到达时机与「重连后发现服务端
+   * 已经空闲」是同一个判据的两条路（后者意味着那一轮在断线期间跑完了），而“哪一轮在飞”只有
+   * 会话层知道。界面自己等就只能等一个它编出来的条件。
+   *
+   * 连不回来时实现会把错误报进通知栏（与 `send` 的同步拒绝同一个出口），**不**向调用方抛：
+   * 宿主那些 `await` 周围都没有 try/catch，未处理的 rejection 会直接终止进程。
+   */
+  waitForTurn(): Promise<void>;
   /** 中止本轮（Ctrl+C）：只取消这一轮，不退出 */
   abort(): void;
   /** `/new`：先归档当前对话（有内容才存），再开一段新的；返回被归档的 id */
@@ -170,9 +190,18 @@ export interface ChatSessionOptions {
   agentId?: string;
   sessionId?: string;
   /**
+   * 进程级的那一条连接（D8）：会话**不建连接**，只借它说话。
+   *
+   * 它必须由组装根给（TUI 是 `tui/index.tsx` 那个模块级实例，stdio 是这个入口自己造的
+   * 那一个）。会话层自己建一条的后果不是报错，而是「启动预检一条、对话一条」—— 两条
+   * driver、两套事件订阅，而且断线时两次重连各接一次。
+   */
+  connection: ServerConnection;
+  /**
    * 配置面：拼图片内容块要按**服务端**的端点 / 视觉能力判断。
    *
-   * 屏幕层已经持有一个（懒连接的远程端口），递下来省一条连接；不给则实现自己建一个。
+   * 屏幕层已经持有一个（懒连接的远程端口，与 `connection` 是同一条连接），递下来省一次
+   * 派生；不给则实现自己由 `connection` 派生一个（`createConfigPort(connection)`）。
    */
   config?: ConfigPort;
   /**
@@ -184,6 +213,18 @@ export interface ChatSessionOptions {
    * 给了明确的 `sessionId` 时以它为准（`/load` 选中的那段）。
    */
   resume?: boolean;
+  /**
+   * 明确指定工作目录。**一般不要给**：本地由服务端的「是不是 loopback」判据决定（是就递客户端
+   * cwd，不是就不说），给了也只是「我希望是这里」，最终仍由服务端规范化。
+   */
+  path?: string;
+  /**
+   * 这段要不要进工作区存档（缺省 `true`）。
+   *
+   * 只有 stdio 的一次性调用传 `false`：`ai "…"` 那一轮不属于工作区的历史，不该在
+   * `sessions/` 里留痕，也不该把「上一轮会话」指针挪过去。
+   */
+  persist?: boolean;
   /**
    * 自动迁移时的执行者选择（由 Ink 层弹出选择器实现）。
    * 返回 `null` 表示跳过本次迁移；未提供时按默认执行者（原 agent 自交接）直接迁移。

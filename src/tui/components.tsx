@@ -10,6 +10,7 @@ import { clipWidth, displayWidth } from "./text.js";
 import type { RateSample } from "../session-rate.js";
 import { packSegments, type StatusSegment } from "./status-segments.js";
 import { t } from "../i18n/index.js";
+import type { SelectItem } from "../commands/types.js";
 
 // ==================== Spinner ====================
 
@@ -33,12 +34,12 @@ export function Spinner({ label }: { label?: string }) {
 
 // ==================== 选择列表 ====================
 
-export interface SelectItem<T> {
-  label: string;
-  value: T;
-  hint?: string;
-  icon?: string;
-}
+/**
+ * 选择器条目的形状住在命令层（`commands/types.ts`）—— 命令层**产出**条目、这里**渲染**它，
+ * 所以它是两边共享的词汇而不是本文件的私有类型。这里再转出一遍，是为了让 tui 内的引用
+ * 路径保持不变（`../components.js`）；新增字段去那边加。
+ */
+export type { SelectItem } from "../commands/types.js";
 
 export interface SelectListProps<T> {
   items: SelectItem<T>[];

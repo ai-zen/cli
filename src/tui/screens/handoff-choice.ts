@@ -1,22 +1,25 @@
 /**
- * 交接方式三选一 —— 自动迁移与手动 `/migrate`、`/handoff` 共用同一套「谁写交接文档」选择器。
+ * 交接方式三选一 —— **自动迁移**那条路上的选择器（服务端提问 → 用户在面板上选）。
  *
- * 三个选项（统一交互，避免自动用选择器、手动却用 yes/no 确认的不一致）：
- *   1. 当前会话自己写交接文档（`self`）—— 原会话用工具核实并撰写，**保真**；
- *   2. 单独 Agent 写交接文档（`summary`）—— 历史序列化后单次独立生成（独立摘要），
- *      更快更省，但**不核实磁盘状态**；
- *   3. 不交接 —— 返回 `null`，跳过本次交接 / 迁移。
+ * ## 为什么选项本身不在这里
  *
- * 本模块只负责「弹选择器 + 把选择映射为 `HandoffMode | null`」，不触达任何执行逻辑，
- * 便于自动与手动两条链路复用同一份选项 / 文案。
+ * 选项与文案（`handoffModeItems`）住在 `commands/types.ts`：手动 `/migrate`、`/handoff` 在
+ * 命令层问同一句话，自动迁移在渲染层问同一句话 —— 一份定义、两处调用。命令层不能 import
+ * `tui/`（那是叶子，判据是产物图），所以共享词汇只能落在 `commands/` 那一侧。
+ *
+ * ## 这里只剩「怎么上屏」
+ *
+ * 覆盖层状态是渲染层的东西（`useChatOverlays` 的 picker），所以把「弹出来并等一个答案」包成
+ * Promise 的那几行留在这里，与 `pick` / `confirm` 同一套机制（关状态与结算在同一次函数式更新
+ * 里完成，连按两下 Esc 不会重复 resolve）。
  */
 
 import type { Dispatch, SetStateAction } from "react";
 import type { HandoffMode } from "@ai-zen/agents-sdk";
 import type { SelectItem } from "../components.js";
-import { t } from "../../i18n/index.js";
+import { handoffModeItems, toHandoffMode } from "../../commands/types.js";
 
-/** 选择器状态（与 Chat / ChatCommandHost 的 `pickerState` 结构一致） */
+/** 选择器状态（与 `ChatOverlays` 的 `pickerState` 结构一致） */
 export interface HandoffPickerState {
   title: string;
   items: SelectItem<string>[];
@@ -24,21 +27,6 @@ export interface HandoffPickerState {
 }
 
 export type SetHandoffPicker = Dispatch<SetStateAction<HandoffPickerState | null>>;
-
-/** 「不交接」的哨兵值（区别于 `self` / `summary` 两个执行者） */
-export const HANDOFF_SKIP = "__skip__";
-
-/**
- * 三选一选项。
- * `label` 贴近用户措辞，`hint` 交代取舍：保真 vs 省算力、是否核实文件。
- */
-export function handoffModeItems(): SelectItem<string>[] {
-  return [
-    { label: t("handoff.modeSelf"), value: "self", hint: t("handoff.modeSelfHint") },
-    { label: t("handoff.modeSummary"), value: "summary", hint: t("handoff.modeSummaryHint") },
-    { label: t("handoff.modeSkip"), value: HANDOFF_SKIP, hint: t("handoff.modeSkipHint") },
-  ];
-}
 
 /**
  * 弹出「交接方式」三选一，返回所选执行者；选择「不交接」或按 Esc 取消时返回 `null`。
@@ -54,7 +42,7 @@ export function chooseHandoffMode(
     setPickerState({
       title,
       items: handoffModeItems(),
-      resolve: (value) => resolve(value === "self" || value === "summary" ? value : null),
+      resolve: (value) => resolve(toHandoffMode(value)),
     });
   });
 }

@@ -24,7 +24,7 @@ import {
   type ModelLevel,
 } from "@ai-zen/agents-server";
 import { AgentNS } from "@ai-zen/agents-core";
-import { SocketServerClient } from "./server-client/index.js";
+import { ServerConnection, SocketServerClient } from "./server-client/index.js";
 import type { ClientInfo } from "./server-client/index.js";
 import { mergePrompt, extractText, runStdio } from "./stdio.js";
 
@@ -203,7 +203,9 @@ async function run(options: {
   const code = await runStdio(
     { instruction: options.instruction, save: options.save ?? false },
     {
-      connect: async () => connection!,
+      // 一次性调用的入口自己造连接（生产是 `createServerConnection()`）；用例把它指到
+      // 自己起的那个 Daemon 上 —— 注入一条现成连接（生命周期归用例）。
+      connection: new ServerConnection({ client: connection! }),
       readInput: async () => options.stdin ?? "",
       writeOut: (text) => {
         stdout += text;

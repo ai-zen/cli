@@ -5,8 +5,8 @@
  *
  * `truncate` 曾经住在 `tui/screens/render.tsx`，而那个文件第一行是
  * `import { Text } from "ink"`。于是命令层为了一个 6 行的纯函数（`/load` 的预览、
- * `/back` 的标签）把 ink 拖进了自己的依赖图 —— 实测 `dist/tui/screens/chat-commands.js`
- * 的 24 文件 import 图里，`ink` 与 `react/jsx-runtime` **只有这一条**来源。
+ * `/back` 的标签）把 ink 拖进了自己的依赖图 —— 实测那条链的 import 图里，`ink` 与
+ * `react/jsx-runtime` **只有这一条**来源。
  *
  * 判据不能是「路径 grep」：只要调用点写的是 `from "./render.js"`，把文件挪个地方 grep
  * 就绿了，ink 仍在图里。真正的门禁是**产物 import 图**（`scripts/check-imports.mjs`）。

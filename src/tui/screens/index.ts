@@ -44,6 +44,7 @@ export {
   STATUS_BAR_LINES,
   AGENT_TABS_LINES,
   pickerLines,
+  pickerCapacity,
   computeChatLayout,
   clampViewTop,
 } from "./layout.js";

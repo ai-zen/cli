@@ -1,10 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import {
-  chooseHandoffMode,
-  handoffModeItems,
-  HANDOFF_SKIP,
-  type HandoffPickerState,
-} from "./handoff-choice.js";
+import { chooseHandoffMode, type HandoffPickerState } from "./handoff-choice.js";
+// 选项与哨兵值住在命令层（两侧共享的词汇）：`/migrate`、`/handoff` 在那边用同一份
+import { handoffModeItems, HANDOFF_SKIP } from "../../commands/types.js";
 import { setLocale } from "../../i18n/index.js";
 
 // 选项文案已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）

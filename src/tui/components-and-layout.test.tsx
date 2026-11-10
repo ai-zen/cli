@@ -28,6 +28,7 @@ import {
   deleteToLineEnd,
   deleteToLineStart,
   computeChatLayout,
+  pickerCapacity,
   moveCursorRow,
   AGENT_TABS_LINES,
   clampViewTop,
@@ -924,6 +925,46 @@ describe("usableFrameRows（预留末行，避开 Ink 全屏分支）", () => {
   it("退化场景下不小于 1", () => {
     expect(usableFrameRows(1)).toBe(1);
     expect(usableFrameRows(0)).toBe(1);
+  });
+});
+
+/**
+ * `pickerCapacity` —— 「终端能放下几条选择器候选」的唯一实现。
+ *
+ * 回归（PLAN L15）：这个式子曾经内联在命令层，而且少扣了 2 行，于是选择器把状态栏顶出
+ * 屏幕。它现在在渲染层（命令层只收结果），所以它的"装得下"必须在这里被**量**住：用
+ * `computeChatLayout` 把那个条数摆上去，看整帧高度是不是真的不超。
+ */
+describe("pickerCapacity（选择器条数上限）", () => {
+  const fits = (terminalRows: number, pickerItems: number): boolean =>
+    computeChatLayout({
+      columns: 80,
+      rows: terminalRows,
+      transcript: [],
+      input: "",
+      busy: false,
+      hintCount: 0,
+      overlay: "picker",
+      pickerItems,
+    }).bottomLines <= usableFrameRows(terminalRows);
+
+  it("给多少条就刚好装得下，多一条就装不下", () => {
+    // 从 16 行起：再矮就轮到下面那条「不小于 1」的退化分支（容不下也要能选一个）
+    for (const rows of [16, 24, 40]) {
+      const capacity = pickerCapacity(rows);
+      expect(capacity).toBeGreaterThanOrEqual(2);
+      expect(fits(rows, capacity)).toBe(true);
+      expect(fits(rows, capacity + 1)).toBe(false);
+    }
+  });
+
+  it("24 行终端：14 条（23 帧高 − 7 覆盖层固定行 − 2 状态栏）", () => {
+    expect(pickerCapacity(24)).toBe(14);
+  });
+
+  it("退化场景下不小于 1（再小也得能选一个）", () => {
+    expect(pickerCapacity(1)).toBe(1);
+    expect(pickerCapacity(0)).toBe(1);
   });
 });
 

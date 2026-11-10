@@ -48,11 +48,15 @@
 
 import { AgentNS } from "@ai-zen/agents-core";
 import { setLogger } from "@ai-zen/agents-sdk";
-import { createRemoteConfigPort, type ConfigPort } from "./server-client/index.js";
-import { RemoteSessions } from "./server-client/index.js";
-import type { ServerClient } from "./server-client/index.js";
+import {
+  createConfigPort,
+  createServerConnection,
+  RemoteSessions,
+  type ConfigPort,
+  type ServerConnection,
+} from "./server-client/index.js";
 import type { ChatSessionNotifier } from "./session/types.js";
-import { RemoteChatSession, connectToServer } from "./session.js";
+import { RemoteChatSession } from "./session.js";
 
 export interface StdioRunOptions {
   /** 位置参数拼接而成的指令（可空，此时全部内容来自 stdin） */
@@ -68,8 +72,11 @@ export interface StdioRunOptions {
  * 「stdout 只含答案」是本模式的全部契约，它必须能被直接断言，而不是靠抓进程输出。
  */
 export interface StdioRunDeps {
-  /** 建一条到服务端的连接；缺省 `connectToServer`（有的话就连，没有就拉一个） */
-  connect?: () => Promise<ServerClient>;
+  /**
+   * 那**一条**连接（D8）。缺省由本入口自己造一个（`createServerConnection()`）：
+   * stdio 是独立入口，没有上层组装根可以靠。
+   */
+  connection?: ServerConnection;
   /** 读 stdin；缺省 {@link readStdin}（TTY 时返回空串） */
   readInput?: () => Promise<string>;
   /** 结果出口；缺省 `process.stdout.write` */
@@ -77,9 +84,8 @@ export interface StdioRunDeps {
   /** 日志出口；缺省 `process.stderr.write` */
   writeErr?: (line: string) => void;
   /**
-   * 配置面（只为读「用哪个 Agent」）。缺省在连上服务端之后自建一个、复用同一条连接 ——
-   * 客户端不再读本机 `config.json`：那份在这一侧可能根本不存在，也可能与 Agent
-   * 实际用的不是一份。
+   * 配置面（只为读「用哪个 Agent」）。缺省由那条 `connection` 派生 —— 客户端不再读本机
+   * `config.json`：那份在这一侧可能根本不存在，也可能与 Agent 实际用的不是一份。
    */
   config?: ConfigPort;
 }
@@ -176,10 +182,11 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
   setLogger({ info: writeErr, warn: writeErr, error: writeErr });
   console.log = (...args: unknown[]) => writeErr(args.map((a) => String(a)).join(" "));
 
-  let client: ServerClient | null = null;
+  /** 这个入口自己造的那条连接（除非调用方递了一条） */
+  const connection = deps.connection ?? createServerConnection();
   let session: RemoteChatSession | null = null;
   try {
-    client = await (deps.connect ?? connectToServer)();
+    const client = await connection.client();
     const sessions = new RemoteSessions(client);
 
     /**
@@ -188,8 +195,11 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
      * 这里只读**这一个字段**是有意的：model → endpoint → apiKey 的解析属于服务端装配方
      * （`SessionAgentFactory` + SDK 的 `createAgent`），配置有毛病时 `session.create`
      * 会把 SDK 的原话带回来，客户端只负责转达。
+     *
+     * 配置面与对话走**同一条**连接（`createConfigPort(connection)`）：本入口只有一条
+     * 连接可用，再建一条就是 D8 那个病。
      */
-    const configPort = deps.config ?? createRemoteConfigPort({ client });
+    const configPort = deps.config ?? createConfigPort(connection);
     const agentId = (await configPort.readConfig()).defaultAgent ?? "default";
 
     /**
@@ -209,16 +219,21 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
       },
     };
 
-    session = await RemoteChatSession.openWith(client, { agentId, persist: false }, notifier);
+    session = await RemoteChatSession.open(
+      connection,
+      { agentId, persist: false },
+      notifier,
+    );
 
     /**
-     * `send()` 等到本轮结束才返回（拿到 `turnId` 后挂起，直到同一轮的 `turn.end`）——
-     * 与 TUI 包 busy 状态用的是同一份等待逻辑，这里只是没有人看过程。
+     * 一轮 = `send()`（受理即回，拿到 `turnId`）+ `waitForTurn()`（等它真的结束）：
+     * 两半分开是协议的形状（`turn.end` 可能先于回执落地），TUI 包 `busy` 用的是同一对。
      *
-     * 它返回时消息**已经是服务端那份快照**：`finishTurn` 先换快照、后置「已收尾」标记
+     * 等完之后消息**已经是服务端那份快照**：包里的收尾先换快照、后置「已收尾」标记
      * （否则一轮很短时这里会读到空数组，打出「模型没回答」）。
      */
     await session.send(prompt);
+    await session.waitForTurn();
 
     const lastAssistant = [...session.messages]
       .reverse()
@@ -268,15 +283,16 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
     await closeQuietly(session);
     session?.dispose();
     /**
-     * 连接**一定要**断。
+     * 连接**一定要**断（本入口自己造的那条，没有别的使用方）。
      *
      * `openWith` 中途失败（配置有毛病时 `session.create` 会抛）那条路上根本没造出
      * `session`，于是没东西会关这条 socket —— 而一条活 socket 把进程钉在事件循环里：
      * 一次 `ai "…"` 永远退不出，在脚本里就是「命令卡死」（只能用 Ctrl+C）。
      *
-     * 已经关过再关一次是幂等的（`destroy()`）。
+     * 关之前 `closeQuietly` 已经 **await** 了 `session.close()`：顺序反过来这一帧就发不
+     * 出去（连接已关，调用直接拒），只能退化成等宽限期 —— 而那正是那一帧要避开的。
      */
-    client?.close();
+    connection.close();
 
     setLogger({
       info: originalLog,

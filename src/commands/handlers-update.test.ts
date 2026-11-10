@@ -12,8 +12,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentNS } from "@ai-zen/agents-core";
-import { t } from "../../i18n/index.js";
-import { CLI_VERSION } from "../../version.js";
+import { t } from "../i18n/index.js";
+import { CLI_VERSION } from "../version.js";
 
 /**
  * 假 registry 里那个「比当前更新的版本」。
@@ -25,9 +25,9 @@ import { CLI_VERSION } from "../../version.js";
 const NEXT_VERSION = `${Number(CLI_VERSION.split(".")[0]) + 1}.0.0-alpha.99`;
 /** 比当前版本旧的版本（1.x 之后一直成立） */
 const OLDER_VERSION = "0.9.0";
-import { runCommand, type ChatCommandHost } from "./chat-commands.js";
-import type { ChatSessionLike } from "../../session/types.js";
-import type { ConfigPort } from "../../server-client/index.js";
+import { runCommand, type ChatCommandHost } from "./handlers.js";
+import type { ChatSessionLike } from "../session/types.js";
+import type { ConfigPort } from "../server-client/index.js";
 
 const state = vi.hoisted(() => ({
   /** `npm view <pkg> dist-tags --json` 的 stdout */
@@ -117,14 +117,12 @@ function createHost(options: { confirmAnswer?: boolean; withHistory?: boolean } 
     restartProcess: async () => {
       restarts.count += 1;
     },
-    setPickerState: vi.fn(),
-    // 真实宿主是同一次函数式更新里「关覆盖层 + 结算 Promise」，这里直接结算
-    setConfirmState: (update: any) => {
-      const request = typeof update === "function" ? update(null) : update;
-      if (!request) return;
-      confirms.push(request.question);
-      request.resolve(confirmAnswer);
+    // 覆盖层入口是一个**异步口**（命令层拿不到 React setter）：这里的假件记下问句直接作答
+    confirm: async (question: string) => {
+      confirms.push(question);
+      return confirmAnswer;
     },
+    pick: async () => null,
     setInputText: vi.fn(),
     setEffortView: vi.fn(),
     refreshLocale: vi.fn(),

@@ -1,6 +1,7 @@
 // 对话屏布局 —— 吸底 + 应用内翻页（只做截取 / 补白，不自建转录内容）
 import { RLine } from "./lines.js";
 import { inputLines, INPUT_MAX_ROWS } from "./input.js";
+import { usableFrameRows } from "../text.js";
 
 /** 确认框固定高度（外 marginTop 1 + 上下边框 2 + 问题 1 + marginTop 1 + 选项 1） */
 export const CONFIRM_LINES = 6;
@@ -10,6 +11,21 @@ export const STATUS_BAR_LINES = 2;
 /** 选择覆盖层高度（相对条目数） */
 export function pickerLines(itemCount: number): number {
   return 7 + itemCount;
+}
+
+/**
+ * 一个终端能放下多少条**选择器候选**。
+ *
+ * 为什么它是渲染层的函数：它由两个渲染事实构成 —— 帧高要预留下末行
+ * （`usableFrameRows`）、覆盖层与状态栏各占几行（`pickerLines` / `STATUS_BAR_LINES`）。
+ * 命令层（`/load` / `/back`）只需要那个**结果**（`ChatCommandHost.rows`）：把这三条公式
+ * 搬到命令层，就是拿一个终端概念去换一个 ink 依赖（它们全在 `tui/` 里）。
+ *
+ * 以前这个式子内联在命令层，曾经少扣了 2 行 —— 选择器把状态栏顶出屏幕。所以它只该有一处，
+ * 而那一处要在能看到布局的地方。
+ */
+export function pickerCapacity(terminalRows: number): number {
+  return Math.max(1, usableFrameRows(terminalRows) - (pickerLines(0) + STATUS_BAR_LINES));
 }
 
 /** Agent 栏目行数：只有「存在子 Agent」时才出现，且恒为一行（超出宽度由组件截断） */

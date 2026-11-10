@@ -11,7 +11,7 @@
 
 import { render, useApp, type Instance } from "ink";
 import { resolveModel, type AppConfig } from "@ai-zen/agents-sdk";
-import { createConfigPort } from "../server-client/index.js";
+import { createConfigPort, createServerConnection } from "../server-client/index.js";
 // 类型从 `agents-store.ts` 转出（那里只剩词汇表）：首启凭据屏要把**服务端那**一份定义快照递下去
 import type { AgentStore } from "../agents-store.js";
 import { resolveCredential } from "../config-editor.js";
@@ -28,15 +28,27 @@ import type { AgentNS } from "@ai-zen/agents-core";
 const CLEAR_SCREEN = "\x1b[2J\x1b[H\x1b[?25h";
 
 /**
- * 进程级配置面（**全文件复用这一个**）。
+ * 进程级的那一条连接（D8：一个进程一条）。
  *
- * 为什么全局一个而不是每次调用新建：远程端口是懒连接的，一次 `modelOf` / `resolveTarget`
- * / 凭据预检各建一个，启动阶段就会为同一件事重复握手；而它本来就是进程级共享的资源。
+ * **它必须活在 `runChat` 的重挂载循环之外**。`/load`、`/clear`、`/back` 都是「卸载当前
+ * Ink 实例 → 再 `mount(<Chat/>)`」，而连接如果建在循环里（或建在组件里），切一次会话就
+ * 重连一次：服务端那边多一条 driver，客户端这边丢掉全部在飞事件（还包括「刚断线」的
+ * 误报）。放在模块级，循环里的每一代屏幕都只是「换了个用户」，连接不变。
+ *
+ * 懒建：第一次 `client()` 才去 `ensureServer`，所以启动顺序不受影响。
+ */
+const connection = createServerConnection();
+
+/**
+ * 进程级配置面 —— 派生自**同一条**连接，全文件复用这一个。
+ *
+ * 为什么全局一个而不是每次调用新建：一次 `modelOf` / `resolveTarget` / 凭据预检各建一个
+ * 端口，启动阶段就会为同一件事重复握手；而它本来就是进程级共享的资源。
  *
  * 为什么是远程实现：启动预检读的是「**服务端**用哪份配置、Agent 绑的哪个模型」。
  * 读本机磁盘在两端不同机时必然错误 —— 预检通过、实际请求仍然缺 Key（或反之）。
  */
-const configPort = createConfigPort();
+const configPort = createConfigPort(connection);
 
 /**
  * 告别并终止进程。
@@ -284,9 +296,9 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
         messages={messages}
         sessionId={current.sessionId}
         resume={resume}
-        // 把**同一个**配置面实例交给对话屏：端口是懒连接的，不传的话对话屏会自己再建一个，
-        // 一个 TUI 进程就变成两条到服务端的连接（启动预检一条、对话屏一条）。
-        deps={{ config: configPort }}
+        // 把**同一对**（连接 + 由它派生的配置面）交给对话屏。对话屏不再有兜底：它自己
+        // 造一条连接的话，一个 TUI 进程就又变成两条到服务端的连接（D8 之前就是这么错的）。
+        deps={{ config: configPort, connection }}
         initialInput={initialInput}
         initialNotice={initialNotice}
         initialPrompt={initialPrompt}
@@ -410,6 +422,17 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
   } finally {
     uninstallSignals();
     activeInstance = null;
+    /**
+     * 断掉这条进程级连接。
+     *
+     * 它现在**不随界面卸载而消失**（那正是 D8 想要的：切会话不重连），所以退出时必须由
+     * 这里显式关掉 —— 否则进程要等事件循环里的这条 socket 自己超时才能退。
+     *
+     * 顺序上这帧 `session.close` 已经由最后一代屏幕的 `dispose()` 发过了（尽力而为、不
+     * await：按 Ctrl+C 不该卡在这里）。连接先断会让那帧落不了地，代价是多留一段会话到
+     * 服务端宽限期 —— 既有取舍，写在 `session.ts` 的 `dispose()` 里。
+     */
+    connection.close();
   }
 }
 

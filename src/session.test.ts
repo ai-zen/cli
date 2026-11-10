@@ -25,12 +25,12 @@ import {
 } from "@ai-zen/agents-server";
 import { AgentNS } from "@ai-zen/agents-core";
 import { RemoteSessions } from "./server-client/index.js";
-import { SocketServerClient } from "./server-client/index.js";
+import { ServerConnection, SocketServerClient } from "./server-client/index.js";
 import type { ServerClient } from "./server-client/index.js";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 import { setLocale } from "./i18n/index.js";
 import { useTempAiZenDir } from "./test-support/temp-dir.js";
-import { RemoteChatSession, type RemoteChatSessionDeps } from "./session.js";
+import { RemoteChatSession } from "./session.js";
 import { clientWorkspacePath } from "./server-client/index.js";
 import type { ConfigPort } from "./server-client/index.js";
 import type { ChatSessionNotifier } from "./session/types.js";
@@ -93,6 +93,8 @@ let manager: SessionManager | null = null;
 let agent: FakeAgent;
 let client: SocketServerClient | null = null;
 let session: RemoteChatSession | null = null;
+/** `open()` 造的那条连接（用例要拿它手上那条 client 做断言） */
+let sessionConnection: ServerConnection | null = null;
 let notices: Array<{ text: string; tone: "info" | "error" }>;
 let changes: number;
 /**
@@ -165,11 +167,13 @@ beforeEach(() => {
   nextServer = portSignal();
   reconnectCalls = 0;
   manager = newManager();
+  agentClaimed = false;
 });
 
 afterEach(async () => {
   session?.dispose();
   session = null;
+  sessionConnection = null;
   client?.close();
   client = null;
   manager?.dispose();
@@ -199,6 +203,18 @@ async function waitUntil(what: () => boolean, timeoutMs = 2000): Promise<void> {
   }
 }
 
+/**
+ * 同上，但条件本身要**问服务端**（异步）：`/new` 与 `dispose()` 发的 `session.close` 都是
+ * 「帧发出去就算完」的，落地时间只能轮询。
+ */
+async function waitUntilAsync(what: () => Promise<boolean>, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await what())) {
+    if (Date.now() > deadline) throw new Error("waitUntil: timed out");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 /** 一个可以先发后到的端口：`promise` 给重连等，`settle()` 由用例在新 Daemon 起来后调 */
 interface PortSignal {
   readonly promise: Promise<number>;
@@ -213,20 +229,32 @@ function portSignal(): PortSignal {
   return { promise, settle };
 }
 
-/**
- * 一个**新的** SessionManager（同一个 `dir`、同一份存档根）。
+/** 一个**新的** SessionManager（同一个 `dir`、同一份存档根）。
  *
  * 重连用例要“换一台服务端”：新实例的内存里没有那段会话，只能从盘上把它装回来 ——
  * 这正是 `session.attach` 的「盘上有就装回来」那条路。
  */
 /** `createAgent` 最近一次收到的入参：用例要靠它拿服务端注入的 `resolveMode` */
 let lastAgentInput: CreateAgentInput | undefined;
+/** 上面那个假 Agent 已经被哪一段会话认领了（见 `createAgent` 的注释） */
+let agentClaimed = false;
 
 function newManager(): SessionManager {
   let counter = 0;
   return new SessionManager({
     createAgent: async (input) => {
       lastAgentInput = input;
+      /**
+       * **新会话 = 空的新 Agent**（与生产一致：`session.create` 现造一个，不继承上一段
+       * 的消息）。共用同一个假件会把「`/new` 之后快照是空的」这个事实掩盖掉 —— 那正是
+       * P4a 之前那份实现自己 `currentMessages = []` 遮住的东西。
+       *
+       * 首次建 Agent 时保留用例预置的那个（用例经常先 `agent.messages = [...]` 再
+       * `open()`）；之后的 `reload` / `setAgent` 由服务端的 `adoptAgent` 把消息搬过去，
+       * 所以「保留消息」那几条仍然成立。
+       */
+      if (agentClaimed) agent = new FakeAgent();
+      agentClaimed = true;
       return agent;
     },
     nextSessionId: () => `chat_${++counter}`,
@@ -258,15 +286,38 @@ async function connectTo(port: number): Promise<SocketServerClient> {
 }
 
 /**
- * 默认注入的重连：等用例交出端口，再连过去（生产里这里是 `ensureServer` + `connect`）。
- *
- * 用例一律走注入而不是 `vi.mock`：模块级 mock 在 `isolate: false` 下会串到别的文件，
- * 而且「重连到哪个端口」本来就该由用例说了算。
+ * 默认注入的「重建」：等用例交出端口，再连过去（生产里这就是 `ServerConnection` 的
+ * `connect`）—— 用例一律走注入而不是 `vi.mock`。
  */
 const reconnectToNextServer = async (): Promise<ServerClient> => {
   reconnectCalls += 1;
   return await connectTo(await nextServer.promise);
 };
+
+/**
+ * 造一条**由用例控制重建**的连接。
+ *
+ * 生产的连接归组装根（一个进程一条）；用例要的是一条能指向「另一个端口」的：
+ * 第一次 `client()` 交出已经连好的那条，之后交给 `reconnect`。
+ * 这样 `SessionConnection` 的三条不变式（查活 / 单飞 / 重放 `events.watch`）在用例里
+ * 跑的就是**生产那份实现**，而不是测试自己又写一遍。
+ */
+function connectionFor(
+  client: ServerClient,
+  reconnect: () => Promise<ServerClient> = reconnectToNextServer,
+): ServerConnection {
+  let seeded: ServerClient | null = client;
+  return new ServerConnection({
+    connect: async () => {
+      if (seeded) {
+        const first = seeded;
+        seeded = null;
+        return first;
+      }
+      return await reconnect();
+    },
+  });
+}
 
 /**
  * 盯着一个 promise（不 await 它）：回调里写，用例轮询着等。
@@ -328,6 +379,12 @@ async function startServer(): Promise<SocketServerClient> {
   return client;
 }
 
+/** `open()` 的第二个参数：用例只关心「重建到哪」与「用哪份假配置」 */
+interface TestDeps {
+  reconnect?: () => Promise<ServerClient>;
+  config?: ConfigPort;
+}
+
 /** 起服务端并开一段远程会话。
  *
  * 默认把 `path` 固定成服务端的工作目录：用例里要断言「这档会话跑在哪个目录」时，
@@ -342,16 +399,28 @@ async function open(
     /** 自动迁移的选择器（`ChatSessionOptions.requestMode` 的同一个回调） */
     requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
   } = {},
-  deps: RemoteChatSessionDeps = { reconnect: reconnectToNextServer, config: testConfigPort },
+  deps: TestDeps = { reconnect: reconnectToNextServer, config: testConfigPort },
 ): Promise<RemoteChatSession> {
   const connected = await startServer();
-  session = await RemoteChatSession.openWith(
-    connected,
+  const connection = connectionFor(connected, deps.reconnect ?? reconnectToNextServer);
+  sessionConnection = connection;
+  session = await RemoteChatSession.open(
+    connection,
     { path: workspaceDir, ...input },
     notifier,
-    deps,
+    { config: deps.config ?? testConfigPort },
   );
   return session;
+}
+
+/**
+ * 那条连接上**此刻**的 client（重连之后就是新的那一条）。
+ *
+ * 连接与重建都是 `ServerConnection` 的事，所以「接上了没有」就它说了算
+ * （`closed === false` 就是「手上这条还活着」）。
+ */
+async function currentClient(): Promise<ServerClient> {
+  return await sessionConnection!.client();
 }
 
 /**
@@ -366,13 +435,14 @@ async function defaultStore(): Promise<FileSessionStore> {
 }
 
 /**
- * 读一个**私有**字段。
+ * 「这段会话落在哪个工作区」—— 问服务端，不读客户端的私有字段。
  *
- * `path` / `workspaceId` 不在 `ChatSessionLike` 里（界面不需要它们），但「会话落在哪个目录」
- * 只能从实例上看。只在这里做窄口读取，不把它们提升成对外契约（同 `(manager as any)` 的用法）。
+ * 工作区身份是**服务端的事实**（`workspace.resolve` 说了算），客户端手上那个 id 从来不是
+ * 契约的一部分（P4b 起 `session.ts` 甚至不再保存它）。用例要它的时候就问服务端要 ——
+ * 这也正是「客户端不该自己推导 id 算法」那条规矩的用例版本。
  */
-function observed<T>(session: RemoteChatSession, key: string): T {
-  return (session as unknown as Record<string, T>)[key]!;
+async function workspaceIdOf(path: string | undefined): Promise<string> {
+  return (await new RemoteSessions(await startServer()).resolveWorkspace(path)).workspaceId;
 }
 
 describe("RemoteChatSession：开一段会话", () => {
@@ -395,10 +465,11 @@ describe("RemoteChatSession：工作区归谁决定", () => {
   it("本地服务端（loopback）：不传 path 就用客户端 cwd —— 会话落在你敲 `ai` 的那个目录", async () => {
     const opened = await open({ path: undefined });
 
-    // 服务端规范化后的路径就是客户端递上去的那个目录（本仓根）：
-    // 这是「在项目里敲 `ai` 就接着这个项目」的全部依据
-    expect(observed<string>(opened, "path")).toBe(resolve(process.cwd()));
-    expect(observed<string>(opened, "path")).not.toBe(resolve(workspaceDir));
+    // 判据是**会话真的跑在哪个目录**（`workspace.files` 扫的就是那个目录的磁盘）：
+    // 不传 path 时客户端递的是自己的 cwd（本仓根），所以清单里应该有本仓的文件。
+    // 这是「在项目里敲 `ai` 就接着这个项目」的全部依据。
+    const entries = await opened.listWorkspaceFiles();
+    expect(entries).toContainEqual({ path: "package.json", dir: false });
   });
 
   it("远端（非 loopback）：不递 cwd，用服务端自己的工作目录", async () => {
@@ -414,9 +485,12 @@ describe("RemoteChatSession：工作区归谁决定", () => {
   });
 
   it("明确给了 path 就以它为准（同一个工作区里换会话用得上）", async () => {
+    // 造一个只在那个目录里存在的文件：清单里有它，就说明会话真的跑在那个目录
+    writeFileSync(join(workspaceDir, "only-here.txt"), "hi\n", "utf-8");
     const opened = await open({ path: workspaceDir });
 
-    expect(observed<string>(opened, "path")).toBe(resolve(workspaceDir));
+    const entries = await opened.listWorkspaceFiles();
+    expect(entries).toContainEqual({ path: "only-here.txt", dir: false });
   });
 
   it("listWorkspaceFiles：清单来自服务端磁盘，既有文件也有祖先目录条目", async () => {
@@ -503,7 +577,8 @@ describe("RemoteChatSession：send 的语义与进程内一致", () => {
     const opened = await open();
     let finished = false;
 
-    const pending = opened.send("你好").then(() => {
+    // 一轮 = `send()`（受理即回）+ `waitForTurn()`（等它真的结束）—— 与界面手里那对同形
+    const pending = opened.send("你好").then(() => opened.waitForTurn()).then(() => {
       finished = true;
     });
     // 回执已到、但这一轮还在跑：此时不该 resolve
@@ -511,10 +586,16 @@ describe("RemoteChatSession：send 的语义与进程内一致", () => {
     expect(finished).toBe(false);
 
     // 服务端这一侧：追加用户消息 → 流式两片 → 收尾
+    //
+    // 注意两片拼起来与最终那条 assistant **逐字一致**（"答" + "完了" = "答完了"）：
+    // 生产里服务端那条权威消息就是由这些增量拼出来的，两者不会“一个是另一个的前缀而
+    // 又不相等”。假件在这里必须守同样的约束，否则测的是包里的兜底分支（它是为“真的对不上”
+    // 准备的：宁可重复也不吞字），而不是正常收尾。
     agent.messages.push({ role: "user", content: "你好" });
     agent.fire("chunk-parsed", {}, { choices: [{ delta: { content: "答" } }] });
+    agent.fire("chunk-parsed", {}, { choices: [{ delta: { content: "完了" } }] });
     // 生成中就能读到临时拼出来的正文（屏幕要能滚起来）
-    await waitUntil(() => JSON.stringify(opened.messages).includes("答"));
+    await waitUntil(() => JSON.stringify(opened.messages).includes("答完了"));
     expect(opened.phase).not.toBeNull();
     expect(finished).toBe(false);
 
@@ -794,7 +875,7 @@ describe("RemoteChatSession：子 Agent 栏目（等服务端协议）", () => {
     expect(view.index).toBe(1);
     expect(view.status).toBe("running");
     // 已有内容由 `session.subAgent.snapshot` 补上（不从主会话搬）
-    await waitUntil(() => JSON.stringify(view.messages).includes("子任务：数文件"));
+    await waitUntil(() => JSON.stringify(opened.subAgents).includes("子任务：数文件"));
     // 与主会话互不干扰
     expect(opened.messages).toEqual([]);
   });
@@ -807,8 +888,9 @@ describe("RemoteChatSession：子 Agent 栏目（等服务端协议）", () => {
 
     subAgent.events.fire("chunk-parsed", {}, { choices: [{ delta: { content: "数到 3 个" } }] });
 
-    const view = opened.subAgents[0]!;
-    await waitUntil(() => JSON.stringify(view.messages).includes("数到 3 个"));
+    // 栏目条目是**整份替换**语义（每次变更都是新对象）：所以断言必须现取，
+    // 把 `subAgents[0]` 先存下来再等，等到的永远是那个已经被换掉的旧对象。
+    await waitUntil(() => JSON.stringify(opened.subAgents).includes("数到 3 个"));
     // 子 Agent 的增量不进主会话
     expect(JSON.stringify(opened.messages)).not.toContain("数到 3 个");
   });
@@ -867,7 +949,7 @@ describe("RemoteChatSession：子 Agent 栏目（等服务端协议）", () => {
 
   it("只活当前一轮：turn.end 清空列表", async () => {
     const opened = await open();
-    const pending = opened.send("统计一下");
+    const pending = opened.send("统计一下").then(() => opened.waitForTurn());
     await waitUntil(() => agent.sent.length === 1);
 
     agent.fire("sub-agent-start", { subAgent: makeSubAgent() });
@@ -881,9 +963,11 @@ describe("RemoteChatSession：子 Agent 栏目（等服务端协议）", () => {
 
   it("reset / reload / migrate 换了会话也清空（不清就会残留上一段会话的子 Agent）", async () => {
     const opened = await open();
-    agent.messages = [{ role: "user", content: "任务" }];
 
     for (const change of [() => opened.reset(), () => opened.reload(), () => opened.migrate()]) {
+      // 每段会话都得有自己的内容：`reset` 之后是一段**新**会话（服务端现造一个空 Agent），
+      // 而 `migrate` 对「一条用户消息都没有」的会话是拒绝的。
+      agent.messages = [{ role: "user", content: "任务" }];
       agent.fire("sub-agent-start", { subAgent: makeSubAgent() });
       await waitUntil(() => opened.subAgents.length === 1);
       await change();
@@ -908,7 +992,7 @@ describe("RemoteChatSession：断线重连", () => {
     // 落盘：新服务端的内存里没有这段会话，只能从盘上把它装回来（`session.attach` 的那条路）
     expect(await opened.save()).toBe(opened.currentId);
     const id = opened.currentId;
-    const workspaceId = observed<string>(opened, "workspaceId");
+    const workspaceId = await workspaceIdOf(workspaceDir);
 
     // 断线（服务端换了一个实例：新端口、新 SessionManager）
     const port = await restartServer();
@@ -926,8 +1010,14 @@ describe("RemoteChatSession：断线重连", () => {
     });
     nextServer.settle(port);
 
-    // 接上了：手上换成了新连接（旧的那条 `closed` 一直是 true）
-    await waitUntil(() => observed<ServerClient>(opened, "client").closed === false);
+    // 接上了：连接已经换成了活着的那一条（旧的那条 `closed` 永远是 true）
+    await waitUntil(() => sessionConnection!.closed === false);
+    /**
+     * 但「连接活了」比「会话接回来了」早一步：`restore()` 还要 `attach` + 拉一次快照，
+     * 而那之后屏幕才是新的。所以等到**快照真的到了**再断言 —— 否则机器一忙就会读到
+     * 刚重连、消息还没对齐的那一瞬。
+     */
+    await waitUntil(() => opened.messages.length === 2);
 
     expect(opened.currentId).toBe(id); // 会话没变
     expect(opened.messages).toEqual([
@@ -945,7 +1035,7 @@ describe("RemoteChatSession：断线重连", () => {
     const opened = await open();
     await opened.save(); // 新服务端只能从盘上把这段会话装回来
 
-    const sending = watch(opened.send("长任务"));
+    const sending = watch(opened.send("长任务").then(() => opened.waitForTurn()));
     // 回执到了、这一轮在跑：假 Agent **不** fire finally —— 那个 turn.end 就丢在断线里
     await waitUntil(() => agent.sent.length === 1);
 
@@ -972,7 +1062,7 @@ describe("RemoteChatSession：断线重连", () => {
       },
     );
 
-    const sending = watch(opened.send("长任务"));
+    const sending = watch(opened.send("长任务").then(() => opened.waitForTurn()));
     await waitUntil(() => agent.sent.length === 1);
 
     await daemon!.stop("test disconnect");
@@ -1003,30 +1093,43 @@ describe("RemoteChatSession：断线重连", () => {
         },
       },
     );
-    const connected = observed<ServerClient>(opened, "client");
+    const connected = await currentClient();
 
     opened.dispose();
     // 断线通知是**同步**发的（`failAll` 里直接调监听器）：若 `dispose()` 没先摘掉那个订阅，
     // 这时 `attempts` 已经是 1 了 —— 所以这里当场断言，不需要再等什么。
-    expect(connected.closed).toBe(true);
+    //
+    // 连接**仍然开着**：它是进程级的（D8），`dispose()` 只关「这一段会话」，不关连接。
+    // （以前这里断言的是 `closed === true` —— 那时连接归会话所有，切屏就重连。）
+    expect(connected.closed).toBe(false);
     expect(attempts).toBe(0);
 
-    // 服务端那侧也真把这个连接收掉了：断线确实发生过，不是「还没轮到」
+    // 服务端那侧也真看到断线了（不是「还没轮到」）—— 连接现在归**持有方**，
+    // 所以这里由用例自己关掉它。
+    connected.close();
     if (daemon) {
-      await daemon.stop("test disconnect");
       await waitUntil(() => daemon!.connectionCount === 0);
     }
+    // 已经 dispose 了：断线之后不会再拉起连接
     expect(attempts).toBe(0);
-    // 手上仍是那条关掉的连接：没有被换成新连接
-    expect(observed<ServerClient>(opened, "client")).toBe(connected);
   });
 });
 
 describe("RemoteChatSession：send 的同步拒绝（不走事件通道的那一类）", () => {
   it("连接已断时 send：错误进通知栏，不抛出（否则是未处理的 rejection，进程会被终止）", async () => {
-    const session = await open();
-    // 把连接直接关掉：此刻 `session.send` 会被客户端自己拒（`client is closed`）
-    session.dispose();
+    const session = await open(
+      {},
+      {
+        // 连不回来（生产里是服务端一直不在）：断线后的重连会走三次失败，但 send 本身
+        // 不等重连 —— 它用的是此刻手上那条已经关掉的连接，当场就被拒。
+        reconnect: async () => {
+          throw new Error("connect refused (test)");
+        },
+        config: testConfigPort,
+      },
+    );
+    // 把它手上那条连接关掉：此刻 `session.send` 会被客户端自己拒（`client is closed`）
+    (await currentClient()).close();
 
     await expect(session.send("有人吗")).resolves.toBeUndefined();
     expect(notices.at(-1)?.tone).toBe("error");
@@ -1069,7 +1172,7 @@ describe("RemoteChatSession：换 Agent 与会话回收", () => {
     const opened = await open();
     agent.messages = [{ role: "user", content: "在聊" }] as never;
     await opened.reload(); // 把消息同步进客户端（快照是唯一真相源）
-    const workspaceId = observed<string>(opened, "workspaceId");
+    const workspaceId = await workspaceIdOf(workspaceDir);
 
     await opened.setAgent("coder");
 
@@ -1086,7 +1189,7 @@ describe("RemoteChatSession：换 Agent 与会话回收", () => {
     const opened = await open();
     agent.messages = [{ role: "user", content: "第一段" }] as never;
     await opened.reload();
-    const workspaceId = observed<string>(opened, "workspaceId");
+    const workspaceId = await workspaceIdOf(workspaceDir);
     const previous = opened.currentId;
 
     await opened.reset();
@@ -1107,7 +1210,7 @@ describe("RemoteChatSession：换 Agent 与会话回收", () => {
     const opened = await open();
     agent.messages = [{ role: "user", content: "聊过一句" }] as never;
     await opened.reload();
-    const workspaceId = observed<string>(opened, "workspaceId");
+    const workspaceId = await workspaceIdOf(workspaceDir);
     const id = opened.currentId;
     await opened.save(); // 落盘（每轮收尾也会写，这里让用例自足）
 
@@ -1128,12 +1231,43 @@ describe("RemoteChatSession：换 Agent 与会话回收", () => {
     expect(again.sessionId).toBe(id);
     expect((await sessions.snapshot(id)).messages).toHaveLength(1);
   });
+
+  /**
+   * 「会话寿命只剩 `session.close` 一条」的**第二个**出口：退出 / 切屏（`dispose()`）。
+   *
+   * 它是 `/load` 那条路（重挂载 → 旧屏幕卸载 → `dispose()`）与 Ctrl+C 的共同出口。D8 之后
+   * 连接不再随卸载消失，于是「卸载」对服务端彻底不可见 —— 这一帧不发，每切一次会话就多
+   * 一段活会话待到宽限期。
+   *
+   * 与 `/new` 那条的区别：`reset()` 是 `await` 的（要等旧的关掉），`dispose()` **不等**回执
+   * （退出路径卡在网络往返上不可接受），所以这里必须轮询等它落地。
+   */
+  it("退出（dispose）会尝试关掉这一段 —— 不等回执，但那一帧真的发出去了", async () => {
+    const opened = await open();
+    agent.messages = [{ role: "user", content: "退出前的一段" }] as never;
+    await opened.reload();
+    const workspaceId = await workspaceIdOf(workspaceDir);
+    const id = opened.currentId;
+    const sessions = new RemoteSessions(await startServer());
+    const live = async (): Promise<boolean> =>
+      (await sessions.list(workspaceId)).sessions.some(
+        (item) => item.sessionId === id && item.live,
+      );
+    // 先确认它在服务端活着（否则下面的"不活了"什么都没证明）
+    await waitUntilAsync(live);
+
+    opened.dispose();
+
+    await waitUntilAsync(async () => !(await live()));
+    // 幂等：再 dispose 一次不会抛、也不会重发
+    expect(() => opened.dispose()).not.toThrow();
+  });
 });
 
 describe("RemoteChatSession：只带用量的增量", () => {
   it("流末只带 usage 的 chunk 不会在转录里留下空 assistant", async () => {
     const opened = await open();
-    const done = watch(opened.send("问一句"));
+    const done = watch(opened.send("问一句").then(() => opened.waitForTurn()));
     await waitUntil(() => agent.sent.length === 1);
 
     agent.fire("open");

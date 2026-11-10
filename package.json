@@ -18,8 +18,9 @@
     "prepublishOnly": "node scripts/check-publish.mjs && npm run test:all",
     "pretest": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
+    "check:imports": "node scripts/check-imports.mjs dist/commands/index.js --forbid ink --forbid react --forbid ./tui/ && node scripts/check-imports.mjs dist/session.js --forbid ink --forbid react --forbid ./tui/ && node scripts/check-imports.mjs dist/stdio.js --forbid ink --forbid react --forbid ./tui/",
     "test:e2e": "npm run pretest && npm run build && vitest run --config vitest.e2e.config.ts",
-    "test:all": "npm run pretest && vitest run && npm run build && vitest run --config vitest.e2e.config.ts",
+    "test:all": "npm run pretest && vitest run && npm run build && npm run check:imports && vitest run --config vitest.e2e.config.ts",
     "format": "prettier --write --ignore-path .prettierignore \"src/**/*.{ts,tsx,js,mjs,cjs,json}\" \"scripts/**/*.{mjs,js,cjs}\" \"*.{ts,js,mjs,cjs,json}\"",
     "format:check": "prettier --check --ignore-path .prettierignore \"src/**/*.{ts,tsx,js,mjs,cjs,json}\" \"scripts/**/*.{mjs,js,cjs}\" \"*.{ts,js,mjs,cjs,json}\""
   },
