@@ -196,7 +196,7 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 
 | Command | Description |
 |---------|-------------|
-| `/exit` `/quit` | Exit the conversation (offers to save) |
+| `/exit` `/quit` | Exit the conversation |
 | `/save [name]` | Save the conversation (already flushed every turn); with a name it is saved as that file name (a rename — it asks first if the name already exists) |
 | `/load` | Load a conversation (replaces this one; the picker lists saved conversation file names only) |
 | `/new` | Reset the conversation (clear history) |
@@ -220,7 +220,7 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 
 Two related commands, one pipeline:
 
-- **`/handoff`** — the original agent stops what it is doing and writes a handoff document to `<project>/.ai-zen/handoffs/<timestamp>-<conversation id>.md`, using its own tools to verify the real state (branch, uncommitted changes, tests, ports). The session keeps running, so you can keep refining the document.
+- **`/handoff`** — the original agent stops what it is doing and writes a handoff document to `<project>/.ai-zen/handoffs/<YYYYMMDD-HHmmss>.md`, using its own tools to verify the real state (branch, uncommitted changes, tests, ports). The session keeps running, so you can keep refining the document.
 - **`/migrate`** — the same handoff, then history is cleared and a new session starts from the document (the breakpoint message carries only the path; the new agent reads it).
 
 Two executors: `self` (default — the original agent writes it in-session, highest fidelity) and `summary` (a single independent model call, cheap but lossy). `self` degrades to `summary` one-way on failure. Pass it explicitly with `/handoff summary` or `/migrate self`.
@@ -326,7 +326,7 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
 │   ├── default.json          ← Default agent (created on first run)
 │   └── my-custom-agent.json
 ├── sub-agents/               ← SubAgent definitions (shared)
-│   ├── general-assistant.json ← Default sub-agent (created on first run)
+│   ├── sub-agent-default.json ← Default sub-agent (created on first run)
 │   └── my-coder.json
 ├── skills/                   ← Skill directory (shared)
 │   └── my-skill/
@@ -337,8 +337,11 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
 ├── mcp-oauth/                ← MCP OAuth tokens (shared)
 └── logs/                     ← Diagnostics (sdk.log: SDK global log, 2MB rotation)
 
+~/.agents/                    ← Vendor-convention dirs (Cursor / Windsurf / Cline): skills/, mcp.json
+
 /path/to/project/
 ├── .mcp.json                 ← Project-shared MCP config (committable)
+├── .agents/                  ← Vendor-convention dirs (skills/, mcp.json)
 └── .ai-zen/
     ├── mcp.json              ← Project-personal MCP config (not committed)
     ├── skills/               ← Project Skill directory

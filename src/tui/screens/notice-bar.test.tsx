@@ -1,8 +1,8 @@
 // 通知栏渲染：断言「多条通知真的都画出来了」。
 //
-// 这条路径以前没有任何测试——内联在 `Chat` 的 JSX 里，而 `Chat` 依赖整条会话链路
-// （读配置 / 建 Agent / 连 MCP），没法单独渲染。而「只显示最后一条」这个 bug 恰恰
-// 就出在这一层之上（单槽 state），所以渲染映射必须可测。
+// 为什么单独成文件：内联在 `Chat` 的 JSX 里时没法单独渲染（`Chat` 依赖整条会话链路：
+// 读配置 / 建 Agent / 连 MCP）。而「只显示最后一条」这个 bug 恰恰就出在这一层之上
+// （单槽 state），所以渲染映射必须可测。
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { NoticeBar } from "./notice-bar.js";

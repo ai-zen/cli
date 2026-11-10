@@ -11,7 +11,7 @@
  * `tui/` 是叶子（除它自己以外，全仓不许 import 它）。它住在 `src/commands/` 之后，
  * 命令层就不必为了一个常量表把 Ink 拖进依赖图（门禁见 `scripts/check-imports.mjs`）。
  *
- * 本模块为纯数据与纯函数，不依赖 chalk / React 等 UI 依赖，可直接单测。
+ * 本模块为纯数据与纯函数，不依赖 React / Ink 等 UI 依赖，可直接单测。
  */
 
 import { t } from "../i18n/index.js";
@@ -109,9 +109,8 @@ export function commandBlocksInput(name: string): boolean {
  * 把原始斜杠输入切成「命令名 + 参数」。
  *
  * 两种返回形状共用同一个切分规则（`/migrate  self ` → `migrate` + `["self"]`）：
- * 命令名由 {@link parseCommandInput} 取，参数由 {@link parseCommandArgs} 取。
- * 以前命令层自己又 `raw.trim().split(/\s+/).slice(1)` 了一遍 —— 命令名收敛了，
- * 参数没有，于是「参数怎么切」仍然有两份实现。
+ * 命令名由 {@link parseCommandInput} 取，参数由 {@link parseCommandArgs} 取。两者必须走
+ * 同一个切分器，否则「命令名到哪结束」会有两份互不相干的实现。
  */
 function splitCommandInput(text: string): string[] {
   return text.trim().replace(/^\//, "").split(/\s+/);
@@ -130,11 +129,10 @@ export function parseCommandArgs(text: string): string[] {
 /**
  * 解析斜杠输入：`/migrate summary` → `{ name: "migrate", args: ["summary"] }`。
  *
- * 命令名的解析**只有这一处**：此前宿主自己也 `slice(1).split(/\s+/)[0]` 了一遍，
- * 于是「命令名怎么算」在命令层与宿主层各有一份实现。
+ * 命令名的解析**只有这一处**：宿主也只调本函数，不自己 `slice(1).split(/\s+/)[0]`。
  *
  * 注意「只打了个 `/`」也算命令（`name` 为空串）：宿主按斜杠前缀分流，空命令名
- * 落到「未知命令」——与拆出本函数之前的行为一致。
+ * 落到「未知命令」。
  *
  * @returns 非斜杠输入返回 `null`
  */

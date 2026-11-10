@@ -6,26 +6,19 @@
 
 ## 命名规约：`*Context` / `*Deps` / `*Props` 三条判据
 
-这三条来自一次真实的清理：本仓曾经「Context」一窝蜂 —— `ScrollKeyContext` /
-`FieldBuilderContext` 是 React 侧的注入点（能被组件存下来），而 `SendContext` /
-`ToolCallContext` 是**一次调用内**有效的钩子载荷（存下来就是 bug）。同一个词指两件相反的
-事，于是「这个 ctx 能不能存」每次都得点回去看定义。
+同一个后缀不能指两件相反的事：`SendContext` / `ToolCallContext` 这类是**一次调用内**有效的
+钩子载荷（存下来就是 bug），而 React 侧的注入点（能被组件存下来）也是「Context」—— 混用
+之后，「这个 ctx 能不能存」每次都得点回去看定义。所以按下表分开。
 
 | 后缀 | 只用于 | 例子 |
 |------|--------|------|
 | `Context` | **一次调用内**有效的钩子 / 处理器载荷，**不该被存下来** | core 的 `SendContext` / `ToolCallContext`、命令层的 `CommandContext` |
 | `Deps`    | 注入进来的协作者或状态容器（`useRef` 那种也算） | `ChatDeps`、`ToolEnvDeps`、`FieldBuilderDeps`、`RemoteChatSessionDeps` |
-| `Props`   | React 组件的入参 | `ConfigWizardProps`、`ChatProps` |
+| `Props`   | React 组件的入参 | `ConfigWizardProps`、`ChatScreenProps` |
 
 判据的用法：写完一个 `interface XxxYyy`，先问「它活多久」——跨调用存活的注入物是 `Deps`，
 只活在这一次调用里的是 `Context`，是组件入参的是 `Props`。**不要求**所有类型都带这三个
 后缀（`SubAgentView` / `RestoreOutcome` 这类纯数据不需要），但带上了就必须符合上表。
-
-### 为什么它在这里而不是在某个 `.ts` 里
-
-这段规约原本住在 `src/types.ts` 的文件头 —— 而那个文件除了三条 `export type` 转出之外
-零引用（`export * from "@ai-zen/agents-sdk"` 的几个别名，全仓无人 import）。代码可以删，
-**判据不能跟着一起埋掉**：它是下一个起名的人唯一能看到的依据。
 
 ---
 
@@ -58,7 +51,7 @@ src/
   session/types.ts 会话契约（ChatSessionLike / ChatSessionNotifier / ChatSessionOptions）
   session-rate.ts  token 速率（纯）
   session-notice.ts / session-phase.ts  机器码 → 文案（纯）
-  text.ts          纯文本度量（stripCwdNote / displayWidth / truncate / usableFrameRows …）
+  text.ts          纯文本度量（stripCwdNote / displayWidth / truncate …）
   commands/
     registry.ts    命令元数据（名字 / 别名 / 说明 / 是否阻塞输入）
     types.ts       命令层与覆盖层共享的词汇（SelectItem / 交接方式三选一 / 向导入口步）
@@ -98,9 +91,9 @@ import 写法」骗过去（`from "./render.js"` 改个名字就绿了），而 
    必须早于 React 求值（DEV 版 reconciler 的 `performance.measure()` 缓冲无界增长，长会话能把堆
    顶爆）。`stdio.ts` 被 `index.ts` **静态** import，所以它的整条依赖链上出现 React/Ink，那一行
    就白写了 —— 而这条约束以前只靠一句注释（「这条链上今天恰好没有 React」）维持。
-2. **命令层悄悄拿到渲染状态**。`chat-commands.ts` 曾经收着 `setPickerState` / `setConfirmState`
-   两个原始 React setter —— 于是「弹个选择器」被写成了「改一块渲染状态」，那段代码在没有 React
-   的宿主里根本跑不起来。现在它是 `pick()` / `confirm()` 两个 Promise，命令层只知道「问、等答案」。
+2. **命令层悄悄拿到渲染状态**。命令层一旦收着 `setPickerState` / `setConfirmState` 这类原始
+   React setter，「弹个选择器」就会被写成「改一块渲染状态」，那段代码在没有 React 的宿主里根本
+   跑不起来。所以它拿到的是 `pick()` / `confirm()` 两个 Promise，只知道「问、等答案」。
 
 所以「`tui/` 是叶子」不是洁癖：它把「换源 / 换宿主 / 换渲染」的自由留给上层，把「不能有 UI」
 这条纪律变成**结构**（产物图）而不是**记忆**（注释）。

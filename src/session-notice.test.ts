@@ -38,7 +38,7 @@ describe("noticeText", () => {
     expect(noticeText("mcpUnavailable", { name: "filesystem" })).toContain("filesystem");
   });
 
-  it("子 Agent 出错：模板只把原文吐出来（与原来直接推 error.message 逐字一致）", () => {
+  it("子 Agent 出错：模板只把原文吐出来，不加前缀", () => {
     // 不能加「子 Agent 2 出错：」这类前缀：模板里只有 {message}，`index` 不进文案
     expect(noticeText("subAgentFailed", { index: 2, message: "boom" })).toBe("boom");
   });

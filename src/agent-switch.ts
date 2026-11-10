@@ -24,8 +24,8 @@
  *
  * ## 也不写配置
  *
- * 本模块只回答「能不能切」与「切了该说哪句话」；写 `defaultAgent` 走服务端的窄方法
- * `config.defaultAgent.set`（整份写回会把并发修改抹掉）。
+ * 本模块只回答「能不能切」与「切了该说哪句话」；写 `defaultAgent` 走配置面的窄方法
+ * `ConfigPort.setDefaultAgent()`（整份写回会把并发修改抹掉）。
  */
 
 import { resolveModel, type AgentDefinition, type AppConfig } from "@ai-zen/agents-sdk";
@@ -109,9 +109,7 @@ export interface CheckAgentSwitchResult {
 /**
  * 校验目标 Agent 能否切换，并返回「跟用户说一句」的内容。
  *
- * **不改配置**：写 `defaultAgent` 是服务端的一条窄方法（`config.defaultAgent.set`）。
- * 这里曾经把「改好的整份配置」回给调用方、由它 `saveConfig` 整份写回 —— 多客户端并存时
- * 那等于把一个字段的修改变成整份覆盖。
+ * **不改配置**：写 `defaultAgent` 是配置面上的一条窄方法（`ConfigPort.setDefaultAgent()`）。
  *
  * 抛错场景：Agent 不存在、未绑定模型、模型不在配置里、端点不存在、端点缺 Key。
  */

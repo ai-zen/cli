@@ -25,7 +25,7 @@ Project-level Skills live under the project directory:
 
 ## Directory priority
 
-Skill directories are merged from multiple sources **high to low** (from `getScope()` in `src/agent-creator.ts` and the comments in `src/config.ts`):
+Skill directories are merged from multiple sources **high to low** (the order comes from `assetDirs()` on the server; the header comment in `src/config.ts` mirrors it for the client):
 
 1. Project `./.ai-zen/skills/`
 2. Project `./.agents/skills/`
@@ -48,4 +48,4 @@ This path also crosses the sub-agent delegation boundary (`onSubAgentStart` / `o
 
 ## Related configuration
 
-Skills can also be shared per project via the `skills/` directories under `.ai-zen` / `.agents`. The CLI initializes the shared directories via the SDK's `ConfigManager.bootstrap()` in `ensureConfigDir()`.
+Skills can also be shared per project via the `skills/` directories under `.ai-zen` / `.agents`. The shared directories (`agents/`, `sub-agents/`, `skills/` … under `~/.ai-zen`) are created when the server boots, via the SDK's `ConfigManager.bootstrap()`; the CLI process itself never touches that layout.

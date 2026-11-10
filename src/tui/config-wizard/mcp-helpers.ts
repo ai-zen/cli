@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— MCP 展示辅助
+// MCP 展示辅助
 import { McpScope, McpServerEntry } from "../../config.js";
 import { McpSnapshot } from "./types.js";
 import { t } from "../../i18n/index.js";

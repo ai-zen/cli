@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 键值编辑屏 KvEditorScreen（MCP env / headers）
+// 键值编辑屏 KvEditorScreen（MCP env / headers）
 import { useState } from "react";
 import { Box, Text, useCursor, useInput } from "ink";
 import { theme } from "../theme.js";

@@ -18,8 +18,8 @@ import type { AgentDefinition } from "@ai-zen/agents-sdk";
  *   - `AgentKind` 就是协议里的 `AgentKind`（`agent.*` 方法的 `kind` 参数）；
  *   - `AgentStore` 是 `ConfigPort.readAgentStore()` 的返回形状。
  *
- * 以前它们各自定义在本文件 —— 于是「客户端从服务端拿回来的那份」与「本文件这份」是
- * 两个类型，只靠形状碰巧一致。包一层转出后，本文件只剩「词汇表 + 数据整形」。
+ * 两个类型都不在本文件定义，只转出：定义只该有一份，否则「客户端从服务端拿回来的那份」
+ * 与「本文件那份」会变成两个类型，只靠形状碰巧一致。转出之后，本文件只剩「词汇表 + 数据整形」。
  */
 import type { AgentKind, AgentStore } from "@ai-zen/agents-client";
 export type { AgentKind, AgentStore };

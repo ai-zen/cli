@@ -28,7 +28,7 @@ const { calls, fakeConfig, fakeAgents } = vi.hoisted(() => {
 
 import { useWizardHost } from "./use-wizard-host.js";
 
-/** 可替换的读配置实现：用例按需改它，代替原来的 `vi.mocked(readConfig)` */
+/** 可替换的读配置实现：用例按需改它（注入读取器，比 `vi.mock` 整模块替换窄） */
 let readConfigImpl: () => Promise<any> = async () => fakeConfig();
 /** 同上，但可以按作用域返回不同的读取结果（包含「文件坏了」） */
 let readMcpImpl: (scope: "global" | "project") => Promise<any> = async () => ({

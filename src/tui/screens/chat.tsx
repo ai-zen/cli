@@ -85,7 +85,7 @@ export type CreateChatSession = (
 export interface ChatDeps {
   /** 配置面的唯一入口：真相在服务端，客户端只是问它 */
   config: ConfigPort;
-  /** 进程级的那一条连接（D8）：屏幕自己**不建** —— 兜底一删，「两条连接」就只剩组装根一处可犯 */
+  /** 进程级的那一条连接：屏幕自己**不建** —— 兜底一删，「两条连接」就只剩组装根一处可犯 */
   connection: ServerConnection;
   createSession: CreateChatSession;
   readClipboardImage: typeof readClipboardImage;
@@ -95,10 +95,9 @@ export interface ChatDeps {
 /**
  * 注入面：`config` / `connection` **必给**，其余可缺省。
  *
- * 那两个必给的东西曾经有兜底（模块级单例 `defaultConfigPort`）。兜底删掉的理由是：
- * 「一个进程一条连接」只能由**组装根**保证（`tui/index.tsx` 建一个、往下传），
- * 组件自己再造一个就等于两条 ——  Symptom 不是报错，而是「多一条 driver + 切会话重连」，
- * 平时完全看不见。把它做成必填，漏传就是**编译**错误。
+ * 那两个必给的东西**不给兜底**：「一个进程一条连接」只能由**组装根**保证
+ * （`tui/index.tsx` 建一个、往下传），组件自己再造一个就等于两条 —— Symptom 不是报错，
+ * 而是「多一条 driver + 切会话重连」，平时完全看不见。做成必填之后，漏传就是**编译**错误。
  */
 export type ChatDepsInput = Pick<ChatDeps, "config" | "connection"> &
   Partial<Omit<ChatDeps, "config" | "connection">>;
@@ -233,9 +232,9 @@ export function Chat(props: ChatScreenProps) {
   /**
    * 当前模型 id —— **从会话现取**（`stream.state.modelId` 的一手透传）。
    *
-   * 这里曾经是一个 `useState`，在创建会话时灌一次。它的代价不是多几行：`/model` 走
-   * `session.reload()` 之后快照已经换了模型，而屏幕上的那份还停在首挂载时的值 —— 状态栏
-   * 报的是一个已经不生效的模型。派生值就该现取。
+   * 为什么不用 `useState`（创建会话时灌一次）：`/model` 走 `session.reload()` 之后快照已经
+   * 换了模型，灌下来的那份还停在首挂载时的值 —— 状态栏报的是一个已经不生效的模型。
+   * 派生值就该现取。
    */
   const modelId = session?.modelId ?? "";
 
@@ -302,7 +301,7 @@ export function Chat(props: ChatScreenProps) {
   /**
    * SDK 的 warn / error 直接进通知栏 —— **通用通道**，不为某个功能单独接线。
    *
-   * 以前 SDK 日志被整体接管到文件里（不然 `console.log` 会撕坏 Ink 的帧），代价是
+   * 光把 SDK 日志接管到文件里（不然 `console.log` 会撕坏 Ink 的帧）的代价是
    * 「SDK 说了什么」用户在界面上一个字都看不见，只能事后翻 sdk.log —— 排查成本极高
    * （连「工具文件把进程杀了」这种事都只能靠猜）。这里注册一个 sink 把 warn/error
    * 引过来：以后 SDK 任何模块只要打日志，界面上自动就有，不必为新特性再传一个回调。

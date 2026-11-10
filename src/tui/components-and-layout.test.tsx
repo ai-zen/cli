@@ -316,7 +316,7 @@ describe("BottomMenu（底部锚定菜单：`/` 与 `@` 共用）", () => {
       </Box>,
     );
     const row = (lastFrame() ?? "").split("\n")[0] ?? "";
-    // 此前 label 与描述是两个并列 flex 子节点，描述更长就抢走宽度，命令被裁成 `/confi`
+    // label 与描述若是两个并列 flex 子节点，描述更长就抢走宽度，命令被裁成 `/confi`
     expect(row).toContain("/config");
     expect(row).toContain("❯ /config"); // 标记也不允许被挤掉
     expect(row).toContain("打开配置"); // 描述仍有开头，只是被截断
@@ -418,7 +418,7 @@ describe("resolveSubmitText（回车执行高亮命令）", () => {
 
 describe("truncate（单行化 + 截断）", () => {
   /**
-   * 回归（PLAN L20）：用 `.length` / `.slice` 按 UTF-16 code unit 切，截断点落在 emoji
+   * 回归：用 `.length` / `.slice` 按 UTF-16 code unit 切，截断点落在 emoji
    * 中间时会留下孤立代理项 —— 屏幕上是一个方框（或直接乱码）。`/back` 的列表项标签、
    * `/load` 的预览都过这个函数。
    */
@@ -454,7 +454,7 @@ describe("SelectList", () => {
   });
 
   /**
-   * 回归（PLAN L6）：`index` 只在挂载时算一次（`useState(min(initialIndex, …))`），
+   * 回归：`index` 只在挂载时算一次（`useState(min(initialIndex, …))`），
    * 列表变短后不重置，而回车用 `items[index].value` —— 越界就抛 TypeError。
    * 这里让 items 由 3 项变 1 项（光标原本停在末项）。
    */
@@ -484,8 +484,8 @@ describe("SelectList", () => {
   });
 });
 
-// Splash 已移除：启动不再有一次性开屏，空对话的品牌区由 `welcome.ts` 生成，
-// 用例分别在 `welcome.test.ts`（纯函数）与 `screens/chat.test.tsx`（接入对话区）里。
+// 空对话的品牌区由 `welcome.ts` 生成，用例分别在 `welcome.test.ts`（纯函数）与
+// `screens/chat.test.tsx`（接入对话区）里。
 
 describe("stripCwdNote", () => {
   it("去除首次注入的工作目录后缀", () => {
@@ -931,8 +931,7 @@ describe("usableFrameRows（预留末行，避开 Ink 全屏分支）", () => {
 /**
  * `pickerCapacity` —— 「终端能放下几条选择器候选」的唯一实现。
  *
- * 回归（PLAN L15）：这个式子曾经内联在命令层，而且少扣了 2 行，于是选择器把状态栏顶出
- * 屏幕。它现在在渲染层（命令层只收结果），所以它的"装得下"必须在这里被**量**住：用
+ * 它是这个换算的唯一实现（命令层只收结果），所以"装得下"必须在这里被**量**住：用
  * `computeChatLayout` 把那个条数摆上去，看整帧高度是不是真的不超。
  */
 describe("pickerCapacity（选择器条数上限）", () => {

@@ -13,11 +13,7 @@ outline: deep
 ## 环境要求
 
 - **Node.js**：包以 ESM（`"type": "module"`）发布。`package.json` 未声明 `engines` 字段，实际所需版本以 Node 生态为准（建议使用较新的 LTS）。
-- **运行时依赖**（由 `package.json` 声明）：
-  - `@ai-zen/agents-core` `^4.5.5`
-  - `@ai-zen/agents-sdk` `1.1.0`
-  - `@modelcontextprotocol/sdk` `^1.29.0`
-  - `dayjs`、`ink`、`react`、`zod`、`highlight.js`、`lowlight`
+- **运行时依赖**（由 `package.json` 声明）：`@ai-zen/agents-core`、`@ai-zen/agents-sdk`、`@ai-zen/agents-client`、`@ai-zen/agents-protocol`、`@ai-zen/agents-server`、`@modelcontextprotocol/sdk`、`ink`、`react`、`zod`、`string-width`、`highlight.js`、`lowlight`
 - **平台**：底层工具与 Shell 钩子依赖 Unix shell（`bash`/`zsh`）与 `process.env.SHELL`；在 Windows 上 Shell 钩子不可用（`hook` 会报“不支持的 shell”）。
 
 ## 安装
@@ -104,20 +100,20 @@ cat README.md | ai "用三句话总结"
 
 | 命令 | 说明 |
 |------|------|
-| `/exit` `/quit` | 退出对话（提示保存） |
+| `/exit` `/quit` | 退出对话 |
 | `/save [名字]` | 保存对话；带名字则另存为该文件名（重名先确认） |
 | `/new` | 重置会话（清空历史） |
 | `/back` | 撤回上一条（可修改重发） |
 | `/editor` | 用外部编辑器写长消息 |
 | `/clear` | 清屏 |
-| `/config` | 打开配置中心（模型 / 端点） |
-| `/model` | 切换模型（写入 Agent 定义，当场重建 Agent 生效，消息与草稿都保留） |
+| `/config` | 打开配置中心（端点 / 模型 / 图片模型 / MCP / Agent 定义 / 默认项 / 工具上限） |
+| `/model` | 切换模型：`/model <id>` 只改当前会话，`-a`/`--agent <id>` 改 Agent 定义，`-g`/`--global <id>` 改全局兜底；不带参数弹选择器 |
 | `/agent` | 切换主 Agent（同一段对话换个 Agent，保留消息） |
 | `/reload` | 刷新运行环境（重新发现工具 / MCP） |
 | `/update` | 升级 CLI 到最新发布版（在全部 dist-tags 里挑 semver 最大者；逐步骤显示进度，装完弹确认框，确认即重启到新版本） |
 | `/mcp` | 管理 MCP 服务器（增删改 / 启停） |
 | `/lang` | 切换界面语言 |
-| `/think` `/effort` | 切换思考强度 |
+| `/think` `/effort` | 切换思考强度（写入生效模型所在的那一层；全局兜底层没有可写处，明确拒绝） |
 | `/key` | 设置端点 API Key |
 | `/migrate` | 交接并开启新会话 |
 | `/load` | 加载对话（替换当前会话；选择器只列会话文件名） |
@@ -152,8 +148,8 @@ ai hook uninstall
 | 首次启动、端点缺 Key | 启动时自动弹出**凭据设置屏**，输入即存盘并进入对话 |
 | 修改**当前模型所用端点**的 Key | 对话内 `/key`（保存后自动重建会话，立即生效） |
 | 端点 Key / Base URL、默认模型、新建端点 | 对话内 `/config` →「端点管理」 |
-| 当前会话所用模型 | 对话内 `/model`（写入该 Agent 的 `modelId`） |
-| 思考强度（reasoning effort） | 对话内 `/think`（写入当前 Agent 定义的 `reasoningEffort`；可选档位来自 `~/.ai-zen/reasoning-presets.json` 里该模型引用的策略，可自行增删策略） |
+| 当前会话所用模型 | 对话内 `/model`（默认只改当前会话；`/model -a` 才写 Agent 定义的 `modelId`） |
+| 思考强度（reasoning effort） | 对话内 `/think`（参数写进**生效模型所在的那一层**的 `modelParams`；可选档位来自 `~/.ai-zen/reasoning-presets.json` 里该模型引用的策略，可自行增删策略） |
 | 模型 / 图片模型 / MCP 服务器 / Agent 定义 / 默认项（含中断策略）/ 工具上限 | 对话内 `/config` → 配置中心 |
 
 > 说明：CLI 入口只实现 `hook` 子命令（`ai hook install|uninstall`），**没有 `config` 子命令**；配置编辑在 TUI 内完成（端点、模型、图片模型、MCP 服务器、Agent 定义、默认项与工具上限均已可在 `/config` 内增删改）。详见 [配置](./configuration.md)。

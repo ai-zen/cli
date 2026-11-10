@@ -1,9 +1,9 @@
 // 对话屏（screens）—— 对外统一出口
 //
-// 原 src/tui/screens.tsx（1316 行）已按职责拆分为本目录下的多个模块，
-// 此处仅做 re-export，保持既有引用路径 `./screens/index.js`。
+// 本目录按职责分成多个模块，此处只做 re-export —— 本目录只有这一个出口，外部
+// （`tui/index.tsx` 等）一律写 `from "./screens/index.js"`。
 
-// 文本度量 / 折行 / 整帧高度：仍位于 ../text.js，此处转发（历史引用与测试依赖）。
+// 文本度量 / 折行 / 整帧高度住在 ../text.js（纯函数、无 React 依赖），此处转发。
 export {
   displayWidth,
   wrapText,

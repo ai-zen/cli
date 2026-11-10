@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 向导外壳：头部行 + 吸底布局
+// 向导外壳：头部行 + 吸底布局
 import { ReactNode } from "react";
 import { Box, Text } from "ink";
 import { bottomPadding, displayWidth, wrapText } from "../text.js";

@@ -1,21 +1,20 @@
 /**
  * 纯 stdio 模式运行器 —— 一次性调用，但**跑在服务端**。
  *
- * 约定（见 TODO §1）：
+ * 约定：
  *   - 不进入交互循环、不显示横幅、不等待任何按键；
  *   - 仅把**最终 assistant 文本**写入 stdout（零 ANSI、零 emoji 前缀、零 spinner）；
  *   - 日志 / 进度 / 通知一律走 stderr；
  *   - 成功退出码 0，失败非 0。
  *
- * ## 为什么这里不再自己跑 Agent
+ * ## 为什么这里不自己跑 Agent
  *
- * 曾经这一条路是**第二套运行时**：自己 `new Scope(...)`、自己 `agent.use(...)` 装四个
- * 插件、自己读配置解析 model / endpoint / apiKey、自己往 `workspaces/` 写存档。于是同一个
- * 工作区在 TUI 与 `ai "…"` 各有一套 MCP 连接，而服务端那边每加一样能力（每轮落盘、交接
- * 提问、工具刷新档位）这条路径都要重新实现一遍 —— 事实上它已经漂了：
- * `config.autoRefreshTools` 到这里是空参，自动迁移压根没装。
+ * 自己造一套运行时（`new Scope(...)`、`agent.use(...)` 装插件、自己解析 model / endpoint /
+ * apiKey、自己往 `workspaces/` 写存档）等于把同一件事实现两遍：同一个工作区在 TUI 与
+ * `ai "…"` 各有一套 MCP 连接，而服务端每加一样能力（每轮落盘、交接提问、工具刷新档位）
+ * 这条路径都得再实现一遍 —— 漏一处就是个安静的缺口（参数传空、钩子没装，界面上一切正常）。
  *
- * 现在它只是**一条瘦客户端**：`ensureServer`（没有服务端就拉一个）→ 开会话（`persist:false`）
+ * 所以它只是**一条瘦客户端**：`ensureServer`（没有服务端就拉一个）→ 开会话（`persist:false`）
  * → 发一轮 → 等 `session-turn-end` → 取最后一条 assistant → 关会话。Agent 在哪跑、插件怎么装、
  * 存档写在哪，全都只有服务端那一份答案。
  *
@@ -37,8 +36,8 @@
  * **不许出现 React / Ink**：DEV 版 reconciler 的 `performance.measure()` 缓冲无界增长，长会话
  * 会把堆顶爆（见 index.ts 顶部那段）。
  *
- * 这条约束以前只靠一句注释维持（「现在的依赖里恰好没有 React」），现在它是个**结构事实**：
- * 会话层已从 `tui/` 搬到 `session.ts`，于是 `dist/stdio.js` 的 import 图里一个 `tui/`
+ * 光靠一句注释（「现在的依赖里恰好没有 React」）守不住这条约束，所以它是个**结构事实**：
+ * 会话层在 `session.ts` 而不是 `tui/`，于是 `dist/stdio.js` 的 import 图里一个 `tui/`
  * 路径都没有。判据是产物图（`node scripts/check-imports.mjs dist/stdio.js --forbid tui/`），
  * 不是路径 grep —— grep 改个 import 写法就绿了。
  *
@@ -75,7 +74,7 @@ export interface StdioRunOptions {
  */
 export interface StdioRunDeps {
   /**
-   * 那**一条**连接（D8）。缺省由本入口自己造一个（`createServerConnection()`）：
+   * 那**一条**连接。缺省由本入口自己造一个（`createServerConnection()`）：
    * stdio 是独立入口，没有上层组装根可以靠。
    */
   connection?: ServerConnection;
@@ -119,7 +118,7 @@ async function readStdin(): Promise<string> {
 }
 
 /**
- * 合并「指令 + stdin 内容」（见 TODO §5 开放问题 2：参数为指令、stdin 为内容）。
+ * 合并「指令 + stdin 内容」（参数是指令、stdin 是内容 —— 两者都有的场景必须合并）。
  * - 两者都有：`指令\n\n内容`
  * - 仅其一：取该者
  */
@@ -178,7 +177,7 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
   /**
    * 保持 stdout 纯净：SDK 全局日志走 `setLogger` 改道，但 SDK（及第三方依赖）内部仍有
    * **直接调用 console.log** 的地方，不经我们的 logger；管道模式下那会把日志混进模型输出，
-   * 所以这里连 `console.log` 一起改道 —— 与旧版同一处理（`finally` 里还原）。
+   * 所以这里连 `console.log` 一起改道（`finally` 里还原）。
    */
   const originalLog = console.log;
   setLogger({ info: writeErr, warn: writeErr, error: writeErr });
@@ -196,7 +195,7 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
      * 会把 SDK 的原话带回来，客户端只负责转达。
      *
      * 配置面与对话走**同一条**连接（`createConfigPort(connection)`）：本入口只有一条
-     * 连接可用，再建一条就是 D8 那个病。
+     * 连接可用，再建一条就是「一个进程两条连接」那个病。
      */
     const configPort = deps.config ?? createConfigPort(connection);
     const agentId = (await configPort.readConfig()).defaultAgent ?? "default";
@@ -205,8 +204,8 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
      * 通知就是这一模式的「通知栏」，落在 stderr 上。
      *
      * 进度类（`info`）照原样打出去 —— 一次性调用也可能碰上「正在写交接文档」这种事，
-     * 静默十秒比多一行 stderr 更糟。错误类先记着，由收尾那一步统一成 `ai: …` 一行：
-     * 与旧版错误出口逐字一致，且不会同一条错误打两遍。
+     * 静默十秒比多一行 stderr 更糟。错误类先记着，由收尾那一步统一成 `ai: …` 一行 ——
+     * 同一条错误不会打两遍。
      */
     let failure: string | null = null;
     const notifier: ChatSessionNotifier = {
@@ -277,8 +276,8 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
     /**
      * 连接**一定要**断（本入口自己造的那条，没有别的使用方）。
      *
-     * `openWith` 中途失败（配置有毛病时 `session.create` 会抛）那条路上根本没造出
-     * `session`，于是没东西会关这条 socket —— 而一条活 socket 把进程钉在事件循环里：
+     * `RemoteChatSession.open()` 中途失败（配置有毛病时 `session.create` 会抛）那条路上根本
+     * 没造出 `session`，于是没东西会关这条 socket —— 而一条活 socket 把进程钉在事件循环里：
      * 一次 `ai "…"` 永远退不出，在脚本里就是「命令卡死」（只能用 Ctrl+C）。
      *
      * 关之前 `closeQuietly` 已经 **await** 了 `session.close()`：顺序反过来这一帧就发不

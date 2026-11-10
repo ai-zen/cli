@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 工具输出上限 / 端点字段直达编辑
+// 工具输出上限 / 端点字段直达编辑
 import { ReactNode } from "react";
 import {
   apiKeyGuide,

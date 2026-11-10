@@ -50,7 +50,7 @@ const PERMISSION_DIMENSION_LABEL_KEY: Record<PermissionDimension, string> = {
   subagents: "perm.subagents",
 };
 
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 详情屏字段构造器（工厂）
+// 详情屏字段构造器（工厂）
 
 /** 多行文本在详情屏的**单行摘要**（避免换行撑破吸底布局）；内容一律走外部编辑器编辑 */
 function summarizeMultiline(text: string): string {

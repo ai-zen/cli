@@ -27,12 +27,9 @@ import stringWidth from "string-width";
 // 宽度计算直接交给 `string-width` —— **Ink 排版时用的就是它**
 //（`ink/build/output.js` 第一行 `import stringWidth from 'string-width'`）。
 //
-// 曾经这里手写了一张 `isWide` 区间表，逐 code point 累加。结果是两把尺子：
-//   - `⚡` `✅` `✨` `⭐` 这类 East Asian Wide 符号我们算 1 列、Ink 算 2 列；
-//   - `👨‍👩‍👧` 逐 code point 累加得 8 列，实际只占 2 列；
-//   - `✌️`（VS16 序列）与 `🇨🇳`（国旗对）同样对不上。
-// 于是一切依赖宽度的东西（折行、状态栏装行、光标列号）都差一截，还靠
-// 「预留 1 列余量」硬顶。现在两边用同一把尺子，这类偏差从根上没了。
+// 必须与 Ink 同一把尺子，否则一切依赖宽度的东西（折行、状态栏装行、光标列号）都差
+// 一截：East Asian Wide 符号（`⚡` `✅`）、ZWJ 序列（`👨‍👩‍👧`）、VS16 序列（`✌️`）与
+// 国旗对（`🇨🇳`）在两种算法下的差别能从 1 列到好几列。
 //
 // 仍然需要 `graphemes()`：`string-width` 只管宽度，不管「光标该以什么为单位移动」。
 

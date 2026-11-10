@@ -26,7 +26,7 @@ describe("phaseLabel", () => {
     expect(phaseLabel({ kind: "tool-calling" })).toBe("调用工具…");
     expect(phaseLabel({ kind: "tool-waiting" })).toBe("等待工具返回…");
     expect(phaseLabel({ kind: "streaming" })).toBe("输出中…");
-    // 六者互不相同 —— 这正是本次改动的目的（原来全都叫「思考中…」）
+    // 六者互不相同 —— 都叫「思考中…」的话，用户分不清是在排队、思考还是出字
     expect(
       new Set(
         Object.values({

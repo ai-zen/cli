@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 单行输入屏 PromptScreen + promptLayout
+// 单行输入屏 PromptScreen + promptLayout
 import { useState } from "react";
 import { Box, Text, useCursor, useInput } from "ink";
 import { theme } from "../theme.js";

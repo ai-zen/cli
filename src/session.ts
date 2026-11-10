@@ -13,11 +13,11 @@
  * 2. **带图提交要用 `apiModel`**（实发名）：`buildUserContent` 靠它反查端点与视觉能力，读成
  *    `modelId`（配置里的身份）在有别名时会把本来能带的图静默降级成纯文本。
  * 3. **等一轮结束的原语**（`waitForTurn`）：包里的 `send()` 立刻返回 `turnId`，而界面用
- *    `busy` 包住输入禁用，靠的是「这一轮真的结束了」（D7：别删掉它让界面自己等）。
+ *    `busy` 包住输入禁用，靠的是「这一轮真的结束了」—— 别删掉它让界面自己等。
  *
- * ## `session.close` 的三个时机（D5 × D8，正确性）
+ * ## `session.close` 的三个时机（正确性）
  *
- * 「持有者」是唯一的活命判据，而 D8 让连接**不再随界面卸载消失** ——
+ * 「持有者」是唯一的活命判据，而连接**不随界面卸载消失** ——
  *「切走一段会话」于是对服务端完全不可见。三条铁律：
  *   · **`reset()`（`/new`）**：先归档 → 再开新的 → **最后**关旧的（先关再存是拿不存在的 id
  *     写盘；先关旧的再开新的，`open` 一失败两段都没了）；
@@ -28,13 +28,11 @@
  *
  * **会话动作一律走 channel**（不管是换 id 的还是不换的）：
  *   · 换 id 的四个（`saveAs` / `migrate` / `reload` / `setAgent`）包里自己会 `applyIdChanged`
- *     + 重取快照，自己改 id 就是 P4a 之前那个错（在旧 id 上等一个永远不来的 `session-turn-end`）；
+ *     + 重取快照，自己改 id 就是在旧 id 上等一个永远不来的 `session-turn-end`；
  *   · 会话级的模型动作两个（`setModel` / `setModelParams`）不换 id，但包里也会把返回的快照
  *     对齐屏幕（`modelId` / `apiModel` / `modelParams` 当场变成屏幕上的事实）。
- * 所以本文件一次都不直接赋值会话 id，也**不再现取门面**：P4b 时代那两处「现取一次
- * `RemoteSessions`」是包里还没这两个方法时的临时写法，现在通路就在 channel 上 —— 绕过去
- * 的代价是「当前 id」与「门面」在应用里成了一个会漂的配对（重连换了连接之后，两者指向的
- * 可以不是同一条）。
+ * 所以本文件一次都不直接赋值会话 id，也**不现取门面**：绕过去的代价是「当前 id」与
+ * 「门面」在应用里成了一个会漂的配对（重连换了连接之后，两者指向的可以不是同一条）。
  */
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
@@ -148,8 +146,8 @@ export class RemoteChatSession implements ChatSessionLike {
        * 客户端 cwd 只在**本地**服务端时才递上去（判据在包里的 `local-host.ts`）。
        *
        * 递出去的是**意图**（「我想在这个目录开会话」），服务端规范化之后把答案写进
-       * `channel.path` —— `/new` 复用工作区时读的是那个答案，所以这里不再记一份
-       * 「当初说了什么」（P4b 时代包里没有 `path` 出口才只能记着意图）。
+       * `channel.path` —— `/new` 复用工作区时读的是那个答案，所以这里不必再另记一份
+       * 「当初说了什么」。
        */
       const client = await connection.client();
       const path = input.path ?? clientWorkspacePath(client.address.host);
@@ -210,7 +208,7 @@ export class RemoteChatSession implements ChatSessionLike {
       this.reportedFailure = state.failure;
       this.notifier.onNotice(state.failure.message, "error");
     }
-    // 这一轮结束了：速率定格（`live` → 本轮平均），与旧实现 `finishTurn` 同一时机
+    // 这一轮结束了：速率定格（`live` → 本轮平均），与包里 `finishTurn` 落定同一时机
     if (this.rateRunning && state.status !== "streaming") {
       this.rateRunning = false;
       this.rate.finish();
@@ -307,14 +305,12 @@ export class RemoteChatSession implements ChatSessionLike {
    * 里成立；换段就换通道 —— 这样旧的那段在关掉之前完整可读，新的一段从零开始（与「上一段
    * 跑到第几轮」有关的计数不该跟着走）。
    *
-   * ## 新会话落在哪个工作区（D7 那句「包里给的是答案，不是意图」）
+   * ## 新会话落在哪个工作区（包里给的是答案，不是意图）
    *
    * 用 `channel.path`：它是 `open()` 之后服务端 `workspace.resolve` 回来的**规范化路径**，
-   * 也就是「这段会话真正跑在哪个目录」。P4b 时代包里没有这个出口，只能在应用里记「当初请求
-   * 的那个 path」—— 那只是**意图**：相对路径、带 `..`、末尾多一条斜杠，甚至两机部署时那个
-   * 路径在服务端压根不存在（客户端与服务端不是同一台机器）。拿意图去 `/new` 今天还能凑合
-   * （服务端会再规范化一次），但这是「让调用方误以为它是一份答案」的那类便宜，正好是
-   * P4c 要收掉的绕法 —— 有答案就不该再抱着意图。
+   * 也就是「这段会话真正跑在哪个目录」。应用自己记的「当初请求的那个 path」只是**意图**：
+   * 相对路径、带 `..`、末尾多一条斜杠，甚至两机部署时那个路径在服务端压根不存在（客户端
+   * 与服务端不是同一台机器）。有答案就不该再抱着意图。
    */
   async reset(): Promise<string | null> {
     const previous = this.channel;
@@ -373,7 +369,7 @@ export class RemoteChatSession implements ChatSessionLike {
    * 走 `channel.setModel`（与 `saveAs` / `rollback` 同级），**不**自己现取 `RemoteSessions`
    * 门面：门面是「按 id 说话」的无状态薄封装，它不知道「当前这一段是哪个 id」，而应用里那份
    * 「当前 id」会漂（重连换了连接、`saveAs` / 自动迁移换了 id）。绕过去就得在两个会变的
-   * 东西之间维持一个配对 —— P4b 时代正是这么写的，现在包里补上了这个动作，绕法作废。
+   * 东西之间维持一个配对。
    *
    * 屏幕对齐**只靠这一句**：包里拿到快照就 `applySnapshot`（新的 `modelId` / `apiModel` /
    * `modelParams` 立刻是屏幕上的事实），所以这里**不要**再补一次 `reload()` —— 那是多一个
@@ -421,8 +417,7 @@ export class RemoteChatSession implements ChatSessionLike {
    * `setAsLast: false` 是**一次性调用的归档**（`ai "…" --save`）：stdio 要写档但不挪续接
    * 指针 —— 否则连跑几条 `cat … | ai --save` 之后，下次 `ai` 会续接到最后一条管道结果上。
    * 选项原样透传给 channel：只有它知道「当前这一段是哪个 id」，而 `RemoteSessions` 是
-   * 「按 id 说话」的无状态门面 —— 那正是 stdio 以前绕道门面的原因（P4c 时包里还没有
-   * 这个选项，现在有了）。
+   * 「按 id 说话」的无状态门面。
    *
    * 对外契约（`ChatSessionLike.save`）仍然是无参形态：缺省行为不变，选项只是「这一段会话」
    * 的附带能力，不往界面上扩散。

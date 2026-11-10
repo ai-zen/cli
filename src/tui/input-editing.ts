@@ -59,7 +59,9 @@ export function killedText(before: string, after: string): string {
   return a.slice(prefix, a.length - suffix).join("");
 }
 
-// ==================== kill ring（Ctrl+Y / Alt+Y）====================/** kill ring 最大长度（够 Alt+Y 循环几次即可，不做无限历史） */
+// ==================== kill ring（Ctrl+Y / Alt+Y）====================
+
+/** kill ring 最大长度（够 Alt+Y 循环几次即可，不做无限历史） */
 export const KILL_RING_SIZE = 5;
 
 /**

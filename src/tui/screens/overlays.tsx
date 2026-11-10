@@ -1,11 +1,11 @@
-// 由 src/tui/screens.tsx 拆分而来 —— 选择覆盖层 / 确认框
+// 选择覆盖层（选择器 / 确认框）
 import { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { theme } from "../theme.js";
 import { SelectList, KeyHints, SelectItem } from "../components.js";
 import { t } from "../../i18n/index.js";
 
-// ==================== 选择覆盖层（/back）====================
+// ==================== 选择覆盖层（通用：/load、/back、/model、/agent、交接方式…）====================
 
 export function PickerOverlay({
   title,

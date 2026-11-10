@@ -1,8 +1,8 @@
 /**
  * English entries — Configuration center (`/config` wizard).
  *
- * Kept separate from `en.ts` for the same reason as `zh-wizard.ts`: the wizard is the
- * densest text area in the CLI. `index.ts` merges both tables, so `t()` sees one map.
+ * Kept separate from `en.ts`: the wizard is the densest text area in the CLI. `index.ts`
+ * merges both tables, so `t()` sees one map.
  */
 export const en: Record<string, string> = {
   // ---------- Field labels (reused heavily) ----------

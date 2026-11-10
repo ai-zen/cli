@@ -19,11 +19,10 @@
  *
  * ## 为什么连接是「一个实例」而不是「一个函数」
  *
- * 在一个进程里，到服务端的连接**只能有一条**（D8）。以前这件事靠两个土办法维持：TUI 在
- * `tui/index.tsx` 里建一个 `configPort` 往下传（注释写着「不传就变成两条连接」），stdio 的
- * 一次性调用自己再建一条。两处都是「谁记得谁对」的纪律，而纪律会在第三次组装时失效。
- * 现在答案只有一个对象：{@link createServerConnection} 造它，谁要说话就借它
- * （`connection.client()` 每次判活、断了自建，见包里的 `transport/connection.ts`）。
+ * 在一个进程里，到服务端的连接**只能有一条**。所以答案只有一个对象：
+ * {@link createServerConnection} 造它，谁要说话就借它（`connection.client()` 每次判活、
+ * 断了自建，见包里的 `transport/connection.ts`）。靠「各自记得不要多造一条」维持不住 ——
+ * 多一个组装点就会破一次。
  */
 
 import {
@@ -42,9 +41,8 @@ export { CLIENT_INFO };
 /**
  * 拉起（或连上）服务端的一条裸连接。
  *
- * 生产几乎不用它了（要用就用 {@link createServerConnection}：它还带「断了自建 + 重新订阅
- * 事件」）。保留是因为「只要一条连接、不要那层壳」的场景仍然存在：
- * e2e 用例直接 `SocketServerClient.connect` 到自己的 Daemon，`ensure-server` 的探活也是。
+ * 生产不用它，当前也没有调用点（e2e 与探活都直接走 `SocketServerClient.connect` /
+ * `ensureServer`）。它保留为「只要一条连接、不要那层壳（断了自建 + 重新订阅事件）」的最小出口。
  */
 export async function connectToServer(): Promise<ServerClient> {
   const { client } = await ensureServer({ aiZenDir: AI_ZEN_DIR, clientInfo: CLIENT_INFO });
@@ -52,7 +50,7 @@ export async function connectToServer(): Promise<ServerClient> {
 }
 
 /**
- * 造**本进程那一条**连接（D8）。
+ * 造**本进程那一条**连接。
  *
  * 调用点只有两个，而且都必须活得比「谁在用」久：
  *   · `tui/index.tsx` —— 模块级一个，**在 `runChat` 的重挂载循环之外**（`/load`、`/clear`、
@@ -69,8 +67,8 @@ export function createServerConnection(): ServerConnection {
 /**
  * 配置面（`ConfigPort`）—— 绑在**传进来的那条**连接上，并已绑好配置根与身份。
  *
- * 为什么必须接收连接而不是自己造：配置面是懒连接的，自己造就是「第二条连接」（D8 之前
- * 桌面端与 CLI 各踩过一次）。同一条连接上多挂一个端口是免费的 —— 它只是一堆方法。
+ * 为什么必须接收连接而不是自己造：配置面是懒连接的，自己造就是「第二条连接」。同一条
+ * 连接上多挂一个端口是免费的 —— 它只是一堆方法。
  */
 export function createConfigPort(connection: ServerConnection): ConfigPort {
   return createRemoteConfigPort({ connection });

@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 共享类型与步骤常量
+// 共享类型与步骤常量
 import { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { McpConfig, McpScope } from "../../config.js";
 import { AgentKind, AgentStore } from "../../agents-store.js";
@@ -160,8 +160,8 @@ export interface ConfigWizardProps {
   /**
    * 持久化 MCP 配置（**必填**：客户端没有本地 mcp.json 可写，真相在服务端）。
    *
-   * 曾经它是可选的，缺省会写本机 `<AI_ZEN_DIR>/mcp.json` —— 而屏上显示的是服务端那份
-   * 配置，于是「保存成功」却什么都没改到真正在用的文件。
+   * 为什么必填：可选时的缺省会写本机 `<AI_ZEN_DIR>/mcp.json`，而屏上显示的是服务端那份
+   * 配置 ——「保存成功」却什么都没改到真正在用的文件。
    */
   onSaveMcp: (scope: McpScope, config: McpConfig) => Promise<void>;
   /** 关闭向导 */

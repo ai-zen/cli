@@ -3,7 +3,7 @@
  *
  * 命令的**元数据**（名字 / 别名 / 说明 / 是否阻塞输入）在 `commands/registry.ts`；**执行体**
  * 在本文件末尾的 `HANDLERS` 表里。两者以 `Record<CommandName, CommandHandler>` 绑定，于是
- *「新增命令忘了写处理器」是编译错误（此前是 557 行 switch，漏一个分支只会在运行时落到
+ *「新增命令忘了写处理器」是编译错误（switch 那套形状下，漏一个分支只会在运行时落到
  *「未知命令」）。
  *
  * ## 为什么它在 `src/commands/` 而不在 `tui/screens/`
@@ -92,9 +92,9 @@ export interface ChatCommandHost {
   /**
    * 选择器**能放几条**候选。
    *
-   * 它曾经是「终端原始行数」，命令层再用布局公式（`usableFrameRows` / `pickerLines` /
+   * 为什么不是「终端原始行数」：那样命令层就得用布局公式（`usableFrameRows` / `pickerLines` /
    * `STATUS_BAR_LINES`）自己换算 —— 那是把一个渲染概念拖进命令层，也是 ink 进的另一条门。
-   * 现在换算在渲染层（`tui/screens/layout.ts` 的 `pickerCapacity`），命令层只拿结果。
+   * 换算在渲染层（`tui/screens/layout.ts` 的 `pickerCapacity`），命令层只拿结果。
    */
   rows: number;
   exit: (arg?: any) => void;
@@ -190,7 +190,7 @@ function parseHandoffSelection(args: readonly string[]): HandoffSelection {
  *          对话凭空消失，而文件名是用户唯一能看到的身份）
  *
  * 名字的合法性（路径穿越等）不在这里校验：会话仓储的 `path()` 是唯一落盘口，
- * L2 修好后 `/save ../x` 会被那一层拦住，此处不另写一套。
+ * `/save ../x` 会被那一层拦住，此处不另写一套。
  */
 const cmdSave: CommandHandler = async ({ session, push, args, confirm }) => {
   const name = args[0]?.trim();
@@ -544,13 +544,11 @@ const cmdAgent: CommandHandler = async ({ session, push, args, pick, config }) =
     }
     // 换 Agent 是**会话层**的事：服务端按新定义重建、保留消息、更新会话的 `agentId`。
     //
-    // 这里曾经是 `resetScope()` + `exit({ restart: true, agentId })`（重挂载对话屏）。
-    // 远程模式下那条路是错的：重挂载只能换个参数，而服务端对**活着的**会话直接返回、
+    // 不能走「重挂载对话屏」：重挂载只能换个参数，而服务端对**活着的**会话直接返回、
     // 忽略 `agentId`（`attach` 的语义就是「接上」）—— 于是界面提示「已切换」，实际下一轮
     // 仍由旧 Agent 跑；会话不活且没存档时反而撞 `session-missing` 掉进启动错误屏。
-    // `resetScope()` 也不再有意义：它重置的是客户端进程内的那个 Scope 单例。
     await session.setAgent(chosen);
-    // 与旧版一致：`summary` 有就说一句（重挂载那条路上它曾是 `initialNotice`）
+    // `summary` 已经是给人看的一句（`agentSwitch.summary`），原样推出
     push(result.summary);
   } catch (error: any) {
     push(t("cmd.agent.failed", { error: error?.message ?? error }), "error");
@@ -615,9 +613,8 @@ function runNpmCapture(
 /**
  * 读取包在 registry 上的全部 dist-tag（`{ latest, alpha, … }`）。
  *
- * 只拿 `latest` **不够**：本项目的实际发布状态就是「alpha 比正式版新」
- * （曾经 `latest = 0.9.0`、`alpha = 1.0.0-alpha.23`），只认 `latest` 会把正在跑
- * alpha 的用户**降级**回去。所以取全部 tag、再挑 semver 最大的那个。
+ * 只拿 `latest` **不够**：本项目的实际发布状态就是「alpha 比正式版新」，只认 `latest` 会把
+ * 正在跑 alpha 的用户**降级**回去。所以取全部 tag、再挑 semver 最大的那个。
  *
  * `--prefer-online`：npm 会缓存 packument，刚发版时 `npm view` 可能仍拿到旧 tag，
  * 把「有新版」误判成「已是最新」（发布当天踩过这个坑）。
@@ -947,10 +944,9 @@ const cmdThink: CommandHandler = async ({ session, push, args, setEffortView, pi
       effort,
       // 已读过定义，避免命令层与写入层各读一次盘
       readAgent: async () => side.definition,
-      // 写也必须回到**配置面的那一侧**：`setAgentEffort` 的缺省写入是本地
-      // `AgentRepository(AGENTS_DIR).write()`，远程模式下那是客户端本机的文件 ——
-      // 服务端看不到，于是「界面说改成功了，Agent 实际档位没变」。用刚才那份快照的
-      // `save`（远程即 `agent.save`）才是同一份真相。
+      // 写也必须回到**配置面的那一侧**：`setAgentEffort` 没有缺省的写入路径，
+      // 递错一个本地实现就是写客户端本机的文件 —— 服务端看不到，于是「界面说改成功了，
+      // Agent 实际档位没变」。用刚才那份快照的 `save`（远程即 `agent.save`）才是同一份真相。
       writeAgent: (next) => side.store.save("agent", next),
     });
     // 状态栏先跟上；档位要通过重建 Agent 才会进请求参数
@@ -1085,7 +1081,7 @@ const HANDLERS: Record<CommandName, CommandHandler> = {
  * 执行一条斜杠命令。
  *
  * 执行上下文就是宿主 + 解析出来的名字/参数/通知出口：`pick` / `confirm` 是宿主自己实现的
- * 异步口（以前这里把两个 React setter 包成 Promise，命令层因此拿到了渲染状态）。
+ * 异步口 —— 命令层不持有渲染状态，进出都由宿主自己实现。
  *
  * @param name 命令名（含别名，大小写不敏感；由 `parseCommandInput()` 从输入里取出）
  * @param raw  原始输入（含 `/`），用于参数解析与错误回显

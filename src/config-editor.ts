@@ -272,8 +272,8 @@ export function mergeTokenThresholds(
 /**
  * 删除模型；若 `defaultMigrationModel` 指向它，则改指剩余的第一个模型（无剩余则清空）。
  *
- * 模型真相源是 `AgentDefinition.modelId`（不在配置里），所以这里无需处理任何
- * 「默认模型」——删除后由 `createAgent` 报错引导用户重选，而不是静默回退。
+ * 模型真相源是 `AgentDefinition.modelId`（不在配置里），所以除了 `defaultMigrationModel`
+ * 之外没有别的指针要顺带改 —— 删掉后由 `createAgent` 报错引导用户重选，而不是静默回退。
  */
 export function removeModel(config: AppConfig, modelId: string): AppConfig {
   const models = config.models.filter((model) => model.id !== modelId);
@@ -415,7 +415,7 @@ export type AbortedToolRoundStrategyValue = NonNullable<AppConfig["abortedToolRo
 /**
  * 被中断的 assistant 消息（已输出的思考 / 正文）如何处置：`keep` 保留 / `drop` 丢弃。
  *
- * 只是config 层改写：真正生效点在 `createAgent()`（SDK 读 `scope.config`），
+ * 只是 config 层改写：真正生效点在 `createAgent()`（SDK 读 `scope.config`），
  * 所以改完要重建会话（向导关闭时宿主会自动 `/reload` 一次）。
  */
 export function setAbortedMessageStrategy(

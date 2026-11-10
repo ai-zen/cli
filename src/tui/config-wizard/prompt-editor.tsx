@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 多行文本编辑屏 PromptEditorScreen（系统编辑器）
+// 多行文本编辑屏 PromptEditorScreen（调系统编辑器）
 import { useState } from "react";
 import { Box, Text, useApp, useCursor, useInput } from "ink";
 import { spawnSync } from "child_process";

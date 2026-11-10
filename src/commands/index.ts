@@ -10,11 +10,8 @@
  * --forbid ./tui/`）。入口指向哪里，门禁就守哪里 —— 让它指向「屏幕真正 import 的那个文件」，
  * 门禁才在守真实存在的依赖边。
  *
- * 曾经这里还转出过一堆类型（`ChatCommandHost` / `SelectItem` / `WizardEntryStep` …）与
- * 三个 `parse*`（`parseModelSelection` 等）。它们的消费者要么直接 import
- * `commands/types.js`（`tui/` 侧的 `SelectItem` / `handoffModeItems`），要么根本没有 ——
- * 转出的每一行都在向读者暗示一份**不存在的外部契约**。类型与解析函数的出口就是
- * `handlers.ts` / `types.ts` 自己。
+ * 类型与解析函数不从这里转出：它们的出口就是 `handlers.ts` / `types.ts` 自己，
+ * 多转一行只在向读者暗示一份**不存在的外部契约**。
  */
 
 export { runCommand } from "./handlers.js";

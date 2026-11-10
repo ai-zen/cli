@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 向导入口（装配引擎 + 分发到各步骤模块）
+// 向导入口（装配引擎 + 分发到各步骤模块）
 import { useWindowSize } from "ink";
 import { useWizardEngine, type WizardContext } from "./engine.js";
 import type { ConfigWizardProps } from "./types.js";

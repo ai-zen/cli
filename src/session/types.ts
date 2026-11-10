@@ -12,14 +12,9 @@
  *
  * ## 这里为什么只剩契约
  *
- * 曾经这里还有一个 `ChatSession`：在本进程里直接跑 Agent 的实现。会话执行搬到服务端之后
- * 它就**没有调用方**了（存档在服务端、插件装配在装配层、`send()` 的语义由协议定），
- * 但它仍然要向每一次契约改动「交一份实现」—— 本仓改造期间就为它白写过两次
- * （`listWorkspaceFiles`、`resume`）。契约是活的、实现是死的，于是把死的那份删掉，连同它
- * 拖着、只有它在用的三个模块（`session-persist-plugin` / `auto-migrate-confirm` /
- * `handoff-service`）。要找那份实现，看 git 历史（删除前它在 2026-11 的提交里）。
- *
- * 现在唯一的实现是 `../session.ts`（纯客户端，Agent 在服务端跑）。
+ * 契约是活的，实现是死的：每改一次契约，本进程内的实现就要跟着交一份实现，而它并没有
+ * 调用方（存档在服务端、插件装配在装配层、`send()` 的语义由协议定）。所以本文件只留
+ * 形状，实现只有 `../session.ts` 一个（纯客户端，Agent 在服务端跑）。
  */
 
 import { AgentNS } from "@ai-zen/agents-core";
@@ -113,9 +108,9 @@ export interface ChatSessionLike {
    * 换**这一段会话**的模型（`session.model.set`）：只改本段的覆盖，**不动 Agent 定义**。
    *
    * 为什么它在会话契约里而不是配置面：这三档（会话 / 定义 / 全局兜底）的写路径一直都有，
-   * 但「会话级」那一条的**作用对象是一段会话**。它曾经挂在 `ConfigPort` 上（读起来像配置），
-   * 于是同一个动作在门面（`RemoteSessions.modelSet`）与端口里各有一份拼参的地方。
-   * 判据只有一条：作用对象是不是某一段会话。
+   * 但「会话级」那一条的**作用对象是一段会话**。挂在 `ConfigPort` 上读起来像配置，代价是
+   * 同一个动作在门面（`RemoteSessions.modelSet`）与端口里各有一份拼参的地方。判据只有一条：
+   * 作用对象是不是某一段会话。
    */
   setModel(modelId: string): Promise<void>;
   /**
@@ -188,7 +183,7 @@ export interface SubAgentView {
    * 这个子 Agent 到目前为止的完整对话。
    *
    * 这里**刻意不是子 Agent 实例**：实例只存在于「Agent 跑在这个进程里」那种形态
-   * （`CoreAgent.messages`），而现在 Agent 跑在服务端，客户端能拿到的是数据而不是对象。
+   * （core 的 `Agent.messages`），而现在 Agent 跑在服务端，客户端能拿到的是数据而不是对象。
    * 契约写成数据，屏幕也只需要「读消息」。
    */
   messages: AgentNS.Message[];
@@ -200,7 +195,7 @@ export interface ChatSessionOptions {
   agentId?: string;
   sessionId?: string;
   /**
-   * 进程级的那一条连接（D8）：会话**不建连接**，只借它说话。
+   * 进程级的那一条连接：会话**不建连接**，只借它说话。
    *
    * 它必须由组装根给（TUI 是 `tui/index.tsx` 那个模块级实例，stdio 是这个入口自己造的
    * 那一个）。会话层自己建一条的后果不是报错，而是「启动预检一条、对话一条」—— 两条

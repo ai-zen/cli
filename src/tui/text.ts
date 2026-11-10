@@ -1,14 +1,14 @@
 /**
  * TUI 文本**排版** —— 折行、输入区光标定位、整帧高度。纯函数（无 React / Ink 依赖）。
  *
- * 从 `screens.tsx` 中抽出，供对话屏、凭据设置屏、配置中心共用，
- * 避免 `screens.tsx ↔ config-wizard.tsx` 相互 import 形成循环依赖。
+ * 住在 `screens/` 与 `config-wizard/` 之外，两侧都从这里 import：它们是兄弟目录，
+ * 谁 import 谁都会形成循环依赖。
  *
- * ## 度量原语已经搬去 `src/text.ts`
+ * ## 度量原语住在 `src/text.ts`
  *
- * `displayWidth` / `clusterWidth` / `graphemes` / `truncate` / `stripCwdNote` 现在住在
+ * `displayWidth` / `clusterWidth` / `graphemes` / `truncate` / `stripCwdNote` 都住在
  * `src/text.ts`（零 UI 依赖，会话层与命令层都要用）。本文件把它们**原样转出**，
- * 于是既有调用点一行不用改，而命令层从此不必经过这里 —— 这一层剩下的东西
+ * 于是 `tui/` 内的调用点不必改 import 路径，命令层也不必经过这里 —— 这一层剩下的东西
  * （折行、光标、帧高）都只对渲染有意义。
  */
 

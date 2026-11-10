@@ -4,9 +4,8 @@
 // **用户在覆盖层上作答后 Promise 才结算**。这正是命令处理器能写成
 // `const ok = await confirm(...)` 的原因。
 //
-// 从 `chat.tsx` 抽出来的理由：这套 `resolve` 生命周期被埋在 God Component 里，
-// 既没法单测（要从键盘打到命令层才能碰到），也容易被下一个人的 `setState` 写出
-// 「先清状态、后调 resolve」的竞态。抽出来后：
+// 这套 `resolve` 生命周期单独成模块的理由：埋在对话屏里就既没法单测（要从键盘打到命令层
+// 才能碰到），也容易被下一个人的 `setState` 写出「先清状态、后调 resolve」的竞态。收在这里：
 //   · 关状态与调 resolve 在**同一次**函数式更新里完成，不会读到过期状态；
 //   · 已经是 `null` 时重复 resolve 是安全空操作（Esc 连按不会炸）。
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";

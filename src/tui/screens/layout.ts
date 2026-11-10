@@ -21,8 +21,7 @@ export function pickerLines(itemCount: number): number {
  * 命令层（`/load` / `/back`）只需要那个**结果**（`ChatCommandHost.rows`）：把这三条公式
  * 搬到命令层，就是拿一个终端概念去换一个 ink 依赖（它们全在 `tui/` 里）。
  *
- * 以前这个式子内联在命令层，曾经少扣了 2 行 —— 选择器把状态栏顶出屏幕。所以它只该有一处，
- * 而那一处要在能看到布局的地方。
+ * 这条式子只该有一处，且那一处要在能看到布局的地方：它少扣 2 行，选择器就会把状态栏顶出屏幕。
  */
 export function pickerCapacity(terminalRows: number): number {
   return Math.max(1, usableFrameRows(terminalRows) - (pickerLines(0) + STATUS_BAR_LINES));
@@ -87,7 +86,7 @@ export interface ChatLayout {
    *
    * 渲染（`BottomMenu.maxRows`）与硬件光标（`computeInputCursorPosition` 的
    * `hintCount`）都必须从这里取，不许自己另算 —— 三处差一行，输入框与 IME 候选框
-   * 就会整体偏移（历史事故：通知栏被漏算）。
+   * 就会整体偏移（通知栏最容易被漏算）。
    */
   hintRows: number;
   /** 对话区可用高度（已扣除底部区域） */

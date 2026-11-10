@@ -35,7 +35,7 @@ export const zh: Record<string, string> = {
   "effort.default": "默认",
   "effort.unsupported": "—",
 
-  // ---------- 生成阶段（消息栏 spinner；六态见 `tui/phase.ts`） ----------
+  // ---------- 生成阶段（消息栏 spinner；六态在 `src/session-phase.ts`） ----------
   "phase.working": "处理中…",
   "phase.connecting": "连接中…",
   "phase.queued": "排队中…",
@@ -63,7 +63,7 @@ export const zh: Record<string, string> = {
   "notice.pressCtrlDAgain": "再按一次 Ctrl+D 退出",
   "notice.languageChanged": "界面语言已切换为中文",
   "notice.turnAborted": "已中止本轮，会话回到中止前的状态",
-  // 子 Agent 出错：模板只把原文吐出来（不加前缀）—— 与原来直接把 error.message 推上通知栏逐字一致
+  // 子 Agent 出错：模板只把原文吐出来，不加前缀 —— 原文本身就是一句话，加前缀反而添噪
   "notice.subAgentFailed": "{message}",
   "notice.mcpUnavailable": "MCP server 连不上：{name}",
   "notice.storeUnavailable": "会话存档目录不可用：{error}",

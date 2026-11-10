@@ -1,13 +1,12 @@
 /**
  * 配置**路径**与 MCP 配置的**纯类型** —— 客户端侧只剩这两样。
  *
- * ## 为什么不再有读写
+ * ## 为什么这里不做读写
  *
  * 读配置、写配置、初始化配置目录（`~/.ai-zen` 下的 `config.json` / 默认 Agent / 策略表）
  * 全是**服务端**的事：真相在那边，读写经 `ConfigPort`（`@ai-zen/agents-client`）
- * 走 `config.*` / `agent.*`。客户端本地那套实现（`readConfig` / `saveConfig` /
- * `readMcpConfig` / `writeMcpConfig` / `ensureConfigDir`）曾经还在，作为「忘了注入」时的
- * 缺省值 —— 那正是最坏的一种：静默读客户端本机、写却写到服务端，界面上一切正常。
+ * 走 `config.*` / `agent.*`。本进程不提供任何本地缺省值：一个「忘了注入就读本机」的兜底
+ * 是最坏的一种 —— 静默读客户端本机、写却写到服务端，界面上一切正常。
  *
  * 本文件剩下的东西只有两类：
  *   - 路径常量（`AI_ZEN_DIR` 等）与 `projectDirs()`：**本进程**的目录布局，给
@@ -88,10 +87,9 @@ function resolveRoot(): string {
  * `new ConfigManager(AI_ZEN_DIR)`）—— 那个值在模块求值那一刻就定死了。这类地方一律改成
  * 函数（`sdkLogFile()` / `configManager()`），由调用时机决定读哪个目录。
  *
- * 别的路径都不再是模块级变量：项目级的在 `projectDirs(cwd)` 里（cwd 是入参），根下那些
+ * 别的路径都不是模块级变量：项目级的在 `projectDirs(cwd)` 里（cwd 是入参），根下那些
  * （`config.json` / `agents/` / `mcp.json` …）根本不归本进程管 —— 它们经 `ConfigPort` 从
- * 服务端取。曾经这里还有 `CLI_DIR` / `CONFIG_FILE` / `AGENTS_DIR` / `SUB_AGENTS_DIR` /
- * `MCP_CONFIG_FILE`，全是这两件事搬走之后没人读的空壳，已删。
+ * 服务端取。
  */
 export let AI_ZEN_DIR = resolveRoot();
 

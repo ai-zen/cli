@@ -129,8 +129,7 @@ export interface StatusBarProps {
   /**
    * 思考强度是否置灰（不可调档 / 关档）。
    *
-   * **不能靠文案判断**（旧实现是 `effort === "关"`，英文界面下永远不成立），
-   * 由调用方基于档位语义计算（见 `reasoning-effort.ts` 的 `effortDimmed()`）。
+   * 由调用方基于档位语义计算，不靠文案判断（见 `reasoning-effort.ts` 的 `effortDimmed()`）。
    */
   effortDimmed?: boolean;
   /** 最近一轮的 token 用量（lastUsage.total_tokens） */
@@ -220,10 +219,8 @@ function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
 export function statusBarRows(props: StatusBarProps, columns = 80): StatusSegment[][] {
   // 可用宽度 = 列数 − 2（两侧 paddingX(1)）− 1（安全余量）。
   //
-  // 那 1 列余量原本是必需的：当时我们自己算宽度，`◆` / `·` / `⚡` 这类字符与 Ink 的
-  // 测量差 1 列，按满宽算时会被 Ink 的 `truncate` 吃掉行尾半个词。现在 `displayWidth()`
-  // 直接就是 Ink 用的 `string-width`，两边不会再对不上；这 1 列降级为纯安全边际
-  //（终端自己的 Ambiguous 宽度判定仍可能与 Unicode 表不同），所以保留。
+  // 那 1 列是纯安全边际：`displayWidth()` 已经就是 Ink 用的 `string-width`，两边不会再
+  // 对不上，但终端自己的 Ambiguous 宽度判定仍可能与 Unicode 表不同。
   const width = Math.max(8, columns - 3);
   return packSegments(statusBarBlocks(props), width, [{ text: INNER_SEPARATOR, color: theme.dim }]);
 }
@@ -231,7 +228,7 @@ export function statusBarRows(props: StatusBarProps, columns = 80): StatusSegmen
 /**
  * 底部状态栏 —— 三个信息块，窄屏时按块换行：
  *
- * 模型 · Agent · 思考强度 ｜ 本轮 / 累计 token · 生成速率 · 生成状态 ｜ 快捷键提示。
+ * 模型 · Agent · 思考强度 ｜ 本轮 / 累计 token · 生成速率 ｜ 快捷键提示。
  *
  * 行数不固定：放不下的块（从最末的快捷键提示开始）整块顺延到下一行，而不是与
  * 高位信息一起被截掉一半，也不会把某块劈成两半。
@@ -333,7 +330,7 @@ function menuRow(item: MenuItem, columns: number): { label: string; hint?: strin
 }
 
 /**
- * 底部锚定菜单 —— 斜杠命令与 `@` 文件补全**共用同一套**（此前是两套各自实现的视窗）。
+ * 底部锚定菜单 —— 斜杠命令与 `@` 文件补全**共用同一套**视窗（各写一份只会漂成两种手感）。
  *
  * 布局契约：整块高度 = `min(候选数 + (topLine ? 1 : 0), maxRows)`，与
  * `computeChatLayout` 回传的 `hintRows` 严格一致。

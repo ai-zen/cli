@@ -25,7 +25,7 @@ Skill（技能）是可复用的、带 Fronmatter 说明的 Markdown 文档，�
 
 ## 目录优先级
 
-Skill 目录从多个来源**由高到低**合并（来自 `src/agent-creator.ts` 的 `getScope()` 与 `src/config.ts` 注释）：
+Skill 目录从多个来源**由高到低**合并（顺序由服务端的 `assetDirs()` 给出，`src/config.ts` 的文件头注释是它的客户端镜像）：
 
 1. 项目 `./.ai-zen/skills/`
 2. 项目 `./.agents/skills/`
@@ -48,4 +48,4 @@ Skill 目录从多个来源**由高到低**合并（来自 `src/agent-creator.ts
 
 ## 相关配置
 
-Skill 也可通过 `.ai-zen` / `.agents` 下的 `skills/` 目录按项目共享。CLI 在 `ensureConfigDir()` 中通过 SDK 的 `ConfigManager.bootstrap()` 初始化共享目录。
+Skill 也可通过 `.ai-zen` / `.agents` 下的 `skills/` 目录按项目共享。共享目录（`~/.ai-zen` 下的 `agents/`、`sub-agents/`、`skills/` 等）由服务端启动时经 SDK 的 `ConfigManager.bootstrap()` 建好；CLI 本进程不碰这套目录布局。

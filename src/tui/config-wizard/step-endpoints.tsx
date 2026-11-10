@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 端点列表 / 端点详情
+// 端点列表 / 端点详情
 import { ReactNode } from "react";
 import { SelectItem } from "../components.js";
 import {

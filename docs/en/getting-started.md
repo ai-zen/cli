@@ -13,11 +13,7 @@ outline: deep
 ## Requirements
 
 - **Node.js**: the package is published as ESM (`"type": "module"`). `package.json` does not declare an `engines` field, so the actual required version follows the Node ecosystem (a recent LTS is recommended).
-- **Runtime dependencies** (declared in `package.json`):
-  - `@ai-zen/agents-core` `^4.5.5`
-  - `@ai-zen/agents-sdk` `1.1.0`
-  - `@modelcontextprotocol/sdk` `^1.29.0`
-  - `dayjs`, `ink`, `react`, `zod`, `highlight.js`, `lowlight`
+- **Runtime dependencies** (declared in `package.json`): `@ai-zen/agents-core`, `@ai-zen/agents-sdk`, `@ai-zen/agents-client`, `@ai-zen/agents-protocol`, `@ai-zen/agents-server`, `@modelcontextprotocol/sdk`, `ink`, `react`, `zod`, `string-width`, `highlight.js`, `lowlight`
 - **Platform**: the underlying tools and the Shell hook depend on a Unix shell (`bash`/`zsh`) and `process.env.SHELL`; the Shell hook is unavailable on Windows (`hook` will report "unsupported shell").
 
 ## Installation
@@ -104,20 +100,20 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 
 | Command | Description |
 |---------|-------------|
-| `/exit` `/quit` | Exit the conversation (offers to save) |
+| `/exit` `/quit` | Exit the conversation |
 | `/save [name]` | Save the conversation; with a name it is saved as that file name (asks first if it exists) |
 | `/new` | Reset the session (clear history) |
 | `/back` | Retract the last message (edit and resend) |
 | `/editor` | Compose a long message in your editor |
 | `/clear` | Clear the screen |
-| `/config` | Open the configuration center (model / endpoints) |
-| `/model` | Switch model (written to the agent definition; the agent is rebuilt in place, messages and draft kept) |
+| `/config` | Open the configuration center (endpoints / models / image models / MCP / agent definitions / defaults / tool-output cap) |
+| `/model` | Switch model: `/model <id>` changes this session only, `-a`/`--agent <id>` the agent definition, `-g`/`--global <id>` the global fallback; no argument opens a picker |
 | `/agent` | Switch the primary agent (same conversation, messages kept) |
 | `/reload` | Refresh the runtime (rediscovers tools / MCP) |
 | `/update` | Upgrade the CLI to the newest published release (highest semver across all dist-tags; shows each step and offers to restart into the new version) |
 | `/mcp` | Manage MCP servers (add / remove / edit / toggle) |
 | `/lang` | Switch interface language |
-| `/think` `/effort` | Switch reasoning effort |
+| `/think` `/effort` | Switch reasoning effort (written into the layer the effective model came from; the global fallback layer has nowhere to keep params, so it is refused) |
 | `/key` | Set the endpoint API key |
 | `/migrate` | Hand off and start a new session |
 | `/load` | Load a conversation (replaces this one; the picker lists saved conversation file names only) |
@@ -152,8 +148,8 @@ ai hook uninstall
 | First launch, endpoint has no key | The **credential screen** appears automatically; entering a key saves it and enters the chat |
 | Change the key of the **endpoint used by the current model** | `/key` in the chat (the session is rebuilt on save, so it takes effect immediately) |
 | Endpoint key / base URL, default model, add endpoint | `/config` → "Endpoint management" |
-| Model used by the current session | `/model` in the chat (writes the Agent's `modelId`) |
-| Reasoning effort | `/think` in the chat (written into the current Agent's `reasoningEffort`; available levels come from the preset referenced by the model in `~/.ai-zen/reasoning-presets.json`, which you can extend) |
+| Model used by the current session | `/model` in the chat (this session only by default; `/model -a` writes the agent definition's `modelId`) |
+| Reasoning effort | `/think` in the chat (the params land in `modelParams` of **the layer the effective model came from**; available levels come from the preset referenced by the model in `~/.ai-zen/reasoning-presets.json`, which you can extend) |
 | Models / image models / MCP servers / agent definitions / defaults / tool-output cap | `/config` → configuration center |
 
 > Note: the CLI entry only implements the `hook` subcommand (`ai hook install|uninstall`); there is **no `config` subcommand** — configuration editing happens inside the TUI (endpoints, models, image models, MCP servers, agent definitions, defaults and the tool-output cap can all be added/edited/deleted under `/config`). See [Configuration](./configuration.md).

@@ -12,21 +12,16 @@ outline: deep
 
 - **全局配置**：`$AI_ZEN_DIR/config.json`（默认 `~/.ai-zen/config.json`，当未设置 `AI_ZEN_DIR` 时为 `~/.ai-zen/config.json`）。
 
-> 配置目录与 CLI/Desktop **共享**：配置文件在共享根目录（`src/config.ts` 的 `CONFIG_FILE = join(AI_ZEN_DIR, "config.json")`），而 `~/.ai-zen/cli/` 下只放 `preferences.json`（界面语言这类 CLI 本地偏好）。**会话属于工作区**，落在 `~/.ai-zen/workspaces/<workspaceId>/`。
+> 配置目录与 CLI/Desktop **共享**：所有文件都在共享根目录 `~/.ai-zen/` 下，而 `~/.ai-zen/cli/` 只放 `preferences.json`（界面语言这类 CLI 本地偏好）。**会话属于工作区**，落在 `~/.ai-zen/workspaces/<workspaceId>/`。
 
-`src/config.ts` 定义的关键路径：
+`src/config.ts` 只剩**本进程**要用的路径（读配置、写配置、初始化目录全部归服务端，经 `ConfigPort` 走 `config.*` / `agent.*`）：
 
-| 常量 | 路径 | 说明 |
+| 名字 | 路径 | 说明 |
 |------|------|------|
 | `AI_ZEN_DIR` | `~/.ai-zen`（或 `$AI_ZEN_DIR`） | 共享根目录 |
-| `CLI_DIR` | `$AI_ZEN_DIR/cli` | CLI 运行时目录 |
-| `CONFIG_FILE` | `$AI_ZEN_DIR/config.json` | 全局配置（CLI/Desktop 共享） |
-| （无常量） | `$AI_ZEN_DIR/workspaces` | 会话存档根（每个工作区一份，`session-store.ts` 现拼） |
-| `AGENTS_DIR` | `$AI_ZEN_DIR/agents` | Agent 定义（共享） |
-| `SUB_AGENTS_DIR` | `$AI_ZEN_DIR/sub-agents` | SubAgent 定义（共享） |
-| `SKILLS_DIR` | `$AI_ZEN_DIR/skills` | Skill 目录（共享） |
-| `TOOLS_DIR` | `$AI_ZEN_DIR/tools` | 用户工具（共享） |
-| `MCP_CONFIG_FILE` | `$AI_ZEN_DIR/mcp.json` | MCP 配置（共享） |
+| `projectDirs().root` | `<cwd>/.ai-zen` | 项目级配置与产物（入参是 cwd，不读进程全局） |
+
+其余位置（`config.json`、`agents/`、`sub-agents/`、`skills/`、`tools/`、`mcp.json`、`workspaces/`）由服务端与 SDK 决定，本进程不持常量。
 
 ### 环境变量
 
@@ -118,7 +113,7 @@ outline: deep
 │   ├── default.json
 │   └── my-custom-agent.json
 ├── sub-agents/               ← SubAgent 定义（共享）
-│   ├── general-assistant.json
+│   ├── sub-agent-default.json
 │   └── my-coder.json
 ├── skills/                   ← Skill 目录（共享）
 │   └── my-skill/SKILL.md

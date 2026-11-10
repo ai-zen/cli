@@ -14,7 +14,7 @@ When collaborating with AI in a bare terminal, you often have to manually switch
 
 ## Key features
 
-- **Dual-mode execution**: no arguments on an interactive terminal enters the TUI; arguments or a pipe/redirect runs pure stdio (result on stdout, logs on stderr, clear exit codes).
+- **Dual-mode execution**: no arguments on an interactive terminal enters the TUI; arguments or a pipe/redirect runs pure stdio (result on stdout, logs on stderr, clear exit codes). Both modes share **the same server-side assembly and archive**: stdio only pays one cold start (the first call brings the local daemon up).
 - **Modern TUI**: a full-screen Ink/React interface — no splash, straight into chat, a brand block on an empty conversation, a bottom-pinned input area and status bar, and an inline `/` command menu.
 - **Status-bar tokens and rate**: the status bar is **three priority-ordered blocks** — model · agent · reasoning effort | this-round / cumulative tokens · generation rate | key hints (last, and the first thing moved to the next line on narrow terminals). Wrapping happens block by block: a block that does not fit moves to the next line whole instead of being split; the cumulative figure is `sumUsage(agent.messages)`, including every sub-agent level; the rate is live while streaming (2-second window) and becomes this round's average once it finishes.
 - **Six-phase generation progress**: while generating, the indicator in the input row says what the round is actually doing — connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming; the two tool phases name the tool(s), and a parallel round's waiting label keeps only the tools still running.

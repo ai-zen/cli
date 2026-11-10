@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 配置中心菜单 MenuStep
+// 配置中心菜单 MenuStep
 import { Box, useCursor, useInput } from "ink";
 import { AppConfig } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";

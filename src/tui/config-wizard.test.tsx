@@ -819,7 +819,7 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
       />,
     );
     await tick();
-    // 托管状态的详情行写「出厂托管（编辑会自动转自定义）」；字段列里的「自定义」开关行已删掉，
+    // 托管状态的详情行写「出厂托管（编辑会自动转自定义）」；字段列里没有「自定义」开关，
     // 所以最后一个字段是「描述」，紧接着就是动作行。
     expect(lastFrame()).toContain("出厂托管");
     expect(lastFrame()).toMatch(/描述[^\n]*\n\s*恢复出厂设置/u);
@@ -1020,7 +1020,7 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     stdin.write(ENTER);
     await tick();
     expect(lastFrame()).toContain("默认项");
-    stdin.write(DOWN); // → 默认 Agent（第 2 项；配置级「默认模型」已移除）
+    stdin.write(DOWN); // → 默认 Agent（第 2 项）
     await tick();
     stdin.write(ENTER); // 打开 Agent 选择
     await tick();
@@ -1428,7 +1428,7 @@ describe("ConfigWizard（MCP 服务器管理）", () => {
   });
 
   /**
-   * 回归（PLAN L3）：`remove()` 只提交不动光标，而 Enter 分支用 `entries[index - 1]`。
+   * 回归：`remove()` 只提交不动光标，而 Enter 分支用 `entries[index - 1]`。
    * 删掉末项后 `index` 超出新边界，`entries[index - 1]` 是 `undefined`，`entry.key` 抛
    * `TypeError`。渲染处早就有 `safeIndex` 兑着，所以界面看着正常 —— 只有回车会炸。
    */
@@ -1573,7 +1573,7 @@ describe("ConfigWizard（Agent 定义管理）", () => {
   });
 
   /**
-   * 回归（PLAN L11）：删掉 `config.defaultAgent` 指向的那个 Agent 后不改配置，
+   * 回归：删掉 `config.defaultAgent` 指向的那个 Agent 后不改配置，
    * 下次启动 `resolveTarget()` 会拿到一个已不存在的 id（`?? agents[0]?.id` 在第 1
    * 个分支上永不生效），`modelOf` 抛「Agent 未绑定模型」→ 启动屏打印后直接退出。
    * 重启也一样，等于把用户锁在外面。

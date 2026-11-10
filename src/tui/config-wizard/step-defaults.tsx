@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 默认项子菜单 / 选择默认值
+// 默认项子菜单 / 选择默认值
 import { ReactNode } from "react";
 import { SelectItem } from "../components.js";
 import {

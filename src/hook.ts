@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { promises as fs } from "node:fs";
 import { t } from "./i18n/index.js";
 
-/** 当前标记（ai hook 时代）
+/** 当前标记
  *
  * **不得翻译**：这两行是写进 rc 文件的代码块标记，靠它识别「哪段是本工具的」；
  * 翻了字面串就再也找不到旧块，用户会冒出一堆重复 hook。 */

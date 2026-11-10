@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 新建端点（名称 → Base URL → API Key）
+// 新建端点（名称 → Base URL → API Key）
 import { ReactNode } from "react";
 import { addEndpoint, apiKeyGuide } from "../../config-editor.js";
 import { WizardContext } from "./engine.js";

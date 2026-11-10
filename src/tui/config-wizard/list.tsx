@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 通用列表选择屏 ListStep
+// 通用列表选择屏 ListStep
 import { Box, Text, useCursor, useInput } from "ink";
 import { theme } from "../theme.js";
 import { SelectList, KeyHints, SelectItem } from "../components.js";

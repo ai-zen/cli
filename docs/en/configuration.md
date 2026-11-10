@@ -12,21 +12,16 @@ Configuration is stored under the shared root directory (determined by `AI_ZEN_D
 
 - **Global config**: `$AI_ZEN_DIR/config.json` (default `~/.ai-zen/config.json` when `AI_ZEN_DIR` is not set).
 
-> The config directory is **shared** with other AI-Zen clients: the config file lives in the shared root (`CONFIG_FILE = join(AI_ZEN_DIR, "config.json")` in `src/config.ts`), while `~/.ai-zen/cli/` holds only CLI-local preferences such as `preferences.json` (the interface language). **Sessions belong to a workspace** and live under `~/.ai-zen/workspaces/<workspaceId>/`.
+> The config directory is **shared** with other AI-Zen clients: every file lives under the shared root `~/.ai-zen/`, while `~/.ai-zen/cli/` holds only CLI-local preferences such as `preferences.json` (the interface language). **Sessions belong to a workspace** and live under `~/.ai-zen/workspaces/<workspaceId>/`.
 
-Key paths defined in `src/config.ts`:
+`src/config.ts` keeps only the paths **this process** needs (reading, writing and bootstrapping configuration all belong to the server, reached through `ConfigPort` via `config.*` / `agent.*`):
 
-| Constant | Path | Description |
-|----------|------|-------------|
+| Name | Path | Description |
+|------|------|-------------|
 | `AI_ZEN_DIR` | `~/.ai-zen` (or `$AI_ZEN_DIR`) | Shared root directory |
-| `CLI_DIR` | `$AI_ZEN_DIR/cli` | CLI runtime directory |
-| `CONFIG_FILE` | `$AI_ZEN_DIR/config.json` | Global config (shared by CLI/Desktop) |
-| (no constant) | `$AI_ZEN_DIR/workspaces` | Session archives, one per workspace (built on demand in `session-store.ts`) |
-| `AGENTS_DIR` | `$AI_ZEN_DIR/agents` | Agent definitions (shared) |
-| `SUB_AGENTS_DIR` | `$AI_ZEN_DIR/sub-agents` | SubAgent definitions (shared) |
-| `SKILLS_DIR` | `$AI_ZEN_DIR/skills` | Skill directory (shared) |
-| `TOOLS_DIR` | `$AI_ZEN_DIR/tools` | User tools (shared) |
-| `MCP_CONFIG_FILE` | `$AI_ZEN_DIR/mcp.json` | MCP config (shared) |
+| `projectDirs().root` | `<cwd>/.ai-zen` | Project-level config and artifacts (cwd is a parameter, not a process global) |
+
+Everything else (`config.json`, `agents/`, `sub-agents/`, `skills/`, `tools/`, `mcp.json`, `workspaces/`) is decided by the server and the SDK; this process holds no constants for them.
 
 ### Environment variables
 
@@ -117,7 +112,7 @@ Each Agent binds its model in its own definition file — the **second of the th
 │   ├── default.json
 │   └── my-custom-agent.json
 ├── sub-agents/               ← SubAgent definitions (shared)
-│   ├── general-assistant.json
+│   ├── sub-agent-default.json
 │   └── my-coder.json
 ├── skills/                   ← Skill directory (shared)
 │   └── my-skill/SKILL.md

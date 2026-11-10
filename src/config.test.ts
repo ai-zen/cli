@@ -11,8 +11,8 @@ import { join } from "path";
 import * as config from "./config.js";
 
 describe("projectDirs（cwd 是参数，不是模块求值快照）", () => {
-  // 曾经是 7 个 `export const PROJECT_* = join(process.cwd(), …)`：模块求值那一刻就把
-  // 启动目录焊死，之后换目录（测试换临时根、将来服务端一个进程服务多个工作区）
+  // 为什么是函数：`export const PROJECT_* = join(process.cwd(), …)` 那套写法在模块求值
+  // 那一刻就把启动目录焊死，之后换目录（测试换临时根、将来服务端一个进程服务多个工作区）
   // 全部悄悄落到启动时的那个目录里 —— 不报错，只是写错地方。
   it("传入不同 cwd → 拿到各自的路径（互不影响）", () => {
     const a = config.projectDirs("/work/proj-a");

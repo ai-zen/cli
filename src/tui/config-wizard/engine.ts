@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 配置向导引擎（状态 + 写盘/跳转处理器）
+// 配置向导引擎（状态 + 写盘 / 跳转处理器）
 import { useRef, useState, Dispatch, SetStateAction } from "react";
 import { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
 import type { McpConfig, McpScope } from "../../config.js";

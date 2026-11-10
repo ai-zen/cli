@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 通用详情屏 DetailStep（就地编辑）
+// 通用详情屏 DetailStep（就地编辑）
 import { useEffect, useState } from "react";
 import { Box, Text, useCursor, useInput } from "ink";
 import { theme } from "../theme.js";
@@ -10,7 +10,7 @@ import { t } from "../../i18n/index.js";
 
 // ==================== 通用详情屏（就地编辑）====================
 
-/** 字段形态；`open` = 按 Enter 进子屏（此前叫 `map`，但实际语义与 key-value 无关） */
+/** 字段形态；`open` = 按 Enter 进子屏（进的不一定是 key-value 子屏，故不叫 `map`） */
 export type DetailFieldKind = "text" | "secret" | "number" | "enum" | "bool" | "open";
 
 /** 详情屏的一个可编辑字段 */
@@ -28,7 +28,7 @@ export interface DetailField {
    * 提交文本 / 枚举值：返回错误信息或 `null`（成功）。
    *
    * **同步校验直接返回字符串即可**：字段构造器里大量「格式不对就报错」的判断本就没有
-   * 异步动作，此前被签名逼着写成 `Promise.resolve(t(...))`，纯噪音。
+   * 异步动作，只为满足签名写成 `Promise.resolve(t(...))` 是纯噪音。
    */
   commit?: (raw: string) => string | null | Promise<string | null>;
   /** bool 切换（同上：同步可用） */

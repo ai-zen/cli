@@ -330,7 +330,7 @@ function newManager(): SessionManager {
       /**
        * **新会话 = 空的新 Agent**（与生产一致：`session.create` 现造一个，不继承上一段
        * 的消息）。共用同一个假件会把「`/new` 之后快照是空的」这个事实掩盖掉 —— 那正是
-       * P4a 之前那份实现自己 `currentMessages = []` 遮住的东西。
+       * 客户端自己 `currentMessages = []` 遮住的也正是这件事。
        *
        * 首次建 Agent 时保留用例预置的那个（用例经常先 `agent.messages = [...]` 再
        * `open()`）；之后的 `reload` / `setAgent` 由服务端的 `adoptAgent` 把消息搬过去，
@@ -401,7 +401,7 @@ const reconnectToNextServer = async (): Promise<ServerClient> => {
  *
  * 生产的连接归组装根（一个进程一条）；用例要的是一条能指向「另一个端口」的：
  * 第一次 `client()` 交出已经连好的那条，之后交给 `reconnect`。
- * 这样 `SessionConnection` 的三条不变式（查活 / 单飞 / 重新订阅 `events.watch`）在用例里
+ * 这样 `ServerConnection` 的三条不变式（查活 / 单飞 / 重新订阅 `events.watch`）在用例里
  * 跑的就是**生产那份实现**，而不是测试自己又写一遍。
  */
 function connectionFor(
@@ -537,7 +537,7 @@ async function defaultStore(): Promise<FileSessionStore> {
  * 「这段会话落在哪个工作区」—— 问服务端，不读客户端的私有字段。
  *
  * 工作区身份是**服务端的事实**（`workspace.resolve` 说了算），客户端手上那个 id 从来不是
- * 契约的一部分（P4b 起 `session.ts` 甚至不再保存它）。用例要它的时候就问服务端要 ——
+ * 契约的一部分（`session.ts` 也不保存它）。用例要它的时候就问服务端要 ——
  * 这也正是「客户端不该自己推导 id 算法」那条规矩的用例版本。
  */
 async function workspaceIdOf(path: string | undefined): Promise<string> {
@@ -865,10 +865,10 @@ describe("RemoteChatSession：存档与换 id 的方法", () => {
 /**
  * 会话级的模型动作（`/model` / `/think`）。
  *
- * 它们以前是应用里现取一次 `RemoteSessions` 门面调的 —— 包里补了
- * `setModel` / `setModelParams` 之后改成走 channel：这样「当前这一段是哪个 id」与「接哪条
- * 连接」不再是应用里两个会漂的来源。顺带钉住两件事：换完**立刻**是屏幕上的事实，且只
- * 通知一次重画（再补一次 `reload()` 就是多一个往返、多一次通知，而屏幕上不会多一个字）。
+ * 它们走会话自己的 channel，不在应用里现取一次 `RemoteSessions` 门面：这样「当前这一段是
+ * 哪个 id」与「接哪条连接」不会变成应用里两个会漂的来源。顺带钉住两件事：换完**立刻**是
+ * 屏幕上的事实，且只通知一次重画（再补一次 `reload()` 就是多一个往返、多一次通知，而屏幕上
+ * 不会多一个字）。
  */
 describe("RemoteChatSession：会话级模型动作（走 channel，不现取门面）", () => {
   it("setModel：这一段会话的模型当场换成新的，且只通知一次重画", async () => {
@@ -909,8 +909,8 @@ describe("RemoteChatSession：会话级模型动作（走 channel，不现取门
    * 命令层那一层：`/model` 换完模型**不要**再补一次 `reload()`。
    *
    * 上面那条钉的是 `session.setModel` 自己不 reload；这条钉的是**调用方**也没补 ——
-   * `commands/handlers.ts` 的 `/model` 曾经在写完三档之后无条件跟一句 `session.reload()`。
-   * P4c 起包里自己 `applySnapshot`，那一句就成了「多一个往返 + 多一次通知，屏幕上不多一个字」；
+   * `commands/handlers.ts` 的 `/model` 不能在写完三档之后再无条件跟一句 `session.reload()`：
+   * session 档由包自己 `applySnapshot`，那一句就成了「多一个往返 + 多一次通知，屏幕上不多一个字」；
    * 而 `-a` / `-g` 两档仍需要它（它们走 `agent.save` / `config.json`，没有那份快照）。
    *
    * 判据就两条：状态里的 `modelId` 当场是新的，且「该重画了」只多一次。
@@ -1316,8 +1316,7 @@ describe("RemoteChatSession：断线重连", () => {
     // 断线通知是**同步**发的（`failAll` 里直接调监听器）：若 `dispose()` 没先摘掉那个订阅，
     // 这时 `attempts` 已经是 1 了 —— 所以这里当场断言，不需要再等什么。
     //
-    // 连接**仍然开着**：它是进程级的（D8），`dispose()` 只关「这一段会话」，不关连接。
-    // （以前这里断言的是 `closed === true` —— 那时连接归会话所有，切屏就重连。）
+    // 连接**仍然开着**：它归持有方、不归会话（进程级），`dispose()` 只关「这一段会话」。
     expect(connected.closed).toBe(false);
     expect(attempts).toBe(0);
 
@@ -1452,8 +1451,8 @@ describe("RemoteChatSession：换 Agent 与会话回收", () => {
   /**
    * 「会话寿命只剩 `session.close` 一条」的**第二个**出口：退出 / 切屏（`dispose()`）。
    *
-   * 它是 `/load` 那条路（重挂载 → 旧屏幕卸载 → `dispose()`）与 Ctrl+C 的共同出口。D8 之后
-   * 连接不再随卸载消失，于是「卸载」对服务端彻底不可见 —— 这一帧不发，每切一次会话就多
+   * 它是 `/load` 那条路（重挂载 → 旧屏幕卸载 → `dispose()`）与 Ctrl+C 的共同出口。连接归
+   * 持有方、不随卸载消失，于是「卸载」对服务端彻底不可见 —— 这一帧不发，每切一次会话就多
    * 一段活会话待到宽限期。
    *
    * 与 `/new` 那条的区别：`reset()` 是 `await` 的（要等旧的关掉），`dispose()` **不等**回执

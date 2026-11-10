@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 配置中心菜单
+// 配置中心菜单
 import { ReactNode } from "react";
 import { WizardContext } from "./engine.js";
 import { MenuStep } from "./menu.js";

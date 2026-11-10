@@ -4,8 +4,11 @@
  * 要么终端发来的序列和我们认的不一样。两种情况的判定方法是同一个 —— 看日志里有几行。
  *
  * 用法：
- *   AIZ_DEBUG_KEYS=1 aiz                       → 追加写到 <tmp>/aiz-key-debug.log
+ *   AIZ_DEBUG_KEYS=1 aiz                       → 追加写到 /tmp/aiz-key-debug.log
  *   AIZ_DEBUG_KEYS=1 AIZ_KEYS_FILE=/path aiz   → 写到指定文件
+ *
+ * 两个环境变量都在**模块加载时**读一次就固定（见下方的 `KEY_DEBUG_*` 常量），所以必须在
+ * 启动进程前给 —— 进程跑起来之后再设无效。
  *
  * 判读：
  *   - 按了键但日志里没有新增行 → 键根本没到应用（被 OS 快捷键或终端键位映射截走）
@@ -20,7 +23,13 @@ import { appendFileSync } from "node:fs";
 
 export const KEY_DEBUG_ENABLED = process.env.AIZ_DEBUG_KEYS === "1";
 
-/** 日志落盘路径（测试与用户都可能改写，故导出常量） */
+/**
+ * 日志落盘路径：`AIZ_KEYS_FILE`，缺省 `/tmp/aiz-key-debug.log`。
+ *
+ * 导出是为了与用例、`keyDebugStart()` 的摘要行共用**同一个**已解析值（用例要 `stat` 它）。
+ * 它是加载时快照而不是可改写的开关：换路径就在启动前设环境变量。
+ * （`sdk-log.ts` 的路径相反，每次调用重新解析 —— 它跟着 `AI_ZEN_DIR` 走，而那是活绑定。）
+ */
 export const KEY_DEBUG_FILE = process.env.AIZ_KEYS_FILE || "/tmp/aiz-key-debug.log";
 
 /** Ink `useInput` 的 key 对象里我们关心的字段（结构化，避免依赖 ink 的类型导出） */

@@ -106,7 +106,7 @@ When `usage.prompt_tokens` exceeds the model's `tokenThresholds.handoff`, the SD
 
 The old conversation is always saved before pruning, so a failed handoff never costs you history: you can retry or keep chatting.
 
-> **The conversation id has exactly one source of truth.** The new id written by `onMigrated` must be visible to the persistence layer immediately (the layer that owns the session proxies `ConversationContext.currentId` instead of holding its own copy; after the session layer moved to the server, that is the server-side `SessionContext`). Otherwise the next auto-persist still uses the **old** id and writes the post-`prune` shell (system prompt + breakpoint) **over the old conversation file** — from the user's side, "after the handoff my history was gone and only the handoff doc was left".
+> **The conversation id has exactly one source of truth.** The new id written by `onMigrated` must be visible to the persistence layer immediately (the server-side `currentId` is the only copy; the client and the render layer only read `sessionId` from the snapshot). Otherwise the next auto-persist still uses the **old** id and writes the post-`prune` shell (system prompt + breakpoint) **over the old conversation file** — from the user's side, "after the handoff my history was gone and only the handoff doc was left".
 
 ## Cancellation
 

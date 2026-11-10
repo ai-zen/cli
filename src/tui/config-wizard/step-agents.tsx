@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— Agent 列表 / 详情 / 权限 / 提示词 / 新建
+// Agent 列表 / 详情 / 权限 / 提示词 / 新建
 import { ReactNode } from "react";
 import { DEFAULT_AGENT_DEFINITION, DEFAULT_AGENT_ID } from "@ai-zen/agents-sdk";
 import { SelectItem } from "../components.js";

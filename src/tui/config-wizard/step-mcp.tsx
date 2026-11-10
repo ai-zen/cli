@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— MCP 列表 / 详情 / 键值 / 新建
+// MCP 列表 / 详情 / 键值 / 新建
 import { ReactNode } from "react";
 import { SelectItem } from "../components.js";
 import { McpScope, McpServerEntry } from "../../config.js";

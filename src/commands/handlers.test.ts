@@ -203,8 +203,8 @@ describe("/new：归档后重置转录显示起点", () => {
 });
 
 /**
- * 回归（PLAN L8）：`/back` 撤回后只 `exit({ restart: true })` 重挂界面，没落盘 ——
- * 存档文件里仍留着被撤回的消息，下次 `/load` 或重启就「复活」。
+ * 回归：`/back` 撤回只重挂界面、不落盘的话，存档文件里仍留着被撤回的消息 ——
+ * 下次 `/load` 或重启就「复活」。
  */
 describe("/back：撤回后必须落盘", () => {
   it("撤回后的消息写回文件（被撤回的那条不再存在）", async () => {
@@ -250,7 +250,7 @@ describe("/back：撤回后必须落盘", () => {
 });
 
 /**
- * `/save <名字>`（PLAN §4）：不带参数维持时间戳 id；带名字则另存为指定文件名，
+ * `/save <名字>`：不带参数维持时间戳 id；带名字则另存为指定文件名，
  * 重名要二次确认（静默覆盖会让另一份对话凭空消失），确认后旧文件不留残影。
  */
 describe("/save：支持指定名字 + 重名二次确认", () => {
@@ -339,7 +339,7 @@ describe("/save：支持指定名字 + 重名二次确认", () => {
 });
 
 /**
- * 回归（PLAN L15）：选择器的条数上限。
+ * 回归：选择器的条数上限。
  *
  * **换算搬走了**：`原始终端行数 → 能放几条候选` 是终端布局的事实（预留末行、覆盖层高、
  * 状态栏高），公式与它的用例都在渲染层（`tui/screens/layout.ts` 的 `pickerCapacity`，用例见
@@ -649,10 +649,10 @@ describe("配置来源是 deps.config（假端口），不是本地读盘", () =
 });
 
 /**
- * `/agent`：换 Agent 是**会话层**的事（`session.setAgent`），不再重挂载对话屏。
+ * `/agent`：换 Agent 是**会话层**的事（`session.setAgent`），不重挂载对话屏。
  *
- * 回归点：这条命令曾经走 `exit({ restart: true, agentId })`，而远程模式下服务端对活着的
- * 会话直接返回、忽略 `agentId` —— 界面提示「已切换」，实际下一轮仍由旧 Agent 跑。
+ * 回归点：重挂载（`exit({ restart: true, agentId })`）在远程模式下不成立 —— 服务端对活着的
+ * 会话直接返回、忽略 `agentId`，界面提示「已切换」，实际下一轮仍由旧 Agent 跑。
  */
 describe("/agent：走 session.setAgent，不重挂载", () => {
   it("调 setAgent(chosen) 且不 exit；「默认 Agent」走窄方法而不是整份写回", async () => {
@@ -701,11 +701,11 @@ describe("/agent：走 session.setAgent，不重挂载", () => {
  *
  * 三档各写各的：
  *   - `session` → 会话级（`setSessionModelParams`），不碰 Agent 定义；
- *   - `agent`   → Agent 定义（`store.save`），与改造前的行为逐字一致；
+ *   - `agent`   → Agent 定义（`store.save`）；
  *   - `global`  → 没有可写的一层，**明确拒绝**。
  *
- * 另外钉住两处曾经按定义算的毛病：模型来自全局兜底时误报「未绑定模型」、档位列表按定义上
- * 的模型算（换了模型之后列出来的是另一套档位）。
+ * 另外钉住两处「按定义算」会算错的地方：模型来自全局兜底时误报「未绑定模型」、档位列表按
+ * 定义上的模型算（换了模型之后列出来的是另一套档位）。
  */
 describe("/think：写哪一层跟着「模型来自哪一级」走", () => {
   const texts = (notices: Array<{ text: string }>) => notices.map((n) => n.text).join("\n");

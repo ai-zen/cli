@@ -32,7 +32,7 @@ export const en: Record<string, string> = {
   "effort.default": "default",
   "effort.unsupported": "—",
 
-  // ---------- Generation phases (message-area spinner; see `tui/phase.ts`) ----------
+  // ---------- Generation phases (message-area spinner; the six states live in `src/session-phase.ts`) ----------
   "phase.working": "Working…",
   "phase.connecting": "Connecting…",
   "phase.queued": "Queued…",
@@ -60,8 +60,8 @@ export const en: Record<string, string> = {
   "notice.pressCtrlDAgain": "Press Ctrl+D again to exit",
   "notice.languageChanged": "Language switched to English",
   "notice.turnAborted": "Turn aborted — the session is back to where it was",
-  // A sub-agent failed: the template only echoes the raw message (no prefix), matching
-  // what the client used to push straight onto the notice bar
+  // A sub-agent failed: the template only echoes the raw message, no prefix added — the
+  // original message already reads as one sentence
   "notice.subAgentFailed": "{message}",
   "notice.mcpUnavailable": "MCP server unreachable: {name}",
   "notice.storeUnavailable": "The session store is unavailable: {error}",

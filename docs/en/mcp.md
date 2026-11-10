@@ -47,7 +47,7 @@ MCP server configurations are merged from multiple sources **high to low**, with
 4. User-level `~/.ai-zen/mcp.json`
 5. User-convention `~/.agents/mcp.json`
 
-> The order above comes from `getScope()` in `src/agent-creator.ts` and the comments in `src/config.ts`.
+> The order is implemented on the server side (`agentPaths().mcpConfigs` in `@ai-zen/agents-server`); the header comment in `src/config.ts` mirrors it for the client.
 
 ## Dynamically loaded tools
 

@@ -1,4 +1,4 @@
-// 由 src/tui/screens.tsx 拆分而来 —— 输入区折行 / 硬件光标 / 跨词移动
+// 输入区折行 / 硬件光标 / 跨词移动
 import { displayWidth, graphemes, layoutInput, INPUT_PREFIX_WIDTH } from "../text.js";
 import { t } from "../../i18n/index.js";
 

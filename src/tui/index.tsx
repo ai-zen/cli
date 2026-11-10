@@ -28,7 +28,7 @@ import type { AgentNS } from "@ai-zen/agents-core";
 const CLEAR_SCREEN = "\x1b[2J\x1b[H\x1b[?25h";
 
 /**
- * 进程级的那一条连接（D8：一个进程一条）。
+ * 进程级的那一条连接（一个进程只到服务端建一条）。
  *
  * **它必须活在 `runChat` 的重挂载循环之外**。`/load`、`/clear`、`/back` 都是「卸载当前
  * Ink 实例 → 再 `mount(<Chat/>)`」，而连接如果建在循环里（或建在组件里），切一次会话就
@@ -265,7 +265,7 @@ function resumeLastSession(): ChatTarget {
 
 /**
  * 运行对话屏；`/clear`、`/back`、`/load` 通过重挂载（新 Ink 实例 + 原生清屏）实现，
- * 其余退出（退出）直接结束。
+ * 其余退出直接结束。
  */
 async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise<void> {
   let current = target;
@@ -295,7 +295,7 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
         sessionId={current.sessionId}
         resume={resume}
         // 把**同一对**（连接 + 由它派生的配置面）交给对话屏。对话屏不再有兜底：它自己
-        // 造一条连接的话，一个 TUI 进程就又变成两条到服务端的连接（D8 之前就是这么错的）。
+        // 造一条连接的话，一个 TUI 进程就又变成两条到服务端的连接。
         deps={{ config: configPort, connection }}
         initialInput={initialInput}
         initialNotice={initialNotice}
@@ -376,7 +376,7 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
   const uninstallSignals = installSignalSafety();
   // 接管 SDK 全局日志：关掉库自带的 console 兜底。必须在任何 Ink 渲染之前——
   // SDK 的 logger 默认是 console.log，直写 stdout 会把界面撕坏
-  // （`load_mcp` 甚至会把整份 manifest 打出来）。AIZ_DEBUG_SDK=1 可改为落盘。
+  // （`load_mcp` 甚至会把整份 manifest 打出来）。日志默认落盘，AIZ_DEBUG_SDK=0 可完全关掉。
   installSdkLogger();
   // 界面语言必须在任何渲染之前定下来：首次启动按系统语言识别并落盘，
   // 之后以 preferences.json 为准（`/lang` 可随时改）。
@@ -423,7 +423,7 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
     /**
      * 断掉这条进程级连接。
      *
-     * 它现在**不随界面卸载而消失**（那正是 D8 想要的：切会话不重连），所以退出时必须由
+     * 它现在**不随界面卸载而消失**（切会话不重连），所以退出时必须由
      * 这里显式关掉 —— 否则进程要等事件循环里的这条 socket 自己超时才能退。
      *
      * 顺序上这帧 `session.close` 已经由最后一代屏幕的 `dispose()` 发过了（尽力而为、不

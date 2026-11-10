@@ -33,13 +33,13 @@ const NOTICE_KEYS: Record<NoticeCode, string> = {
   migrationDegraded: "handoff.degraded",
   turnAborted: "notice.turnAborted",
   persistFailed: "handoff.persistFailed",
-  // 迁移落地的两条与「本次跳过」：旧版这三句在 CLI 侧产文案，服务端化之后一度静默
+  // 迁移落地的两条与「本次跳过」：服务端只发 code，句子得由这边给
   handoffMigrated: "handoff.migrated",
   handoffMigratedHint: "handoff.migratedHint",
   migrationSkipped: "migrate.skipped",
   // 子 Agent 出错（`params.index` 指哪个子 Agent，`params.message` 是原文）。
-  // 模板只是把 `message` 原样吐出来 —— 与进程内实现「直接把 `error.message` 推上通知栏」
-  // 逐字一致，**不加**「子 Agent 1 出错：」这类前缀（那是交互变化）。
+  // 模板就是 `{message}`：把服务端给的原文原样吐出来，**不加**「子 Agent 1 出错：」这类
+  // 前缀 —— 那是交互层的措辞，塞进模板就成了第二份真相（模板只放事实，不放句子）。
   subAgentFailed: "notice.subAgentFailed",
   // ---- 服务端级（不属于任何一段会话，不过 sessionId 过滤）----
   mcpUnavailable: "notice.mcpUnavailable",
@@ -59,9 +59,7 @@ export function noticeText(code: NoticeCode, params: Record<string, unknown> = {
 /**
  * 把 `params` 里的值变成可直接代入模板的字符串/数字。
  *
- * 曾经它还兼任一件事：把 `handoffArchived` 的 `sessionId` 补成模板要的 `{name}`。
- * 那是「会话名」与「会话 id」两套词汇共存时的过渡物 —— 现在模板就用协议里的字段名，
- * 补丁随之消失（服务端给什么，这里就代什么）。
+ * 模板用的是协议里的字段名，所以这里不做别名映射：服务端给什么，就代什么。
  */
 function localizeParams(params: Record<string, unknown>): Record<string, string | number> {
   const localized: Record<string, string | number> = {};

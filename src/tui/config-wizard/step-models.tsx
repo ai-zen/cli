@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 模型 / 图片模型 列表与详情 / 新建
+// 模型 / 图片模型 列表与详情 / 新建
 import { ReactNode } from "react";
 import { DEFAULT_APP_CONFIG } from "@ai-zen/agents-sdk";
 import { SelectItem } from "../components.js";

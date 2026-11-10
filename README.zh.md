@@ -198,7 +198,7 @@ key input="" flags=[pageUp] raw=false
 
 | 命令 | 说明 |
 |------|------|
-| `/exit` `/quit` | 退出对话（提示保存） |
+| `/exit` `/quit` | 退出对话 |
 | `/save [名字]` | 保存对话（本就每轮实时落盘）；带名字则另存为该文件名（相当于改名，重名先确认） |
 | `/load` | 加载对话（替换当前会话；选择器只列会话文件名） |
 | `/new` | 重置会话（清空历史） |
@@ -222,7 +222,7 @@ key input="" flags=[pageUp] raw=false
 
 两条命令，同一条管道：
 
-- **`/handoff`** — 原 agent 停下手头工作，用自己的工具核实真实状态（分支、未提交改动、测试、端口），把交接文档写到 `<项目>/.ai-zen/handoffs/<时间戳>-<会话id>.md`。会话照旧运行，因此可以继续打磨这份文档。
+- **`/handoff`** — 原 agent 停下手头工作，用自己的工具核实真实状态（分支、未提交改动、测试、端口），把交接文档写到 `<项目>/.ai-zen/handoffs/<YYYYMMDD-HHmmss>.md`。会话照旧运行，因此可以继续打磨这份文档。
 - **`/migrate`** — 同一次交接，然后把历史清空、以该文档开启新会话（断点消息只带路径，由新 agent 自己读取）。
 
 两种执行者：`self`（默认——原 agent 在会话内写，保真度最高）与 `summary`（一次独立模型调用，便宜但有损）。`self` 失败时**单向**降级为 `summary`。可用 `/handoff summary` 或 `/migrate self` 显式指定。
@@ -328,7 +328,7 @@ ai hook uninstall
 │   ├── default.json          ← 默认 Agent（首次运行自动创建）
 │   └── my-custom-agent.json
 ├── sub-agents/               ← SubAgent 定义（共享）
-│   ├── general-assistant.json ← 默认 SubAgent（首次运行自动创建）
+│   ├── sub-agent-default.json ← 默认 SubAgent（首次运行自动创建）
 │   └── my-coder.json
 ├── skills/                   ← Skill 目录（共享）
 │   └── my-skill/
@@ -339,8 +339,11 @@ ai hook uninstall
 ├── mcp-oauth/                ← MCP OAuth 令牌（共享）
 └── logs/                     ← 诊断日志（sdk.log：SDK 全局日志，2MB 轮转）
 
+~/.agents/                    ← 业界通用规范目录（Cursor / Windsurf / Cline）：skills/、mcp.json
+
 /path/to/project/
 ├── .mcp.json                 ← 项目共享 MCP 配置（可提交 git）
+├── .agents/                  ← 业界通用规范目录（skills/、mcp.json）
 └── .ai-zen/
     ├── mcp.json              ← 项目个人 MCP 配置（不提交）
     ├── skills/               ← 项目 Skill 目录
