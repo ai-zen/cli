@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "ink-testing-library";
 import { setLocale } from "../../i18n/index.js";
 
-const { created, createFakeSession, fakeIndex } = vi.hoisted(() => {
+const { created, createFakeSession } = vi.hoisted(() => {
   const created: { notifier: any; session: any; options: any } = {
     notifier: null,
     session: null,
@@ -80,7 +80,7 @@ const { created, createFakeSession, fakeIndex } = vi.hoisted(() => {
     };
   };
 
-  return { created, createFakeSession, fakeIndex };
+  return { created, createFakeSession };
 });
 
 /**

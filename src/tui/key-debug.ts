@@ -90,7 +90,7 @@ export function formatKeyEvent(input: string, key: KeyFlags, raw: boolean): stri
 }
 
 /** 当前 stdin 是否处于 raw mode（非 TTY 或平台不支持时视为 false） */
-export function stdinIsRaw(): boolean {
+function stdinIsRaw(): boolean {
   const stdin = process.stdin as { isRaw?: boolean };
   return Boolean(stdin.isRaw);
 }
@@ -103,7 +103,7 @@ let started = false;
  * 同步写：调试期每次按键都写一行，量小；异步写反而可能在崩溃时丢最后几行
  * —— 而那几行往往正是要看的那几行。
  */
-export function keyDebugLog(line: string): void {
+function keyDebugLog(line: string): void {
   if (!KEY_DEBUG_ENABLED) return;
   try {
     appendFileSync(KEY_DEBUG_FILE, `${new Date().toISOString()} ${line}\n`);

@@ -56,7 +56,7 @@ export function effortLabel(level: string): string {
 }
 
 /** 模型关联的策略 */
-export function presetOf(
+function presetOf(
   model: Model | null | undefined,
   presets: ReasoningPresets,
 ): ReasoningPreset | undefined {
@@ -82,7 +82,7 @@ export function isAdjustable(model?: Model | null, presets?: ReasoningPresets | 
  * 会话级的参数在服务端存档里，客户端读不到，那种情况传 `null`，别拿定义那份顶替
  * （混层的参数本来就不会发出去，显示了就是在撒谎）。
  */
-export function effectiveParams(
+function effectiveParams(
   model?: Model | null,
   definition?: Pick<AgentDefinition, "modelParams"> | null,
 ): Record<string, unknown> {

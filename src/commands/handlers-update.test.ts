@@ -190,7 +190,7 @@ describe("/update：装最新版（不区分 alpha / 正式版）", () => {
 
   it("拒绝重启：不重启、仍提示手动重启，但对话照样已落盘", async () => {
     fakeGlobalInstall(root, NEXT_VERSION);
-    const { host, notices, restarts, saves, text } = createHost({ confirmAnswer: false });
+    const { host, notices, restarts, saves } = createHost({ confirmAnswer: false });
 
     await runCommand("update", "/update", host);
 

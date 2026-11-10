@@ -9,7 +9,7 @@
 // `WizardHostDeps` 传进来，于是 hook 可以在测试里用假依赖跑完整生命周期。
 import { useRef, useState } from "react";
 import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { mcpConfigOrEmpty, type McpConfig, type McpScope } from "../../config.js";
+import { mcpConfigOrEmpty, type McpScope } from "../../config.js";
 import type { AgentStore } from "../../agents-store.js";
 import type { ConfigPort } from "../../server-client/index.js";
 import { resolveCredential } from "../../config-editor.js";

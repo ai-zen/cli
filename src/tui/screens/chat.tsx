@@ -140,7 +140,7 @@ export interface ChatScreenProps {
 export const MAX_PASTED_IMAGES = 4;
 
 /** 字节数 → 一位小数的 MB（提示文案用） */
-export function formatMegabytes(bytes: number): string {
+function formatMegabytes(bytes: number): string {
   return (bytes / 1024 / 1024).toFixed(1);
 }
 

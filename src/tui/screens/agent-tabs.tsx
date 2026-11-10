@@ -49,7 +49,7 @@ export function agentStatusColor(status: AgentTabStatus, blinkOn = true): string
 }
 
 /** 闪烁周期（毫秒）：一亮一暗为一个完整周期 */
-export const AGENT_BLINK_MS = 500;
+const AGENT_BLINK_MS = 500;
 
 /**
  * 运行中时返回随时间翻转的开关（其余时候恒为 true，且不启定时器）。
@@ -57,7 +57,7 @@ export const AGENT_BLINK_MS = 500;
  * 定时器只在本组件内驱动自己的重渲染，不牵动上层：`AgentTabs` 的 state 变化只影响
  * 它自己这一行。
  */
-export function useBlink(active: boolean, intervalMs = AGENT_BLINK_MS): boolean {
+function useBlink(active: boolean, intervalMs = AGENT_BLINK_MS): boolean {
   const [on, setOn] = useState(true);
   useEffect(() => {
     if (!active) {

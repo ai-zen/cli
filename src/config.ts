@@ -63,11 +63,7 @@
  *     4. ~/.agents/skills/
  */
 
-import { promises as fs } from "fs";
-import { dirname, join } from "path";
-import { ConfigManager as SdkConfigManager, getLogger } from "@ai-zen/agents-sdk";
-import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { t } from "./i18n/index.js";
+import { join } from "path";
 
 // ==================== 根目录 ====================
 
@@ -83,30 +79,22 @@ function resolveRoot(): string {
 }
 
 /**
- * 全部路径都导出为 `let`：ESM 的 import 是**活绑定**，导入方每次取值都读到最新值
- * （实测：跨模块 import 的常量在 `refreshPaths()` 之后立刻是新目录），所以 `refreshPaths()`
+ * 配置根目录 —— 本进程**唯一**一个还活着的模块级路径。
+ *
+ * 为什么它是 `let` 而不是 `const`：ESM 的 import 是**活绑定**，导入方每次取值都读到最新值
+ * （实测：跨模块 import 的变量在 `refreshPaths()` 之后立刻是新目录），所以 `refreshPaths()`
  * 不需要召回任何引用点。
  *
- * **会失效的是快照**：在模块顶层把路径塞进常量或实例（`const POINTER_FILE = join(CLI_DIR, …)`、
- * `new Repo(CONVERSATIONS_DIR)`、`new ConfigManager(CONFIG_FILE)`）—— 那个值在模块求值那一刻就定死了。
- * 这类地方一律改成函数（`pointerFile()` / `configManager()`），
- * 由调用时机决定读哪个目录。
+ * **会失效的是快照**：在模块顶层把路径塞进常量或实例（`const FILE = join(AI_ZEN_DIR, …)`、
+ * `new ConfigManager(AI_ZEN_DIR)`）—— 那个值在模块求值那一刻就定死了。这类地方一律改成
+ * 函数（`sdkLogFile()` / `configManager()`），由调用时机决定读哪个目录。
+ *
+ * 别的路径都不再是模块级变量：项目级的在 `projectDirs(cwd)` 里（cwd 是入参），根下那些
+ * （`config.json` / `agents/` / `mcp.json` …）根本不归本进程管 —— 它们经 `ConfigPort` 从
+ * 服务端取。曾经这里还有 `CLI_DIR` / `CONFIG_FILE` / `AGENTS_DIR` / `SUB_AGENTS_DIR` /
+ * `MCP_CONFIG_FILE`，全是这两件事搬走之后没人读的空壳，已删。
  */
 export let AI_ZEN_DIR = resolveRoot();
-
-// ==================== CLI 运行时目录 ====================
-
-/**
- * CLI 自己的目录。会话已搬到服务端的 `workspaces/`，这里**只剩旧存档**的位置：
- * 老布局搬迁已在服务端的 `legacyMigration` 里做过（迁移源就指向它），之后就能删。
- */
-export let CLI_DIR = join(AI_ZEN_DIR, "cli");
-export let CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
-
-// ==================== 共享目录 ====================
-
-export let AGENTS_DIR = join(AI_ZEN_DIR, "agents");
-export let SUB_AGENTS_DIR = join(AI_ZEN_DIR, "sub-agents");
 
 // ==================== 项目级目录（基于 CWD）====================
 
@@ -159,10 +147,6 @@ export function projectDirs(cwd: string = process.cwd()): ProjectDirs {
   };
 }
 
-// ==================== MCP 配置 ====================
-
-export let MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
-
 // ==================== 目录初始化 ====================
 
 /**
@@ -178,11 +162,6 @@ export let MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
  */
 export function refreshPaths(): void {
   AI_ZEN_DIR = resolveRoot();
-  CLI_DIR = join(AI_ZEN_DIR, "cli");
-  CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
-  AGENTS_DIR = join(AI_ZEN_DIR, "agents");
-  SUB_AGENTS_DIR = join(AI_ZEN_DIR, "sub-agents");
-  MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
 }
 
 // ==================== MCP 配置的形状 ====================
@@ -191,11 +170,10 @@ export function refreshPaths(): void {
  * MCP 配置的**词汇表**已在 `@ai-zen/agents-client` 里（`mcp.ts`）—— 那是客户端唯一的
  * 一份：读写它的两端（服务端落盘、客户端整形）必须共用同一份字段表，抄两份迟早对不上。
  *
- * 本文件只留**路径**（`mcpConfigPath()`）：目录布局是某个进程自己的本地事实，两端本来
- * 就不该相同（两机部署时客户端的 `~/.ai-zen/mcp.json` 与服务端那份不是一个文件）。
- *
  * 仍然在这里转出类型，是因为 CLI 里 `import { McpConfig } from "./config.js"` 的写法
- * 铺得很开，而那些调用点关心的就是「词汇表 + 路径」这一对。
+ * 铺得很开，而那些调用点关心的就是这份词汇表。（`mcp.json` 的**路径**不属于本进程：
+ * 两机部署时客户端那台与服务端那台本来就不是同一个文件，路径随 `McpReadResult` 一起从
+ * 服务端回来。）
  */
 export type {
   McpConfig,
@@ -205,14 +183,9 @@ export type {
   McpServersMap,
 } from "@ai-zen/agents-client";
 
-// 只取两个形状进来用（路径函数与空配置回落要拿它们做参数/返回类型）。
+// 只取两个形状进来用（空配置回落要拿它们做参数/返回类型）。
 // 上面 block 只负责**转出**，不建立本地绑定。
-import type { McpConfig, McpReadResult, McpScope } from "@ai-zen/agents-client";
-
-/** 作用域对应的 mcp.json 路径 */
-export function mcpConfigPath(scope: McpScope): string {
-  return scope === "project" ? projectDirs().mcpConfig : MCP_CONFIG_FILE;
-}
+import type { McpConfig, McpReadResult } from "@ai-zen/agents-client";
 
 /** 读失败时按空配置继续（仅用于「读来只为做判断」的场景；界面上要显示损坏由编辑屏负责） */
 export function mcpConfigOrEmpty(result: McpReadResult): McpConfig {

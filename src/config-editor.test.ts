@@ -51,9 +51,7 @@ import {
   uniqueMcpServerId,
   uniqueModelId,
   updateEndpoint,
-  updateAgentDefinition,
   updateAgentFunction,
-  updateImageModel,
   updateMcpServer,
   updateModel,
 } from "./config-editor.js";

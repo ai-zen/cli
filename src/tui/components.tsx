@@ -167,7 +167,7 @@ const INNER_SEPARATOR = " · ";
  * 每块内部不再拆行（除单块宽度超一整行），窄屏时整块顺延到下一行——而不是用
  * `space-between` 把两侧各切一半。块内空的部分（如本轮没有速率）直接不占位。
  */
-export function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
+function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
   const { model, agent, effort, effortDimmed, lastTokens, totalTokens, busy, hint, rate } = props;
 
   // ① 身份块
@@ -277,7 +277,7 @@ export interface MenuItem {
  * 高亮一旦越过窗口顶部就整窗上移（`from = selected − size + 1`），保证选中项永远可见；
  * 装不下的从**顶部**丢弃（即索引大的候选先消失，因为它们离输入框最远）。
  */
-export function menuViewport(
+function menuViewport(
   total: number,
   selected: number,
   maxRows: number,
@@ -322,7 +322,7 @@ const MENU_HINT_MIN = 4;
  * 不能用「标签与说明两个并列 flex 子节点」交给 Ink 分配：它会按内容比例分宽度，
  * 说明一长就把命令名挤成 `/confi`（真机反馈）。
  */
-export function menuRow(item: MenuItem, columns: number): { label: string; hint?: string } {
+function menuRow(item: MenuItem, columns: number): { label: string; hint?: string } {
   const available = Math.max(1, columns - MENU_INDENT);
   const labelWidth = displayWidth(item.label);
   if (labelWidth > available) return { label: clipWidth(item.label, available) };

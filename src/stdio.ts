@@ -102,7 +102,7 @@ function writeStdout(text: string): void {
  * 读取全部 stdin 文本。
  * stdin 为 TTY（无管道）或读取失败时返回空串。
  */
-export async function readStdin(): Promise<string> {
+async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return "";
   try {
     const chunks: Buffer[] = [];

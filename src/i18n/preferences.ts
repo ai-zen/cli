@@ -19,7 +19,7 @@ import { detectLocale, setLocale, normalizeLocale, type Locale } from "./index.j
  * 每次调用都重新解析：测试会在用例之间换 `AI_ZEN_DIR`，若在模块加载时固化成常量，
  * 进程内共享模块时后一个用例会继续读写前一个用例的目录。
  */
-export function preferencesFile(): string {
+function preferencesFile(): string {
   const root =
     process.env.AI_ZEN_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".ai-zen");
   return process.env.AIZ_PREFERENCES_FILE || join(root, "cli", "preferences.json");

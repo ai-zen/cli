@@ -163,7 +163,7 @@ type CommandHandler = (ctx: CommandContext) => Promise<void>;
  * 解析命令后的执行者参数（`/migrate self`、`/handoff summary`）。
  * 缺省返回 undefined（走服务默认值）；非法值也返回 undefined，由调用方报错。
  */
-export function parseHandoffMode(raw?: string): HandoffMode | undefined {
+function parseHandoffMode(raw?: string): HandoffMode | undefined {
   const value = raw?.trim().toLowerCase();
   return value === "self" || value === "summary" ? value : undefined;
 }
@@ -174,7 +174,7 @@ export function parseHandoffMode(raw?: string): HandoffMode | undefined {
  * 单独成函数而不是挂在 `CommandContext` 上：16 个命令里只有这两个用得到，
  * 挂在上下文中会让另外 14 个命令（`/save` `/help` `/clear` …）每次也白算一遍。
  */
-export function parseHandoffSelection(args: readonly string[]): HandoffSelection {
+function parseHandoffSelection(args: readonly string[]): HandoffSelection {
   const raw = args[0]?.toLowerCase();
   const mode = parseHandoffMode(raw);
   return { mode, invalid: raw !== undefined && mode === undefined ? raw : undefined };
@@ -352,7 +352,7 @@ const MODEL_SCOPE_FLAGS: Record<string, ModelScope> = {
  * 改掉所有用这个 Agent 的会话（另一个终端里正聊着的对话会莫名换模型），代价远大于收益 ——
  * 要改定义就显式说 `-a`。
  */
-export function parseModelSelection(args: readonly string[]): ModelSelection {
+function parseModelSelection(args: readonly string[]): ModelSelection {
   const flag = args[0]?.toLowerCase();
   const scope = flag ? MODEL_SCOPE_FLAGS[flag] : undefined;
   // 首个 token 不是作用级别参数 → 它就是模型 id（`/model <id>`），落在会话级
