@@ -75,6 +75,11 @@ let sessions: RemoteSessions;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aiz-remote-sessions-"));
+  // 用例里当工作目录用的那个目录得**真的存在**：服务端拒绝在不存在的路径上开会话
+  // （`workspace-path-missing`）—— 它不再悄悄 mkdir 出一个空目录，否则用户会以为
+  // 自己续上了旧对话、实际进了一个新目录。真实流程里客户端递的是 `process.cwd()`，
+  // 总是存在的；这里造一个才是同形。
+  mkdirSync(join(dir, "proj"), { recursive: true });
   agent = new FakeAgent();
   manager = new SessionManager({
     createAgent: async () => agent,
