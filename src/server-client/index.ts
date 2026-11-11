@@ -39,13 +39,31 @@ export * from "@ai-zen/agents-client";
 export { CLIENT_INFO };
 
 /**
+ * 拉起服务端时交给 `npx` 的包坐标。
+ *
+ * **为什么带版本号**：服务端目前只有预发布版本，`latest` 标签并不指向它（发布预发布
+ * 版时打的是 `alpha`），裸包名会让 `npx` 报 notarget。
+ *
+ * **为什么写在这里**：「拉起哪个版本的服务端」是 CLI 的发布策略，不是连接层的事 ——
+ * 桌面端有它自己的一套（捆绑的 server），所以这个值进不了共享包。
+ *
+ * 它必须与仓库里 `@ai-zen/agents-server` 的版本一致：`cli/src/server-client.test.ts`
+ * 有一条用例直接比对两者，改一边忘另一边会红。
+ */
+export const SERVER_PACKAGE = "@ai-zen/agents-server@0.1.0-alpha.0";
+
+/**
  * 拉起（或连上）服务端的一条裸连接。
  *
  * 生产不用它，当前也没有调用点（e2e 与探活都直接走 `SocketServerClient.connect` /
  * `ensureServer`）。它保留为「只要一条连接、不要那层壳（断了自建 + 重新订阅事件）」的最小出口。
  */
 export async function connectToServer(): Promise<ServerClient> {
-  const { client } = await ensureServer({ aiZenDir: AI_ZEN_DIR, clientInfo: CLIENT_INFO });
+  const { client } = await ensureServer({
+    aiZenDir: AI_ZEN_DIR,
+    clientInfo: CLIENT_INFO,
+    serverPackage: SERVER_PACKAGE,
+  });
   return client;
 }
 
@@ -61,7 +79,11 @@ export async function connectToServer(): Promise<ServerClient> {
  * 不需要在这里处理。
  */
 export function createServerConnection(): ServerConnection {
-  return new ServerConnection({ aiZenDir: AI_ZEN_DIR, clientInfo: CLIENT_INFO });
+  return new ServerConnection({
+    aiZenDir: AI_ZEN_DIR,
+    clientInfo: CLIENT_INFO,
+    serverPackage: SERVER_PACKAGE,
+  });
 }
 
 /**
