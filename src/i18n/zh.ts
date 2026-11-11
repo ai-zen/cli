@@ -90,6 +90,8 @@ export const zh: Record<string, string> = {
   "cmd.help.desc": "显示帮助",
   "cmd.exit.desc": "退出对话（提示保存）",
   "cmd.running": "正在执行 /{name}…",
+  /** 兜底出口：处理器没自己 catch 的那几条命令，服务端失败时由 `runCommand` 统一说话 */
+  "cmd.failed": "命令 /{name} 失败：{error}",
 
   // ---------- 命令交互文案（通知 / 选择器） ----------
   "common.current": "（当前）",

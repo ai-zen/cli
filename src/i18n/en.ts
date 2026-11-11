@@ -89,6 +89,8 @@ export const en: Record<string, string> = {
   "cmd.help.desc": "Show this help",
   "cmd.exit.desc": "Exit the conversation (offers to save)",
   "cmd.running": "Running /{name}…",
+  /** Catch-all outlet: commands that don't catch themselves report server failures here */
+  "cmd.failed": "Command /{name} failed: {error}",
 
   // ---------- Command interaction text (notices / pickers) ----------
   "common.current": " (current)",

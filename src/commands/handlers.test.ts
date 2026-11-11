@@ -825,3 +825,40 @@ describe("/think：写哪一层跟着「模型来自哪一级」走", () => {
     expect(texts(notices)).toBe(t("cmd.think.unknown", { level: "turbo", options: "off / on" }));
   });
 });
+
+/**
+ * 失败只有一个出口（`runCommand` 的那个 `catch`）。
+ *
+ * `/load` `/new` `/back` `/mcp` 这几条**没有**自己的 `catch`，而它们的 await 全是网络往返；
+ * 宿主那边 `runCommand(...)` 外面也没有 `catch`（`chat.tsx` 的 `runSubmit` 只有 `finally`），
+ * 漏出去就是 `unhandledRejection` —— 而 `tui/index.tsx` 把它接成 `process.exit(1)`。
+ * 所以这里钉的是：**服务端拒绝 = 一条通知**，不是一条未处理的 rejection。
+ */
+describe("服务端拒绝：一条通知，不是一条未处理的 rejection", () => {
+  it("/load 取不到存档列表 → 通知里说清是哪条命令 + 服务端原话", async () => {
+    const { host, notices } = createHost({
+      listSaved: vi.fn(async () => {
+        throw new Error("connection lost");
+      }),
+    });
+
+    // 不 reject（宿主没有 catch），而是把话说进通知栏
+    await expect(runCommand("load", "/load", host)).resolves.toBeUndefined();
+
+    expect(notices.at(-1)?.tone).toBe("error");
+    expect(notices.at(-1)?.text).toBe(t("cmd.failed", { name: "load", error: "connection lost" }));
+  });
+
+  it("/new 的服务端动作失败 → 同样走通知，不炸进程", async () => {
+    const { host, notices } = createHost({
+      reset: vi.fn(async () => {
+        throw new Error("turn-busy");
+      }),
+    });
+
+    await runCommand("new", "/new", host);
+
+    expect(notices.at(-1)?.tone).toBe("error");
+    expect(notices.at(-1)?.text).toBe(t("cmd.failed", { name: "new", error: "turn-busy" }));
+  });
+});

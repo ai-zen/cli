@@ -1077,6 +1077,18 @@ const HANDLERS: Record<CommandName, CommandHandler> = {
  * 执行上下文就是宿主 + 解析出来的名字/参数/通知出口：`pick` / `confirm` 是宿主自己实现的
  * 异步口 —— 命令层不持有渲染状态，进出都由宿主自己实现。
  *
+ * ## 失败只有一个出口（这里的 `catch`）
+ *
+ * 大部分处理器自己 `catch`：它们要说的是**对症**的一句话（`/save` 的重名、`/migrate` 的
+ * 用户取消）。但「自己记得 catch」不能当判据 —— 宿主那边 `await runCommand(...)` 周围没有
+ * `catch`（`chat.tsx` 的 `runSubmit` 只有 `finally`），漏出去的 rejection 会落到
+ * `tui/index.tsx` 的 `unhandledRejection` 上，那里是 `process.exit(1)`：**一次服务端拒绝就
+ * 等于用户按了退出**，而 `/load` `/new` `/back` 全是网络往返。
+ *
+ * 所以兜底收在这一处，而不是逐条命令记：处理器写过自己的话就走它自己的，没写过的在这里得到
+ * 一句「哪条命令 + 服务端原话」。它不重试、不降级、不改状态 —— 命令失败时状态本来就没动，
+ * 界面下一次重画就是真值。
+ *
  * @param name 命令名（含别名，大小写不敏感；由 `parseCommandInput()` 从输入里取出）
  * @param raw  原始输入（含 `/`），用于参数解析与错误回显
  */
@@ -1094,5 +1106,10 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
     args: parseCommandArgs(raw),
     push: (text, tone = "info") => host.notice(text, tone),
   };
-  await HANDLERS[canonical](context);
+  try {
+    await HANDLERS[canonical](context);
+  } catch (error: any) {
+    // 见上「失败只有一个出口」：这里接的是「没自己 catch」的那几条，不是重复报告
+    host.notice(t("cmd.failed", { name: canonical, error: error?.message ?? error }), "error");
+  }
 }

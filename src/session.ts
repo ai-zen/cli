@@ -2,7 +2,7 @@
  * 会话层 —— 一段会话的客户端实现（**纯客户端**：Agent 在服务端跑）。
  *
  * 它只做三件事：**连接**（借一条进程级连接，不建也不关）、**命令族**（`ChatSessionLike` 那
- * 21 个成员，大多是一行转发）、**把状态交给界面**（`SessionStream.state` 就是那些只读字段的
+ * 27 个成员，大多是一行转发）、**把状态交给界面**（`SessionStream.state` 就是那些只读字段的
  * 来源）。状态机与重连**不在这里**：包里的 `SessionStream`（纯）与 `SessionChannel`（脏）
  * 是唯一实现，三个前端共用 —— 在这里再写一遍的代价不是行数而是漂移。
  *
@@ -652,6 +652,11 @@ export async function createRemoteChatSession(
       agentId: options.sessionId ? undefined : options.agentId,
       sessionId: options.sessionId,
       resume: options.resume,
+      // 契约里有的字段就照递：少写一个，调用方传了也静默不生效 —— 而「静默不生效」是这个
+      // 仓最讨厌的那类错（今天只有 stdio 传 `persist`，它直接调 `open`，所以漏了也看不出来；
+      // 下一个从屏幕层传的人就会踩）
+      ...(options.path !== undefined ? { path: options.path } : {}),
+      ...(options.persist !== undefined ? { persist: options.persist } : {}),
       requestMode: options.requestMode,
     },
     notifier,
