@@ -142,6 +142,14 @@ export function setSdkNoticeSink(sink: SdkNoticeSink | null): void {
  * 落盘版日志器。
  *
  * 写失败要吞掉：日志是旁路能力，磁盘满 / 权限不足时绝不能把 TUI 拖垮。
+ *
+ * **这里的同步写是有意的，不是漏改**：`Logger` 的签名是 `(message: string) => void`，
+ * SDK 调它时不会 `await` —— 换 `fs/promises` 就只能自己排队再后台 flush，代价是进程
+ * 退出前没 flush 的尾行会丢，而那条尾行往往正是排查要看的东西。量级也撑不起队列：写的
+ * 是「每会话几十行」，不是每帧。同样的取舍见 `key-debug.ts`。
+ *
+ * 目录每行都 `mkdirSync` 也不再省：`recursive: true` 对已存在的目录只是一次 `stat`，
+ * 而记住「建过没」的那个标志会在用户中途删掉 `logs/` 时变成「整段日志静默丢失」。
  */
 export function createFileLogger(file: string): Logger {
   const write =
