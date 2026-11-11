@@ -1,10 +1,10 @@
 // 多行文本编辑屏 PromptEditorScreen（调系统编辑器）
 import { useState } from "react";
 import { Box, Text, useApp, useCursor, useInput } from "ink";
-import { spawnSync } from "child_process";
-import { readFileSync, unlinkSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { spawnSync } from "node:child_process";
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { theme } from "../theme.js";
 import { KeyHints } from "../components.js";
 import { usableFrameRows, wrapText } from "../text.js";
@@ -73,7 +73,7 @@ export function PromptEditorScreen({
     const before = current;
     const file = join(tmpdir(), `aizen-edit-${Date.now()}.${ext}`);
     try {
-      writeFileSync(file, before, "utf-8");
+      await writeFile(file, before, "utf-8");
       await suspendTerminal(() => {
         const editor =
           process.env.EDITOR ||
@@ -81,7 +81,7 @@ export function PromptEditorScreen({
           (process.platform === "win32" ? "notepad" : "vi");
         (openEditor ?? defaultOpenEditor)(editor, file);
       });
-      const edited = readFileSync(file, "utf-8").replace(/\r\n/g, "\n").trimEnd();
+      const edited = (await readFile(file, "utf-8")).replace(/\r\n/g, "\n").trimEnd();
       if (edited === before) return; // 未改动：不写盘
       setDraft(edited);
       const failure = await onSave(edited);
@@ -91,7 +91,7 @@ export function PromptEditorScreen({
       setError(t("wiz.openEditorFailed", { error: cause?.message ?? cause }));
     } finally {
       try {
-        unlinkSync(file);
+        await unlink(file);
       } catch {
         /* 忽略 */
       }

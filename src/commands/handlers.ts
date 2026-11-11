@@ -26,7 +26,7 @@
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AgentDefinition, HandoffMode } from "@ai-zen/agents-sdk";
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ChatSessionLike } from "../session/types.js";
@@ -286,7 +286,7 @@ const cmdBack: CommandHandler = async ({ session, push, rows, exit, pick }) => {
 const cmdEditor: CommandHandler = async ({ push, suspendTerminal, setInputText }) => {
   const file = join(tmpdir(), `aizen-input-${Date.now()}.md`);
   try {
-    writeFileSync(file, "", "utf-8");
+    await writeFile(file, "", "utf-8");
     await suspendTerminal(() => {
       const editor =
         process.env.EDITOR ||
@@ -295,13 +295,13 @@ const cmdEditor: CommandHandler = async ({ push, suspendTerminal, setInputText }
       const result = spawnSync(editor, [file], { stdio: "inherit" });
       if (result.error) throw result.error;
     });
-    const text = readFileSync(file, "utf-8").trim();
+    const text = (await readFile(file, "utf-8")).trim();
     if (text) setInputText(text);
   } catch (error: any) {
     push(t("cmd.editor.failed", { error: error?.message ?? error }), "error");
   } finally {
     try {
-      unlinkSync(file);
+      await unlink(file);
     } catch {
       /* 忽略 */
     }
@@ -663,7 +663,7 @@ async function readGlobalInstalledVersion(
   try {
     const root = await readGlobalRoot(spawnImpl);
     if (!root) return undefined;
-    const parsed = JSON.parse(readFileSync(join(root, pkg, "package.json"), "utf-8")) as {
+    const parsed = JSON.parse(await readFile(join(root, pkg, "package.json"), "utf-8")) as {
       version?: string;
     };
     return typeof parsed.version === "string" ? parsed.version : undefined;
