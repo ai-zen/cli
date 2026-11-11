@@ -14,8 +14,11 @@
  * 全都有答案、要么全都没有，并且「谁在哪一刻定下它们」必须有一个人负责。那份职责已经收到
  * `env.ts`（值 + 唯一解析点 + 唯一写点），由 `app.ts` 的 `CliApp` 在启动时钉下。
  *
- * 这个文件因此只剩**纯函数**：给定一个 cwd，项目级路径长什么样。它不再有一个「模块求值那一刻
- * 算一次」的常量 —— 那种常量正是「测试要 `refreshPaths()` 手动刷新全局」的来源。
+ * 这个文件因此只剩**词汇表**加一处纯整形（`mcpConfigOrEmpty`）。
+ *
+ * 以前这里还有一份 `projectDirs(cwd)`：客户端按**自己的** cwd 推项目级路径。它已经删除 ——
+ * 没有调用方了，而且「项目目录在哪」现在只由服务端回答（`workspace.resolve` 之后随快照回来，
+ * 或者 `ConfigPort` 直接给路径）。留着它就是一份会漂的第二答案，而且是**会被抄**的那种。
  *
  * 目录结构：
  *   ~/.ai-zen/                    ← 共享根（`CliEnv.aiZenDir`）
@@ -62,60 +65,6 @@
  *     3. ~/.ai-zen/skills/
  *     4. ~/.agents/skills/
  */
-
-import { join } from "path";
-
-// ==================== 项目级目录（基于 CWD）====================
-
-/**
- * 某个工作目录下的全部项目级路径。
- *
- * **为什么是函数不是常量**：这些路径全部挂在 `process.cwd()` 上，而常量只在**模块求值
- * 那一刻**算一次。于是进程内一旦换目录（测试换临时根、将来服务端一个进程服务多个
- * 工作区），常量就永远指向启动时的那个目录 —— 而且错得很安静：路径存在、读写不报错，
- * 只是全落到别的工作区里。
- *
- * 参数默认 `process.cwd()` 只出现在**这一处**，调用点可以显式传。用户的**主目录**同理不在
- * 这里拼（`~/.ai-zen` 由 `env.ts` 的 `resolveCliEnv()` 给出）。
- */
-export interface ProjectDirs {
-  /** `<cwd>/.ai-zen` */
-  root: string;
-  subAgents: string;
-  skills: string;
-  tools: string;
-  /**
-   * 交接文档目录：`<cwd>/.ai-zen/handoffs/`。
-   *
-   * 交接文档是「人也能直接读」的产物，放在项目内便于随仓库共享/评审；
-   * 目录由交接时的 write 工具或服务落盘时自动创建，无需预先建立。
-   */
-  handoffs: string;
-  mcpConfig: string;
-  /** `<cwd>/.agents`（业界通用规范） */
-  agentsRoot: string;
-  agentsSkills: string;
-  agentsMcpConfig: string;
-  /** `<cwd>/.mcp.json`（业界通用规范优先级最高的一层） */
-  sharedMcpConfig: string;
-}
-
-export function projectDirs(cwd: string = process.cwd()): ProjectDirs {
-  const root = join(cwd, ".ai-zen");
-  const agentsRoot = join(cwd, ".agents");
-  return {
-    root,
-    subAgents: join(root, "sub-agents"),
-    skills: join(root, "skills"),
-    tools: join(root, "tools"),
-    handoffs: join(root, "handoffs"),
-    mcpConfig: join(root, "mcp.json"),
-    agentsRoot,
-    agentsSkills: join(agentsRoot, "skills"),
-    agentsMcpConfig: join(agentsRoot, "mcp.json"),
-    sharedMcpConfig: join(cwd, ".mcp.json"),
-  };
-}
 
 // ==================== MCP 配置的形状 ====================
 
