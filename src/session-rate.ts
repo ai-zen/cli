@@ -11,6 +11,10 @@
  *
  * 两者口径不同，展示上也分开（生成中显示实时，结束后显示本轮平均）——把估算值
  * 和精确值混成一个数字才是真的误导。
+ *
+ * 两个输入都由调用方从**已有的事实**上取：增量文本来自正在拼的那条消息（`content` /
+ * `reasoning_content`），真实用量来自 core 的 `sumUsage()`。这里不认识 chunk 的形状，
+ * 也不接受「服务端算好的一份增量」—— 那类摘录就是同一个概念的第二个定义。
  */
 
 /** 实时速率的滑动窗口：取值越小越「跳」，越大越迟钝 */
@@ -39,34 +43,6 @@ export function estimateTokens(text: string): number {
   return tokens;
 }
 
-/**
- * 从流式 chunk 里取出「本次新增的输出文本」：正文 + 思考 + 工具参数。
- *
- * 三者都是模型实打实吐出来的 token，只统计正文会低估（尤其推理模型的思考段）。
- */
-export function deltaText(chunk: any): string {
-  const delta = chunk?.choices?.[0]?.delta;
-  if (!delta) return "";
-
-  let text = "";
-  const content = delta.content;
-  if (typeof content === "string") {
-    text += content;
-  } else if (Array.isArray(content)) {
-    for (const section of content) {
-      if (section && typeof section.text === "string") text += section.text;
-    }
-  }
-  if (typeof delta.reasoning_content === "string") text += delta.reasoning_content;
-  if (Array.isArray(delta.tool_calls)) {
-    for (const call of delta.tool_calls) {
-      if (typeof call?.function?.name === "string") text += call.function.name;
-      if (typeof call?.function?.arguments === "string") text += call.function.arguments;
-    }
-  }
-  return text;
-}
-
 /** 一次快照：生成中看 `live`，结束后看 `average` */
 export interface RateSample {
   /** 实时速率（token/秒，最近窗口估算）；无数据时为 null */
@@ -90,14 +66,14 @@ interface Sample {
 /**
  * 速率统计器。
  *
- * 生命周期由调用方驱动：`begin()`（一轮开始）→ 若干个 `addDelta()` / `addExact()`
+ * 生命周期由调用方驱动：`begin()`（一轮开始）→ 若干个 `addDelta()` → `setExact()`
  * → `finish()`（一轮结束）。时间一律可注入，便于单测不依赖真实时钟。
  */
 export class TokenRateMeter {
   private samples: Sample[] = [];
   /** 估算的累计输出 token */
   private estimated = 0;
-  /** 真实 `completion_tokens` 累加（多轮工具调用逐轮相加） */
+  /** 真实 `completion_tokens`（本轮累计，由 `setExact()` 给） */
   private exact = 0;
   private startedAt: number | null = null;
   private firstOutputAt: number | null = null;
@@ -129,11 +105,16 @@ export class TokenRateMeter {
     this.trim(now);
   }
 
-  /** 收到真实用量（流末 chunk 的 `usage.completion_tokens`），多轮累加 */
-  addExact(completionTokens: number | undefined | null): void {
+  /**
+   * 本轮的真实产物 token 数（`completion_tokens`）。
+   *
+   * 参数是**本轮累计**而不是增量：调用方拿一次 `sumUsage()` 就能得到，幂等，不必自己逐轮
+   * 累加（逐轮累加要求调用方记住上一轮是多少 —— 又一份要跟上服务端的东西）。
+   */
+  setExact(completionTokens: number | undefined | null): void {
     if (typeof completionTokens !== "number" || !Number.isFinite(completionTokens)) return;
-    if (completionTokens <= 0) return;
-    this.exact += completionTokens;
+    if (completionTokens < 0) return;
+    this.exact = completionTokens;
   }
 
   /**

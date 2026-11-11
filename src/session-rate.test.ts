@@ -1,11 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  IDLE_RATE,
-  MIN_SPAN_MS,
-  TokenRateMeter,
-  deltaText,
-  estimateTokens,
-} from "./session-rate.js";
+import { IDLE_RATE, MIN_SPAN_MS, TokenRateMeter, estimateTokens } from "./session-rate.js";
 
 describe("estimateTokens（按字符估算）", () => {
   it("空文本为零", () => {
@@ -25,43 +19,6 @@ describe("estimateTokens（按字符估算）", () => {
   it("混合文本按字符逐类累加", () => {
     // 2 个中文（1.4）+ 4 个英文（1.0）
     expect(estimateTokens("中文abcd")).toBeCloseTo(2.4, 5);
-  });
-});
-
-describe("deltaText（从流式 chunk 取新增文本）", () => {
-  const wrap = (delta: any) => ({ choices: [{ delta }] });
-
-  it("正文增量", () => {
-    expect(deltaText(wrap({ content: "你好" }))).toBe("你好");
-  });
-
-  it("数组形式的正文增量", () => {
-    expect(
-      deltaText(
-        wrap({
-          content: [
-            { index: 0, text: "ab" },
-            { index: 0, text: "cd" },
-          ],
-        }),
-      ),
-    ).toBe("abcd");
-  });
-
-  it("思考增量也计入（推理模型的思考同样是吐出来的 token）", () => {
-    expect(deltaText(wrap({ reasoning_content: "想一想" }))).toBe("想一想");
-  });
-
-  it("工具调用名与参数增量也计入", () => {
-    expect(
-      deltaText(wrap({ tool_calls: [{ function: { name: "read", arguments: '{"a":1}' } }] })),
-    ).toBe('read{"a":1}');
-  });
-
-  it("无 delta 的 chunk（纯 usage / 心跳）返回空串", () => {
-    expect(deltaText({ choices: [{ delta: {} }] })).toBe("");
-    expect(deltaText({ usage: { completion_tokens: 10 } })).toBe("");
-    expect(deltaText(undefined)).toBe("");
   });
 });
 
@@ -100,7 +57,7 @@ describe("TokenRateMeter（实时 + 本轮平均）", () => {
     meter.begin(0);
     meter.addDelta("x".repeat(40), 1000);
     meter.addDelta("x".repeat(40), 3000);
-    meter.addExact(50);
+    meter.setExact(50);
     meter.finish(3500);
     // 真实 50 tok / 首字到末字 2s
     expect(meter.snapshot(3500)).toEqual({ live: null, average: 25, running: false });
@@ -115,22 +72,25 @@ describe("TokenRateMeter（实时 + 本轮平均）", () => {
     expect(meter.snapshot(3500).average).toBeCloseTo(10, 5);
   });
 
-  it("多轮工具调用：真实用量逐轮累加", () => {
+  it("真实用量是「本轮累计」：同一帧重复给同一个值不会翻倍", () => {
+    // 多轮工具调用时本轮产出 = 各轮之和，由调用方用 `sumUsage()` 一次算出（30 + 20 = 50）。
+    // 若这里做成累加，同一次收尾被观察两帧就会翻成 100 —— 所以语义是**赋值**。
     const meter = new TokenRateMeter();
     meter.begin(0);
     meter.addDelta("x".repeat(40), 1000);
-    meter.addExact(30);
+    meter.setExact(30);
     meter.addDelta("x".repeat(40), 3000);
-    meter.addExact(20);
+    meter.setExact(50);
+    meter.setExact(50);
     meter.finish(3000);
-    expect(meter.snapshot(3000).average).toBeCloseTo(25, 5); // (30+20)/2s
+    expect(meter.snapshot(3000).average).toBeCloseTo(25, 5); // 50 / 2s
   });
 
   it("跨度太短时本轮平均为 null（算不出可信速率）", () => {
     const meter = new TokenRateMeter();
     meter.begin(0);
     meter.addDelta("x".repeat(40), 1000);
-    meter.addExact(10);
+    meter.setExact(10);
     meter.finish(1100);
     expect(meter.snapshot(1100).average).toBeNull();
   });
@@ -146,7 +106,7 @@ describe("TokenRateMeter（实时 + 本轮平均）", () => {
     const meter = new TokenRateMeter();
     meter.begin(0);
     meter.addDelta("x".repeat(40), 1000);
-    meter.addExact(10);
+    meter.setExact(10);
     meter.finish(2000);
     meter.begin(5000);
     expect(meter.snapshot(5000)).toEqual({ live: null, average: null, running: true });

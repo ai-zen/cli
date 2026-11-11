@@ -694,8 +694,8 @@ describe("RemoteChatSession：send 的语义与进程内一致", () => {
     // 又不相等”。假件在这里必须守同样的约束，否则测的是包里的兜底分支（它是为“真的对不上”
     // 准备的：宁可重复也不吞字），而不是正常收尾。
     agent.messages.push({ role: "user", content: "你好" });
-    agent.fire("chunk-parsed", {}, { choices: [{ delta: { content: "答" } }] });
-    agent.fire("chunk-parsed", {}, { choices: [{ delta: { content: "完了" } }] });
+    agent.fire("chunk", { choices: [{ delta: { content: "答" } }] });
+    agent.fire("chunk", { choices: [{ delta: { content: "完了" } }] });
     // 生成中就能读到临时拼出来的正文（屏幕要能滚起来）
     await waitUntil(() => JSON.stringify(opened.messages).includes("答完了"));
     expect(opened.phase).not.toBeNull();
@@ -1041,7 +1041,7 @@ describe("RemoteChatSession：自动迁移的交接方式由用户选", () => {
 });
 
 /**
- * 假子 Agent：带事件总线（服务端会订阅它并转成带 `subAgentId` 的 `chunk-parsed`）。
+ * 假子 Agent：带事件总线（服务端会订阅它并转成带 `subAgentId` 的 `chunk`）。
  *
  * 形状跟 `FakeAgent` 同一个思路 —— 测试就是服务端那侧的「SDK」，手动驱动时序。
  */
@@ -1070,11 +1070,11 @@ function makeSubAgent() {
  * 协议面与服务端那一半都已落地，所以下面几条是真跑的：
  *
  *   1. `AGENT_EVENTS.subAgentStart` / `subAgentEnd`（`sub-agent-start` / `sub-agent-end`）；
- *   2. `AgentChunkParsedEvent.subAgentId?`；
+ *   2. `AgentChunkEvent.subAgentId?`（子 Agent 的原始片带它上线，客户端自己折）；
  *   3. `SESSION_METHODS.subAgentSnapshot`（`session.subAgent.snapshot`）；
  *   4. `SESSION_NOTICE_CODES.subAgentFailed`；
  *   5. 服务端的 `EventBridge` 把 SDK 的 `sub-agent-start` / `sub-agent-end` / 子 Agent 的
- *      `chunk-parsed` 翻译成上面这些。
+ *      `chunk` 翻译成上面这些。
  *
  * 驱动方式是假子 Agent 直接 `fire()`，而不是桩掉事件：`SessionManager.createAgent` 是注入的，
  * 所以「假的只是 SDK 那一侧」，服务端到客户端这段走的是真链路。
@@ -1103,7 +1103,7 @@ describe("RemoteChatSession：子 Agent 栏目", () => {
     agent.fire("sub-agent-start", { subAgent });
     await waitUntil(() => opened.subAgents.length === 1);
 
-    subAgent.events.fire("chunk-parsed", {}, { choices: [{ delta: { content: "数到 3 个" } }] });
+    subAgent.events.fire("chunk", { choices: [{ delta: { content: "数到 3 个" } }] });
 
     // 栏目条目是**整份替换**语义（每次变更都是新对象）：所以断言必须现取，
     // 把 `subAgents[0]` 先存下来再等，等到的永远是那个已经被换掉的旧对象。
@@ -1121,7 +1121,7 @@ describe("RemoteChatSession：子 Agent 栏目", () => {
 
     const subAgent = makeSubAgent();
     agent.fire("sub-agent-start", { subAgent });
-    subAgent.events.fire("chunk-parsed", {}, { choices: [{ delta: { content: "子任务输出" } }] });
+    subAgent.events.fire("chunk", { choices: [{ delta: { content: "子任务输出" } }] });
     await waitUntil(() => JSON.stringify(opened.subAgents).includes("子任务输出"));
 
     // 阶段仍停在「等待 sub_agent_default 返回」
@@ -1487,7 +1487,7 @@ describe("RemoteChatSession：只带用量的增量", () => {
     await waitUntil(() => agent.sent.length === 1);
 
     agent.fire("open");
-    agent.fire("chunk-parsed", {}, { choices: [{ delta: { content: "答案" } }] });
+    agent.fire("chunk", { choices: [{ delta: { content: "答案" } }] });
     // 增量上屏那一刻就能看出有没有多造消息（这一条与下面的收尾快照无关）
     await waitUntil(() =>
       opened.messages.some((message) => message.role === AgentNS.Role.Assistant),
@@ -1496,15 +1496,11 @@ describe("RemoteChatSession：只带用量的增量", () => {
       opened.messages.filter((message) => message.role === AgentNS.Role.Assistant),
     ).toHaveLength(1);
 
-    // 流末 chunk：正文为空、只带用量（客户端拿它校准速率，见 `addExact`）
-    agent.fire(
-      "chunk-parsed",
-      {},
-      {
-        choices: [{ delta: {}, finish_reason: "stop" }],
-        usage: { completion_tokens: 40 },
-      },
-    );
+    // 流末 chunk：正文为空、只带用量（客户端按 `sumUsage()` 校准速率，不读这一片的内容）
+    agent.fire("chunk", {
+      choices: [{ delta: {}, finish_reason: "stop" }],
+      usage: { completion_tokens: 40 },
+    });
     // 服务端那份消息就是真相（真实的 SDK 在跑完时已经有这条 assistant）
     agent.messages = [
       { role: "user", content: "问一句" },

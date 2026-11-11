@@ -34,7 +34,7 @@
  * 所以本文件一次都不直接赋值会话 id，也**不现取门面**：绕过去的代价是「当前 id」与
  * 「门面」在应用里成了一个会漂的配对（重连换了连接之后，两者指向的可以不是同一条）。
  */
-import { AgentNS } from "@ai-zen/agents-core";
+import { AgentNS, sumUsage } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 import {
   MAX_FRAME_BYTES,
@@ -108,6 +108,15 @@ export class RemoteChatSession implements ChatSessionLike {
   private reportedFailure: SessionStreamState["failure"] | null = null;
   /** 速率表正在计的这一轮（收尾时定格一次，别每帧都算） */
   private rateRunning = false;
+  /**
+   * 速率采样游标：上一帧读到的那条消息（下标）与它当时的正文/推理长度。
+   *
+   * 速率只要「这一帧新增了多少字」，而这个事实就在正在拼的那条消息身上 —— 不另开一条
+   * 增量通道，也不存第二份文本，只记两个长度做差。
+   */
+  private rateCursor = { index: -1, text: 0, reasoning: 0 };
+  /** 这一轮开始时整段会话的用量基线（收尾时用差值得到本轮真实产出 token） */
+  private rateBaseline = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   /** 已经显式 `close()` 过：不重复发那一帧 */
   private closed = false;
   /** 已经 `dispose()`：此后不再往界面上推任何东西 */
@@ -169,8 +178,8 @@ export class RemoteChatSession implements ChatSessionLike {
   /**
    * 造一条新的 channel（同一连接、同一套策略）。
    *
-   * 四个回调各答一件应用才知道的事：有没有人能回答服务端的提问、机器码怎么变成句子、
-   * 屏幕该不该重画、原始增量怎么喂给速率表（速率是纯展示口径，不属于状态机）。
+   * 三个回调各答一件应用才知道的事：有没有人能回答服务端的提问、机器码怎么变成句子、
+   * 屏幕该不该重画。
    */
   private newChannel(): SessionChannel {
     return new SessionChannel({
@@ -179,12 +188,6 @@ export class RemoteChatSession implements ChatSessionLike {
         answerQuestion: (event) => this.answerQuestion(event),
         onNotice: (payload) => this.forwardNotice(payload),
         onChange: (immediate) => this.notifyChange(immediate),
-        onDelta: (event) => {
-          // 子 Agent 的 token 也是真从网络来的，一起算；流末 chunk 带真实产物 token 数，
-          // 用它校准（只靠字符估算会偏，中文尤其明显）
-          this.rate.addDelta(event.text + event.reasoning);
-          this.rate.addExact(event.usage?.completionTokens);
-        },
       },
     });
   }
@@ -208,11 +211,43 @@ export class RemoteChatSession implements ChatSessionLike {
       this.reportedFailure = state.failure;
       this.notifier.onNotice(state.failure.message, "error");
     }
+    this.sampleRate(state);
     // 这一轮结束了：速率定格（`live` → 本轮平均），与包里 `finishTurn` 落定同一时机
     if (this.rateRunning && state.status !== "streaming") {
       this.rateRunning = false;
+      // 真实产出 token：本轮新增消息的用量之和（含子 Agent 委派），由 core 的 `sumUsage` 给
+      const used = sumUsage(state.messages);
+      this.rate.setExact(used.completion_tokens - this.rateBaseline.completion_tokens);
       this.rate.finish();
     }
+  }
+
+  /**
+   * 生成中采样一次速率。
+   *
+   * 数据源就是**正在拼的那条消息**（本轮最后一条 assistant）：它的正文与推理就地增长，
+   * 这一帧比上一帧多出来的那一段就是要计的字数。为什么不逐片看原始 chunk：那要求这一层
+   * 认识 `choices[0].delta` 的形状，于是折 chunk 的规则在这里出现了第二份 —— 而屏幕上
+   * 的字本来就来自这条消息，读它不需要任何转换。
+   */
+  private sampleRate(state: SessionStreamState): void {
+    if (!this.rateRunning) return;
+    const index = state.messages.length - 1;
+    if (index < 0) return;
+    const message = state.messages[index]!;
+    if (message.role !== AgentNS.Role.Assistant) return;
+
+    const text = typeof message.content === "string" ? message.content : "";
+    const reasoning = message.reasoning_content ?? "";
+    // 换了一条消息（工具轮次之间 / 收尾对齐后）：游标从头算
+    if (this.rateCursor.index !== index) this.rateCursor = { index, text: 0, reasoning: 0 };
+    // 变短只可能是快照对齐把内容换成了服务端那份（更短的那份不是新增），不计、只跟随
+    const fromText = text.length > this.rateCursor.text ? this.rateCursor.text : text.length;
+    const fromReasoning =
+      reasoning.length > this.rateCursor.reasoning ? this.rateCursor.reasoning : reasoning.length;
+    const added = text.slice(fromText) + reasoning.slice(fromReasoning);
+    if (added) this.rate.addDelta(added);
+    this.rateCursor = { index, text: text.length, reasoning: reasoning.length };
   }
 
   // ==================== 对外面（ChatSessionLike） ====================
@@ -258,6 +293,8 @@ export class RemoteChatSession implements ChatSessionLike {
       if (content === null) return; // 图片全被降级/过滤，且已给过说明
       this.rate.begin();
       this.rateRunning = true;
+      this.rateCursor = { index: -1, text: 0, reasoning: 0 };
+      this.rateBaseline = sumUsage(this.messages);
       this.pendingTurnId = await this.channel.send(content);
     } catch (error: any) {
       this.rateRunning = false;
