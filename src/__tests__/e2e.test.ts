@@ -36,7 +36,14 @@ let shimDir: string | null = null;
  * 这里 stub 的是**外部工具**（和 stub 一个 HTTP 端点同一种做法）：生产代码一行不改，
  * 被测的仍然是「cli → 发现文件 → 真服务端」这条链。
  *
- * 只支持 POSIX：Windows 上 PATH 查找要 `.cmd`，而本仓的 e2e 本来就跑在类 Unix 上。
+ * ## 两个平台各放一个壳子，逻辑只有一份
+ *
+ * `npx` 这个名字在两个平台上是**不同的东西**：POSIX 上它是个无扩展名的可执行文件，
+ * Windows 上 PATH 查找走 `PATHEXT`、命中的是 `npx.cmd`。所以两个壳子都写（各两行），
+ * 「吃掉 `-y` 与包坐标」那一步统一落在 `npx-shim.cjs` 里 —— 一份实现，两个入口。
+ *
+ * 少了 `npx.cmd` 的症状不是报错，而是**静默落到真的 npx 上**：它去 registry 找一个从未
+ * 发布过的版本，十秒后 CLI 说「服务端没能起来」—— 看起来像服务端的问题。
  */
 function npxShimDir(): string {
   if (shimDir) return shimDir;
@@ -52,10 +59,36 @@ function npxShimDir(): string {
   };
   const entry = join(dirname(packageJsonPath), bin["agents-server"]);
 
-  // `shift 2` 吃掉 `-y` 与包坐标，其余参数（`serve --ai-zen-dir …`）原样交给服务端
-  const shim = join(dir, "npx");
-  writeFileSync(shim, `#!/bin/sh\nshift 2\nexec "${process.execPath}" "${entry}" "$@"\n`, "utf-8");
-  chmodSync(shim, 0o755);
+  /**
+   * 真正的壳子：参数形如 `-y <包坐标> serve --ai-zen-dir <dir>`，前两个归 npm，
+   * 之后全是服务端自己的。`stdio: inherit` + 等子进程退出再退，语义与 npx 一致
+   * （服务端是 detached 起来的，这一层只是它的父进程）。
+   */
+  const shimJs = join(dir, "npx-shim.cjs");
+  writeFileSync(
+    shimJs,
+    [
+      "// 由 src/__tests__/e2e.test.ts 生成：把 `npx -y <包> …` 转成「跑仓库里那个服务端」",
+      'const { spawn } = require("node:child_process");',
+      `const ENTRY = ${JSON.stringify(entry)};`,
+      "// [node, shim, -y, 包坐标, ...服务端自己的参数]",
+      'const child = spawn(process.execPath, [ENTRY, ...process.argv.slice(4)], { stdio: "inherit" });',
+      'child.on("exit", (code) => process.exit(code === null ? 0 : code));',
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const posix = join(dir, "npx");
+  writeFileSync(posix, `#!/bin/sh\nexec "${process.execPath}" "${shimJs}" "$@"\n`, "utf-8");
+  chmodSync(posix, 0o755);
+
+  // Windows：`%*` 原样转发（含引号），PATH 查找会命中它而不是 npm 自带的 npx.cmd
+  writeFileSync(
+    join(dir, "npx.cmd"),
+    `@echo off\r\n"${process.execPath}" "${shimJs}" %*\r\n`,
+    "utf-8",
+  );
 
   shimDir = dir;
   return dir;
