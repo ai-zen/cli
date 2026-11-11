@@ -11,6 +11,13 @@
  * `--new` 是 TUI 路径上的修饰项，不改变模式判定：它只表示「跳过续接、开一条新会话」。
  * 出现在 stdio 路径上时被忽略（stdio 本就是一次性会话，不存在续接）。
  *
+ * `--server <url>` 同样是修饰项（它答的是「连哪台服务端」）：三条**会连服务端**的路径
+ * （stdio / TUI / `--server-status`）都把它带在结果上，由入口交给 `config.ts`（本进程事实的
+ * 组装根）与环境变量一起定优先级；再往后接什么（发现文件 `run/server.json`、凭证文件
+ * `run/token`）由 `@ai-zen/agents-client` 决定。本模块只负责「把它从 argv 里认出来」，
+ * **不**校验地址、**不**读环境变量 —— 那两件事都归 `config.ts`（`serverUrlError` /
+ * `explicitServerUrl`）。
+ *
  * 注意：**shell 钩子不属于纯 stdio**。钩子的发起场景是「人坐在交互终端前敲错了命令」，
  * 因此它走 `ai --tui --new "$@"` 进 TUI，并把原命令作为首条消息自动发送 —— 写成
  * `ai "$@"` 就会让钩子会话落到管道模式，那不是这个场景要的。
@@ -44,13 +51,14 @@ export type Invocation =
   | { kind: "help" }
   | { kind: "version" }
   /** `--server-status`：打印常驻服务进程的状态（诊断用，**不**拉起、不进界面） */
-  | { kind: "server-status" }
-  | { kind: "stdio"; instruction: string; save: boolean }
+  | { kind: "server-status"; serverUrl?: string }
+  | { kind: "stdio"; instruction: string; save: boolean; serverUrl?: string }
   /**
    * `initialPrompt`：进 TUI 后**自动作为首条消息**发送的内容（shell 钩子用）
    * `newSession`：`--new` 要求**开新会话**，跳过「续接该目录上一轮对话」
+   * `serverUrl`：`--server <url>`（显式地址）；没给就没有这个字段，地址交给环境变量 / 发现文件
    */
-  | { kind: "tui"; initialPrompt?: string; newSession?: boolean }
+  | { kind: "tui"; initialPrompt?: string; newSession?: boolean; serverUrl?: string }
   /** `--tui` 明确要求交互界面，但终端不支持：报错退出，**绝不**降级成 stdio */
   | { kind: "tui-rejected" };
 
@@ -73,6 +81,9 @@ export function decideMode(tty: TtyState, hasArgs: boolean): RunMode {
  *
  * 选项在遇到 `--` 之后一律视为位置参数（便于传入以 `-` 开头的提示词）。
  * 未知的 `-x` 选项不报错，按位置参数处理，避免误伤以 `-` 开头的正常提问。
+ *
+ * `--server <url>` 只被**认出来**：合法性不在这里判（那是 `config.ts` 的 `serverUrlError`
+ * 在启动早期做的事），否则同一条命令会在两处报两种错。
  */
 export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
   const positional: string[] = [];
@@ -82,9 +93,18 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
   let wantServerStatus = false;
   let wantTui = false;
   let wantNew = false;
+  /**
+   * `--server` 的值。`undefined` = 没给过；空串 = 给了但没下一个参数（拼错的调用）。
+   *
+   * 两种情形必须分开：前者是「走默认（环境变量 → 发现文件）」，后者是「参数少了一个值」
+   * —— 静默当成「没给」的话，`ai --server` 会连回本机，而用户以为他指定了远端。
+   */
+  let serverUrl: string | undefined;
   let passthrough = false;
 
-  for (const arg of argv) {
+  // 下标循环：`--server` 要吃掉**下一个**参数当值（`for…of` 拿不到它）
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
     if (passthrough) {
       positional.push(arg);
       continue;
@@ -95,6 +115,13 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
     }
     if (arg === "--save") {
       save = true;
+      continue;
+    }
+    if (arg === "--server") {
+      // 值就是紧跟的那一个（以 `-` 开头也照收：`wss://…` 之外不该有人填这种，
+      // 但「值是不是合法地址」由 config.ts 的早期校验判，不在这里拦）
+      serverUrl = argv[index + 1] ?? "";
+      index += 1;
       continue;
     }
     if (arg === "--tui") {
@@ -129,8 +156,9 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
     if (action === undefined) return { kind: "hook", action: "usage" };
     return { kind: "hook", action: "usage", invalidAction: action };
   }
-  // 诊断动作：只读发现文件，不拉起服务端 —— 所以优先级高于 help/version（要的就是当前状态）
-  if (wantServerStatus) return { kind: "server-status" };
+  // 诊断动作：只读发现文件（或直接问显式地址），不拉起服务端 —— 所以优先级高于
+  // help/version（要的就是当前状态）
+  if (wantServerStatus) return { kind: "server-status", serverUrl };
   if (wantHelp) return { kind: "help" };
   if (wantVersion) return { kind: "version" };
   // `ai help` / `ai version`：单词形式与 `--help` / `--version` 等价。
@@ -148,11 +176,12 @@ export function resolveInvocation(argv: string[], tty: TtyState): Invocation {
       kind: "tui",
       initialPrompt: instruction || undefined,
       newSession: wantNew || undefined,
+      serverUrl,
     };
   }
 
   const mode = decideMode(tty, positional.length > 0);
   // `--new` 只在 TUI 路径有意义；走到 stdio（脚本 / 管道）时静默忽略
-  if (mode === "tui") return { kind: "tui", newSession: wantNew || undefined };
-  return { kind: "stdio", instruction, save };
+  if (mode === "tui") return { kind: "tui", newSession: wantNew || undefined, serverUrl };
+  return { kind: "stdio", instruction, save, serverUrl };
 }

@@ -23,9 +23,13 @@ Configuration is stored under the shared root directory (determined by `AI_ZEN_D
 
 Everything else (`config.json`, `agents/`, `sub-agents/`, `skills/`, `tools/`, `mcp.json`, `workspaces/`) is decided by the server and the SDK; this process holds no constants for them.
 
+The **explicit** half of "which server / which key" also lives in `src/config.ts` (`--server` / `AI_ZEN_SERVER_URL`, `AI_ZEN_SERVER_TOKEN`): this process only pulls those two explicit values out of argv / env and hands them to the client. Parsing the address and the credential, their precedence, and the default route (`$AI_ZEN_DIR/run/server.json` + `$AI_ZEN_DIR/run/token`) all belong to `resolve-target.ts` in `@ai-zen/agents-client`. The server listens on loopback only; reaching it from another machine takes a tunnel or a reverse proxy — see `agents/docs/en/deploy.md` (the deployment doc in the ai-zen workspace).
+
 ### Environment variables
 
 - **`AI_ZEN_DIR`**: overrides the shared root directory (default `~/.ai-zen`). CLI runtime data is written to `$AI_ZEN_DIR/cli/`, and shared resources (agents, skills, tools, MCP, etc.) are written to `$AI_ZEN_DIR/`.
+- **`AI_ZEN_SERVER_URL`**: explicit server address, the same as `--server <url>` (`--server` wins when both are given); without it the discovery file `$AI_ZEN_DIR/run/server.json` is used.
+- **`AI_ZEN_SERVER_TOKEN`**: credential for an explicit server, taking precedence over `$AI_ZEN_DIR/run/token`. There is deliberately **no** `--token` flag: argv ends up in `ps` and in your shell history.
 
 ## config.json structure
 
@@ -120,6 +124,9 @@ Each Agent binds its model in its own definition file — the **second of the th
 │   └── my-tool.js
 ├── mcp.json                  ← MCP config (shared)
 ├── mcp-oauth/                ← MCP OAuth tokens (shared, not yet implemented)
+├── run/                      ← Written by the resident server: how to reach it
+│   ├── server.json           ← Discovery: host / port of the server that is running
+│   └── token                 ← Credential (read or created by the server, 0600)
 └── logs/                     ← Diagnostics (sdk.log: SDK global log, 2MB rotation)
 
 /path/to/project/

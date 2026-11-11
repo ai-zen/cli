@@ -5,8 +5,9 @@
  *
  * 连接层已经下沉成 `@ai-zen/agents-client` 了，但它刻意不读进程级全局：配置根
  * （`AI_ZEN_DIR`）与自己这个进程的身份（`CLIENT_INFO` / `CLI_VERSION`）都是**应用级**事实
- * —— 库拍不了这个板，否则桌面端拉起服务端时会自称是 CLI。于是剩下这两件小事归 CLI：
- * 把那两个值读一次，绑进两个函数里。
+ * —— 库拍不了这个板，否则桌面端拉起服务端时会自称是 CLI。于是剩下这几件小事归 CLI：
+ * 把那两个值读一次，绑进两个函数里；外加把「显式地址与凭证从哪来」接上去（读点在
+ * `config.ts`，见下一节）。
  *
  * 除此之外这里只有透传（`export * from "@ai-zen/agents-client"`）：**不是**第二份实现，
  * 定义仍然只有包里那一处。加东西时先想清楚它属于「CLI 的组装根」还是「连接层」，
@@ -23,6 +24,15 @@
  * {@link createServerConnection} 造它，谁要说话就借它（`connection.client()` 每次判活、
  * 断了自建，见包里的 `transport/connection.ts`）。靠「各自记得不要多造一条」维持不住 ——
  * 多一个组装点就会破一次。
+ *
+ * ## 显式地址与凭证（`--server` / `AI_ZEN_SERVER_URL`、`AI_ZEN_SERVER_TOKEN`）
+ *
+ * 这两个值的**读点**在 `../config.js`（本进程事实的组装根，与 `AI_ZEN_DIR` 同一处）：它们
+ * 是 argv / env 里的事实，不属于连接层，也不属于包里。这里只负责把它们递给包里那两个入
+ * 口（`ServerConnection` 的 `serverUrl` / `serverToken`、`ensureServer` 的同名项）。
+ *
+ * 为什么必须递到**同一个**地方：地址一旦可指向远端，凭证就不能只从本地文件读（反之亦然）。
+ * 少递一个的症状是「连得上、握手被拒」—— 而那比连不上难查得多。
  */
 
 import {
@@ -32,7 +42,7 @@ import {
   type ConfigPort,
   type ServerClient,
 } from "@ai-zen/agents-client";
-import { AI_ZEN_DIR } from "../config.js";
+import { AI_ZEN_DIR, explicitServerToken, explicitServerUrl } from "../config.js";
 import { CLIENT_INFO } from "./client-info.js";
 
 export * from "@ai-zen/agents-client";
@@ -63,6 +73,10 @@ export async function connectToServer(): Promise<ServerClient> {
     aiZenDir: AI_ZEN_DIR,
     clientInfo: CLIENT_INFO,
     serverPackage: SERVER_PACKAGE,
+    // 显式地址 + 显式凭证：包里看到地址就**只连不拉起**（D10），凭证优先级也由包里的
+    // `resolve-target.ts` 决定（显式 > `<aiZenDir>/run/token`）—— 这里只负责递值
+    serverUrl: explicitServerUrl(),
+    serverToken: explicitServerToken(),
   });
   return client;
 }
@@ -83,6 +97,12 @@ export function createServerConnection(): ServerConnection {
     aiZenDir: AI_ZEN_DIR,
     clientInfo: CLIENT_INFO,
     serverPackage: SERVER_PACKAGE,
+    // 显式地址 / 凭证透传给 `ensureServer`：本类不自己解析地址（「连哪儿 + 拿什么进门」只该
+    // 有一个解析点），也不自己决定拉起与否 —— 两个决定都在包里。
+    //
+    // 不传时（`undefined`）语义就是「走默认」：读发现文件、凭证读 `<aiZenDir>/run/token`。
+    serverUrl: explicitServerUrl(),
+    serverToken: explicitServerToken(),
   });
 }
 

@@ -253,8 +253,9 @@ export const zh: Record<string, string> = {
   "cli.help.usage":
     "\n用法:\n  ai                      进入交互式界面（TUI，需 stdin/stdout 为 TTY）\n  ai <提示词>              以纯 stdio 模式提问，结果写入 stdout\n  cat 文件 | ai “总结要点”  通过管道传入内容，参数作为指令\n  ai hook install         安装 shell 兜底钩子（命令不存在时转发给 AI）\n  ai hook uninstall       卸载 shell 兜底钩子",
   "cli.help.options":
-    "\n选项:\n  --save                  保存本次对话到存档（默认不落盘）\n  --tui [提示词…]          强制进入交互界面，提示词作为首条消息自动发送（shell 钩子用）\n  --new                   进入交互界面时开新会话，不续接上一轮对话\n  -h, --help              显示本帮助\n  -v, --version           显示版本号\n  --server-status         打印常驻服务进程的状态（JSON，未运行退出码 1）",
-  "cli.help.notes": "\n说明:\n  stdio 模式无任何交互，结果走 stdout、日志走 stderr，成功退出码 0。",
+    "\n选项:\n  --save                  保存本次对话到存档（默认不落盘）\n  --tui [提示词…]          强制进入交互界面，提示词作为首条消息自动发送（shell 钩子用）\n  --new                   进入交互界面时开新会话，不续接上一轮对话\n  --server <url>          连到显式指定的服务端（如 wss://example.com/ai-zen；也可用 AI_ZEN_SERVER_URL）\n  -h, --help              显示本帮助\n  -v, --version           显示版本号\n  --server-status         打印常驻服务进程的状态（JSON，未运行退出码 1）",
+  "cli.help.notes":
+    "\n说明:\n  stdio 模式无任何交互，结果走 stdout、日志走 stderr，成功退出码 0。\n  远端凭证走 AI_ZEN_SERVER_TOKEN，不进命令行（argv 会出现在 ps 输出与 shell 历史里）。",
 
   // ---------- `ai hook install / uninstall`（非 TUI 输出，同 help 一样在分支内先初始化语言） ----------
   "cli.hookUsage": "用法: ai hook install|uninstall",

@@ -23,9 +23,13 @@ outline: deep
 
 其余位置（`config.json`、`agents/`、`sub-agents/`、`skills/`、`tools/`、`mcp.json`、`workspaces/`）由服务端与 SDK 决定，本进程不持常量。
 
+「连哪台服务端 / 拿什么进门」的**显式**那一半也收在 `src/config.ts`（`--server` / `AI_ZEN_SERVER_URL`、`AI_ZEN_SERVER_TOKEN`）：本进程只把 argv / env 里那两份显式值捞出来递给客户端，地址与凭证的解析、优先级、默认路（`$AI_ZEN_DIR/run/server.json` + `$AI_ZEN_DIR/run/token`）全归 `@ai-zen/agents-client` 的 `resolve-target.ts`。服务端只监听 loopback，跨机器访问靠隧道或反向代理，详见 `agents/docs/zh/deploy.md`（ai-zen 工作区里的部署文档）。
+
 ### 环境变量
 
 - **`AI_ZEN_DIR`**：覆盖共享根目录（默认 `~/.ai-zen`）。CLI 运行时数据写入 `$AI_ZEN_DIR/cli/`，共享资源（agents、skills、tools、mcp 等）写入 `$AI_ZEN_DIR/`。
+- **`AI_ZEN_SERVER_URL`**：显式服务端地址，与 `--server <url>` 同义（两者都给时 `--server` 胜）；不给就走发现文件 `$AI_ZEN_DIR/run/server.json`。
+- **`AI_ZEN_SERVER_TOKEN`**：显式服务端的凭证，优先于 `$AI_ZEN_DIR/run/token`。**故意没有** `--token` 参数：argv 会被 `ps` 与 shell 历史留下。
 
 ## config.json 结构
 
@@ -121,6 +125,9 @@ outline: deep
 │   └── my-tool.js
 ├── mcp.json                  ← MCP 配置（共享）
 ├── mcp-oauth/                ← MCP OAuth token（共享，暂未实现）
+├── run/                      ← 常驻服务端写的「怎么找到它」
+│   ├── server.json           ← 服务发现：服务端此刻在哪个端口
+│   └── token                 ← 凭证（服务端启动时读或生成，0600）
 └── logs/                     ← 诊断日志（sdk.log：SDK 全局日志，2MB 轮转）
 
 /path/to/project/

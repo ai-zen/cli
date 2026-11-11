@@ -148,6 +148,14 @@ class FakeAgent implements AgentLike {
 }
 
 let dir: string;
+/**
+ * 用例自己起的那台 Daemon 的凭证（两边钉同一个值）。
+ *
+ * 服务端现在要求 `hello.params.token` 必填（D2 / D3），而这里用 `SocketServerClient.connect`
+ * **直连**（不走 `ensureServer` / `resolveTarget` 那套「读文件」的路）。所以两份值都得自己递：
+ * 注入给 Daemon、发给自己。这不是放宽鉴权，只是把正确的串放到正确的位置。
+ */
+const TEST_TOKEN = "cli-stdio-test-token";
 let daemon: Daemon | null = null;
 let manager: SessionManager | null = null;
 let connection: SocketServerClient | null = null;
@@ -165,6 +173,8 @@ beforeEach(async () => {
     aiZenDir: dir,
     port: 0,
     version: "0.0.0-test",
+    // 与下面 `connect()` 发的那一串一致（见 TEST_TOKEN）
+    token: TEST_TOKEN,
     handlers: {
       ...createSessionHandlers({
         manager,
@@ -187,6 +197,7 @@ beforeEach(async () => {
   connection = await SocketServerClient.connect({
     address: { host: "127.0.0.1", port: daemon.port },
     client: clientInfo,
+    token: TEST_TOKEN,
   });
   workspaceId = "";
 });

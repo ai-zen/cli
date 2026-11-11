@@ -4,7 +4,13 @@ import { installHook, uninstallHook } from "./hook.js";
 import { resolveInvocation } from "./mode.js";
 import { CLIENT_INFO } from "./server-client/index.js";
 import { readServerStatus } from "./server-client/index.js";
-import { AI_ZEN_DIR } from "./config.js";
+import {
+  AI_ZEN_DIR,
+  explicitServerToken,
+  explicitServerUrl,
+  serverUrlError,
+  setServerUrlFlag,
+} from "./config.js";
 import { runStdio } from "./stdio.js";
 import { CLI_VERSION } from "./version.js";
 import { initLocale } from "./i18n/preferences.js";
@@ -44,6 +50,7 @@ process.stdout.on("error", (error: NodeJS.ErrnoException) => {
  *   ai hook uninstall       → 卸载 shell 兜底钩子
  *   ai --help / --version   → 帮助 / 版本
  *   ai --server-status      → 常驻服务进程状态（JSON，未运行退出码 1）
+ *   ai --server wss://… …   → 连到显式指定的服务端（地址也可放在 `AI_ZEN_SERVER_URL`）
  *
  * 模式判定与参数解析集中在 ./mode.ts（纯函数，单测覆盖），本文件只做分发。
  */
@@ -70,6 +77,36 @@ async function main(): Promise<void> {
   };
   const invocation = resolveInvocation(process.argv.slice(2), tty);
 
+  /**
+   * 显式服务端地址（`--server` > `AI_ZEN_SERVER_URL`）与凭证（`AI_ZEN_SERVER_TOKEN`）的**落地
+   * 点**，而且就在分发之前。
+   *
+   * 为什么两件事都要在这里：
+   *   1. **落地** —— argv 晚于模块求值，`config.ts` 无法自己读它；后面三条会连服务端的路径
+   *      （stdio / TUI / `--server-status`）全都从 `config.ts` 取地址，不再各自看 argv。
+   *   2. **校验** —— 地址拼错时唯一能把它说清楚的地方就是这里（D12）。让它飘进
+   *      `ensureServer` / `readServerStatus`，用户看到的会是「连不上某个 host」或一条栈，
+   *      而真正的原因是他把 `wss://example.com/ai-zen` 敲成了 `wss:/example.com`。
+   *
+   * 只对三条**会连服务端**的路径生效：`--help` / `--version` / `hook` 不连服务端，不该被一个
+   * 与本命令无关的配置拖住（`AI_ZEN_SERVER_URL` 写错时，帮助仍须能出来）。
+   */
+  if (
+    invocation.kind === "stdio" ||
+    invocation.kind === "tui" ||
+    invocation.kind === "server-status"
+  ) {
+    setServerUrlFlag(invocation.serverUrl);
+    const invalidServerUrl = serverUrlError();
+    if (invalidServerUrl) {
+      // 退出码 2 = 「命令本身用错了」（与 `--tui` 非 TTY / stdio 无输入一致）；
+      // 1 留给「已经跑起来之后失败」
+      process.stderr.write(`ai: ${invalidServerUrl}\n`);
+      process.exitCode = 2;
+      return;
+    }
+  }
+
   switch (invocation.kind) {
     case "help":
       // 帮助是用户可见的终端文案，跟随界面语言（偏好 / 系统语言）；其余非 TUI 路径（stdio）不初始化语言
@@ -82,11 +119,16 @@ async function main(): Promise<void> {
       return;
 
     case "server-status": {
-      // 只读发现文件 + 一次 status 调用，**不**拉起服务端：这个命令是用来诊断的，
-      // 顺手拉一个起来会让答案失去意义。输出 JSON 供脚本消费（无需 i18n）。
+      // 只读发现文件（或直接问显式地址）+ 一次 status 调用，**不**拉起服务端：这个命令是用来
+      // 诊断的，顺手拉一个起来会让答案失去意义。输出 JSON 供脚本消费（无需 i18n）。
+      //
+      // 显式地址必须递进去：远程场景下本机根本没有那份发现文件，不递就永远回
+      // `no descriptor` —— 一句既不是「没在跑」也不是「连不上」的话。
       const status = await readServerStatus({
         aiZenDir: AI_ZEN_DIR,
         clientInfo: CLIENT_INFO,
+        serverUrl: explicitServerUrl(),
+        serverToken: explicitServerToken(),
       });
       process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
       process.exitCode = status.running ? 0 : 1;

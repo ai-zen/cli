@@ -8,9 +8,13 @@
  * 走 `config.*` / `agent.*`。本进程不提供任何本地缺省值：一个「忘了注入就读本机」的兜底
  * 是最坏的一种 —— 静默读客户端本机、写却写到服务端，界面上一切正常。
  *
- * 本文件剩下的东西只有两类：
+ * 本文件剩下的东西只有三类：
  *   - 路径常量（`AI_ZEN_DIR` 等）与 `projectDirs()`：**本进程**的目录布局，给
  *     「SDK 日志落盘」「hook 安装」「临时目录隔离」这些真正本地的事情用；
+ *   - **显式**服务端地址与凭证（`--server` / `AI_ZEN_SERVER_URL`、`AI_ZEN_SERVER_TOKEN`）：
+ *     同样是「本进程的事实」，argv / env 只在**这一处**读（用法与优先级见「服务端地址与
+ *     凭证」那一节）；它之后接什么由 `@ai-zen/agents-client` 的 `resolve-target.ts` 决定，
+ *     本文件不重复实现那套判据；
  *   - MCP 配置的类型（`McpScope` / `McpConfig` / `McpReadResult`）：与协议同形的词汇表，
  *     编辑屏与命令层拿它做数据整形（不吃盘）。
  *
@@ -62,6 +66,9 @@
  */
 
 import { join } from "path";
+// 地址形状的**唯一**定义处（四种 scheme、IPv6、缺省端口）—— 校验不在这里再写一份，
+// 否则「启动时能过、连的时候报错」这种两边判据分叉的错必然出现
+import { parseServerUrl } from "@ai-zen/agents-client";
 
 // ==================== 根目录 ====================
 
@@ -92,6 +99,94 @@ function resolveRoot(): string {
  * 服务端取。
  */
 export let AI_ZEN_DIR = resolveRoot();
+
+// ==================== 服务端地址与凭证 ====================
+
+/**
+ * 「连哪台服务端 + 拿什么进门」里**显式的那一半**（`--server` / `AI_ZEN_SERVER_URL`、
+ * `AI_ZEN_SERVER_TOKEN`）。与 `AI_ZEN_DIR` 放在同一个文件，理由也一样：它们是**本进程的
+ * 事实**，只该有一处给出答案。
+ *
+ * ## 这里只捞「显式」的两级
+ *
+ * 地址：`--server` > `AI_ZEN_SERVER_URL` > 没有；凭证：`AI_ZEN_SERVER_TOKEN` > 没有。
+ * 「没有」之后接什么（发现文件 `run/server.json`、凭证文件 `run/token`）不是本文件的事 ——
+ * 那是 `@ai-zen/agents-client` 的 `resolve-target.ts`，它才是「连哪儿 + 拿什么进门」的
+ * 唯一解析点。这里只把 argv / env 里那两份显式值捞出来递给它，判据不重复实现。
+ *
+ * ## 为什么 `--server` 是「存进来」而不是「模块求值时读一次」
+ *
+ * argv 在模块求值**之后**才解析（`index.ts` 先 import 本模块，再 `resolveInvocation`），
+ * 所以它没有 `AI_ZEN_DIR` 那种「模块顶层算一次」的可能，只能有一个明确的注入点。
+ *
+ * ## 为什么**没有** `--token`（只有 `AI_ZEN_SERVER_TOKEN`）
+ *
+ * 地址不是秘密（进 argv 无所谓），凭证是：`ps` 的输出与 shell 历史都会留下 argv。
+ * 服务端拉起时同理（那边的注释也写着凭证不进命令行）—— 命令行里永远不给凭证留口子。
+ */
+let serverUrlFlag: string | undefined;
+
+/**
+ * 记下 argv 里的 `--server <url>`（启动早期由 `index.ts` 从 `mode.ts` 的解析结果传进来）。
+ *
+ * `undefined` = 这次没给 `--server`，地址退回 `AI_ZEN_SERVER_URL`。
+ * 空串 = 「`--server` 给了但没给值」（`ai --server` 结尾），那是拼错的调用，**不**当成
+ * 「没给」：交给 {@link serverUrlError} 说一句对症的话，而不是静默地连回本机。
+ */
+export function setServerUrlFlag(url: string | undefined): void {
+  serverUrlFlag = url;
+}
+
+/** 显式地址：`--server` > `AI_ZEN_SERVER_URL` > 没有（没有 = 走发现文件） */
+export function explicitServerUrl(): string | undefined {
+  if (serverUrlFlag !== undefined) return serverUrlFlag;
+  return nonBlank(process.env.AI_ZEN_SERVER_URL);
+}
+
+/**
+ * 显式凭证：`AI_ZEN_SERVER_TOKEN`；没设就返回 `undefined`，让客户端回落到
+ * `<aiZenDir>/run/token`。
+ *
+ * 「不传」与「传空串」的区别是实的：包里的 `resolveToken` 第一句就是「显式凭证非空才算」，
+ * 空串会落到下一级（读文件）；而服务端对「长度为 0 的凭证」只会回 `unauthorized`。
+ * 所以空白一律算「没设」，不把一格空格当成一把锁。
+ */
+export function explicitServerToken(): string | undefined {
+  return nonBlank(process.env.AI_ZEN_SERVER_TOKEN);
+}
+
+/**
+ * 显式地址的**早期校验**（D12）：不合法时返回一句人话，合法（或压根没给）返回 `null`。
+ *
+ * 为什么必须在启动早期判：地址拼错时，唯一能把它说清楚的地方是入口。让它飘到
+ * `ensureServer` / `readServerStatus` 那一层，用户看到的会是「连不上 example.com:80」或者
+ * 一条栈 —— 而真正的原因是他把 `wss://example.com/ai-zen` 敲成了 `wss:/example.com`。
+ *
+ * 判据用包里导出的 `parseServerUrl`（四种 scheme 的映射、IPv6 方括号、缺省端口都在那里），
+ * 不在这里写第二份：两套判据分叉的症状是「启动时过了、连的时候报错」。
+ *
+ * @returns 一句带原值的人话（由入口写到 stderr）；没有问题返回 `null`
+ */
+export function serverUrlError(): string | null {
+  const raw = explicitServerUrl();
+  if (raw === undefined) return null;
+  // `--server` 给了却没给值：先给一句对症的话（要用户去猜 `"" 不是合法的服务端地址` 太刻薄）
+  if (raw.trim() === "") {
+    return "--server 需要一个地址（例：--server wss://example.com/ai-zen）";
+  }
+  try {
+    parseServerUrl(raw);
+    return null;
+  } catch (error) {
+    return (error as Error).message;
+  }
+}
+
+/** 空白 = 没有（`AI_ZEN_SERVER_URL=""` 是「别用它」的常见写法，不是一条非法地址） */
+function nonBlank(value: string | undefined): string | undefined {
+  const trimmed = value?.trim() ?? "";
+  return trimmed === "" ? undefined : trimmed;
+}
 
 // ==================== 项目级目录（基于 CWD）====================
 

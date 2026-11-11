@@ -31,7 +31,41 @@ The CLI has two **non-mixing** run modes, chosen automatically from the launch a
 
 In pure stdio mode, logs / progress / tool activity / error summaries all go to **stderr**; stdout carries the result only (no ANSI, no emoji prefix, no spinner). Exit code is `0` on success and non-zero on failure. Nothing is persisted by default (no conversation archive).
 
-Pure stdio also **runs on the server**: `ai "…"` makes sure the local daemon is up (spawning one if needed) and opens a **one-off session** for that single turn — same agent assembly, tools, MCP connections and context guard as the TUI, and the same archive location (`workspaces/<workspaceId>/`). The cost is a one-time cold start of a second or two, plus `<config dir>/run/` must be writable and `node` must be able to spawn a child process.
+Pure stdio also **runs on the server**: `ai "…"` makes sure the local daemon is up (spawning one if needed) and opens a **one-off session** for that single turn — same agent assembly, tools, MCP connections and context guard as the TUI, and the same archive location (`workspaces/<workspaceId>/`). The cost is a one-time cold start of a second or two, plus `<config dir>/run/` must be writable and `node` must be able to spawn a child process. With an explicit server address ([below](#which-server-to-connect-to)) neither applies: nothing is spawned locally, and the cold start (if any) belongs to that server.
+
+## Which Server to Connect To
+
+On a one-machine setup there is nothing to configure. The address defaults to the discovery file `~/.ai-zen/run/server.json` (`$AI_ZEN_DIR/run/server.json` when `AI_ZEN_DIR` is set): the resident server writes the port it actually got, so a restarted server is found again without anyone caching a port, and a server is started when none is running. The credential defaults to `~/.ai-zen/run/token` in the same directory — the server reads or generates it at startup, mode `0600`. It is **not** in `server.json`.
+
+To reach a server elsewhere, name it explicitly:
+
+| Setting | Meaning |
+|---------|---------|
+| `--server <url>` | Talk to this server for this run |
+| `AI_ZEN_SERVER_URL` | Same thing, for shells where the address is always the same |
+| `AI_ZEN_SERVER_TOKEN` | Credential for that server |
+
+- **Priority** — address: `--server` > `AI_ZEN_SERVER_URL` > discovery file; credential: `AI_ZEN_SERVER_TOKEN` > `run/token`.
+- **Schemes** — `ws:` / `wss:` / `http:` / `https:` (`http→ws`, `https→wss`, same port), and a path is allowed for an nginx sub-path mount: `wss://your.domain/ai-zen`.
+- **An explicit address never spawns a local server.** Whatever would get started here is not listening on that address, so `ai` connects to the address and to nothing else.
+- **There is no `--token`.** The address is not a secret, so it may sit in argv. The credential is a secret, and argv is copied into `ps` output and into your shell history — so the credential only ever comes from the environment.
+- **The server listens on loopback only and speaks no TLS.** Reaching it from another machine is a tunnel in front of it (SSH forwarding, tailscale) or a TLS-terminating reverse proxy (nginx).
+- **A malformed address fails early** — one plain sentence on stderr, exit code `2`, and neither a connection attempt nor a spawn.
+
+```bash
+# Local: nothing to configure
+ai
+
+# An explicit address: ask the server behind a reverse proxy for its status
+ai --server-status --server wss://your.domain/ai-zen
+
+# Through a tunnel (ssh -L 9999:127.0.0.1:<port> …): the address looks local,
+# but the credential is the one from the machine on the other end
+AI_ZEN_SERVER_TOKEN="$(ssh host cat ~/.ai-zen/run/token)" \
+  ai --server ws://127.0.0.1:9999 "summarize the changes on this branch"
+```
+
+The full remote setup — tunnel, nginx, where the credential lives, what to check when the handshake is refused — is in `agents/docs/en/deploy.md` (in the ai-zen workspace, next to this repo).
 
 ## Quick Start
 
@@ -310,6 +344,8 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
 - `AI_ZEN_DIR` — Override the shared root directory (default: `~/.ai-zen`). CLI runtime data goes to `$AI_ZEN_DIR/cli/`, and shared resources (agents, skills, tools, MCP, etc.) go to `$AI_ZEN_DIR/`.
 - `AIZ_DEBUG_KEYS=1` — Enables key diagnostics logging (off by default, zero overhead); `AIZ_KEYS_FILE=<path>` overrides the target file (default `/tmp/aiz-key-debug.log`).
 - `AIZ_DEBUG_SDK=0` — Disables SDK global logging. **On by default**: everything is written to `$AI_ZEN_DIR/logs/sdk.log` (no library logs ever reach the screen), rotated to `sdk.log.1` once the file passes 2MB; `AIZ_SDK_LOG_FILE=<path>` overrides the location. Check this file when debugging "MCP won't connect" or "Skill failed to parse".
+- `AI_ZEN_SERVER_URL` — Explicit server address; same as `--server <url>`, which wins when both are given ([details](#which-server-to-connect-to)).
+- `AI_ZEN_SERVER_TOKEN` — Credential for an explicit server; it wins over `~/.ai-zen/run/token`. There is deliberately no `--token` flag (argv ends up in `ps` and in your shell history).
 
 ## Filesystem Layout
 
@@ -335,6 +371,9 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
 │   └── my-tool.js
 ├── mcp.json                  ← MCP config (shared)
 ├── mcp-oauth/                ← MCP OAuth tokens (shared)
+├── run/                      ← Written by the resident server: how to reach it
+│   ├── server.json           ← Discovery: host / port of the server that is running
+│   └── token                 ← Credential (read or created by the server, 0600)
 └── logs/                     ← Diagnostics (sdk.log: SDK global log, 2MB rotation)
 
 ~/.agents/                    ← Vendor-convention dirs (Cursor / Windsurf / Cline): skills/, mcp.json

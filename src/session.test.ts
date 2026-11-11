@@ -101,6 +101,16 @@ const DOC = `# 交接\n\n${"- 桩\n".repeat(80)}`;
 
 let dir: string;
 /**
+ * 用例自己起的那台 Daemon 的凭证。
+ *
+ * 服务端现在要求 `hello.params.token` 必填（D2 / D3），而本文件是**绕过组装根**直连
+ * `SocketServerClient.connect`（它不读文件、没有 `resolveToken`）。于是两头直接钉同一个值：
+ * 服务端用注入的、客户端发同一串。**不是**放宽鉴权 —— 错的那一串仍然会被拒（那条用例在
+ * 服务端仓），这里只是先把正确的串递到位。用注入而不是读文件：会话层的用例不该顺带验
+ * 「凭证文件在哪」这件事。
+ */
+const TEST_TOKEN = "cli-session-test-token";
+/**
  * 服务端自己的工作目录（Daemon 的 `defaultWorkspacePath`）。
  *
  * 客户端不再上送 `process.cwd()`：会话的工作目录由服务端决定，所以它就是每个用例里
@@ -407,6 +417,9 @@ function newDaemon(): Daemon {
     aiZenDir: dir,
     port: 0,
     version: "0.0.0-test",
+    // 与 `connectTo()` 发的那一串一致（见 TEST_TOKEN）；不注入就会现场生成一份文件，
+    // 而这条直连路径不读文件
+    token: TEST_TOKEN,
     handlers: {
       ...createSessionHandlers({
         manager: manager!,
@@ -458,6 +471,8 @@ async function connectTo(port: number): Promise<SocketServerClient> {
   return await SocketServerClient.connect({
     address: { host: "127.0.0.1", port },
     client: { name: "@ai-zen/cli", version: "0.0.0-test" },
+    // 服务端的凭证（见 TEST_TOKEN）：直连不走 `resolveTarget()`，得自己递
+    token: TEST_TOKEN,
   });
 }
 

@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { createRequire } from "node:module";
 import { delimiter, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { workspaceIdFor } from "@ai-zen/agents-server";
+import { workspaceIdFor, Daemon } from "@ai-zen/agents-server";
 import { readDescriptor } from "@ai-zen/agents-client";
 import { SocketServerClient } from "../server-client/index.js";
 import { startFakeLlm, type FakeLlm } from "@ai-zen/agents-testing";
@@ -99,6 +99,21 @@ let tmpDirs: string[] = [];
 let liveDirs: string[] = [];
 
 /**
+ * 读服务端写在 `<aiZenDir>/run/token` 的凭证（不存在就返回 `undefined`）。
+ *
+ * 路径与文件名是**协议的一部分**（服务端 `wire/token.ts` 与客户端 `wire/token.ts` 同一条约定），
+ * 这里直接拼：用例要验的不是「路径对不对」，而是「带着这一串能不能进门」。
+ */
+function serverTokenOf(aizDir: string): string | undefined {
+  try {
+    const token = readFileSync(join(aizDir, "run", "token"), "utf-8").trim();
+    return token === "" ? undefined : token;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * 收掉某个临时目录里被 `ai "…"` 顺手拉起的守护进程。
  *
  * 纯 stdio 模式现在**跑在服务端**（`ensureServer` 会 spawn 一个 detached 进程），而 e2e
@@ -110,9 +125,13 @@ let liveDirs: string[] = [];
 async function stopServer(aizDir: string): Promise<void> {
   const descriptor = await readDescriptor(aizDir);
   if (!descriptor) return;
+  // 服务端 `start()` 时自己生成在 `<aizDir>/run/token` 的那串凭证：CLI 内部读文件、自动带上，
+  // 而这里是一次**用例自发的**收摊连接，所以得自己把它读出来（不读就只能看着 `unauthorized`）
+  const token = serverTokenOf(aizDir);
   const client = await SocketServerClient.connect({
     address: { host: descriptor.host, port: descriptor.port },
     client: { name: "@ai-zen/cli-e2e", version: "0.0.0" },
+    token,
   }).catch(() => null);
   if (!client) return;
   // 回执先到、进程后停：这条调用的 reject 不重要（socket 可能先被关）
@@ -240,6 +259,51 @@ describe("E2E: 启动命令与子命令", () => {
     expect(result.stdout).toContain("stdio");
     expect(result.exitCode).toBe(0);
   });
+});
+
+describe("E2E: 显式服务端地址（--server / AI_ZEN_SERVER_URL）", () => {
+  it("--server 给了非法地址：启动早期一句人话 + 非 0 退出（stdout 干净，不去连接也不拉起）", async () => {
+    const aizDir = makeTestDir();
+    setupConfigDir(aizDir);
+
+    const result = await runCli(["--server", "example.com:8790", "你好"], undefined, {
+      AI_ZEN_DIR: aizDir,
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    // 措辞来自包里那份 `parseServerUrl`：带原值，用户能认出自己敲的那一行
+    expect(result.stderr).toContain("不是合法的服务端地址");
+    expect(result.stderr).toContain("example.com:8790");
+    expect(result.stdout).toBe("");
+  }, 20_000);
+
+  it("--server-status 给了显式地址：问的是那个地址，不是本机的发现文件", async () => {
+    // 服务端跑在 A（发现文件与凭证都在 A），而客户端那侧是**另一个**空目录 B —— 这就是
+    // 远程 / 隧道的形状：B 里既没有 `run/server.json`，也没有 `run/token`
+    const serverDir = makeTestDir();
+    const clientDir = makeTestDir();
+    const daemon = new Daemon({ aiZenDir: serverDir, port: 0, version: "0.0.0-test" });
+    await daemon.start();
+    try {
+      // `start()` 一定会写这份凭证（读或生成），所以这里不可能为 `undefined`
+      const token = serverTokenOf(serverDir)!;
+      const running = await runCli(
+        ["--server-status", "--server", `ws://127.0.0.1:${daemon.port}`],
+        undefined,
+        { AI_ZEN_DIR: clientDir, AI_ZEN_SERVER_TOKEN: token },
+      );
+      expect(running.exitCode).toBe(0);
+      expect(JSON.parse(running.stdout).running).toBe(true);
+
+      // 同一台服务端、不给地址：客户端只看自己那个目录 → 一句「没描述文件」
+      // （这正是显式地址必须接进 `readServerStatus` 的那个答案）
+      const blind = await runCli(["--server-status"], undefined, { AI_ZEN_DIR: clientDir });
+      expect(blind.exitCode).toBe(1);
+      expect(JSON.parse(blind.stdout)).toEqual({ running: false, reason: "no descriptor" });
+    } finally {
+      await daemon.stop("e2e teardown").catch(() => {});
+    }
+  }, 30_000);
 });
 
 describe("E2E: shell 兜底钩子", () => {

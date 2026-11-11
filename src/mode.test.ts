@@ -230,3 +230,80 @@ describe("resolveInvocation / --new（强制新会话）", () => {
     });
   });
 });
+
+/**
+ * `--server <url>`：显式服务端地址（D11 / D12）。
+ *
+ * 本模块只负责**认出**它并原样带在结果上：合法性由 `config.ts` 的早期校验判（两条命令不该
+ * 对同一个拼写错误说两种话），优先级（`--server` > `AI_ZEN_SERVER_URL`）也在那边。
+ * 所以这里断言的全是「这个值有没有跟着走」，不是「它对不对」。
+ */
+describe("resolveInvocation / --server（显式地址）", () => {
+  const URL_ = "wss://example.com/ai-zen";
+
+  it("stdio 路径：地址跟着指令一起出来", () => {
+    expect(resolveInvocation(["--server", URL_, "总结", "要点"], TTY)).toEqual({
+      kind: "stdio",
+      instruction: "总结 要点",
+      save: false,
+      serverUrl: URL_,
+    });
+  });
+
+  it("顺序无关：地址放在位置参数之后也一样（且不会被当成提问内容）", () => {
+    expect(resolveInvocation(["总结", "--server", URL_], TTY)).toEqual({
+      kind: "stdio",
+      instruction: "总结",
+      save: false,
+      serverUrl: URL_,
+    });
+  });
+
+  it("不给 --server：结果里没有这个字段（地址交给环境变量 / 发现文件）", () => {
+    expect(resolveInvocation(["你好"], TTY)).toEqual({
+      kind: "stdio",
+      instruction: "你好",
+      save: false,
+    });
+  });
+
+  it("TUI 路径同样带着它（`ai --server … ` 空参数时进界面）", () => {
+    expect(resolveInvocation(["--server", URL_], TTY)).toEqual({
+      kind: "tui",
+      initialPrompt: undefined,
+      newSession: undefined,
+      serverUrl: URL_,
+    });
+  });
+
+  it("--server-status 也带着它（远程诊断走同一个地址）", () => {
+    expect(resolveInvocation(["--server-status", "--server", URL_], PIPE_OUT)).toEqual({
+      kind: "server-status",
+      serverUrl: URL_,
+    });
+  });
+
+  it("`--server` 结尾没给值 → 空串（不是「没给」：静默连回本机会掩盖拼错）", () => {
+    // 无位置参数 + 全 TTY 时模式仍是 TUI，但地址照样得带着（拼接错误不分模式）
+    expect(resolveInvocation(["--server"], TTY)).toEqual({
+      kind: "tui",
+      initialPrompt: undefined,
+      newSession: undefined,
+      serverUrl: "",
+    });
+    expect(resolveInvocation(["你好", "--server"], TTY)).toEqual({
+      kind: "stdio",
+      instruction: "你好",
+      save: false,
+      serverUrl: "",
+    });
+  });
+
+  it("`--` 之后的 --server 是普通参数（地址不能从分隔符后面长出来）", () => {
+    expect(resolveInvocation(["--", "--server", URL_], TTY)).toEqual({
+      kind: "stdio",
+      instruction: `--server ${URL_}`,
+      save: false,
+    });
+  });
+});

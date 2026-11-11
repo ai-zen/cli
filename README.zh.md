@@ -31,7 +31,41 @@ CLI 有两种**互不混合**的运行模式，由启动参数与终端环境自
 
 纯 stdio 模式下，日志 / 进度 / 工具过程 / 错误摘要一律走 **stderr**，stdout 只有结果本身（零 ANSI、零 emoji 前缀、零 spinner）；成功退出码 `0`，失败非 `0`。默认**不落盘**（不写对话存档）。
 
-纯 stdio 也**跑在服务端**：`ai "…"` 会先确保本地常驻服务在跑（不在就拉起一个），再开一段**一次性会话**跑完这一轮 —— Agent 装配、工具、MCP 连接、上下文护栏与 TUI 完全同一套，存档位置也同一份（`workspaces/<workspaceId>/`）。代价是首次调用多一两秒的冷启动，并且 `<配置目录>/run/` 需要可写、`node` 要能起子进程。
+纯 stdio 也**跑在服务端**：`ai "…"` 会先确保本地常驻服务在跑（不在就拉起一个），再开一段**一次性会话**跑完这一轮 —— Agent 装配、工具、MCP 连接、上下文护栏与 TUI 完全同一套，存档位置也同一份（`workspaces/<workspaceId>/`）。代价是首次调用多一两秒的冷启动，并且 `<配置目录>/run/` 需要可写、`node` 要能起子进程。给了显式服务端地址（[见下](#连哪台服务端)）时这两条都不成立：本机什么也不拉起，冷启动（如果有）算在那台服务端头上。
+
+## 连哪台服务端
+
+单机部署**什么都不用配**。地址默认取发现文件 `~/.ai-zen/run/server.json`（设了 `AI_ZEN_DIR` 就是 `$AI_ZEN_DIR/run/server.json`）：常驻服务端会把自己实际拿到的端口写进去，重启后换端口也照样找得到，谁都不用缓存端口；没有服务端在跑就拉起一个。凭证默认取同目录下的 `~/.ai-zen/run/token` —— 服务端启动时读或生成，权限 `0600`，**不在** `server.json` 里。
+
+要连别处的服务端，就显式指定：
+
+| 配置项 | 含义 |
+|--------|------|
+| `--server <url>` | 这一次连这台服务端 |
+| `AI_ZEN_SERVER_URL` | 同一件事，适合「地址永远只有那一个」的 shell |
+| `AI_ZEN_SERVER_TOKEN` | 那台服务端的凭证 |
+
+- **优先级** —— 地址：`--server` > `AI_ZEN_SERVER_URL` > 发现文件；凭证：`AI_ZEN_SERVER_TOKEN` > `run/token`。
+- **接受的写法** —— `ws:` / `wss:` / `http:` / `https:`（`http→ws`、`https→wss`，端口不变），并且允许带 path（nginx 子路径挂载）：`wss://your.domain/ai-zen`。
+- **显式地址 ⇒ 永不拉起本地服务端**：本机拉起来的那一份一定不在那个地址上，所以 `ai` 只连这个地址，别的一概不碰。
+- **没有 `--token`**：地址不是秘密，进 argv 无所谓；凭证是 —— `ps` 的输出与 shell 历史都会留下 argv，所以凭证只走环境变量。
+- **服务端只监听 loopback、永不实现 TLS**：要跨机器访问，就在它前面放一条隧道（SSH 转发、tailscale）或一个终结 TLS 的反向代理（nginx）。
+- **地址写错在启动早期就报**：stderr 一句人话，退出码 `2`，既不去连接也不去拉起。
+
+```bash
+# 本机：什么都不用配
+ai
+
+# 显式地址：问一下反向代理背后那台服务端的状态
+ai --server-status --server wss://your.domain/ai-zen
+
+# 进隧道（ssh -L 9999:127.0.0.1:<端口> …）：地址看着是本机，
+# 凭证却是另一头那台机器上的那一份
+AI_ZEN_SERVER_TOKEN="$(ssh host cat ~/.ai-zen/run/token)" \
+  ai --server ws://127.0.0.1:9999 "总结这个分支的改动"
+```
+
+远程部署的完整说明 —— 隧道、nginx、凭证落在哪、握手被拒时先查什么 —— 见 `agents/docs/zh/deploy.md`（在本仓旁边的 ai-zen 工作区里）。
 
 ## 快速使用
 
@@ -312,6 +346,8 @@ ai hook uninstall
 - `AI_ZEN_DIR` — 覆盖共享根目录（默认 `~/.ai-zen`）。CLI 运行时数据在 `$AI_ZEN_DIR/cli/`，共享资源（agents、skills、tools、MCP 等）在 `$AI_ZEN_DIR/`。
 - `AIZ_DEBUG_KEYS=1` — 开启按键诊断日志（默认关闭，零开销）；`AIZ_KEYS_FILE=<路径>` 可改落盘位置（默认 `/tmp/aiz-key-debug.log`）。
 - `AIZ_DEBUG_SDK=0` — 关闭 SDK 全局日志。**默认开启**，一律写入 `$AI_ZEN_DIR/logs/sdk.log`（界面上不显示任何库日志），单文件 2MB 封顶后轮转为 `sdk.log.1`；`AIZ_SDK_LOG_FILE=<路径>` 可改落盘位置。排查「MCP 连不上」「Skill 解析失败」时看这个文件。
+- `AI_ZEN_SERVER_URL` — 显式服务端地址，与 `--server <url>` 同义（两者都给时 `--server` 胜），[详见](#连哪台服务端)。
+- `AI_ZEN_SERVER_TOKEN` — 显式服务端的凭证，优先于 `~/.ai-zen/run/token`。**故意没有** `--token` 参数：argv 会被 `ps` 与 shell 历史留下。
 
 ## 文件系统布局
 
@@ -337,6 +373,9 @@ ai hook uninstall
 │   └── my-tool.js
 ├── mcp.json                  ← MCP 配置（共享）
 ├── mcp-oauth/                ← MCP OAuth 令牌（共享）
+├── run/                      ← 常驻服务端写的「怎么找到它」
+│   ├── server.json           ← 服务发现：服务端此刻在哪个端口
+│   └── token                 ← 凭证（服务端启动时读或生成，0600）
 └── logs/                     ← 诊断日志（sdk.log：SDK 全局日志，2MB 轮转）
 
 ~/.agents/                    ← 业界通用规范目录（Cursor / Windsurf / Cline）：skills/、mcp.json

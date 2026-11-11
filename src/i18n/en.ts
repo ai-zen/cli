@@ -263,9 +263,9 @@ export const en: Record<string, string> = {
   "cli.help.usage":
     '\nUsage:\n  ai                              Start the interactive UI (TUI; stdin/stdout must be a TTY)\n  ai <prompt>                     Ask in pure stdio mode; the result goes to stdout\n  cat file | ai "summarize it"   Pipe content in; the argument is the instruction\n  ai hook install                 Install the shell fallback hook (route unknown commands to the AI)\n  ai hook uninstall               Uninstall the shell fallback hook',
   "cli.help.options":
-    "\nOptions:\n  --save                          Save this conversation to the archive (off by default)\n  --tui [prompt…]                 Force the interactive UI; the prompt is auto-sent as the first message (used by the shell hook)\n  --new                           Start a new conversation instead of resuming the last one\n  -h, --help                      Show this help\n  -v, --version                   Show the version\n  --server-status                 Print the resident server status (JSON; exit code 1 when not running)",
+    "\nOptions:\n  --save                          Save this conversation to the archive (off by default)\n  --tui [prompt…]                 Force the interactive UI; the prompt is auto-sent as the first message (used by the shell hook)\n  --new                           Start a new conversation instead of resuming the last one\n  --server <url>                  Talk to this server instead of the local one (e.g. wss://example.com/ai-zen; AI_ZEN_SERVER_URL does the same)\n  -h, --help                      Show this help\n  -v, --version                   Show the version\n  --server-status                 Print the resident server status (JSON; exit code 1 when not running)",
   "cli.help.notes":
-    "\nNotes:\n  stdio mode is non-interactive: the result goes to stdout, logs to stderr, exit code 0 on success.",
+    "\nNotes:\n  stdio mode is non-interactive: the result goes to stdout, logs to stderr, exit code 0 on success.\n  A remote server's credential goes in AI_ZEN_SERVER_TOKEN, never on the command line (argv shows up in ps and shell history).",
 
   // ---------- `ai hook install / uninstall` (outside the TUI, locale initialised in that branch) ----------
   "cli.hookUsage": "Usage: ai hook install|uninstall",
