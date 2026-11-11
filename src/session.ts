@@ -37,7 +37,7 @@
 import { AgentNS, sumUsage } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
 import {
-  MAX_FRAME_BYTES,
+  MAX_TEXT_BYTES,
   SessionChannel,
   clientWorkspacePath,
   type ChannelNoticePayload,
@@ -60,6 +60,7 @@ import type {
   SubAgentView,
 } from "./session/types.js";
 import { noticeText } from "./session-notice.js";
+import { ackNotices, flushPendingNotices } from "./pending-notices.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, type RateSample } from "./session-rate.js";
 
@@ -106,6 +107,8 @@ export class RemoteChatSession implements ChatSessionLike {
   private closed = false;
   /** 已经 `dispose()`：此后不再往界面上推任何东西 */
   private disposed = false;
+  /** 「连接换了一条」的订阅（重连之后要重新补看一次通知槽位） */
+  private offOpen: (() => void) | null = null;
 
   private constructor(
     connection: ServerConnection,
@@ -117,6 +120,9 @@ export class RemoteChatSession implements ChatSessionLike {
     this.requestMode = input.requestMode;
     this.channel = this.newChannel();
     this.useChannel(this.channel);
+    // 建好 / 重建一条连接之后各补看一次：通知是**有状态的槽位**（不是发一次就没的广播），
+    // 「这条连接建立之前登记过什么」只能问服务端要（见 `flushPendingNotices`）
+    this.offOpen = connection.onOpen(() => void this.flushNotices());
   }
 
   /**
@@ -149,8 +155,16 @@ export class RemoteChatSession implements ChatSessionLike {
         ...(input.resume !== undefined ? { resume: input.resume } : {}),
         ...(input.persist !== undefined ? { persist: input.persist } : {}),
       });
+      /**
+       * 会话开好了再补看一次：上面那条 `onOpen` 触发时 `currentId` 还是空的（会话还没开），
+       * 只补了全局那一半 —— 会话内的那些要等快照能取才看得到。
+       */
+      await session.flushNotices();
     } catch (error) {
-      // 半开的那条 channel 也要摘干净（它的 `onClose` 订阅会跟着实例一起活）
+      // 半开的那条 channel 也要摘干净（它的 `onClose` 订阅会跟着实例一起活）；
+      // 顺便把构造时挂上的「连接换了」那条订阅也摘掉 —— 连接是共享的，留着就是一个
+      // 指向已废弃实例的监听者，每次重连都白跑一次。
+      session.dispose();
       await session.channel.close().catch(() => {});
       throw error;
     }
@@ -160,8 +174,8 @@ export class RemoteChatSession implements ChatSessionLike {
   /**
    * 造一条新的 channel（同一连接、同一套策略）。
    *
-   * 三个回调各答一件应用才知道的事：有没有人能回答服务端的提问、机器码怎么变成句子、
-   * 屏幕该不该重画。
+   * 三个回调各答一件应用才知道的事：有没有人能回答服务端的提问、机器码怎么变成句子
+   * （`forwardNotice`：上屏之后当场用事件里的 id 确认掉）、屏幕该不该重画。
    */
   private newChannel(): SessionChannel {
     return new SessionChannel({
@@ -484,6 +498,9 @@ export class RemoteChatSession implements ChatSessionLike {
     this.disposed = true;
     this.offStream?.();
     this.offStream = null;
+    // 连接是共享的（一条进程一条），这条「补看」订阅必须跟着本实例一起摘掉
+    this.offOpen?.();
+    this.offOpen = null;
     void this.close();
   }
 
@@ -492,12 +509,13 @@ export class RemoteChatSession implements ChatSessionLike {
   /**
    * 拼出这一条要发的内容：纯文本，或「文本 + 内容块」。
    *
-   * 图片**字节**走 `content.upload`（帧后紧跟原始字节，不经 JSON），但换回来的**那一块**
-   * 仍然随 `session.send` 的帧走：端点不支持 Files API 时服务端给的是 base64 内联的
-   * data URL，所以这一帧照样会被八张图撑爆。
+   * 图片**字节**走 `content.upload`（同一条连接上的第二条 WS 消息，前 4 字节是请求 id），
+   * 但换回来的**那一块**仍然随 `session.send` 的**文本**消息走：端点不支持 Files API 时
+   * 服务端给的是 base64 内联的 data URL，所以这条照样会被八张图撑爆。
    *
-   * 唯一的远程约束就是帧大小：超限帧会让服务端判协议错误、**断掉整条连接**。所以先量一下：
-   * 装不下就发文字，并明确告知图片没带上（不静默丢消息，也不冒险把连接弄断）。
+   * 唯一的远程约束就是文本消息的大小上限（`MAX_TEXT_BYTES`，8 MiB）：超限的文本消息会让
+   * 服务端判协议错误、**断掉整条连接**。所以先量一下：装不下就发文字，并明确告知图片没带上
+   * （不静默丢消息，也不冒险把连接弄断）。
    *
    * @returns 要发的内容；`null` = 什么都不发（已给过说明）
    */
@@ -518,7 +536,7 @@ export class RemoteChatSession implements ChatSessionLike {
     if (typeof content === "string") return content; // 一张图都没转成功：文字照发
 
     const bytes = Buffer.byteLength(JSON.stringify(content), "utf-8");
-    if (bytes > MAX_FRAME_BYTES) {
+    if (bytes > MAX_TEXT_BYTES) {
       this.notifier.onNotice(
         t("notice.remoteImagesTooLarge", { size: (bytes / 1024 / 1024).toFixed(1) }),
         "error",
@@ -544,10 +562,65 @@ export class RemoteChatSession implements ChatSessionLike {
     });
   }
 
-  /** 服务端的机器码 → CLI 词典里的句子（服务端一句自然语言都不产） */
+  /**
+   * 把服务端此刻还挂着的通知补上屏（启动 / 重连之后各一次）。
+   *
+   * 两类都走 {@link showNotice} —— 也就是**既有的**通知栏渲染路径（`session-notice` 事件用
+   * 的就是它），补看这条路上没有第二套 UI。三步（查 / 显示 / 确认）的顺序、以及「两个入口
+   * 一份 id、**一次**确认」都写在 `pending-notices.ts` 的文件头。
+   *
+   * 失败一律吞掉：这是「把错过的补上」的尽力而为，连不上 / 服务端没注册 `notice.*` /
+   * 会话刚被别的客户端关掉，都不该让开会话或重连失败。
+   */
+  private async flushNotices(): Promise<void> {
+    if (this.disposed) return;
+    try {
+      const client = await this.connection.client();
+      await flushPendingNotices({
+        client,
+        // 还没开会话时只有全局那一半（`/new` 换 id 之后读的是新 id，见 `currentId`）
+        sessionId: this.currentId || undefined,
+        // 只上屏：确认由 `flushPendingNotices` 收齐 id 之后**一次**发出去（见它的文件头）
+        onNotice: (payload) => this.showNotice(payload),
+      });
+    } catch {
+      // 见方法头：补看是尽力而为，不升级成通知（否则「没连上」会先说一遍、再说一遍）
+    }
+  }
+
+  /**
+   * 实时推过来的一条通知（`session-notice` / `server-notice`）：**上屏之后当场确认**。
+   *
+   * 事件里的 `id` 与槽位是**同一个值**，所以确认不必回头再查一遍列表 —— 这个 id 本身就是
+   * `notice.ack { ids }` 的凭据。少了这一步，同一条通知会一直躺在服务端，下次连上来时被
+   * 补看再念一遍（上一版为此在本地记了一份「哪几条念过」的表：那份表既确认不掉槽位，又得
+   * 与服务端保持同步 —— 拿到 id 之后它就是多余的了）。
+   */
   private forwardNotice(payload: ChannelNoticePayload): void {
+    this.showNotice(payload);
+    void this.ackNotice(payload.id);
+  }
+
+  /** 一条通知上屏：服务端的机器码 → CLI 词典里的句子（服务端一句自然语言都不产） */
+  private showNotice(payload: ChannelNoticePayload): void {
     if (this.disposed) return;
     this.notifier.onNotice(noticeText(payload.code, payload.params), toneOf(payload.level));
+  }
+
+  /**
+   * 确认一条（`notice.ack { ids: [id] }`），失败一律吞掉。
+   *
+   * 不 await：本方法由事件回调同步调用（`policy.onNotice` 返回 `void`），把这条连接上的
+   * 事件处理卡在一个往返上毫无好处；而确认失败也不算错 —— 那条通知只会在下次补看时再上
+   * 一次屏，比打断正在收事件的会话好。
+   */
+  private async ackNotice(id: string): Promise<void> {
+    try {
+      const client = await this.connection.client();
+      await ackNotices(client, [id]);
+    } catch {
+      // 见方法头：确认是尽力而为
+    }
   }
 
   /** 「屏幕该重画了」；卸载之后一律不再推（那一代的 `notifier` 已经没人听了） */

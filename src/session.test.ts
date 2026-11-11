@@ -17,6 +17,7 @@ import { join } from "node:path";
 import {
   Daemon,
   createContentHandlers,
+  createNoticeHandlers,
   createSessionHandlers,
   FileSessionStore,
   SessionManager,
@@ -40,7 +41,7 @@ import { setLocale } from "./i18n/index.js";
 import { useTempAiZenDir } from "./test-support/temp-dir.js";
 import { RemoteChatSession } from "./session.js";
 import { clientWorkspacePath } from "./server-client/index.js";
-import type { ConfigPort } from "./server-client/index.js";
+import type { ConfigPort, GlobalNoticeSlot } from "./server-client/index.js";
 import type { ChatSessionNotifier } from "./session/types.js";
 
 class FakeAgent implements AgentLike {
@@ -248,6 +249,8 @@ beforeEach(() => {
   agent = new FakeAgent();
   notices = [];
   changes = 0;
+  globalNotices = [];
+  ackedNotices = [];
   nextServer = portSignal();
   reconnectCalls = 0;
   manager = newManager();
@@ -255,6 +258,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  await settlePendingTurn();
   session?.dispose();
   session = null;
   sessionConnection = null;
@@ -291,6 +295,27 @@ async function waitUntil(what: () => boolean, timeoutMs = 2000): Promise<void> {
  * 同上，但条件本身要**问服务端**（异步）：`/new` 与 `dispose()` 发的 `session.close` 都是
  * 「帧发出去就算完」的，落地时间只能轮询。
  */
+/**
+ * 拆环境**之前**先把在飞的那一轮等落地。
+ *
+ * 服务端收尾的顺序是「先写存档，再发 `session-turn-end`」；而用例里 `agent.fire("finally")`
+ * 之后大多只看回执就结束了 —— `send()` 受理即回，所以那条收尾的写还在半路上。立刻
+ * `rmSync` 临时目录，那条写就会撞上 ENOENT，服务端把它转成一条 `persistFailed` 通知，
+ * 可那一刻会话已经被 `dispose()` 关掉了，于是变成一条没人处理的 rejection（vitest 把它
+ * 算成整轮失败）。
+ *
+ * `waitForTurn()` 就是「这一轮结束了」那个原语：没在飞的一轮时它立刻返回，有就等到
+ * `session-turn-end`（服务端在它**之前**写完存档）。超时兜底只是「用例压根没开轮」那种
+ * 情形下不去赌 —— 它不是用来伪装时序的。
+ */
+async function settlePendingTurn(): Promise<void> {
+  if (!session) return;
+  await Promise.race([
+    session.waitForTurn().catch(() => {}),
+    new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+  ]);
+}
+
 async function waitUntilAsync(what: () => Promise<boolean>, timeoutMs = 2000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!(await what())) {
@@ -367,6 +392,16 @@ function newManager(): SessionManager {
   });
 }
 
+/**
+ * 服务端此刻还挂着的**全局**通知槽位（由 `beforeEach` 重置）。
+ *
+ * 它是**进程作用域**的状态：与哪一段会话无关，只在 `notice.list` 里出现。用例直接改这个
+ * 数组 —— 那正是「别的客户端早先登记过一条，而我还没连上来」那个情形。
+ */
+let globalNotices: GlobalNoticeSlot[];
+/** `notice.ack` 收到过哪些 id（按调用记，断言「确认的就是那一条」） */
+let ackedNotices: string[][];
+
 function newDaemon(): Daemon {
   return new Daemon({
     aiZenDir: dir,
@@ -392,6 +427,27 @@ function newDaemon(): Daemon {
             config: JSON.parse(readFileSync(join(zen.dir, "config.json"), "utf-8")),
             path: join(zen.dir, "config.json"),
           }),
+        },
+      }),
+      /**
+       * 通知的两个入口（`notice.list` / `notice.ack`）。
+       *
+       * 生产里这两面归 `ServerApp`（进程作用域的状态），本用例只给一个最小假件：`list`
+       * 读上面那个数组，`ack` 记下调用、并按 `ServerApp.ackNotices` 的**同一次序**认两类
+       * id —— 先查全局表，再扫各会话的通知表（`manager.ackNotice`）。「确认即消」这条语义
+       * 就是这几行（一份状态，不按客户端各存一份）；只有真正被消掉的 id 才进 `acked`。
+       */
+      ...createNoticeHandlers({
+        list: () => ({ notices: [...globalNotices] }),
+        ack: (ids) => {
+          ackedNotices.push(ids);
+          const acked: string[] = [];
+          for (const id of ids) {
+            const inGlobal = globalNotices.some((slot) => slot.id === id);
+            if (inGlobal) globalNotices = globalNotices.filter((slot) => slot.id !== id);
+            if (inGlobal || manager!.ackNotice(id)) acked.push(id);
+          }
+          return { acked };
         },
       }),
     },
@@ -971,6 +1027,51 @@ describe("RemoteChatSession：会话级模型动作（走 channel，不现取门
   });
 });
 
+/**
+ * 通知是**有状态的槽位**（不是发一次就没的广播）：全局的挂在进程上、会话内的挂在会话上，
+ * 直到有客户端确认。所以「我连上来那一刻之前发生过什么」只能问服务端要 —— 这两条用例钉的
+ * 就是那一问，以及「显示过就确认」的顺序。
+ */
+describe("RemoteChatSession：通知槽位（启动 / 重连之后补看）", () => {
+  it("启动时把还没人确认的全局通知上屏，显示过就确认掉", async () => {
+    // 别的客户端早先登记过一条、还没有人确认 —— 本客户端连上来时它还在槽位上
+    globalNotices.push({
+      id: "notice-1",
+      level: "error",
+      code: "mcpUnavailable",
+      params: { name: "fs" },
+      createdAt: new Date().toISOString(),
+    });
+
+    await open();
+
+    // 走的是**既有的**通知栏渲染路径（`notifier.onNotice`），句子由 CLI 的词典给
+    expect(notices.at(-1)).toEqual({ text: "MCP server 连不上：fs", tone: "error" });
+    // 一份状态、任意客户端确认即消：服务端那份槽位没了，下一个客户端不会再看到一遍
+    expect(ackedNotices).toEqual([["notice-1"]]);
+    expect(globalNotices).toEqual([]);
+  });
+
+  it("实时推过来的会话内通知：上屏之后当场确认（不用回头查列表）", async () => {
+    const opened = await open();
+    agent.messages = [{ role: "user", content: "任务" }];
+
+    // `handoff` 会推两条会话内通知（`handoffWriting` / `handoffPath`）—— 这是实时那条路
+    await opened.handoff();
+    expect(notices.length).toBeGreaterThan(0);
+
+    /**
+     * 推送那条与槽位是**同一个 id**（A35），所以确认用的是事件里带来的那个 id，不必为了
+     * 拿到 id 再拉一次快照/列表。确认是 `void` 发出的（上屏优先），所以这里轮询到槽位消失。
+     */
+    await waitUntilAsync(async () => {
+      const snapshot = await manager!.snapshot(opened.currentId);
+      return snapshot.pendingNotices.length === 0;
+    });
+    expect(ackedNotices.flat().length).toBeGreaterThan(0);
+  });
+});
+
 describe("RemoteChatSession：服务端在一轮内部换 id（自动迁移）", () => {
   it("跟着换 id 并重取消息，send 才能等到新 id 上的 session-turn-end", async () => {
     const opened = await open();
@@ -985,6 +1086,13 @@ describe("RemoteChatSession：服务端在一轮内部换 id（自动迁移）",
     agent.messages = [{ role: "user", content: "交接断点：/tmp/x.md" }];
     agent.fire("finally");
     await pending;
+
+    /**
+     * `session-id-changed` 是**一条事件**，它走的是同一条连接上的另一条消息：
+     * `send()` 在受理时就返回了，所以这里必须等它到达（`waitUntil` 而不是直接断言 ——
+     * 事件与回执是两条独立的投递，先断言就会读到一个还没换过来的 id）。
+     */
+    await waitUntil(() => opened.currentId !== "chat_1");
 
     // id 变了，消息是迁移之后那份（客户端不能还挂着旧历史）
     expect(opened.currentId).not.toBe("chat_1");
