@@ -12,8 +12,8 @@ importers:
         specifier: link:../agents/packages/client
         version: link:../agents/packages/client
       '@ai-zen/agents-core':
-        specifier: ^4.5.5
-        version: 4.5.5(ws@8.22.0)(zod@4.5.4)
+        specifier: link:../agents/packages/core
+        version: link:../agents/packages/core
       '@ai-zen/agents-protocol':
         specifier: link:../agents/packages/protocol
         version: link:../agents/packages/protocol
@@ -80,12 +80,6 @@ importers:
         version: 5.1.0(@types/node@24.13.3)(vite@8.3.5(@types/node@24.13.3))
 
 packages:
-
-  '@ai-zen/agents-core@4.5.5':
-    resolution: {integrity: sha512-qin7xjeZ5fEHFaBi/R7RcJoWolIjCAlFr4MKUF27kOTI5Fc7pvgljVjIolHDwxq/br6HUD0zq4v7EZQ6Iqng+w==}
-
-  '@ai-zen/event-bus@1.1.0':
-    resolution: {integrity: sha512-xjfQEmUMly++dOSrQMJkwrnBVl7bQHtiw8S09AW5jPuqnFV9OwBk0PsGFc/T+4eP4yWThBJo2X3cCdE5DkAr+Q==}
 
   '@alcalzone/ansi-tokenize@0.3.1':
     resolution: {integrity: sha512-cUD0PT0YX+rImRhfn7BfMRduP/tX/Zqt/N0dHlAyn2RlcJssCb5KsCJkhln61eh9vuJDkH8wKn3L8zJzzWXPFg==}
@@ -884,30 +878,6 @@ packages:
     resolution: {integrity: sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==}
     engines: {node: '>=6'}
 
-  openai@7.8.0:
-    resolution: {integrity: sha512-/2g9JzdnXNcjX1W/UlSNu+OdSFDAaAVt0n9Onom0kPenH54o59G2WrX/xjTnr26UHNSh6hxcAf58doGYRme2rw==}
-    engines: {node: '>=22.0.0'}
-    peerDependencies:
-      '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
-      '@smithy/hash-node': '>=4.3.0 <5'
-      '@smithy/signature-v4': '>=5.4.0 <6'
-      undici: '>=5 <9'
-      ws: ^8.21.0
-      zod: ^3.25 || ^4.0
-    peerDependenciesMeta:
-      '@aws-sdk/credential-provider-node':
-        optional: true
-      '@smithy/hash-node':
-        optional: true
-      '@smithy/signature-v4':
-        optional: true
-      undici:
-        optional: true
-      ws:
-        optional: true
-      zod:
-        optional: true
-
   package-json-from-dist@1.0.1:
     resolution: {integrity: sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw==}
 
@@ -1246,20 +1216,6 @@ packages:
     resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
 
 snapshots:
-
-  '@ai-zen/agents-core@4.5.5(ws@8.22.0)(zod@4.5.4)':
-    dependencies:
-      '@ai-zen/event-bus': 1.1.0
-      openai: 7.8.0(ws@8.22.0)(zod@4.5.4)
-    transitivePeerDependencies:
-      - '@aws-sdk/credential-provider-node'
-      - '@smithy/hash-node'
-      - '@smithy/signature-v4'
-      - undici
-      - ws
-      - zod
-
-  '@ai-zen/event-bus@1.1.0': {}
 
   '@alcalzone/ansi-tokenize@0.3.1':
     dependencies:
@@ -1895,11 +1851,6 @@ snapshots:
   onetime@5.1.2:
     dependencies:
       mimic-fn: 2.1.0
-
-  openai@7.8.0(ws@8.22.0)(zod@4.5.4):
-    optionalDependencies:
-      ws: 8.22.0
-      zod: 4.5.4
 
   package-json-from-dist@1.0.1: {}
 
