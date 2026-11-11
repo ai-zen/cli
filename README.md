@@ -68,7 +68,7 @@ When run with no arguments on an interactive terminal, the CLI opens a full-scre
 ╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
 
               AI workbench in your terminal
-              v1.0.2 · sdk x · core y
+              v1.1.0-alpha.0 · sdk 1.2.0-alpha.0 · core 4.6.0-alpha.0
 ```
 
 You land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and a **status bar** (three priority-ordered blocks: model · agent · reasoning effort | this-round / cumulative tokens · generation rate | key hints; a block that does not fit moves to the next line whole, so nothing is truncated and no block gets split) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line and its label shows **which phase** the round is in: connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming; the two tool phases name the tool(s), and while a parallel round is waiting it lists only the tools still running (so a finished `edit` drops out and the label points at `exec`). The generation rate shows a live value while streaming (2-second sliding window, estimated from output deltas) and switches to this round's average once it finishes (preferring the real `completion_tokens` from the API).

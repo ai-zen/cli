@@ -980,13 +980,13 @@ describe("RemoteChatSession：服务端在一轮内部换 id（自动迁移）",
 // 这一条往返横跨三方，缺一条用例都证明不了链路是通的：
 //
 //   服务端插件侧：`AutoMigratePlugin` 触发 → 注入的 `resolveMode`
-//     → `QuestionBroker.askHandoffMode` → 发 `SESSION_EVENTS.question`；
+//     → `QuestionBroker.askHandoffMode` → 发 `"session-question"`；
 //   客户端：`RemoteChatSession.answerQuestion` 弹 `requestMode` 选择器
-//     → 回 `SESSION_METHODS.answer`；
+//     → 回 `"session.answer"`；
 //   服务端：拿到 mode 才真正迁移。
 //
-// 三样东西都已落地：协议面（`@ai-zen/agents-protocol` 的 `SESSION_EVENTS.question` /
-// `SESSION_METHODS.answer`）、服务端（`SessionAgentFactory` 把 `resolveMode` 交给
+// 三样东西都已落地：协议面（`@ai-zen/agents-protocol` 的 `"session-question"` /
+// `"session.answer"`）、服务端（`SessionAgentFactory` 把 `resolveMode` 交给
 // `AutoMigratePlugin`）、客户端（`answerQuestion`）。所以下面三条走**真 socket、真服务端**
 // 跑，没有一条是占位的。
 //
@@ -1069,10 +1069,10 @@ function makeSubAgent() {
  *
  * 协议面与服务端那一半都已落地，所以下面几条是真跑的：
  *
- *   1. `AGENT_EVENTS.subAgentStart` / `subAgentEnd`（`sub-agent-start` / `sub-agent-end`）；
+ *   1. `"sub-agent-start"` / `subAgentEnd`（`sub-agent-start` / `sub-agent-end`）；
  *   2. `AgentChunkEvent.subAgentId?`（子 Agent 的原始片带它上线，客户端自己折）；
- *   3. `SESSION_METHODS.subAgentSnapshot`（`session.subAgent.snapshot`）；
- *   4. `SESSION_NOTICE_CODES.subAgentFailed`；
+ *   3. `"session.subAgent.snapshot"`（`session.subAgent.snapshot`）；
+ *   4. `"subAgentFailed"`；
  *   5. 服务端的 `EventBridge` 把 SDK 的 `sub-agent-start` / `sub-agent-end` / 子 Agent 的
  *      `chunk` 翻译成上面这些。
  *

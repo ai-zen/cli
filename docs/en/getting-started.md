@@ -13,7 +13,7 @@ outline: deep
 ## Requirements
 
 - **Node.js**: the package is published as ESM (`"type": "module"`). `package.json` does not declare an `engines` field, so the actual required version follows the Node ecosystem (a recent LTS is recommended).
-- **Runtime dependencies** (declared in `package.json`): `@ai-zen/agents-core`, `@ai-zen/agents-sdk`, `@ai-zen/agents-client`, `@ai-zen/agents-protocol`, `@ai-zen/agents-server`, `@modelcontextprotocol/sdk`, `ink`, `react`, `zod`, `string-width`, `highlight.js`, `lowlight`
+- **Runtime dependencies** (declared in `package.json`): `@ai-zen/agents-core`, `@ai-zen/agents-sdk`, `@ai-zen/agents-client`, `@ai-zen/agents-server` (the wire contract is its `@ai-zen/agents-server/protocol` subpath), `@modelcontextprotocol/sdk`, `ink`, `react`, `zod`, `string-width`, `highlight.js`, `lowlight`
 - **Platform**: the underlying tools and the Shell hook depend on a Unix shell (`bash`/`zsh`) and `process.env.SHELL`; the Shell hook is unavailable on Windows (`hook` will report "unsupported shell").
 
 ## Installation

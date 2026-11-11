@@ -13,7 +13,7 @@ outline: deep
 ## 环境要求
 
 - **Node.js**：包以 ESM（`"type": "module"`）发布。`package.json` 未声明 `engines` 字段，实际所需版本以 Node 生态为准（建议使用较新的 LTS）。
-- **运行时依赖**（由 `package.json` 声明）：`@ai-zen/agents-core`、`@ai-zen/agents-sdk`、`@ai-zen/agents-client`、`@ai-zen/agents-protocol`、`@ai-zen/agents-server`、`@modelcontextprotocol/sdk`、`ink`、`react`、`zod`、`string-width`、`highlight.js`、`lowlight`
+- **运行时依赖**（由 `package.json` 声明）：`@ai-zen/agents-core`、`@ai-zen/agents-sdk`、`@ai-zen/agents-client`、`@ai-zen/agents-server`（线上契约是它的子路径 `@ai-zen/agents-server/protocol`）、`@modelcontextprotocol/sdk`、`ink`、`react`、`zod`、`string-width`、`highlight.js`、`lowlight`
 - **平台**：底层工具与 Shell 钩子依赖 Unix shell（`bash`/`zsh`）与 `process.env.SHELL`；在 Windows 上 Shell 钩子不可用（`hook` 会报“不支持的 shell”）。
 
 ## 安装

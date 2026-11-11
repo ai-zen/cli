@@ -14,9 +14,6 @@ importers:
       '@ai-zen/agents-core':
         specifier: link:../agents/packages/core
         version: link:../agents/packages/core
-      '@ai-zen/agents-protocol':
-        specifier: link:../agents/packages/protocol
-        version: link:../agents/packages/protocol
       '@ai-zen/agents-sdk':
         specifier: link:../agents/packages/sdk
         version: link:../agents/packages/sdk

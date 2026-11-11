@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { readDescriptor, workspaceIdFor } from "@ai-zen/agents-server";
+import { workspaceIdFor } from "@ai-zen/agents-server";
+import { readDescriptor } from "@ai-zen/agents-client";
 import { SocketServerClient } from "../server-client/index.js";
 import { startFakeLlm, type FakeLlm } from "@ai-zen/agents-testing";
 

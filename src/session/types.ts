@@ -30,7 +30,7 @@ import type {
   ModelParams,
   PhaseInfo,
   WorkspaceFileEntry,
-} from "@ai-zen/agents-protocol";
+} from "@ai-zen/agents-server/protocol";
 import type { ServerConnection } from "@ai-zen/agents-client";
 import type { ClipboardImage } from "../clipboard.js";
 import type { ConfigPort } from "../server-client/index.js";

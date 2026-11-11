@@ -1,6 +1,6 @@
 {
   "name": "@ai-zen/cli",
-  "version": "1.0.2",
+  "version": "1.1.0-alpha.0",
   "description": "AI-ZEN CLI - dual-mode AI terminal: pure stdio pipelines and an interactive TUI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -37,7 +37,6 @@
   "dependencies": {
     "@ai-zen/agents-client": "link:../agents/packages/client",
     "@ai-zen/agents-core": "link:../agents/packages/core",
-    "@ai-zen/agents-protocol": "link:../agents/packages/protocol",
     "@ai-zen/agents-sdk": "link:../agents/packages/sdk",
     "@ai-zen/agents-server": "link:../agents/packages/server",
     "@modelcontextprotocol/sdk": "^1.29.0",
