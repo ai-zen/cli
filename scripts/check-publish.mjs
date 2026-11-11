@@ -14,16 +14,17 @@
  * 第 2 条现在就该看得见：本地开发期人肉 link 是合理的（新包还没发布），但「发布前
  * 记得改回版本号」靠记性一定会漏，所以让它在这里红灯。
  *
- * ## 一个例外：`devDependencies` 指向**本仓私有测试件**
+ * ## 例外：`devDependencies` 一律放行
  *
- * `@ai-zen/agents-testing` 是 `private: true` 的测试件（假 LLM 端点），永远不会发布 ——
- * 于是「改成发布出去的精确版本号」对它根本不成立，而消费者也不会安装别人的
- * `devDependencies`。所以只对这一种情况放行：**字段是 devDependencies 且目标包自身
- * `private: true`**。运行期三个字段的口径一点没松。
+ * 消费者的安装图里**不包含别人的 `devDependencies`** —— 它们不进包、不会被安装，也
+ * 就不可能把「发布出去的包装不上」这件事引进来。所以这一档不查本地路径。
+ *
+ * 本仓的 `@ai-zen/agents-{client,core,sdk,server}` 都靠这一档：它们是被**打包内联**
+ * 进产物的构建期依赖，运行期不装（`dist/` 里没有对它们的 import，由 `check:imports`
+ * 盯着）。三个运行期字段的口径一点没松。
  */
 
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
 
 let failed = false;
 
@@ -55,30 +56,14 @@ const LOCAL_PATH_SPEC = /^(link:|file:|\.{1,2}\/)/;
 const FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
-const ROOT = dirname(new URL("../package.json", import.meta.url).pathname);
 const offenders = [];
 const allowedDevLinks = [];
-
-/**
- * 本地依赖指向的那个包自己是不是 `private`（= 永远不会发布）。
- *
- * 读不到就当「不是」，宁可红灯：一道闸门猜错方向的代价不对称。
- */
-function isPrivateTarget(spec) {
-  try {
-    const relative = spec.replace(/^(link:|file:)/, "");
-    const target = JSON.parse(readFileSync(resolve(ROOT, relative, "package.json"), "utf-8"));
-    return target.private === true;
-  } catch {
-    return false;
-  }
-}
 
 for (const field of FIELDS) {
   for (const [name, spec] of Object.entries(pkg[field] ?? {})) {
     if (typeof spec === "string" && LOCAL_PATH_SPEC.test(spec)) {
-      // 只有 devDependencies 能放行，且必须是私有包（理由见文件头）
-      if (field === "devDependencies" && isPrivateTarget(spec)) {
+      // devDependencies 不进消费者的安装图（理由见文件头）
+      if (field === "devDependencies") {
         allowedDevLinks.push({ field, name, spec });
         continue;
       }
@@ -106,7 +91,7 @@ if (offenders.length > 0) {
 }
 
 for (const { field, name, spec } of allowedDevLinks) {
-  console.log(`  ℹ️  ${field}.${name} = ${JSON.stringify(spec)} —— 目标包 private，不随发布出去`);
+  console.log(`  ℹ️  ${field}.${name} = ${JSON.stringify(spec)} —— devDependencies，不随包发出去`);
 }
 
 if (failed) process.exit(1);

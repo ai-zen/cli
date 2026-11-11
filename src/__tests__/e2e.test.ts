@@ -1,7 +1,8 @@
 import { describe, it, expect, afterAll, afterEach, beforeEach } from "vitest";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { delimiter, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { workspaceIdFor } from "@ai-zen/agents-server";
 import { readDescriptor } from "@ai-zen/agents-client";
@@ -21,6 +22,45 @@ interface CliResult {
   exitCode: number;
 }
 
+/**
+ * `npx` 的替身目录（见 {@link npxShimDir}），模块级只建一次。
+ */
+let shimDir: string | null = null;
+
+/**
+ * 造一个 `npx` 替身，指向**仓库里刚构建出来的**那个服务端。
+ *
+ * CLI 拉起服务端的默认动作是 `npx -y @ai-zen/agents-server@<版本> serve …`，而那个包
+ * 从未发布到 registry —— 真 `npx` 在离线机器上必然失败，在 CI 上也会因为包不存在而失败。
+ *
+ * 这里 stub 的是**外部工具**（和 stub 一个 HTTP 端点同一种做法）：生产代码一行不改，
+ * 被测的仍然是「cli → 发现文件 → 真服务端」这条链。
+ *
+ * 只支持 POSIX：Windows 上 PATH 查找要 `.cmd`，而本仓的 e2e 本来就跑在类 Unix 上。
+ */
+function npxShimDir(): string {
+  if (shimDir) return shimDir;
+
+  const dir = join(tmpdir(), "aiz-e2e-bin");
+  mkdirSync(dir, { recursive: true });
+
+  // 服务端入口从它自己的 `package.json` 里读 `bin`（不写死 `dist/cli.js`）
+  const require = createRequire(import.meta.url);
+  const packageJsonPath = require.resolve("@ai-zen/agents-server/package.json");
+  const { bin } = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
+    bin: Record<string, string>;
+  };
+  const entry = join(dirname(packageJsonPath), bin["agents-server"]);
+
+  // `shift 2` 吃掉 `-y` 与包坐标，其余参数（`serve --ai-zen-dir …`）原样交给服务端
+  const shim = join(dir, "npx");
+  writeFileSync(shim, `#!/bin/sh\nshift 2\nexec "${process.execPath}" "${entry}" "$@"\n`, "utf-8");
+  chmodSync(shim, 0o755);
+
+  shimDir = dir;
+  return dir;
+}
+
 function runCli(
   args: string[],
   stdinInput?: string,
@@ -30,7 +70,14 @@ function runCli(
     // 断言的是用户可见的中文文案（hook 用法 / 错误提示），而界面语言跟随偏好或
     // 系统 LANG；给临时 `AI_ZEN_DIR` 时没有 preferences.json，会落到英文 —— 显式锁语言，
     // 否则同一份断言在开发者机器上红、CI 上绿（或反之）。
-    const env = { ...process.env, LANG: "zh_CN.UTF-8", LC_ALL: "zh_CN.UTF-8", ...extraEnv };
+    const env = {
+      ...process.env,
+      LANG: "zh_CN.UTF-8",
+      LC_ALL: "zh_CN.UTF-8",
+      // 让 CLI 内部那次 `npx` 命中替身（见 {@link npxShimDir}）
+      PATH: `${npxShimDir()}${delimiter}${process.env.PATH ?? ""}`,
+      ...extraEnv,
+    };
 
     const proc = spawn("node", [CLI, ...args], { env, stdio: ["pipe", "pipe", "pipe"] });
 
@@ -94,6 +141,8 @@ afterAll(async () => {
       rmSync(d, { recursive: true, force: true });
     } catch {}
   }
+  // `npx` 替身目录也是本文件造的（它不是用例目录，不在 `tmpDirs` 里）
+  if (shimDir) rmSync(shimDir, { recursive: true, force: true });
 });
 
 function makeTestDir(): string {
