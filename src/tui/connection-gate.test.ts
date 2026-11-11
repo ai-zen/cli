@@ -11,11 +11,16 @@
  *   4. **退出就是不连**（`ok: false`），没有「悄悄降级成本地」这一支。
  */
 
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { Daemon } from "@ai-zen/agents-server";
 import { settleConnection } from "./connection-gate.js";
 import type { ShowConnectScreen } from "./connection-gate.js";
 import type { ConnectionSettings } from "../server-client/index.js";
 import type { ConnectPlan, ProbeResult } from "../connection.js";
+import { connectionFile, readConnectPlan } from "../connection.js";
 import type { CliEnv } from "../env.js";
 
 const LOCAL: ConnectionSettings = { mode: "local" };
@@ -167,4 +172,69 @@ describe("屏上选完：连上了才写盘", () => {
     expect(result.ok).toBe(false);
     expect(saves).toHaveLength(0);
   });
+});
+
+/**
+ * 探活 + 落盘（真 daemon、真 socket）。
+ *
+ * 单测里探活一直是假件，于是「真连一次」与「真写一份」的接缝没人盖：凭证从服务端的
+ * `run/token` 读出来、`ensureServer` 的显式地址那条路（只连不拉起）、`0600` 落盘。这条用例
+ * 把它们一次走完 —— 没有 TTY，也不起界面。
+ */
+describe("探活 + 落盘：屏上选了一个能连的远程", () => {
+  it("连得上 → 宿主把那一份原样写进 <aiZenDir>/cli/connection.json", async () => {
+    const serverDir = mkdtempSync(join(tmpdir(), "aiz-probe-server-"));
+    const clientDir = mkdtempSync(join(tmpdir(), "aiz-probe-client-"));
+    const daemon = new Daemon({ aiZenDir: serverDir, port: 0, version: "0.0.0-test" });
+    await daemon.start();
+    try {
+      const token = readFileSync(join(serverDir, "run", "token"), "utf-8").trim();
+      const chosen = {
+        mode: "remote" as const,
+        serverUrl: `ws://127.0.0.1:${daemon.port}`,
+        serverToken: token,
+      };
+
+      const result = await settleConnection({
+        plan: { settings: null, explicit: false },
+        env: { aiZenDir: clientDir },
+        showConnectScreen: async (input) => {
+          // 屏上那次「提交并测试」：宿主给的 connect 返回 null = 真连上了
+          expect(await input.connect(chosen)).toBeNull();
+          return { kind: "connected", settings: chosen };
+        },
+      });
+
+      expect(result.ok).toBe(true);
+      const stored = JSON.parse(readFileSync(connectionFile({ aiZenDir: clientDir }), "utf-8"));
+      expect(stored).toEqual(chosen);
+    } finally {
+      await daemon.stop("test teardown").catch(() => {});
+      rmSync(serverDir, { recursive: true, force: true });
+      rmSync(clientDir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("连不上 → 原样一句话回去，盘上一份都没写", async () => {
+    const clientDir = mkdtempSync(join(tmpdir(), "aiz-probe-client-"));
+    try {
+      const result = await settleConnection({
+        plan: { settings: null, explicit: false },
+        env: { aiZenDir: clientDir },
+        showConnectScreen: async (input) => {
+          const failure = await input.connect({ mode: "remote", serverUrl: "ws://127.0.0.1:1" });
+          expect(failure).toBeTruthy();
+          return { kind: "exit" };
+        },
+      });
+
+      expect(result.ok).toBe(false);
+      await expect(readConnectPlan({ aiZenDir: clientDir })).resolves.toEqual({
+        settings: null,
+        explicit: false,
+      });
+    } finally {
+      rmSync(clientDir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

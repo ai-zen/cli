@@ -1101,6 +1101,12 @@ describe("RemoteChatSession：服务端在一轮内部换 id（自动迁移）",
     agent.messages = [{ role: "user", content: "交接断点：/tmp/x.md" }];
     agent.fire("finally");
     await pending;
+    /**
+     * 收尾要等**这一轮真的结束**：`send()` 是受理即回（回执先于 `session-turn-end`），
+     * 而 `phase` 与消息都由收尾那一步（`finishTurn` → 快照对齐）写。少这一句，断言读到的
+     * 就是「迁移已完成、这一轮还在飞」那一瞬间 —— 那时 `phase` 确实还是 `connecting`。
+     */
+    await opened.waitForTurn();
 
     /**
      * `session-id-changed` 是**一条事件**，它走的是同一条连接上的另一条消息：

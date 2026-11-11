@@ -2,7 +2,10 @@
  * shell 钩子安装 / 卸载测试。
  *
  * 全部在临时 HOME 下进行：`detectShell()` 读 `SHELL`，rc 路径来自 `homedir()`，
- * 所以改这两个环境变量就能完全隔离，**绝不触碰真实 `~/.bashrc`**。
+ * 所以改这几个环境变量就能完全隔离，**绝不触碰真实 `~/.bashrc`**。
+ *
+ * `HOME` 与 `USERPROFILE` 两个都要设：`os.homedir()` 在 Windows 上取的是后者，只设 `HOME`
+ * 时这些用例会在**开发机的真实主目录**下找不到刚写的文件（在 bash/zsh 里则完全没问题）。
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -17,12 +20,14 @@ const MARKER_END = "# === ai hook (结束) ===";
 let home: string;
 let rcFile: string;
 const originalHome = process.env.HOME;
+const originalUserProfile = process.env.USERPROFILE;
 const originalShell = process.env.SHELL;
 
 beforeEach(async () => {
   home = await fs.mkdtemp(join(tmpdir(), "aiz-hook-test-"));
   rcFile = join(home, ".bashrc");
   process.env.HOME = home;
+  process.env.USERPROFILE = home;
   process.env.SHELL = "/bin/bash";
   // 安装过程会打印提示，测试里静音（同时避免污染 vitest 输出）
   vi.spyOn(console, "log").mockImplementation(() => {});
@@ -33,6 +38,8 @@ afterEach(async () => {
   vi.restoreAllMocks();
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
+  if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = originalUserProfile;
   if (originalShell === undefined) delete process.env.SHELL;
   else process.env.SHELL = originalShell;
   await fs.rm(home, { recursive: true, force: true });

@@ -11,12 +11,11 @@
  * 全部不碰 `process.env`：环境由用例传进来（`env.ts` 已经把它做成了值）。
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdirSync } from "node:fs";
-import { Daemon } from "@ai-zen/agents-server";
 import {
   connectionFile,
   connectionTargetOf,
@@ -24,7 +23,6 @@ import {
   readConnectPlan,
   saveConnectPlan,
 } from "./connection.js";
-import { settleConnection } from "./tui/connection-gate.js";
 import type { CliEnv } from "./env.js";
 
 const REMOTE_URL = "wss://ai-zen.example.com/ai-zen";
@@ -51,7 +49,8 @@ function seed(raw: unknown): void {
 describe("落点", () => {
   it("在 <aiZenDir>/cli/connection.json（与桌面端各存各的）", () => {
     expect(connectionFile({ aiZenDir: "/home/u/.ai-zen" })).toBe(
-      "/home/u/.ai-zen/cli/connection.json",
+      // `join` 而不是手写 `/`：这条断言验的是「落到哪」，不是「这个平台用什么分隔符」
+      join("/home/u/.ai-zen", "cli", "connection.json"),
     );
   });
 });
@@ -153,69 +152,4 @@ describe("normalizeServerAddress：没写 scheme 就补 ws://", () => {
     expect(normalizeServerAddress("  10.0.0.5:8790\n")).toBe("ws://10.0.0.5:8790");
     expect(normalizeServerAddress("   ")).toBe("");
   });
-});
-
-/**
- * 探活 + 落盘（真 daemon、真 socket）。
- *
- * 单测里探活一直是假件，于是「真连一次」与「真写一份」的接缝没人盖：凭证从服务端的
- * `run/token` 读出来、`ensureServer` 的显式地址那条路（只连不拉起）、`0600` 落盘。这条用例
- * 把它们一次走完 —— 没有 TTY，也不起界面。
- */
-describe("探活 + 落盘：屏上选了一个能连的远程", () => {
-  it("连得上 → 宿主把那一份原样写进 <aiZenDir>/cli/connection.json", async () => {
-    const serverDir = mkdtempSync(join(tmpdir(), "aiz-probe-server-"));
-    const clientDir = mkdtempSync(join(tmpdir(), "aiz-probe-client-"));
-    const daemon = new Daemon({ aiZenDir: serverDir, port: 0, version: "0.0.0-test" });
-    await daemon.start();
-    try {
-      const token = readFileSync(join(serverDir, "run", "token"), "utf-8").trim();
-      const chosen = {
-        mode: "remote" as const,
-        serverUrl: `ws://127.0.0.1:${daemon.port}`,
-        serverToken: token,
-      };
-
-      const result = await settleConnection({
-        plan: { settings: null, explicit: false },
-        env: { aiZenDir: clientDir },
-        showConnectScreen: async (input) => {
-          // 屏上那次「提交并测试」：宿主给的 connect 返回 null = 真连上了
-          expect(await input.connect(chosen)).toBeNull();
-          return { kind: "connected", settings: chosen };
-        },
-      });
-
-      expect(result.ok).toBe(true);
-      const stored = JSON.parse(readFileSync(connectionFile({ aiZenDir: clientDir }), "utf-8"));
-      expect(stored).toEqual(chosen);
-    } finally {
-      await daemon.stop("test teardown").catch(() => {});
-      rmSync(serverDir, { recursive: true, force: true });
-      rmSync(clientDir, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  it("连不上 → 原样一句话回去，盘上一份都没写", async () => {
-    const clientDir = mkdtempSync(join(tmpdir(), "aiz-probe-client-"));
-    try {
-      const result = await settleConnection({
-        plan: { settings: null, explicit: false },
-        env: { aiZenDir: clientDir },
-        showConnectScreen: async (input) => {
-          const failure = await input.connect({ mode: "remote", serverUrl: "ws://127.0.0.1:1" });
-          expect(failure).toBeTruthy();
-          return { kind: "exit" };
-        },
-      });
-
-      expect(result.ok).toBe(false);
-      await expect(readConnectPlan({ aiZenDir: clientDir })).resolves.toEqual({
-        settings: null,
-        explicit: false,
-      });
-    } finally {
-      rmSync(clientDir, { recursive: true, force: true });
-    }
-  }, 30_000);
 });
