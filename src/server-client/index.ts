@@ -42,8 +42,8 @@ import {
   ServerConnection,
   type ConfigPort,
   type ServerClient,
+  type ServerTargetSource,
 } from "@ai-zen/agents-client";
-import type { CliEnv } from "../env.js";
 import { CLIENT_INFO } from "./client-info.js";
 
 export * from "@ai-zen/agents-client";
@@ -69,15 +69,15 @@ export const SERVER_PACKAGE = "@ai-zen/agents-server@0.1.0-alpha.0";
  * 生产不用它，当前也没有调用点（e2e 与探活都直接走 `SocketServerClient.connect` /
  * `ensureServer`）。它保留为「只要一条连接、不要那层壳（断了自建 + 重新订阅事件）」的最小出口。
  */
-export async function connectToServer(env: CliEnv): Promise<ServerClient> {
+export async function connectToServer(source: ServerTargetSource): Promise<ServerClient> {
   const { client } = await ensureServer({
-    aiZenDir: env.aiZenDir,
+    aiZenDir: source.aiZenDir,
     clientInfo: CLIENT_INFO,
     serverPackage: SERVER_PACKAGE,
     // 显式地址 + 显式凭证：包里看到地址就**只连不拉起**（D10），凭证优先级也由包里的
     // `resolve-target.ts` 决定（显式 > `<aiZenDir>/run/token`）—— 这里只负责递值
-    serverUrl: env.serverUrl,
-    serverToken: env.serverToken,
+    serverUrl: source.serverUrl,
+    serverToken: source.serverToken,
   });
   return client;
 }
@@ -93,17 +93,17 @@ export async function connectToServer(env: CliEnv): Promise<ServerClient> {
  * 它不建连（懒）：第一次 `client()` 才去 `ensureServer`。所以「启动时还没有服务端」这件事
  * 不需要在这里处理。
  */
-export function createServerConnection(env: CliEnv): ServerConnection {
+export function createServerConnection(source: ServerTargetSource): ServerConnection {
   return new ServerConnection({
-    aiZenDir: env.aiZenDir,
+    aiZenDir: source.aiZenDir,
     clientInfo: CLIENT_INFO,
     serverPackage: SERVER_PACKAGE,
     // 显式地址 / 凭证透传给 `ensureServer`：本类不自己解析地址（「连哪儿 + 拿什么进门」只该
     // 有一个解析点），也不自己决定拉起与否 —— 两个决定都在包里。
     //
     // 不传时（`undefined`）语义就是「走默认」：读发现文件、凭证读 `<aiZenDir>/run/token`。
-    serverUrl: env.serverUrl,
-    serverToken: env.serverToken,
+    serverUrl: source.serverUrl,
+    serverToken: source.serverToken,
   });
 }
 

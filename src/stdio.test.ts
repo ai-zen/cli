@@ -359,6 +359,44 @@ describe("runStdio：一次性调用（真 socket + 真存档）", () => {
   });
 });
 
+/**
+ * 没配过服务端 → **直接失败**（这是用户定下的口径）。
+ *
+ * 不注入连接，也不给 `<aiZenDir>/cli/connection.json`：这就是一台刚解压完的机器。
+ * 断言三件事：退出码 2、一句能照做的话、以及**根本没去读 stdin**（失败发生在消费管道之前）。
+ */
+describe("没配过服务端：一次性调用直接失败，不偷偷拉起本地服务端", () => {
+  it("退出码 2 + 一句指路的话，且没读 stdin", async () => {
+    const bare = mkdtempSync(join(tmpdir(), "aiz-stdio-unset-"));
+    let readStdin = 0;
+    let stderr = "";
+    try {
+      const code = await runStdio(
+        { instruction: "你好", save: false, env: resolveCliEnv({ env: { AI_ZEN_DIR: bare } }) },
+        {
+          readInput: async () => {
+            readStdin += 1;
+            return "";
+          },
+          writeOut: () => {},
+          writeErr: (line) => {
+            stderr += line + "\n";
+          },
+        },
+      );
+
+      expect(code).toBe(2);
+      expect(stderr).toContain("no server configured");
+      // 指路：要么进交互界面选一次，要么当场用 --server 说清楚
+      expect(stderr).toContain("run `ai` once");
+      expect(stderr).toContain("--server");
+      expect(readStdin).toBe(0);
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+});
+
 /** 工作区 id（`workspace.resolve` 里那套规则；测试直接按目录名反查） */
 function workspaceIdFor(root: string): string {
   const workspaces = join(root, "workspaces");

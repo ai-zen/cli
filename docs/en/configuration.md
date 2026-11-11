@@ -23,7 +23,25 @@ Configuration is stored under the shared root directory (determined by `AI_ZEN_D
 
 Everything else (`config.json`, `agents/`, `sub-agents/`, `skills/`, `tools/`, `mcp.json`, `workspaces/`) is decided by the server and the SDK; this process holds no constants for them.
 
-The **explicit** half of "which server / which key" also lives in `src/config.ts` (`--server` / `AI_ZEN_SERVER_URL`, `AI_ZEN_SERVER_TOKEN`): this process only pulls those two explicit values out of argv / env and hands them to the client. Parsing the address and the credential, their precedence, and the default route (`$AI_ZEN_DIR/run/server.json` + `$AI_ZEN_DIR/run/token`) all belong to `resolve-target.ts` in `@ai-zen/agents-client`. The server listens on loopback only; reaching it from another machine takes a tunnel or a reverse proxy — see `agents/docs/en/deploy.md` (the deployment doc in the ai-zen workspace).
+"Which server / which key" comes in **three layers**, each with its own owner:
+
+| Layer | Who supplies it | Remembered? |
+|-------|-----------------|-------------|
+| `--server` / `AI_ZEN_SERVER_URL` / `AI_ZEN_SERVER_TOKEN` | this run's command line / environment | no (a one-off statement) |
+| `$AI_ZEN_DIR/cli/connection.json` | what the user picked on the connection screen | yes (the only layer that writes to disk) |
+| `$AI_ZEN_DIR/run/server.json` + `run/token` | the server running on that machine | not the CLI's business (the client reads it) |
+
+There is exactly one place that resolves them (`readConnectPlan` in `src/connection.ts`) and one place that writes them (`saveConnectPlan` → `connection-settings.ts` in `@ai-zen/agents-client`, `0600` + atomic write). Address/credential precedence, the default route and the `unauthorized` wording all belong to `resolve-target.ts` in the same package. The server listens on loopback only; reaching it from another machine takes a tunnel or a reverse proxy — see `agents/docs/en/deploy.md`.
+
+### Connection screen and "remember the last server"
+
+`ai` (the interactive UI) first checks where it connected last time:
+
+- **reachable** → straight into the conversation (no screen);
+- **unreachable / very first run** → the connection screen: `This machine` (start a server here) / `Remote` (address + token) / `Retry` / `Quit`. Submitting **verifies before it persists**: a failed attempt writes nothing, so a known-bad config never lands on disk.
+- `--server` / `AI_ZEN_SERVER_URL` **override** the saved entry and are **never remembered** (trying a colleague's machine once should not change your default).
+
+`ai "…"` (pipes / one-shot) **has nobody to ask**: with no configuration it **fails immediately** (exit code 2, one line telling you what to do) and will **never** start a local server on your behalf. Once you have picked `This machine`, one-shot calls work as before (starting the local server when needed).
 
 ### Environment variables
 
@@ -127,6 +145,9 @@ Each Agent binds its model in its own definition file — the **second of the th
 ├── run/                      ← Written by the resident server: how to reach it
 │   ├── server.json           ← Discovery: host / port of the server that is running
 │   └── token                 ← Credential (read or created by the server, 0600)
+├── cli/                      ← The CLI's own runtime data
+│   ├── connection.json       ← Last chosen server (local / remote + address, token; 0600)
+│   └── preferences.json      ← UI language and similar preferences
 └── logs/                     ← Diagnostics (sdk.log: SDK global log, 2MB rotation)
 
 /path/to/project/

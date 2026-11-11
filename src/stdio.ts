@@ -50,6 +50,7 @@
 
 import { AgentNS } from "@ai-zen/agents-core";
 import { setLogger } from "@ai-zen/agents-sdk";
+import { connectionTargetOf, readConnectPlan } from "./connection.js";
 import type { CliEnv } from "./env.js";
 import {
   createConfigPort,
@@ -176,6 +177,24 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
   const writeErr = deps.writeErr ?? logStderr;
   const writeOut = deps.writeOut ?? writeStdout;
 
+  /**
+   * 这一台是怎么选的：显式地址 / 环境变量 > 落盘那份 `<aiZenDir>/cli/connection.json`。
+   *
+   * 两样都没有 = **没配过** → 直接失败，**绝不**替用户拉起一个本地服务端。理由：一次性调用
+   * 没有人可以问，而「那我帮你装一个吧」的代价是在一台没配过的机器上、给一条脚本悄悄下一个
+   * 服务端。要选就进交互界面（`ai`）选，或者用 `--server` 当场说清楚。
+   *
+   * 判定放在**读 stdin 之前**：`cat 大文件 | ai "…"` 这种情况下没必要先把管道读完再报错。
+   */
+  const plan = deps.connection ? null : await readConnectPlan(options.env);
+  if (!deps.connection && !plan?.settings) {
+    writeErr(
+      "ai: no server configured yet — run `ai` once to pick one, or pass --server <url>" +
+        " (AI_ZEN_SERVER_URL works too)",
+    );
+    return 2;
+  }
+
   const prompt = mergePrompt(instruction, await (deps.readInput ?? readStdin)());
   if (!prompt.trim()) {
     writeErr("ai: no input (pass an argument or pipe text in)");
@@ -192,7 +211,13 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
   console.log = (...args: unknown[]) => writeErr(args.map((a) => String(a)).join(" "));
 
   /** 这个入口自己造的那条连接（除非调用方递了一条） */
-  const connection = deps.connection ?? createServerConnection(options.env);
+  const connection =
+    deps.connection ??
+    createServerConnection({
+      aiZenDir: options.env.aiZenDir,
+      // `plan` 在 `deps.connection` 有值时是 `null`，那条分支走不到这里
+      ...connectionTargetOf(plan!, options.env),
+    });
   let session: RemoteChatSession | null = null;
   try {
     /**

@@ -74,6 +74,7 @@ src/
   index.ts         入口副作用：NODE_ENV + EPIPE，然后把进程交给 CliApp
   app.ts           根：CliApp（路由 → 退出码；五条路径的接线）
   env.ts           本进程的事实：CliEnv + 唯一解析点（resolveCliEnv）+ 唯一写点（applyCliEnv）
+  connection.ts    「这次连哪台」：ConnectPlan / 探活 / 记忆落盘（只此一处）
   mode.ts          调用形态判定（纯）
   stdio.ts         管道模式（一次性调用；自己造一条连接）
   session.ts       会话层：连接 + 命令族 + 把 SessionStream.state 交给界面
@@ -87,6 +88,8 @@ src/
     handlers.ts    19 条命令的执行体（表驱动）
     index.ts       出口：只导 runCommand（同时也是产物图门禁的入口）
   tui/             只管渲染与输入（ink）：组件、屏幕、布局、主题、配置向导
+    connection-gate.ts  启动时的连接门（先试上次那台，不行才摆屏）—— 不含 JSX，可单测
+    screens/connect.tsx 连接屏（首启 / 连不上）：本机 / 远程 / 重试 / 退出
 ```
 
 判据一句话：**`tui/` 之外的东西不认识「帧」**。它们可以知道「终端多宽多高」（`text.ts` 的

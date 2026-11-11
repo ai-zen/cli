@@ -258,6 +258,26 @@ export const en: Record<string, string> = {
   "migrate.skipped":
     "⏭️ Task migration skipped this time; run /migrate whenever you like. If the context keeps growing past the hard limit, the safety guard will interrupt the conversation.",
 
+  // ---------- Connection screen (first run / unreachable) ----------
+  "connect.title": "Connect to a server",
+  "connect.firstRunHint": "First run: pick a server — this machine, or a remote one",
+  "connect.local": "This machine",
+  "connect.localHint": "Start a server on this computer",
+  "connect.remote": "Remote",
+  "connect.remoteHint": "Enter an address and token",
+  "connect.retry": "Retry",
+  "connect.exit": "Quit",
+  "connect.exitHint": "Don't connect now",
+  "connect.keys": "↑↓ select · Enter confirm · Esc quit",
+  "connect.connecting": "Connecting… (local mode starts a server when needed)",
+  "connect.addressTitle": "Server address",
+  "connect.addressHelp": "e.g. wss://example.com/ai-zen or 10.0.0.5:8790 (no scheme means ws://)",
+  "connect.tokenTitle": "Token",
+  "connect.tokenHelp": "Leave empty to use this machine's run/token (written by the local daemon)",
+  "connect.continue": "Continue",
+  "connect.back": "Back",
+  "connect.connect": "Connect",
+
   // ---------- `ai --help` (printed outside the TUI, hence the locale init in the help branch) ----------
   "cli.help.title": "ai — AI-Zen CLI v{version}",
   "cli.help.usage":

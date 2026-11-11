@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { delimiter, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { workspaceIdFor, Daemon } from "@ai-zen/agents-server";
-import { readDescriptor } from "@ai-zen/agents-client";
+import { connectionSettingsPath, readDescriptor } from "@ai-zen/agents-client";
 import { SocketServerClient } from "../server-client/index.js";
 import { startFakeLlm, type FakeLlm } from "@ai-zen/agents-testing";
 
@@ -181,6 +181,16 @@ interface SetupOptions {
 function setupConfigDir(aizDir: string, options: SetupOptions = {}): void {
   const { apiKey = "sk-test-fake-key", baseUrl = "https://api.deepseek.com/v1" } = options;
 
+  /**
+   * 这台机器「配过」：连接决定也在盘上（用户跑过一次 `ai` 之后就是它）。
+   *
+   * 不写这一份的话，`ai "…"` 会按「没配过」**直接失败**（那是 `没配过服务端` 那条用例
+   * 要验的事）—— 而本组用例要验的是「stdio 跑一轮」本身。
+   */
+  const connectionFile = connectionSettingsPath(aizDir, "cli");
+  mkdirSync(dirname(connectionFile), { recursive: true });
+  writeFileSync(connectionFile, `${JSON.stringify({ mode: "local" })}\n`, "utf-8");
+
   mkdirSync(join(aizDir, "agents"), { recursive: true });
   mkdirSync(join(aizDir, "sub-agents"), { recursive: true });
 
@@ -304,6 +314,26 @@ describe("E2E: 显式服务端地址（--server / AI_ZEN_SERVER_URL）", () => {
       await daemon.stop("e2e teardown").catch(() => {});
     }
   }, 30_000);
+});
+
+describe("E2E: 没配过服务端（一次性调用直接失败）", () => {
+  it('ai "…" 退出码 2、一句指路的话、且**没有拉起任何服务端**', async () => {
+    // 一台刚解压完的机器：没有 `cli/connection.json`，也没有 `run/`
+    const aizDir = makeTestDir();
+
+    // `AI_ZEN_SERVER_URL` 显式置空：开发者 shell 里若真有这一项，本用例就测不到「没配过」了
+    const result = await runCli(["你好"], undefined, {
+      AI_ZEN_DIR: aizDir,
+      AI_ZEN_SERVER_URL: "",
+      AI_ZEN_SERVER_TOKEN: "",
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("no server configured");
+    // 判据：真的一个服务端都没被拉起来（拉起一定会写发现文件）
+    expect(existsSync(join(aizDir, "run", "server.json"))).toBe(false);
+  }, 20_000);
 });
 
 describe("E2E: shell 兜底钩子", () => {

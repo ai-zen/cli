@@ -23,7 +23,26 @@ outline: deep
 
 其余位置（`config.json`、`agents/`、`sub-agents/`、`skills/`、`tools/`、`mcp.json`、`workspaces/`）由服务端与 SDK 决定，本进程不持常量。
 
-「连哪台服务端 / 拿什么进门」的**显式**那一半也收在 `src/config.ts`（`--server` / `AI_ZEN_SERVER_URL`、`AI_ZEN_SERVER_TOKEN`）：本进程只把 argv / env 里那两份显式值捞出来递给客户端，地址与凭证的解析、优先级、默认路（`$AI_ZEN_DIR/run/server.json` + `$AI_ZEN_DIR/run/token`）全归 `@ai-zen/agents-client` 的 `resolve-target.ts`。服务端只监听 loopback，跨机器访问靠隧道或反向代理，详见 `agents/docs/zh/deploy.md`（ai-zen 工作区里的部署文档）。
+「连哪台服务端 / 拿什么进门」分**三层**，各有各的主人：
+
+| 层 | 谁给的 | 记不记 |
+|----|--------|--------|
+| `--server` / `AI_ZEN_SERVER_URL` / `AI_ZEN_SERVER_TOKEN` | 这一次的命令行 / 环境 | 不记（这一次的表态） |
+| `$AI_ZEN_DIR/cli/connection.json` | 用户在连接屏上选过的那一份 | 记（唯一会写盘的一层） |
+| `$AI_ZEN_DIR/run/server.json` + `run/token` | 那台机器上正在跑的服务端 | 不归 CLI（连接层自己读） |
+
+解析点只有一处（`src/connection.ts` 的 `readConnectPlan`），落盘只有一处（同一文件的 `saveConnectPlan` → 包里 `connection-settings.ts`，`0600` + 原子写）。地址与凭证的优先级、缺省路、`unauthorized` 的措辞全归 `@ai-zen/agents-client` 的 `resolve-target.ts`。服务端只监听 loopback，跨机器访问靠隧道或反向代理，详见 `agents/docs/zh/deploy.md`。
+
+### 连接屏与「记住上次」
+
+`ai`（交互界面）每次启动先看一眼上次连的是哪台：
+
+- **连得上** → 直接进对话（不弹屏）；
+- **连不上 / 第一次启动** → 连接屏：`本机`（在这台电脑上启动服务端）/ `远程`（地址 + 凭证）/ `重试` / `退出`。屏上提交 = **先验证再落盘**：连不上就不写，不把一个已知是错的配置留在盘上。
+- 命令行的 `--server` / `AI_ZEN_SERVER_URL` **压过**盘上那份，而且**不会被记住**（临时连一下同事的机器不该改掉你的默认）。
+
+`ai "…"`（管道 / 一次性调用）**没有人可以问**：没配过就**直接失败**（退出码 2，一句指路的话），**绝不**替用户拉起一个本地服务端。已经选过 `本机` 之后，一次性调用会照旧（需要时拉起本机服务端）。
+
 
 ### 环境变量
 
@@ -128,6 +147,9 @@ outline: deep
 ├── run/                      ← 常驻服务端写的「怎么找到它」
 │   ├── server.json           ← 服务发现：服务端此刻在哪个端口
 │   └── token                 ← 凭证（服务端启动时读或生成，0600）
+├── cli/                      ← CLI 自己的运行时数据
+│   ├── connection.json       ← 上次选的服务端（本地 / 远程 + 地址凭证，0600）
+│   └── preferences.json      ← 界面语言等偏好
 └── logs/                     ← 诊断日志（sdk.log：SDK 全局日志，2MB 轮转）
 
 /path/to/project/

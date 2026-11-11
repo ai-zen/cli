@@ -16,13 +16,17 @@ import {
   createServerConnection,
   type ConfigPort,
   type ServerConnection,
+  type ServerTargetSource,
 } from "../server-client/index.js";
+import { readConnectPlan } from "../connection.js";
 import type { CliEnv } from "../env.js";
 // 类型从 `agents-store.ts` 转出（那里只剩词汇表）：首启凭据屏要把**服务端那**一份定义快照递下去
 import type { AgentStore } from "../agents-store.js";
 import { resolveCredential } from "../config-editor.js";
 import { ConfigWizard, type WizardCloseResult } from "./config-wizard/index.js";
 import { Chat } from "./screens/index.js";
+import { ConnectScreen } from "./screens/connect.js";
+import { settleConnection, type ConnectScreenResult } from "./connection-gate.js";
 import { keyDebugStart } from "./key-debug.js";
 import { disableMouseTracking, enableMouseTracking } from "./mouse.js";
 import { installSdkLogger } from "../sdk-log.js";
@@ -64,8 +68,8 @@ export interface TuiEndpoints {
 }
 
 /** 按根递进来的事实把那一对对象建出来（一次 `runTui` 只调一次） */
-function openEndpoints(env: CliEnv): TuiEndpoints {
-  const connection = createServerConnection(env);
+function openEndpoints(source: ServerTargetSource): TuiEndpoints {
+  const connection = createServerConnection(source);
   return { connection, config: createConfigPort(connection) };
 }
 
@@ -419,8 +423,6 @@ export interface RunTuiOptions {
 }
 
 export async function runTui(options: RunTuiOptions): Promise<void> {
-  // 进程级那一对（连接 + 配置面）：一次 `runTui` 只建一次，且**在重挂载循环之外**
-  const endpoints = openEndpoints(options.env);
   const uninstallSignals = installSignalSafety();
   // 接管 SDK 全局日志：关掉库自带的 console 兜底。必须在任何 Ink 渲染之前——
   // SDK 的 logger 默认是 console.log，直写 stdout 会把界面撕坏
@@ -432,7 +434,38 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
   // 按键诊断：AIZ_DEBUG_KEYS=1 时把终端环境 + 每次按键写进日志（默认关闭，零开销）
   keyDebugStart();
 
+  /**
+   * 进程级那一对（连接 + 配置面）：一次 `runTui` 只建一次，且**在重挂载循环之外**。
+   *
+   * 它必须等**连接门**过了才能建 —— 门里用户可能把目标换掉（从本机改成某台远程），而一条
+   * `ServerConnection` 的目标在构造那一刻就定了。所以它住在门后的那个作用域里；收摊时真正要
+   * 用的只是「关掉它」这一个动作，单独记一个函数就够（不在外面留一个可空的对象）。
+   */
+  let closeConnection: (() => void) | null = null;
+
   try {
+    /**
+     * 连接门：先看上次那台还能不能用，不行就摆一块屏（理由与顺序见 `connection-gate.ts`）。
+     *
+     * 这一句取代了从前那句「直接 `resolveTarget()`，失败就报一行 `bootFailed` 退出」——
+     * 那时的症状是：服务端不可达时 TUI **没有任何可操作的界面**，用户只能去改环境变量。
+     */
+    const gate = await settleConnection({
+      plan: await readConnectPlan(options.env),
+      env: options.env,
+      showConnectScreen: (input) =>
+        mount(
+          <ConnectScreen initial={input.initial} reason={input.reason} connect={input.connect} />,
+        ).then((result) => (result as ConnectScreenResult | undefined) ?? { kind: "exit" }),
+    });
+    if (!gate.ok) {
+      farewell();
+      return;
+    }
+    // 门过了：目标已经定下（可能是用户在屏上刚选的），现在才建那一条连接
+    const endpoints = openEndpoints(gate.source);
+    closeConnection = () => endpoints.connection.close();
+
     // 直达对话：Agent 身份与它绑的模型都由配置面给（服务端那份配置）；
     // 「接不接上次」只在这里定 —— 不带 `--new` 就带上 resume 意图，带上就一定是新会话。
     let target: ChatTarget | null = null;
@@ -477,8 +510,11 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
      * 顺序上这帧 `session.close` 已经由最后一代屏幕的 `dispose()` 发过了（尽力而为、不
      * await：按 Ctrl+C 不该卡在这里）。连接先断会让那帧落不了地，代价是多留一段会话到
      * 服务端宽限期 —— 既有取舍，写在 `session.ts` 的 `dispose()` 里。
+     *
+     * `?.` 是因为连接门里用户可能直接退了：那时一条连接都没建过（`endpoints` 还是 `null`），
+     * 而「没建过」不该被当成「要关一条不存在的连接」。
      */
-    endpoints.connection.close();
+    closeConnection?.();
   }
 }
 

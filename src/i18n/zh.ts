@@ -248,6 +248,27 @@ export const zh: Record<string, string> = {
   "migrate.skipped":
     "⏭️ 已跳过本次任务迁移；可随时输入 /migrate 手动迁移，若继续增长至严重超限对话会被安全护栏中断。",
 
+  // ---------- 连接屏（首启 / 连不上） ----------
+  "connect.title": "连接服务端",
+  "connect.firstRunHint": "第一次使用：先选一台服务端（本机，或者一台远程）",
+  "connect.local": "本机",
+  "connect.localHint": "在这台电脑上启动服务端",
+  "connect.remote": "远程",
+  "connect.remoteHint": "填写地址与凭证",
+  "connect.retry": "重试",
+  "connect.exit": "退出",
+  "connect.exitHint": "先不连",
+  "connect.keys": "↑↓ 选择 · Enter 确认 · Esc 退出",
+  "connect.connecting": "正在连接…（本机模式会在需要时启动服务端）",
+  "connect.addressTitle": "服务端地址",
+  "connect.addressHelp":
+    "例：wss://example.com/ai-zen、10.0.0.5:8790（不写 scheme 时按 ws:// 处理）",
+  "connect.tokenTitle": "凭证",
+  "connect.tokenHelp": "留空 = 用本机 run/token（本机 daemon 自己生成的那一串）",
+  "connect.continue": "继续",
+  "connect.back": "返回",
+  "connect.connect": "连接",
+
   // ---------- `ai --help`（在 TUI 之外打印，故单独在 help 分支初始化语言） ----------
   "cli.help.title": "ai — AI-Zen CLI v{version}",
   "cli.help.usage":
