@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { refreshPaths } from "./config.js";
+import { applyCliEnv, resolveCliEnv } from "./env.js";
 import { getLogger, setLogger } from "@ai-zen/agents-sdk";
 import {
   createFileLogger,
@@ -94,18 +94,18 @@ describe("SDK 日志接管", () => {
   });
 
   it("默认落盘到 <AI_ZEN_DIR>/logs/sdk.log", () => {
-    // 走真实接线：改 `AI_ZEN_DIR` → `refreshPaths()` → 不传参的 `sdkLogFile()`
+    // 走真实接线：改 `AI_ZEN_DIR` → 重新钉根（`applyCliEnv`）→ 不传参的 `sdkLogFile()`
     const dir = tmpLogFile(); // 只借用它建临时目录的能力
     const root = dirname(dir);
     const saved = process.env.AI_ZEN_DIR;
     try {
       process.env.AI_ZEN_DIR = root;
-      refreshPaths();
+      applyCliEnv(resolveCliEnv({ env: process.env }));
       expect(sdkLogFile()).toBe(join(root, "logs", "sdk.log"));
     } finally {
       if (saved === undefined) delete process.env.AI_ZEN_DIR;
       else process.env.AI_ZEN_DIR = saved;
-      refreshPaths();
+      applyCliEnv(resolveCliEnv({ env: process.env }));
     }
   });
 

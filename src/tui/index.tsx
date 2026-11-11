@@ -11,7 +11,13 @@
 
 import { render, useApp, type Instance } from "ink";
 import { resolveModel, type AppConfig } from "@ai-zen/agents-sdk";
-import { createConfigPort, createServerConnection } from "../server-client/index.js";
+import {
+  createConfigPort,
+  createServerConnection,
+  type ConfigPort,
+  type ServerConnection,
+} from "../server-client/index.js";
+import type { CliEnv } from "../env.js";
 // 类型从 `agents-store.ts` 转出（那里只剩词汇表）：首启凭据屏要把**服务端那**一份定义快照递下去
 import type { AgentStore } from "../agents-store.js";
 import { resolveCredential } from "../config-editor.js";
@@ -28,27 +34,40 @@ import type { AgentNS } from "@ai-zen/agents-core";
 const CLEAR_SCREEN = "\x1b[2J\x1b[H\x1b[?25h";
 
 /**
- * 进程级的那一条连接（一个进程只到服务端建一条）。
+ * 本进程那一条连接，与由它派生的配置面 —— 一个 TUI 进程只有一份。
  *
- * **它必须活在 `runChat` 的重挂载循环之外**。`/load`、`/clear`、`/back` 都是「卸载当前
- * Ink 实例 → 再 `mount(<Chat/>)`」，而连接如果建在循环里（或建在组件里），切一次会话就
- * 重连一次：服务端那边多一条 driver，客户端这边丢掉全部在飞事件（还包括「刚断线」的
- * 误报）。放在模块级，循环里的每一代屏幕都只是「换了个用户」，连接不变。
+ * ## 为什么它不是模块级常量
+ *
+ * 它必须**在 `runChat` 的重挂载循环之外**：`/load`、`/clear`、`/back` 都是「卸载当前 Ink
+ * 实例 → 再 `mount(<Chat/>)`」，而连接如果建在循环里（或建在组件里），切一次会话就重连一次：
+ * 服务端那边多一条 driver，客户端这边丢掉全部在飞事件（还包括「刚断线」的误报）。
+ *
+ * 但「在循环之外」不等于「在模块里」：它需要的事实（`CliEnv`：配置根 + 显式地址/凭证）由
+ * 根（`CliApp`）在 `runTui(options.env)` 里递进来。放在模块级就只能去全局拿 —— 那样「这个 TUI
+ * 连的是哪台」又要读实现才知道，而它是本文件最该一眼看出来的一件事。
  *
  * 懒建：第一次 `client()` 才去 `ensureServer`，所以启动顺序不受影响。
  */
-const connection = createServerConnection();
+export interface TuiEndpoints {
+  /** 那一条连接（`connection.client()` 每次判活，断了自建） */
+  connection: ServerConnection;
+  /**
+   * 配置面 —— 派生自**同一条**连接，全文件复用这一个。
+   *
+   * 为什么不每次调用新建：一次 `modelOf` / `resolveTarget` / 凭据预检各建一个端口，启动阶段
+   * 就会为同一件事重复握手；而它本来就是进程级共享的资源。
+   *
+   * 为什么是远程实现：启动预检读的是「**服务端**用哪份配置、Agent 绑的哪个模型」。读本机磁盘
+   * 在两机部署时必然错误 —— 预检通过、实际请求仍然缺 Key（或反之）。
+   */
+  config: ConfigPort;
+}
 
-/**
- * 进程级配置面 —— 派生自**同一条**连接，全文件复用这一个。
- *
- * 为什么全局一个而不是每次调用新建：一次 `modelOf` / `resolveTarget` / 凭据预检各建一个
- * 端口，启动阶段就会为同一件事重复握手；而它本来就是进程级共享的资源。
- *
- * 为什么是远程实现：启动预检读的是「**服务端**用哪份配置、Agent 绑的哪个模型」。
- * 读本机磁盘在两端不同机时必然错误 —— 预检通过、实际请求仍然缺 Key（或反之）。
- */
-const configPort = createConfigPort(connection);
+/** 按根递进来的事实把那一对对象建出来（一次 `runTui` 只调一次） */
+function openEndpoints(env: CliEnv): TuiEndpoints {
+  const connection = createServerConnection(env);
+  return { connection, config: createConfigPort(connection) };
+}
 
 /**
  * 告别并终止进程。
@@ -137,12 +156,15 @@ function CredentialGate({
   configPath,
   endpointId,
   agentStore,
+  endpoints,
 }: {
   config: AppConfig;
   configPath: string;
   endpointId: string;
-  /** Agent / Sub-agent 定义快照（服务端那一份，`configPort.readAgentStore()`） */
+  /** Agent / Sub-agent 定义快照（服务端那一份，`endpoints.config.readAgentStore()`） */
   agentStore: AgentStore;
+  /** 本进程那一对（连接 + 配置面）：这个屏的保存必须落在**同一条**连接上 */
+  endpoints: TuiEndpoints;
 }) {
   const { exit } = useApp();
   return (
@@ -154,7 +176,7 @@ function CredentialGate({
       onboarding
       closeOnSave
       initialStep={{ kind: "edit", field: "apiKey", endpointId }}
-      onSave={(config) => configPort.saveConfig(config)}
+      onSave={(config) => endpoints.config.saveConfig(config)}
       // 首启凭据屏不碰 MCP：这里给一个明确的空实现，而不是让组件去写本机 mcp.json
       onSaveMcp={async () => {}}
       onClose={(result) => exit(result)}
@@ -168,16 +190,16 @@ function CredentialGate({
  * 配置本身残缺（模型 / 端点不存在）时不在此拦截 —— 交给对话屏报错，
  * 那里可按 `k` 打开配置中心自行修配置。
  */
-async function ensureCredential(modelId: string): Promise<boolean> {
+async function ensureCredential(endpoints: TuiEndpoints, modelId: string): Promise<boolean> {
   // 凭据要从**实际会用它的那一份配置**里取：在服务端，不是本机磁盘。
   // 顺带拿那份文件的路径 —— 凭据屏是同一个 `ConfigWizard`，它要知道自己改的是哪个文件。
-  const { config, path } = await configPort.readConfigFile();
+  const { config, path } = await endpoints.config.readConfigFile();
   const credential = resolveCredential(config, modelId);
   if (!credential || credential.configured) return true;
 
   // 定义快照也来自**服务端**（它只有真要开屏时才读一次）：凭据屏里可以进 Agent 定义编辑，
   // 而那条路的写入必须落在 Agent 实际用的那一份上。
-  const agentStore = await configPort.readAgentStore();
+  const agentStore = await endpoints.config.readAgentStore();
 
   const result = (await mount(
     <CredentialGate
@@ -185,6 +207,7 @@ async function ensureCredential(modelId: string): Promise<boolean> {
       configPath={path}
       endpointId={credential.endpointId}
       agentStore={agentStore}
+      endpoints={endpoints}
     />,
   )) as WizardCloseResult | undefined;
   return Boolean(result?.dirty);
@@ -215,13 +238,16 @@ interface ChatTarget {
  *
  * 解析不出来就直接报错，绝不做任何隐式回退：静默挑一个模型，用户会以为在用配置里那个。
  */
-async function modelOf(agentId: string | undefined): Promise<string> {
+async function modelOf(endpoints: TuiEndpoints, agentId: string | undefined): Promise<string> {
   const id = agentId || "default";
   // 历史 Agent 缺 `modelId` 的补齐（迁移 / bootstrap）发生在**持有定义的那一侧**
   // （服务端）。客户端只负责读快照，不自己重做一遍迁移
   // （在这里补写会让「谁改的配置」变得说不清）；读到的定义若仍无 modelId 且没有兜底，
   // 就是真缺。
-  const [config, store] = await Promise.all([configPort.readConfig(), configPort.readAgentStore()]);
+  const [config, store] = await Promise.all([
+    endpoints.config.readConfig(),
+    endpoints.config.readAgentStore(),
+  ]);
   const definition = store.agents.find((agent) => agent.id === id);
   const resolved = resolveModel({
     agentModelId: definition?.modelId,
@@ -236,17 +262,20 @@ async function modelOf(agentId: string | undefined): Promise<string> {
   return resolved.modelId;
 }
 
-async function resolveTarget(): Promise<ChatTarget> {
+async function resolveTarget(endpoints: TuiEndpoints): Promise<ChatTarget> {
   // 默认 Agent 与可用 Agent 列表都在配置面里（远程时以服务端为准），
   // 「本机有没有装 Agent」与「服务端能不能跑」是两回事。
-  const [config, store] = await Promise.all([configPort.readConfig(), configPort.readAgentStore()]);
+  const [config, store] = await Promise.all([
+    endpoints.config.readConfig(),
+    endpoints.config.readAgentStore(),
+  ]);
   const agents = store.agents;
 
   const agentId = config.defaultAgent ?? agents[0]?.id;
   if (!agentId) throw new Error(t("app.noAgents"));
 
   // 校验模型可用（缺失时抛出可读错误，交给启动屏展示）
-  await modelOf(agentId);
+  await modelOf(endpoints, agentId);
   return { agentId };
 }
 
@@ -267,7 +296,17 @@ function resumeLastSession(): ChatTarget {
  * 运行对话屏；`/clear`、`/back`、`/load` 通过重挂载（新 Ink 实例 + 原生清屏）实现，
  * 其余退出直接结束。
  */
-async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise<void> {
+/**
+ * `runChat` 只需要「这一屏怎么开」的那两个开关：`env` 在 `runTui` 里已经变成了
+ * {@link TuiEndpoints}，再往下传一份事实只会给“到底以哪份为准”留口子。
+ */
+type ChatRunOptions = Pick<RunTuiOptions, "initialPrompt" | "newSession">;
+
+async function runChat(
+  endpoints: TuiEndpoints,
+  target: ChatTarget,
+  options: ChatRunOptions = {},
+): Promise<void> {
   let current = target;
   let messages = target.messages;
   let initialInput: string | undefined;
@@ -296,7 +335,7 @@ async function runChat(target: ChatTarget, options: RunTuiOptions = {}): Promise
         resume={resume}
         // 把**同一对**（连接 + 由它派生的配置面）交给对话屏。对话屏不再有兜底：它自己
         // 造一条连接的话，一个 TUI 进程就又变成两条到服务端的连接。
-        deps={{ config: configPort, connection }}
+        deps={{ config: endpoints.config, connection: endpoints.connection }}
         initialInput={initialInput}
         initialNotice={initialNotice}
         initialPrompt={initialPrompt}
@@ -370,9 +409,18 @@ export interface RunTuiOptions {
    * 具体接哪一段由会话实现问服务端，客户端不读本地存档。
    */
   newSession?: boolean;
+  /**
+   * 本进程的事实（配置根 / 显式地址与凭证）—— 由根（`CliApp`）递进来。
+   *
+   * **必填**：TUI 不读 `process.env`。上面那两个开关是「这一屏怎么开」，这一项是「连哪台、
+   * 拿什么进门」—— 两者混成一个可选参数的结果，就是“忘了传”静默地连回本机。
+   */
+  env: CliEnv;
 }
 
-export async function runTui(options: RunTuiOptions = {}): Promise<void> {
+export async function runTui(options: RunTuiOptions): Promise<void> {
+  // 进程级那一对（连接 + 配置面）：一次 `runTui` 只建一次，且**在重挂载循环之外**
+  const endpoints = openEndpoints(options.env);
   const uninstallSignals = installSignalSafety();
   // 接管 SDK 全局日志：关掉库自带的 console 兜底。必须在任何 Ink 渲染之前——
   // SDK 的 logger 默认是 console.log，直写 stdout 会把界面撕坏
@@ -389,7 +437,7 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
     // 「接不接上次」只在这里定 —— 不带 `--new` 就带上 resume 意图，带上就一定是新会话。
     let target: ChatTarget | null = null;
     try {
-      target = await resolveTarget();
+      target = await resolveTarget(endpoints);
     } catch (error: any) {
       process.stderr.write(`\n${t("app.bootFailed", { error: error?.message ?? error })}\n`);
     }
@@ -404,18 +452,18 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
     // 模型从 Agent 定义读 —— 与实发请求用的是同一个值
     let modelId: string | null = null;
     try {
-      modelId = await modelOf(target.agentId);
+      modelId = await modelOf(endpoints, target.agentId);
     } catch (error: any) {
       process.stderr.write(`\n${t("app.bootFailed", { error: error?.message ?? error })}\n`);
       farewell();
       return;
     }
-    if (!(await ensureCredential(modelId))) {
+    if (!(await ensureCredential(endpoints, modelId))) {
       farewell();
       return;
     }
 
-    await runChat(target, options);
+    await runChat(endpoints, target, options);
     farewell();
   } finally {
     uninstallSignals();
@@ -430,7 +478,7 @@ export async function runTui(options: RunTuiOptions = {}): Promise<void> {
      * await：按 Ctrl+C 不该卡在这里）。连接先断会让那帧落不了地，代价是多留一段会话到
      * 服务端宽限期 —— 既有取舍，写在 `session.ts` 的 `dispose()` 里。
      */
-    connection.close();
+    endpoints.connection.close();
   }
 }
 

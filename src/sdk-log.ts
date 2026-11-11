@@ -30,15 +30,18 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { setLogger, type Logger } from "@ai-zen/agents-sdk";
-import { AI_ZEN_DIR } from "./config.js";
+import { cliEnv } from "./env.js";
 
 /**
  * 日志落盘路径（测试与用户都可能改写，故每次重新解析）。
  *
- * 不在模块加载时固化成常量：`AI_ZEN_DIR` 是活绑定，测试会在用例之间改它 ——
- * 而**顶层常量**拿到的才是快照。
+ * 不在模块加载时固化成常量：根由 `CliApp` 在启动时钉进 `env.ts`，而**顶层常量**拿到的是
+ * 「模块被 import 那一刻」的那一份。缺省参数是**调用时**求值，所以这个函数永远跟着当前那一份
+ * 走（用例换临时根之后，下一次调用就落在新目录）。
+ *
+ * `AIZ_SDK_LOG_FILE` 仍是当场覆盖（调试开关不进 `CliEnv`，见 `env.ts` 的边界）。
  */
-export function sdkLogFile(root: string = AI_ZEN_DIR): string {
+export function sdkLogFile(root: string = cliEnv().aiZenDir): string {
   return process.env.AIZ_SDK_LOG_FILE || join(root, "logs", "sdk.log");
 }
 

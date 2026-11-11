@@ -22,10 +22,37 @@
 
 ---
 
+## 根：一个进程一个 `CliApp`
+
+`CliApp`（`src/app.ts`）是本进程唯一**有名字**的根：它持有路由结果（`Invocation`）、本进程的
+事实（`CliEnv`，见 `env.ts`）、终端能力（`TtyState`），并决定退出码。`index.ts` 只剩两段必须
+早于任何模块求值成立的副作用（`NODE_ENV`、EPIPE）。
+
+判据（不满足就是「松散全局 / 松散模块」，而不是「根」）：
+
+| 判据 | 怎么查 |
+|---|---|
+| 进程级事实只有一个主人 | `grep -rn "process\.argv\|process\.env\.AI_ZEN\|process\.exitCode" src` 应只命中 `app.ts` / `env.ts` / `index.ts` |
+| 同一个东西只有一个构造点 | 想第二次 `new` / 第二次读 env 之前，先问「能不能让根递进来」 |
+| 依赖单向 | `stdio.ts` / `tui/` / `hook.ts` 都不 import `app.js`，它们只收参数 |
+| 根里没有业务 | `CliApp` 的 `switch` 只做「把事实递给谁 + 返回几」；判定在 `mode.ts` / `stdio.ts` / `tui/` |
+| 能单独验 | `app.test.ts` 用假件跑完五条分支 —— 造不出来，说明它偷偷读了 `process.*` |
+
+**为什么不是「把所有东西都收进来」**：`t()`（界面语言）与 `setLogger()`（SDK 日志出口）是进程级
+单例（同 `console`），全仓 30 多个文件在用，且**没有第二个真相**。把它们收进根等于把整个 TUI
+改成「一切从 Props 取」，成本极高、换不到任何保证。根对它们只负责**时机**（`help` / `hook` /
+`tui` 说话之前先 `initLocale()`）。
+
+**别给 `CliEnv` 加缺省回落**（「没设置就自己读 `process.env`」）：那会让「谁在哪一刻定的根」重新
+变成不可回答的问题，而错得很安静。`cliEnv()` 没设置就抛。
+
+---
+
 ## 边界：`tui/` 是叶子
 
-除 `tui/` 自己以外，全仓**不许** import `tui/`（唯一例外是 `src/index.ts` 里那句
-`await import("./tui/index.js")` —— 那是 TUI 入口本身）。
+除 `tui/` 自己以外，全仓**不许** import `tui/`（唯一例外是 `src/app.ts` 里那句
+`await import("./tui/index.js")` —— 那是 TUI 入口本身，而且必须是**动态**的，见下文「为什么
+`tui/` 要当叶子」）。
 
 判据不是路径 grep（改个 import 写法就绿了），而是**产物 import 图**：
 
@@ -44,7 +71,9 @@ token 速率（`session-rate.ts`）、通知/阶段文案（`session-notice.ts` 
 
 ```
 src/
-  index.ts         分发器（唯一的动态 import `./tui/index.js` 的地方）
+  index.ts         入口副作用：NODE_ENV + EPIPE，然后把进程交给 CliApp
+  app.ts           根：CliApp（路由 → 退出码；五条路径的接线）
+  env.ts           本进程的事实：CliEnv + 唯一解析点（resolveCliEnv）+ 唯一写点（applyCliEnv）
   mode.ts          调用形态判定（纯）
   stdio.ts         管道模式（一次性调用；自己造一条连接）
   session.ts       会话层：连接 + 命令族 + 把 SessionStream.state 交给界面
@@ -75,9 +104,9 @@ src/
 |---|---|---|
 | `tsc --noEmit -p tsconfig.test.json` | 类型（含用例的类型级断言）+ **未使用符号**（`noUnusedLocals` / `noUnusedParameters` 已开） | 契约改了没同步；用例期望的字段没了；留了一个没人读的 import 或只写不读的变量 |
 | `npm run format:check` | 格式（`.prettierrc` 是唯一约定） | 有人手写成 100 列以上、或被编辑器/工具重排过 —— 跑 `npm run format` 就好，别手工对 |
-| `vitest run` | 行为（800 例） | 行为回归；**用例数下降必须能解释**（测的是被删掉的旧实现？） |
+| `vitest run` | 行为（860 例） | 行为回归；**用例数下降必须能解释**（测的是被删掉的旧实现？） |
 | `npm run build` + `npm run check:imports` | **产物 import 图**：三个入口（`commands/index.js` / `session.js` / `stdio.js`）的运行期依赖里不许有 `ink`、`react`、`./tui/` | 有人在「不该有 UI」的层里用了 UI，或者为了一个纯函数把带 ink 的模块拖了进来 |
-| `vitest run --config vitest.e2e.config.ts` | 真进程 + 真服务端（`dist/index.js` 跑起来） | 组装根改了（连接从哪来、模式分发）；只有真跑才看得见 |
+| `vitest run --config vitest.e2e.config.ts` | 真进程 + 真服务端（`dist/index.js` 跑起来） | **产物**跑不起来（入口链、打包后的动态 import、进程环境）。路由与退出码已经由 `app.test.ts` 用假件验过 —— 这一层验的是另一件事，两者不能互相替代 |
 
 `check:imports` 为什么必须在 `build` **之后**：它读的是 `dist/*.js`。路径 grep 会被「改个
 import 写法」骗过去（`from "./render.js"` 改个名字就绿了），而 `render.js` 头顶那句
@@ -89,7 +118,7 @@ import 写法」骗过去（`from "./render.js"` 改个名字就绿了），而 
 
 1. **`ai "…"` 会不会 OOM 取决于某个文件的 import 图**。`index.ts` 里 `NODE_ENV ||= "production"`
    必须早于 React 求值（DEV 版 reconciler 的 `performance.measure()` 缓冲无界增长，长会话能把堆
-   顶爆）。`stdio.ts` 被 `index.ts` **静态** import，所以它的整条依赖链上出现 React/Ink，那一行
+   顶爆）。`app.ts` **静态** import 了 `stdio.ts`，所以它的整条依赖链上出现 React/Ink，那一行
    就白写了 —— 而这条约束以前只靠一句注释（「这条链上今天恰好没有 React」）维持。
 2. **命令层悄悄拿到渲染状态**。命令层一旦收着 `setPickerState` / `setConfirmState` 这类原始
    React setter，「弹个选择器」就会被写成「改一块渲染状态」，那段代码在没有 React 的宿主里根本

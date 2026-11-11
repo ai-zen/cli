@@ -50,6 +50,7 @@
 
 import { AgentNS } from "@ai-zen/agents-core";
 import { setLogger } from "@ai-zen/agents-sdk";
+import type { CliEnv } from "./env.js";
 import {
   createConfigPort,
   createServerConnection,
@@ -64,6 +65,13 @@ export interface StdioRunOptions {
   instruction: string;
   /** 是否保存对话存档（默认 false，不落盘） */
   save: boolean;
+  /**
+   * 本进程的事实（配置根 / 显式地址与凭证）—— 由根（`CliApp`）递进来。
+   *
+   * **必填**：本文件不读 `process.env`。一个「不传就去全局拿」的缺省会让「这件事是怎么连上
+   * 那台机器的」重新变成要读实现才知道的事。
+   */
+  env: CliEnv;
 }
 
 /**
@@ -74,8 +82,8 @@ export interface StdioRunOptions {
  */
 export interface StdioRunDeps {
   /**
-   * 那**一条**连接。缺省由本入口自己造一个（`createServerConnection()`）：
-   * stdio 是独立入口，没有上层组装根可以靠。
+   * 那**一条**连接。缺省由本入口自己用 `options.env` 造一个（`createServerConnection(env)`）：
+   * stdio 是独立入口，没有别的上层可以靠。
    */
   connection?: ServerConnection;
   /** 读 stdin；缺省 {@link readStdin}（TTY 时返回空串） */
@@ -184,7 +192,7 @@ async function closeQuietly(session: RemoteChatSession | null): Promise<void> {
   console.log = (...args: unknown[]) => writeErr(args.map((a) => String(a)).join(" "));
 
   /** 这个入口自己造的那条连接（除非调用方递了一条） */
-  const connection = deps.connection ?? createServerConnection();
+  const connection = deps.connection ?? createServerConnection(options.env);
   let session: RemoteChatSession | null = null;
   try {
     /**

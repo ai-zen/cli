@@ -11,18 +11,18 @@
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { cliEnv } from "../env.js";
 import { detectLocale, setLocale, normalizeLocale, type Locale } from "./index.js";
 
 /**
- * 偏好文件路径；`AIZ_PREFERENCES_FILE` 可覆盖（测试与特殊部署用）。
+ * 偏好文件路径；`AIZ_PREFERENCES_FILE` 可覆盖（调试与特殊部署用）。
  *
- * 每次调用都重新解析：测试会在用例之间换 `AI_ZEN_DIR`，若在模块加载时固化成常量，
- * 进程内共享模块时后一个用例会继续读写前一个用例的目录。
+ * 根从 `cliEnv()` 取，**不**在这里再拼一遍 `AI_ZEN_DIR` / `HOME`：那份拼法以前在本文件与
+ * `config.ts` 各有一份，两份的**时机**还不一样（一个每次调用重算、一个模块求值时算一次），
+ * 症状是「设了 `AI_ZEN_DIR` 有个文件跟着走、另一个不跟」。现在解析只有 `env.ts` 一处。
  */
 function preferencesFile(): string {
-  const root =
-    process.env.AI_ZEN_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".ai-zen");
-  return process.env.AIZ_PREFERENCES_FILE || join(root, "cli", "preferences.json");
+  return process.env.AIZ_PREFERENCES_FILE || join(cliEnv().aiZenDir, "cli", "preferences.json");
 }
 
 /** CLI 本地偏好 */

@@ -1,5 +1,5 @@
 /**
- * 组装根（`server-client/index.ts`）的两件事。
+ * 绑定层（`server-client/index.ts`）的两件事。
  *
  * 1. 「服务端包坐标」的漂移检查：`SERVER_PACKAGE` 里的版本号必须等于仓库里
  *    `@ai-zen/agents-server` 的实际版本。它是**跨仓手工同步**的字符串（CLI 与 agents 是两个
@@ -7,10 +7,10 @@
  *    notarget」，用户看到的只是 CLI 起不来。
  *
  * 2. 显式地址 / 凭证真的被递到了线上（D9 / D10 / D11）：`--server` / `AI_ZEN_SERVER_URL`、
- *    `AI_ZEN_SERVER_TOKEN` 从 `config.ts` 出发，经过 `createServerConnection()` /
- *    `readServerStatus()`，最终要出现在那条 socket 的 `hello` 里。
+ *    `AI_ZEN_SERVER_TOKEN` 从 `env.ts` 解析成一份 `CliEnv`，经过 `createServerConnection(env)` /
+ *    `readServerStatus({…})`，最终要出现在那条 socket 的 `hello` 里。
  *
- * 第 2 条**不 mock 构造函数**：这里真起一台 Daemon（`port: 0`），然后用组装根造出来的连接去
+ * 第 2 条**不 mock 构造函数**：这里真起一台 Daemon（`port: 0`），然后用那对工厂造出来的连接去
  * 连它、`ping` 它。只断言「`toHaveBeenCalledWith(…)`」的写法即使把两个值递反了也是绿的
  * —— 而「地址与凭证必须同源」正是这一批的全部内容，它得能被观测到才有意义。
  */
@@ -28,7 +28,7 @@ import {
   createServerConnection,
   readServerStatus,
 } from "./server-client/index.js";
-import { setServerUrlFlag } from "./config.js";
+import { resolveCliEnv, type CliEnv } from "./env.js";
 import { useTempAiZenDir } from "./test-support/temp-dir.js";
 
 const require = createRequire(import.meta.url);
@@ -70,13 +70,21 @@ function serverUrl(): string {
   return `ws://127.0.0.1:${daemon!.port}`;
 }
 
+/**
+ * 这一次的事实 —— 走生产同一条解析路（`resolveCliEnv`），只把 argv 那一半作为参数。
+ *
+ * 用例不再有「`setServerUrlFlag()` 往模块里塞值」那一步：`--server` 现在是**入参**，不在任何
+ * 模块状态里，所以「上一个文件残留了一个 flag」这类串味从根上没了。
+ */
+function envNow(serverUrlFlag?: string): CliEnv {
+  return resolveCliEnv({ env: process.env, serverUrlFlag });
+}
+
 beforeEach(async () => {
   savedUrl = process.env[ENV_URL];
   savedToken = process.env[ENV_TOKEN];
   delete process.env[ENV_URL];
   delete process.env[ENV_TOKEN];
-  // `--server` 是「存进来的」状态（`isolate: false` 下会跨文件残留）：每个用例都从未给开始
-  setServerUrlFlag(undefined);
   zen.pin();
 
   serverDir = mkdtempSync(join(tmpdir(), "aiz-server-side-"));
@@ -89,7 +97,6 @@ afterEach(async () => {
   await daemon?.stop("test teardown");
   daemon = null;
   rmSync(serverDir, { recursive: true, force: true });
-  setServerUrlFlag(undefined);
   if (savedUrl === undefined) delete process.env[ENV_URL];
   else process.env[ENV_URL] = savedUrl;
   if (savedToken === undefined) delete process.env[ENV_TOKEN];
@@ -101,13 +108,13 @@ afterAll(() => {
 });
 
 /**
- * 用组装根造一条连接、借它说一句话、收掉。
+ * 造一条连接、借它说一句话、收掉。
  *
  * 断言用的是 `ping` 的回执 —— 它只有真握过手（带着对的凭证）才拿得到，所以「连上了」与
  * 「进得去」两件事一次说完。
  */
-async function pingViaAssembly(): Promise<void> {
-  const connection = createServerConnection();
+async function pingViaAssembly(env: CliEnv): Promise<void> {
+  const connection = createServerConnection(env);
   try {
     const client = await connection.client();
     expect(await client.call("ping")).toEqual({ pong: true });
@@ -121,21 +128,20 @@ describe("createServerConnection：显式地址真的出现在了那条 socket �
     process.env[ENV_URL] = serverUrl();
     process.env[ENV_TOKEN] = serverToken();
 
-    await pingViaAssembly();
+    await pingViaAssembly(envNow());
   });
 
   it("--server 覆盖 AI_ZEN_SERVER_URL（环境里那个地址上没人监听）", async () => {
     process.env[ENV_URL] = "ws://127.0.0.1:1";
     process.env[ENV_TOKEN] = serverToken();
-    setServerUrlFlag(serverUrl());
 
     // 若 --server 没赢，这一跳会连到 127.0.0.1:1 上，用例当场红
-    await pingViaAssembly();
+    await pingViaAssembly(envNow(serverUrl()));
   });
 
   it("给了显式地址就只连、不拉起（D10）：地址没人时抛的是「连不上那个地址」", async () => {
     process.env[ENV_URL] = "ws://127.0.0.1:1";
-    const connection = createServerConnection();
+    const connection = createServerConnection(envNow());
     try {
       // 拉起那条路会白等满 10s 再报「server did not become reachable」；这里的错误必须
       // 指向显式地址本身，而且很快就到（用例超时就够长了，不用另设）
@@ -151,7 +157,7 @@ describe("connectToServer：同一条 `ensureServer` 出口，同样的两个值
     process.env[ENV_URL] = serverUrl();
     process.env[ENV_TOKEN] = serverToken();
 
-    const client = await connectToServer();
+    const client = await connectToServer(envNow());
     try {
       expect(await client.call("ping")).toEqual({ pong: true });
     } finally {
@@ -165,7 +171,7 @@ describe("凭证：AI_ZEN_SERVER_TOKEN 递下去，没设就回落读文件（D9
     process.env[ENV_URL] = serverUrl();
     process.env[ENV_TOKEN] = "这不是本机 daemon 的那一串";
 
-    const connection = createServerConnection();
+    const connection = createServerConnection(envNow());
     try {
       await expect(connection.client()).rejects.toThrow(/unauthorized/);
     } finally {
@@ -177,7 +183,7 @@ describe("凭证：AI_ZEN_SERVER_TOKEN 递下去，没设就回落读文件（D9
     process.env[ENV_URL] = serverUrl();
 
     // 文件不在 → 没有凭证可用 → 服务端回 unauthorized（这条同时证明「不传」不是「随便就进」）
-    const bare = createServerConnection();
+    const bare = createServerConnection(envNow());
     try {
       await expect(bare.client()).rejects.toThrow(/unauthorized/);
     } finally {
@@ -188,7 +194,7 @@ describe("凭证：AI_ZEN_SERVER_TOKEN 递下去，没设就回落读文件（D9
     mkdirSync(join(zen.dir, "run"), { recursive: true });
     writeFileSync(join(zen.dir, "run", "token"), `${serverToken()}\n`, "utf-8");
 
-    await pingViaAssembly();
+    await pingViaAssembly(envNow());
   });
 });
 

@@ -38,6 +38,7 @@ import { AgentNS } from "@ai-zen/agents-core";
 import { ServerConnection, SocketServerClient } from "./server-client/index.js";
 import type { ClientInfo } from "./server-client/index.js";
 import { mergePrompt, extractText, runStdio } from "./stdio.js";
+import { resolveCliEnv } from "./env.js";
 
 describe("mergePrompt", () => {
   it("仅有指令", () => {
@@ -223,9 +224,15 @@ async function run(options: {
   let stdout = "";
   let stderr = "";
   const code = await runStdio(
-    { instruction: options.instruction, save: options.save ?? false },
     {
-      // 一次性调用的入口自己造连接（生产是 `createServerConnection()`）；用例把它指到
+      instruction: options.instruction,
+      save: options.save ?? false,
+      // 这条用例递了现成的连接，所以 `env` 里的地址/凭证根本用不到；但它仍然必填 ——
+      // 「这次的事实从哪来」不该有一个「不传就去全局拿」的缺省。
+      env: resolveCliEnv({ env: process.env }),
+    },
+    {
+      // 一次性调用的入口自己造连接（生产是 `createServerConnection(env)`）；用例把它指到
       // 自己起的那个 Daemon 上 —— 注入一条现成连接（生命周期归用例）。
       connection: new ServerConnection({ client: connection! }),
       readInput: async () => options.stdin ?? "",

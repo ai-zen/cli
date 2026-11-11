@@ -12,11 +12,11 @@
  * 出现在 stdio 路径上时被忽略（stdio 本就是一次性会话，不存在续接）。
  *
  * `--server <url>` 同样是修饰项（它答的是「连哪台服务端」）：三条**会连服务端**的路径
- * （stdio / TUI / `--server-status`）都把它带在结果上，由入口交给 `config.ts`（本进程事实的
- * 组装根）与环境变量一起定优先级；再往后接什么（发现文件 `run/server.json`、凭证文件
- * `run/token`）由 `@ai-zen/agents-client` 决定。本模块只负责「把它从 argv 里认出来」，
- * **不**校验地址、**不**读环境变量 —— 那两件事都归 `config.ts`（`serverUrlError` /
- * `explicitServerUrl`）。
+ * （stdio / TUI / `--server-status`）都把它带在结果上，由根（`app.ts` 的 `CliApp`）交给
+ * `env.ts` 与环境变量一起定优先级，再往下递给三条路径；接什么后端（发现文件
+ * `run/server.json`、凭证文件 `run/token`）由 `@ai-zen/agents-client` 决定。本模块只负责
+ * 「把它从 argv 里认出来」，**不**校验地址、**不**读环境变量 —— 那两件事都归 `env.ts`
+ * （`serverUrlError` / `resolveCliEnv`）。
  *
  * 注意：**shell 钩子不属于纯 stdio**。钩子的发起场景是「人坐在交互终端前敲错了命令」，
  * 因此它走 `ai --tui --new "$@"` 进 TUI，并把原命令作为首条消息自动发送 —— 写成
@@ -82,7 +82,7 @@ export function decideMode(tty: TtyState, hasArgs: boolean): RunMode {
  * 选项在遇到 `--` 之后一律视为位置参数（便于传入以 `-` 开头的提示词）。
  * 未知的 `-x` 选项不报错，按位置参数处理，避免误伤以 `-` 开头的正常提问。
  *
- * `--server <url>` 只被**认出来**：合法性不在这里判（那是 `config.ts` 的 `serverUrlError`
+ * `--server <url>` 只被**认出来**：合法性不在这里判（那是 `env.ts` 的 `serverUrlError`
  * 在启动早期做的事），否则同一条命令会在两处报两种错。
  */
 export function resolveInvocation(argv: string[], tty: TtyState): Invocation {

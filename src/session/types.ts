@@ -196,9 +196,9 @@ export interface ChatSessionOptions {
   /**
    * 进程级的那一条连接：会话**不建连接**，只借它说话。
    *
-   * 它必须由组装根给（TUI 是 `tui/index.tsx` 那个模块级实例，stdio 是这个入口自己造的
-   * 那一个）。会话层自己建一条的后果不是报错，而是「启动预检一条、对话一条」—— 两条
-   * driver、两套事件订阅，而且断线时两次重连各接一次。
+   * 它必须由上层给（TUI 是 `runTui()` 里 `openEndpoints(env)` 造的那一个，stdio 是这个入口
+   * 用 `options.env` 自己造的）。会话层自己建一条的后果不是报错，而是「启动预检一条、
+   * 对话一条」—— 两条 driver、两套事件订阅，而且断线时两次重连各接一次。
    */
   connection: ServerConnection;
   /**
