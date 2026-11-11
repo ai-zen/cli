@@ -268,7 +268,7 @@ export function Chat(props: ChatScreenProps) {
   /**
    * 待发送的粘贴图片（`Ctrl+V` 累积）。
    *
-   * 存 base64 而不是落盘：SDK 的 `fileToContentSection()` 正好接受 `{ base64, mime }`，
+   * 存 base64 而不是落盘：提交时它被解成字节交给服务端（`content.upload`），
    * 于是粘贴全程不碰磁盘 —— 也就不会在 `$TMPDIR` 里留下一堆无人清理的 png。
    */
   const [pastedImages, setPastedImages] = useState<readonly ClipboardImage[]>([]);
@@ -422,8 +422,6 @@ export function Chat(props: ChatScreenProps) {
           sessionId: props.sessionId,
           // 那**一条**连接（屏幕不自建）：会话层只借它说话，重连也归它
           connection: deps.connection,
-          // 配置面复用屏幕这一个：图片链路的端点能力要读服务端那份（见 `ChatSessionOptions.config`）
-          config: deps.config,
           // 「接着上次」只是意图：接哪一段由会话实现去问（服务端存档 / 本地指针），屏幕不判断
           resume: props.resume,
           // 自动迁移：与手动 /migrate、/handoff 共用同一套「交接方式三选一」选择器

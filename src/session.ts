@@ -10,8 +10,8 @@
  *
  * 1. **失败要能被用户看见**：包里只给 `state.failure = {code, message}`（不产句子、也不认识
  *    通知栏），这里把它映回 `notifier.onNotice` —— 渲染层零改动，失败不会变成静默。
- * 2. **带图提交要用 `apiModel`**（实发名）：`buildUserContent` 靠它反查端点与视觉能力，读成
- *    `modelId`（配置里的身份）在有别名时会把本来能带的图静默降级成纯文本。
+ * 2. **粘贴的图片走 `content.upload`**：端点 / 视觉能力的判据在服务端（按这段会话的实发模型
+ *    名解析），客户端只递字节 —— 客户端再算一遍就是第二份会漂的答案。
  * 3. **等一轮结束的原语**（`waitForTurn`）：包里的 `send()` 立刻返回 `turnId`，而界面用
  *    `busy` 包住输入禁用，靠的是「这一轮真的结束了」—— 别删掉它让界面自己等。
  *
@@ -40,9 +40,7 @@ import {
   MAX_FRAME_BYTES,
   SessionChannel,
   clientWorkspacePath,
-  createConfigPort,
   type ChannelNoticePayload,
-  type ConfigPort,
   type MessageContent,
   type ModelLevel,
   type ModelParams,
@@ -65,24 +63,13 @@ import { noticeText } from "./session-notice.js";
 import { stripCwdNote } from "./text.js";
 import { TokenRateMeter, type RateSample } from "./session-rate.js";
 
-/** 会话层的注入点 —— **只剩配置面**（连接归组装根、重连归包里的 `SessionChannel`） */
-export interface RemoteChatSessionDeps {
-  /**
-   * 配置面（拼图片内容块要读**服务端**的端点 / 视觉能力）。
-   *
-   * 缺省由传进来的那条 `connection` 派生一个（同一条连接上的第二个端口是免费的）；
-   * 注入只为了测试（不碰真配置根）。
-   */
-  config?: ConfigPort;
-}
-
 /**
- * 开一段会话的输入：**就是会话契约那一份**去掉已经单独递进来的两样（连接 / 配置面）。
+ * 开一段会话的输入：**就是会话契约那一份**去掉已经单独递进来的那样（连接）。
  *
  * 不另立一个平行类型：多一份"这里也有 agentId / sessionId / resume"的定义，就会多一处漂 ——
  * 而它们本来就是同一组意图。
  */
-export type OpenRemoteSessionInput = Omit<ChatSessionOptions, "connection" | "config">;
+export type OpenRemoteSessionInput = Omit<ChatSessionOptions, "connection">;
 
 export class RemoteChatSession implements ChatSessionLike {
   private readonly connection: ServerConnection;
@@ -94,8 +81,6 @@ export class RemoteChatSession implements ChatSessionLike {
    * `/handoff` 共用的三选一选择器，所以自动这条路径上没有第二套文案。
    */
   private readonly requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
-  /** 配置面：拼图片内容块时按**服务端**的端点能力判断（客户端本机那份是另一份事实） */
-  private readonly configPort: ConfigPort;
   private readonly rate = new TokenRateMeter();
 
   /** 这一段的 I/O（订阅 / 请求 / 重连）：`/new` 会整条换掉，所以不是 readonly */
@@ -126,12 +111,10 @@ export class RemoteChatSession implements ChatSessionLike {
     connection: ServerConnection,
     input: OpenRemoteSessionInput,
     notifier: ChatSessionNotifier,
-    deps: RemoteChatSessionDeps,
   ) {
     this.connection = connection;
     this.notifier = notifier;
     this.requestMode = input.requestMode;
-    this.configPort = deps.config ?? createConfigPort(connection);
     this.channel = this.newChannel();
     this.useChannel(this.channel);
   }
@@ -147,9 +130,8 @@ export class RemoteChatSession implements ChatSessionLike {
     connection: ServerConnection,
     input: OpenRemoteSessionInput,
     notifier: ChatSessionNotifier,
-    deps: RemoteChatSessionDeps = {},
   ): Promise<RemoteChatSession> {
-    const session = new RemoteChatSession(connection, input, notifier, deps);
+    const session = new RemoteChatSession(connection, input, notifier);
     try {
       /**
        * 客户端 cwd 只在**本地**服务端时才递上去（判据在包里的 `local-host.ts`）。
@@ -508,10 +490,14 @@ export class RemoteChatSession implements ChatSessionLike {
   // ==================== 内部 ====================
 
   /**
-   * 拼出这一条要发的内容：纯文本，或「文本 + 图片」内容块（与进程内模式同一段逻辑）。
+   * 拼出这一条要发的内容：纯文本，或「文本 + 内容块」。
    *
-   * 唯一的远程约束是帧大小：图片是 base64 内联的，超限帧会让服务端判协议错误、**断掉整条
-   * 连接**。所以先量一下：装不下就发文字，并明确告知图片没带上。
+   * 图片**字节**走 `content.upload`（帧后紧跟原始字节，不经 JSON），但换回来的**那一块**
+   * 仍然随 `session.send` 的帧走：端点不支持 Files API 时服务端给的是 base64 内联的
+   * data URL，所以这一帧照样会被八张图撑爆。
+   *
+   * 唯一的远程约束就是帧大小：超限帧会让服务端判协议错误、**断掉整条连接**。所以先量一下：
+   * 装不下就发文字，并明确告知图片没带上（不静默丢消息，也不冒险把连接弄断）。
    *
    * @returns 要发的内容；`null` = 什么都不发（已给过说明）
    */
@@ -524,9 +510,8 @@ export class RemoteChatSession implements ChatSessionLike {
     const { content, warnings } = await buildUserContent({
       text: input,
       images,
-      config: await this.configPort.readConfig(),
-      // **实发**模型名（不是配置里的身份）：起过别名时两者不同，读错了会把带图提交静默降级
-      apiModelName: this.channel.stream.state.apiModel || undefined,
+      // 转换在服务端：端点 / 视觉能力按**这段会话**的实发模型名解析，客户端只递字节
+      upload: (image) => this.channel.uploadContent(image),
     });
     for (const warning of warnings) this.notifier.onNotice(warning, "info");
 
@@ -597,6 +582,5 @@ export async function createRemoteChatSession(
       requestMode: options.requestMode,
     },
     notifier,
-    { config: options.config },
   );
 }

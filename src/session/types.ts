@@ -33,7 +33,6 @@ import type {
 } from "@ai-zen/agents-server/protocol";
 import type { ServerConnection } from "@ai-zen/agents-client";
 import type { ClipboardImage } from "../clipboard.js";
-import type { ConfigPort } from "../server-client/index.js";
 import type { RateSample } from "../session-rate.js";
 
 export interface ChatSessionLike {
@@ -202,13 +201,6 @@ export interface ChatSessionOptions {
    * driver、两套事件订阅，而且断线时两次重连各接一次。
    */
   connection: ServerConnection;
-  /**
-   * 配置面：拼图片内容块要按**服务端**的端点 / 视觉能力判断。
-   *
-   * 屏幕层已经持有一个（懒连接的远程端口，与 `connection` 是同一条连接），递下来省一次
-   * 派生；不给则实现自己由 `connection` 派生一个（`createConfigPort(connection)`）。
-   */
-  config?: ConfigPort;
   /**
    * 续接该工作区的「上一轮会话」（有就接着，没有就开新的）。
    *

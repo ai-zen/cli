@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   Daemon,
+  createContentHandlers,
   createSessionHandlers,
   FileSessionStore,
   SessionManager,
@@ -371,12 +372,29 @@ function newDaemon(): Daemon {
     aiZenDir: dir,
     port: 0,
     version: "0.0.0-test",
-    handlers: createSessionHandlers({
-      manager: manager!,
-      workspacesRoot: join(dir, "workspaces"),
-      // 客户端不上送路径：开会话用它（**服务端**的目录）
-      defaultWorkspacePath: workspaceDir,
-    }),
+    handlers: {
+      ...createSessionHandlers({
+        manager: manager!,
+        workspacesRoot: join(dir, "workspaces"),
+        // 客户端不上送路径：开会话用它（**服务端**的目录）
+        defaultWorkspacePath: workspaceDir,
+      }),
+      /**
+       * 内容转块（`content.upload`）：粘贴的图片从这条路进服务端。
+       *
+       * 端点 / 视觉能力读**服务端那份**配置 —— 用例把它写进临时根的 `config.json`
+       * （`beforeEach` 里那份），所以走的是生产的判据，不是客户端的第二份。
+       */
+      ...createContentHandlers({
+        manager: manager!,
+        config: {
+          get: async () => ({
+            config: JSON.parse(readFileSync(join(zen.dir, "config.json"), "utf-8")),
+            path: join(zen.dir, "config.json"),
+          }),
+        },
+      }),
+    },
   });
 }
 
@@ -484,7 +502,6 @@ async function startServer(): Promise<SocketServerClient> {
 /** `open()` 的第二个参数：用例只关心「重建到哪」与「用哪份假配置」 */
 interface TestDeps {
   reconnect?: () => Promise<ServerClient>;
-  config?: ConfigPort;
 }
 
 /** 起服务端并开一段远程会话。
@@ -501,14 +518,12 @@ async function open(
     /** 自动迁移的选择器（`ChatSessionOptions.requestMode` 的同一个回调） */
     requestMode?: (info: AutoMigrateTriggerInfo) => Promise<HandoffMode | null>;
   } = {},
-  deps: TestDeps = { reconnect: reconnectToNextServer, config: testConfigPort },
+  deps: TestDeps = { reconnect: reconnectToNextServer },
 ): Promise<RemoteChatSession> {
   const connected = await startServer();
   const connection = connectionFor(connected, deps.reconnect ?? reconnectToNextServer);
   sessionConnection = connection;
-  session = await RemoteChatSession.open(connection, { path: workspaceDir, ...input }, notifier, {
-    config: deps.config ?? testConfigPort,
-  });
+  session = await RemoteChatSession.open(connection, { path: workspaceDir, ...input }, notifier);
   return session;
 }
 
@@ -723,10 +738,13 @@ describe("RemoteChatSession：send 的语义与进程内一致", () => {
     const pending = opened.send("看看这张图", [{ base64: "AAA", mime: "image/png" }]);
     await waitUntil(() => agent.sent.length === 1);
 
-    // 文本段排在最前（图在文前会把指令切断），图片是内联 data URL
+    // 文本段排在最前（图在文前会把指令切断），图片是内联 data URL。
+    //
+    // 端点没声明 Files API，所以服务端回的是 base64 内联 —— 但那份 base64 是**服务端**
+    // 按收到的字节重新编码的（补了 padding），不再是客户端手里那一串原样透传。
     expect(agent.sent[0]).toEqual([
       { type: "text", text: "看看这张图" },
-      { type: "image_url", image_url: { url: "data:image/png;base64,AAA" } },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AAA=" } },
     ]);
 
     agent.messages.push({ role: "user", content: "看看这张图" });
@@ -1341,7 +1359,6 @@ describe("RemoteChatSession：send 的同步拒绝（不走事件通道的那一
         reconnect: async () => {
           throw new Error("connect refused (test)");
         },
-        config: testConfigPort,
       },
     );
     // 把它手上那条连接关掉：此刻 `session.send` 会被客户端自己拒（`client is closed`）

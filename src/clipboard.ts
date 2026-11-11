@@ -16,8 +16,8 @@
  * | Windows | PowerShell `Get-Clipboard -Format Image` → PNG → base64 | `Get-Clipboard -Raw` |
  *
  * **一律不落盘**：macOS 那条给的是十六进制文本，Linux 给的是二进制，Windows 给的是
- * base64 —— 三者都能在内存里还原成 base64，而 SDK 的 `fileToContentSection()` 正好接受
- * `{ base64, mime }`，于是粘贴一张图片不需要写任何临时文件。
+ * base64 —— 三者都能在内存里还原成 base64，而粘贴链路（`buildUserContent`）把它解成字节
+ * 经 `content.upload` 交给服务端，于是粘贴一张图片不需要写任何临时文件。
  *
  * 命令不存在 / 退出码非 0 / 输出为空，一律当作「没有」，由调用方回退到文本。
  * 这条约定让「没装 `wl-paste`」「剪贴板是文本」「剪贴板是图片」三种情况不会互相阻塞。
