@@ -11,7 +11,7 @@
  */
 
 import { t } from "./i18n/index.js";
-// 类型从**协议包**取：`PhaseInfo` 是线上的形状（服务端发来的 `{ kind, tools }`），
+// 类型从**线上契约**取（`@ai-zen/agents-server/protocol`）：`PhaseInfo` 是线上的形状（服务端发来的 `{ kind, tools }`），
 // 它属于「双方约定的数据」，不属于服务端的任何实现。从 `@ai-zen/agents-server` 拿会把
 // 服务端实现拖进本仓的依赖面 —— 为了一个类型，声明与打包边界上都多了一条本不存在的边。
 import type { PhaseInfo } from "@ai-zen/agents-server/protocol";

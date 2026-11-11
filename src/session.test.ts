@@ -985,7 +985,7 @@ describe("RemoteChatSession：服务端在一轮内部换 id（自动迁移）",
 //     → 回 `"session.answer"`；
 //   服务端：拿到 mode 才真正迁移。
 //
-// 三样东西都已落地：协议面（`@ai-zen/agents-protocol` 的 `"session-question"` /
+// 三样东西都已落地：协议面（`@ai-zen/agents-server/protocol` 的 `"session-question"` /
 // `"session.answer"`）、服务端（`SessionAgentFactory` 把 `resolveMode` 交给
 // `AutoMigratePlugin`）、客户端（`answerQuestion`）。所以下面三条走**真 socket、真服务端**
 // 跑，没有一条是占位的。

@@ -1,15 +1,15 @@
 /**
  * 通知的机器码 → 人看的文案，只属于**客户端**。
  *
- * 服务端的通知只带 `{ code, params }`（协议里的 `SESSION_NOTICE_CODES` / `SERVER_NOTICE_CODES`），
+ * 服务端的通知只带 `{ code, params }`（协议里的 `SessionNoticeCode` / `ServerNoticeCode`），
  * 一句自然语言都不产 —— 一个服务端同时接中文终端与英文浏览器时，它只能挑一种语言撒谎。
  * 于是「这句 code 该怎么说」落在各客户端自己的词典里，本文件就是 CLI 的这一份。
  *
  * ## 两档 code，一份词典
  *
- * 会话内的（`SessionNoticeCode`）与会话无关的（`ServerNoticeCode`）在协议里是两张表
+ * 会话内的（`SessionNoticeCode`）与会话无关的（`ServerNoticeCode`）在协议里是两个联合
  * —— 它们的**作用域**不同（前者跟着 sessionId 过滤，后者不过滤）。而「怎么念」是同一
- * 件事，所以本文件仍只留一张 `NOTICE_KEYS`：拆成两份只会让「新增一条 code 时忘了在哪张表
+ * 件事，所以本文件仍只留一张 `NOTICE_KEYS`：拆成两份只会让「新增一条 code 时忘了在哪个联合
  * 里加一行」变成两个地方各忘一次。
  *
  * 两个约定：

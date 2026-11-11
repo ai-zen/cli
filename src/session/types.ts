@@ -19,7 +19,7 @@
 
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AutoMigrateTriggerInfo, HandoffMode } from "@ai-zen/agents-sdk";
-// 协议形状从 `@ai-zen/agents-protocol` 取，门面形状从 `@ai-zen/agents-client` 取
+// 协议形状从 `@ai-zen/agents-server/protocol` 取，门面形状从 `@ai-zen/agents-client` 取
 //
 // 两者不是两条依赖路线（client 把 protocol 原样转出，选哪个都能编译）：分开写是为了让
 // 「这个类型属于**线上契约**」在 import 那一行就看得见 —— `PhaseInfo` / `ModelLevel` /
