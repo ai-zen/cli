@@ -2,6 +2,7 @@
 import { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
 import { McpConfig, McpScope } from "../../config.js";
 import { AgentKind, AgentStore } from "../../agents-store.js";
+import type { OpenEditor } from "../../system-editor.js";
 
 // ==================== 类型 ====================
 
@@ -135,10 +136,10 @@ export interface ConfigWizardProps {
    */
   terminalSize?: { columns: number; rows: number };
   /**
-   * 打开系统编辑器的实现（默认 `spawnSync`）。测试注入假实现即可，
+   * 打开系统编辑器的实现（默认 {@link openInSystemEditor}）。测试注入假实现即可，
    * 不必 `vi.mock("child_process")` —— 模块级 mock 全局注册，多文件会互相覆盖。
    */
-  openEditor?: (editor: string, file: string) => void;
+  openEditor?: OpenEditor;
   /** 首启引导模式：文案更完整，Esc 语义为「放弃」 */
   onboarding?: boolean;
   /** 保存成功后直接关闭（首启引导 / `/key`），否则回到配置中心菜单 */

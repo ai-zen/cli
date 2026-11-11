@@ -25,11 +25,12 @@
  */
 import { AgentNS } from "@ai-zen/agents-core";
 import type { AgentDefinition, HandoffMode } from "@ai-zen/agents-sdk";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ChatSessionLike } from "../session/types.js";
+import { openInSystemEditor, systemEditorCommand } from "../system-editor.js";
 import { stripCwdNote, truncate } from "../text.js";
 import {
   canonicalCommandName,
@@ -287,14 +288,7 @@ const cmdEditor: CommandHandler = async ({ push, suspendTerminal, setInputText }
   const file = join(tmpdir(), `aizen-input-${Date.now()}.md`);
   try {
     await writeFile(file, "", "utf-8");
-    await suspendTerminal(() => {
-      const editor =
-        process.env.EDITOR ||
-        process.env.VISUAL ||
-        (process.platform === "win32" ? "notepad" : "vi");
-      const result = spawnSync(editor, [file], { stdio: "inherit" });
-      if (result.error) throw result.error;
-    });
+    await suspendTerminal(() => openInSystemEditor(systemEditorCommand(), file));
     const text = (await readFile(file, "utf-8")).trim();
     if (text) setInputText(text);
   } catch (error: any) {
