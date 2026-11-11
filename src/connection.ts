@@ -81,21 +81,12 @@ export async function readConnectPlan(env: CliEnv): Promise<ConnectPlan> {
 }
 
 /**
- * 用户敲的地址 → 一条能交给 `parseServerUrl` 的地址。
+ * 用户敲的地址 → 一条能交给 `parseServerUrl` 的地址（没写 scheme 就补 `ws://`）。
  *
- * 只做一件事：**没写 scheme 就补 `ws://`**。用户在连接屏上敲 `10.0.0.5:8790` 是最自然的
- * 写法，而 `parseServerUrl` 要求带 scheme —— 不补的话他会得到一句「不是合法的服务端地址」，
- * 而真正的问题只是少敲了六个字符。
- *
- * **不猜加密**：写了 `https://` / `wss://` 就按他的（包里有 `http→ws`、`https→wss` 的映射），
- * 没写就当内网明文 —— 反过来「自动给你升成 wss」会在连一个没配证书的服务端时得到一条
- * 与地址无关的 TLS 报错。
+ * 规则住在 `agents-client` 的 `wire/server-url.ts`（地址形状的唯一门户隔壁），本仓只转发 ——
+ * 桌面端的连接屏也要同一条规则，两边各写一份的话「终端里能连、面板里连不上」迟早会来。
  */
-export function normalizeServerAddress(raw: string): string {
-  const text = raw.trim();
-  if (text === "") return text;
-  return text.includes("://") ? text : `ws://${text}`;
-}
+export { normalizeServerAddress } from "./server-client/index.js";
 
 /**
  * 一份计划 → 递给连接层的两个值。
