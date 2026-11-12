@@ -10,11 +10,14 @@
     "zen": "dist/index.js"
   },
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
+    "scan:secrets": "node scripts/scan-secrets.mjs --all",
+    "scan:secrets:history": "node scripts/scan-secrets.mjs --history",
     "clean": "rimraf ./dist",
     "prebuild": "npm run clean",
     "build": "rolldown -c rolldown.config.mjs",
     "start": "npm run build && node ./dist/index.js",
-    "prepublishOnly": "node scripts/check-publish.mjs && npm run test:all",
+    "prepublishOnly": "node scripts/check-publish.mjs && npm run scan:secrets && npm run test:all",
     "pretest": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "check:imports": "node scripts/check-imports.mjs dist/index.js --forbid openai --forbid @modelcontextprotocol --forbid dayjs --forbid ink --forbid react && node scripts/check-imports.mjs dist/commands/index.js --forbid ink --forbid react --forbid ./tui/ && node scripts/check-imports.mjs dist/session.js --forbid ink --forbid react --forbid ./tui/ && node scripts/check-imports.mjs dist/stdio.js --forbid ink --forbid react --forbid ./tui/",
