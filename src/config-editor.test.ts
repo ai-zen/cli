@@ -145,7 +145,7 @@ describe("config-editor / 密钥掩码与厂商指引", () => {
     expect(maskApiKey("   ")).toBe("未设置");
     // 短密钥整体打码（len ≤ 8）
     expect(maskApiKey("sk-1234")).toBe("*".repeat(7));
-    expect(maskApiKey("sk-54138a00b00c411d922007e0d9a429ce")).toBe("sk-5…29ce");
+    expect(maskApiKey("sk-test-0123456789abcdef01234567")).toBe("sk-t…4567");
   });
 
   it("apiKeyGuide 按 baseUrl 识别厂商", () => {
