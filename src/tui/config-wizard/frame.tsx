@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 向导外壳：头部行 + 吸底布局
+// 向导外壳：头部行 + 吸底布局
 import { ReactNode } from "react";
 import { Box, Text } from "ink";
 import { bottomPadding, displayWidth, wrapText } from "../text.js";
@@ -39,11 +39,11 @@ export function Header({ rows: headerRows }: { rows: Row[] }) {
 // ==================== 向导外壳（自底部向上布局）====================
 
 /**
- * 向导外壳 —— 与对话屏一致：内容用顶部空白行顶到底部。
+ * 向导外壳 —— 与会话屏一致：内容用顶部空白行顶到底部。
  *
  * 帧高 = 内容行数 + 顶部留白，其中留白 = 「终端行数 − 1 − 内容行数」。
- * 这样内容永不飘到视口外（之前短帧顶对齐时，从对话屏切过来会被擦除/滚动错位顶出可视区，
- * 在 VS Code 终端里表现为「渲染不全」），且与对话屏帧高一致、切换时不抖动。
+ * 这样内容永不飘到视口外（之前短帧顶对齐时，从会话屏切过来会被擦除/滚动错位顶出可视区，
+ * 在 VS Code 终端里表现为「渲染不全」），且与会话屏帧高一致、切换时不抖动。
  */
 export function WizardFrame({
   columns,
@@ -66,4 +66,3 @@ export function WizardFrame({
     </Box>
   );
 }
-

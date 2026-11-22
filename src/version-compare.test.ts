@@ -9,7 +9,10 @@ describe("parseVersion", () => {
 
   it("忽略构建元数据与 v 前缀", () => {
     expect(parseVersion("v1.2.3+build.7")).toEqual({ core: [1, 2, 3], pre: [] });
-    expect(parseVersion("1.2.3-alpha+exp.sha.5114f85")).toEqual({ core: [1, 2, 3], pre: ["alpha"] });
+    expect(parseVersion("1.2.3-alpha+exp.sha.5114f85")).toEqual({
+      core: [1, 2, 3],
+      pre: ["alpha"],
+    });
   });
 
   it("畸形输入返回 null（不抛错）", () => {
@@ -47,17 +50,31 @@ describe("compareVersions", () => {
   });
 });
 
+/**
+ * `/upgrade` 挑目标版本的那一步（PRD 2.3「在所有发布标签里挑版本最高的」）。
+ *
+ * 用例名就是需求：alpha 比 latest 新时选 alpha；全都相等时选那个；畸形串跳过而不炸。
+ */
 describe("pickNewest", () => {
-  it("在多个 dist-tag 之间取 semver 最大的那个", () => {
-    // 真实发布状态：正式版 latest 落后于 alpha，按 semver 该选 alpha
+  it("alpha 比 latest 新时选 alpha（发布常态）", () => {
     expect(pickNewest(["0.9.0", "1.0.0-alpha.23"])).toBe("1.0.0-alpha.23");
-    // 正式版追上之后反过来选正式版
-    expect(pickNewest(["0.9.0", "1.0.0-alpha.23", "1.0.0"])).toBe("1.0.0");
   });
 
-  it("跳过畸形条目；全非法返回 undefined", () => {
-    expect(pickNewest(["nope", "0.1.0"])).toBe("0.1.0");
+  it("正式版追上之后反过来选正式版", () => {
+    expect(pickNewest(["1.0.0", "1.0.0-alpha.23"])).toBe("1.0.0");
+    expect(pickNewest(["9.9.9", "1.0.0-alpha.23"])).toBe("9.9.9");
+  });
+
+  it("全部 tag 指向同一个版本时选那一个（不因为「都一样」返回空）", () => {
+    expect(pickNewest(["1.2.3", "1.2.3", "1.2.3"])).toBe("1.2.3");
+  });
+
+  it("畸形版本串跳过，剩下的照挑（不抛错）", () => {
+    expect(pickNewest(["nope", "1.0.0", "1.x.0", ""])).toBe("1.0.0");
+  });
+
+  it("一条都不合法 / 一条都没有：返回 undefined（调用方报「查不到」）", () => {
+    expect(pickNewest(["nope", "latest"])).toBeUndefined();
     expect(pickNewest([])).toBeUndefined();
-    expect(pickNewest(["nope", ""])).toBeUndefined();
   });
 });

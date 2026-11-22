@@ -1,8 +1,11 @@
 // 行渲染（Ink 组件）—— RLine → <Text>
+//
+// 纯文本度量（`truncate` / `graphemes` / `clusterWidth`）在 `src/text.ts`：它零 UI 依赖，
+// 所以命令层直接吃 `text.js`。本文件第一行就是 `import { Text } from "ink"`，只要有一个
+// 命令层模块走本文件，`dist/commands/*.js` 的图上就会多出 ink 与 react/jsx-runtime。
 import { Text } from "ink";
 import { theme } from "../theme.js";
 import { RLine, type LineKind } from "./lines.js";
-import { graphemes } from "../text.js";
 
 /** 行 kind → 基础色（分段渲染时作默认色；`undefined` = 终端默认前景色） */
 function baseColor(kind: LineKind): string | undefined {
@@ -42,7 +45,13 @@ export function LineView({ line }: { line: RLine }) {
         wrap="truncate"
       >
         {line.spans.map((span, i) => (
-          <Text key={i} color={span.color} dimColor={span.dim} bold={span.bold} italic={span.italic}>
+          <Text
+            key={i}
+            color={span.color}
+            dimColor={span.dim}
+            bold={span.bold}
+            italic={span.italic}
+          >
             {span.text}
           </Text>
         ))}
@@ -53,31 +62,54 @@ export function LineView({ line }: { line: RLine }) {
     case "gap":
       return <Text>{line.text}</Text>;
     case "user-header":
-      return <Text color={theme.user} bold strikethrough={struck}>{line.text}</Text>;
+      return (
+        <Text color={theme.user} bold strikethrough={struck}>
+          {line.text}
+        </Text>
+      );
     case "user-text":
-      return <Text strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     case "ai-header":
-      return <Text color={theme.brand[2]} bold strikethrough={struck}>{line.text}</Text>;
+      return (
+        <Text color={theme.brand[2]} bold strikethrough={struck}>
+          {line.text}
+        </Text>
+      );
     case "reasoning":
-      return <Text color={theme.reasoning} italic strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text color={theme.reasoning} italic strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     case "tool":
-      return <Text color={theme.tool} strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text color={theme.tool} strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     case "content":
-      return <Text strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     case "notice":
-      return <Text color={theme.dim} strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text color={theme.dim} strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     case "error":
-      return <Text color={theme.error} strikethrough={struck} wrap="truncate">{line.text}</Text>;
+      return (
+        <Text color={theme.error} strikethrough={struck} wrap="truncate">
+          {line.text}
+        </Text>
+      );
     default:
       return <Text>{line.text}</Text>;
   }
-}
-
-/** 单行化文本（表格 / 列表项用）：折叠空白并按**字素簇**截断 */
-export function truncate(text: string, max: number): string {
-  const single = text.replace(/\s+/g, " ").trim();
-  // 按簇而不是按 UTF-16 code unit 切：`slice` 会把 emoji / ZWJ 序列劈成两半，
-  // 屏幕上显示为一个孤立代理项（一个方框）。`/back` 的标签与 `/load` 的预览都走这里。
-  const chars = graphemes(single);
-  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : single;
 }

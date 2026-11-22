@@ -34,7 +34,7 @@ export interface RLine {
   /**
    * 整行划删除线。
    *
-   * 目前只有一种来源：消息被标了 `omit`（已剔除出上下文，不会再发给模型）。
+   * 判据只有一个：这条消息不进下一次请求的上下文（`omit`，或按 `drop` 策略处理过的中断消息）。
    * 划掉而不是隐藏 —— 消息凭空消失会让人以为丢了内容，划掉则明确表示「还在，但已出列」。
    */
   struck?: boolean;
@@ -112,7 +112,13 @@ function cellsToSpans(cells: SpanCell[]): Span[] {
     ) {
       last.text += cell.ch;
     } else {
-      out.push({ text: cell.ch, color: cell.color, dim: cell.dim, bold: cell.bold, italic: cell.italic });
+      out.push({
+        text: cell.ch,
+        color: cell.color,
+        dim: cell.dim,
+        bold: cell.bold,
+        italic: cell.italic,
+      });
     }
   }
   return out;
@@ -241,7 +247,9 @@ export function contentLines(kind: LineKind, key: string, text: string, width: n
     }
     if (isCode) {
       // 闭围栏
-      out.push(spanLine(`${key}-${n++}`, kind, [{ text: "  " }, { text: "```", color: theme.dim }]));
+      out.push(
+        spanLine(`${key}-${n++}`, kind, [{ text: "  " }, { text: "```", color: theme.dim }]),
+      );
     }
   }
   return out;

@@ -1,12 +1,25 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 新建端点（名称 → Base URL → API Key）
+// 新建端点（名称 → Base URL → API Key）
 import { ReactNode } from "react";
-import { addEndpoint, apiKeyGuide } from "../../config-editor.js";
+import { apiKeyGuide, uniqueEndpointId } from "../../config-editor.js";
 import { WizardContext } from "./engine.js";
 import { PromptScreen } from "./prompt.js";
 import { t } from "../../i18n/index.js";
 
 export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
-  const { config, error, draft, activeStep, go, commit, setDraft, setError, setStep, cols, rows } = ctx;
+  const {
+    config,
+    error,
+    draft,
+    activeStep,
+    go,
+    addEndpoint,
+    runWrite,
+    setDraft,
+    setError,
+    setStep,
+    cols,
+    rows,
+  } = ctx;
   if (activeStep.kind !== "new-endpoint") return null;
   // ---------- 新建端点（名称 → Base URL → API Key）----------
   const field = activeStep.field;
@@ -21,7 +34,10 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
         details={[t("wiz.newEndpoint.nameDesc", { example: "My Gateway" })]}
         initialValue={draft.name}
         error={error}
-        hints={[["Enter", t("ui.next")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("ui.next")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const name = value.trim();
           if (!name) {
@@ -48,7 +64,10 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
         details={[t("wiz.newEndpoint.baseUrlDesc")]}
         initialValue={draft.baseUrl}
         error={error}
-        hints={[["Enter", t("ui.next")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("ui.next")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const baseUrl = value.trim();
           if (!/^https?:\/\//i.test(baseUrl)) {
@@ -82,18 +101,31 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
       ].filter((line): line is string => Boolean(line))}
       mask
       error={error}
-      hints={[["Enter", t("wiz.newEndpoint.save")], ["Tab", t("ui.plainOrMasked")], ["Esc", t("ui.back")]]}
+      hints={[
+        ["Enter", t("wiz.newEndpoint.save")],
+        ["Tab", t("ui.plainOrMasked")],
+        ["Esc", t("ui.back")],
+      ]}
       onSubmit={(value) => {
         const apiKey = value.trim();
-        const { config: next, endpoint } = addEndpoint(config, { ...draft, apiKey });
-        void commit(
-          next,
-          t("wiz.newEndpoint.created", {
-            name: endpoint.name,
-            id: endpoint.id,
-            suffix: apiKey ? "" : t("wiz.newEndpoint.keyPending"),
-          }),
-          [endpoint.id],
+        // id 由名称派生（`config.endpoint.add` 的 id 客户端定，宿主只负责落盘）
+        const id = uniqueEndpointId(config, draft.name);
+        void runWrite(
+          () =>
+            addEndpoint(
+              {
+                id,
+                name: draft.name,
+                baseUrl: draft.baseUrl,
+                // `add` 收的是整条 `Endpoint`：密钥这一格必须给，留空就是空串（= 还没配）
+                apiKey,
+              },
+              t("wiz.newEndpoint.created", {
+                name: draft.name,
+                id,
+                suffix: apiKey ? "" : t("wiz.newEndpoint.keyPending"),
+              }),
+            ),
           { kind: "endpoints" },
         );
       }}

@@ -24,7 +24,10 @@ function fakeRun(table: Record<string, Buffer | string | null>) {
 }
 
 const darwin = (run: ClipboardDeps["run"]): ClipboardDeps => ({ platform: "darwin", env: {}, run });
-const linux = (run: ClipboardDeps["run"], env: NodeJS.ProcessEnv = { XDG_SESSION_TYPE: "x11" }): ClipboardDeps => ({
+const linux = (
+  run: ClipboardDeps["run"],
+  env: NodeJS.ProcessEnv = { XDG_SESSION_TYPE: "x11" },
+): ClipboardDeps => ({
   platform: "linux",
   env,
   run,
@@ -88,6 +91,14 @@ describe("readClipboardImage：有图片", () => {
     const result = await readClipboardImage(linux(run));
     expect(result.kind).toBe("too-large");
     if (result.kind === "too-large") expect(result.bytes).toBe(huge.length);
+  });
+
+  it("上限由调用方给：宿主比本地兜底值大时，本地不拦", async () => {
+    // 宿主说了算（`hello.limits.maxAssetBytes`）：同样是 20MB+1 的图，宿主给 64MB 就该放行
+    const huge = Buffer.alloc(MAX_CLIPBOARD_IMAGE_BYTES + 1, 0x89);
+    const { run } = fakeRun({ "xclip -selection clipboard -t image/png -o": huge });
+    const result = await readClipboardImage(linux(run), 64 * 1024 * 1024);
+    expect(result.kind).toBe("image");
   });
 });
 

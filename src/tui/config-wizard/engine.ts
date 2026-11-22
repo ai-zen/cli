@@ -1,30 +1,103 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 配置向导引擎（状态 + 写盘/跳转处理器）
-import { useRef, useState, Dispatch, SetStateAction } from "react";
-import { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
-import { mcpConfigPath, McpConfig, McpScope, writeMcpConfigAt } from "../../config.js";
-import { agentKindLabel, agentList, AgentStore, AgentKind, findAgentDefinition, createAgentStore } from "../../agents-store.js";
-import { findEndpoint, findMcpServer, findModel } from "../../config-editor.js";
-import { WizardStep, NewEndpointDraft, WizardCloseResult, McpSnapshot, ConfigWizardProps } from "./types.js";
-import { createFieldBuilders } from "./fields.js";
-import { t } from "../../i18n/index.js";
+// 配置向导引擎：本地快照 + 每次写都是一次 procedure 调用
+//
+// ## 这个文件不再「改配置」，它只发起改动
+//
+// 每条改动对应宿主的一条 procedure，而**每个写口都回整份 `AppConfig`**（`config.endpoint.*` /
+// `config.model.*` / `config.imageModel.*` / `config.setDefaults` / `config.setGlobal` 都是
+// `{ config }`）。于是：
+//
+//   - 本地快照只从返回值换一份整的，不自己拼「改一处、写回全量」；
+//   - 删端点 / 删模型之后**不必再读一次**：宿主顺带改指的默认项就在它回的那一份里
+//     （旧版要 `refreshConfig()` 补一刀，是因为旧写口只回被改的那一条）；
+//   - 一次改动一次调用（PRD F-F9）：默认项走 `config.setDefaults`，上限与中断策略走
+//     `config.setGlobal`，两件事两个口。
+//
+// 两个例外仍然要补读：`agentDefinition.remove` 只回 `{ agentId }`（默认助手被清掉这件事在
+// 配置那一侧），`agentDefinition.*` 写的是另一份文件（定义），配置本身不动。
+import { useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { agentListOf, findAgent, toDefinition, type AgentList } from "../../agents-store.js";
+import { MCP_SCOPE_OF } from "../../config.js";
+import type {
+  AgentDefinition,
+  AppConfig,
+  Endpoint,
+  ImageModel,
+  McpEditableScope,
+  McpEntry,
+  McpServerConfig,
+  Model,
+  ReasoningPresets,
+} from "../../config.js";
+import type {
+  AgentDefinitionInput,
+  ConfigWizardProps,
+  DefaultsChange,
+  GlobalChange,
+  NewEndpointDraft,
+  WizardCloseResult,
+  WizardHost,
+  WizardStep,
+} from "./types.js";
+import { createFieldBuilders, type FieldBuilders, type FieldWriters } from "./fields.js";
 
-export interface WizardEngine extends ReturnType<typeof createFieldBuilders> {
+/**
+ * 一次写的统一出口：返回 `null` 表示成功，否则是给屏上看的一句话。
+ *
+ * `FieldWriters` 那几条（字段构造器要用的）在这里继承下来，剩下的都是步骤屏直接用的增删动作。
+ * 名字与 procedure 一一对应，读一遍就知道每一屏调了契约里的哪一条。
+ */
+export interface WizardWriters extends FieldWriters {
+  /** 新建端点（`config.endpoint.add`；`apiKey` 必须给，空串 = 先不配） */
+  addEndpoint: (endpoint: Endpoint, message: string) => Promise<string | null>;
+  deleteEndpoint: (endpointId: string, message: string) => Promise<string | null>;
+  /** 默认项五格（`config.setDefaults`；`null` = 清空那一项） */
+  setDefaults: (change: DefaultsChange, message: string) => Promise<string | null>;
+  /** 上限 + 中断策略两项（`config.setGlobal`） */
+  setGlobal: (change: GlobalChange, message: string) => Promise<string | null>;
+  createModel: (model: Model, message: string) => Promise<string | null>;
+  deleteModel: (modelId: string, message: string) => Promise<string | null>;
+  /** 恢复出厂（`config.model.reset`） */
+  resetModel: (modelId: string, message: string) => Promise<string | null>;
+  createImageModel: (model: ImageModel, message: string) => Promise<string | null>;
+  deleteImageModel: (modelId: string, message: string) => Promise<string | null>;
+  createAgent: (definition: AgentDefinitionInput, message: string) => Promise<string | null>;
+  deleteAgent: (agentId: string, message: string) => Promise<string | null>;
+  /** 存一条 MCP（`mcp.save`）；`previousName` 与 `server.id` 不同时表示改名 */
+  saveMcp: (
+    scope: McpEditableScope,
+    server: McpServerConfig,
+    message: string,
+    previousName?: string,
+  ) => Promise<string | null>;
+  /** 删一条 MCP（`mcp.remove`） */
+  deleteMcp: (scope: McpEditableScope, name: string, message: string) => Promise<string | null>;
+}
+
+export interface WizardEngine extends WizardWriters, FieldBuilders {
   config: AppConfig;
-  mcp: McpSnapshot;
-  store: AgentStore;
+  presets: ReasoningPresets;
+  /** 助手清单（定义 + 默认助手 id；后者来自 `config.defaultAgent`，每次现拼） */
+  agents: AgentList;
+  /** MCP 服务器清单（`mcp.list` 原样：每条带 `scope`） */
+  servers: McpEntry[];
+  /** 每个助手上挂着几段会话（删除代价那一句里的数字）；`null` = 数不出来 */
+  sessionsByAgent: Record<string, number> | null;
+  workspaceId: string;
   error: string | null;
   notice: string | null;
   draft: NewEndpointDraft;
-  acc: { current: WizardCloseResult };
   step: WizardStep;
   activeStep: WizardStep;
+  /** 已发生的改动事实（关闭时交给宿主） */
   snapshot: () => WizardCloseResult;
   go: (next: WizardStep) => void;
-  commit: (next: AppConfig, message: string, changedEndpointIds?: string[], after?: WizardStep | "stay", sessionOptions?: boolean) => Promise<void>;
-  persist: (next: AppConfig, message: string, changedEndpointIds?: string[], sessionOptions?: boolean, agentsChanged?: boolean) => Promise<string | null>;
-  persistMcp: (scope: McpScope, next: McpConfig, message: string) => Promise<string | null>;
-  saveAgent: (kind: AgentKind, def: AgentDefinition, message: string) => Promise<string | null>;
-  deleteAgent: (kind: AgentKind, id: string) => Promise<string | null>;
+  /**
+   * 执行一次写：失败把原因放上屏，成功按调用方要求跳转。
+   *
+   * `props.closeOnSave` 时改成直接关闭（首启引导 / `/key` 的两条路）。
+   */
+  runWrite: (write: () => Promise<string | null>, after?: WizardStep | "stay") => Promise<boolean>;
+  close: () => void;
   setDraft: Dispatch<SetStateAction<NewEndpointDraft>>;
   setError: Dispatch<SetStateAction<string | null>>;
   setStep: Dispatch<SetStateAction<WizardStep>>;
@@ -36,193 +109,323 @@ export interface WizardContext extends WizardEngine {
   props: ConfigWizardProps;
 }
 
+// ==================== 纯小工具 ====================
+
+/** 按 id 换掉一条（不存在则追加） */
+function upsert<T extends { id: string }>(list: readonly T[], item: T): T[] {
+  const index = list.findIndex((existing) => existing.id === item.id);
+  if (index < 0) return [...list, item];
+  return list.map((existing, at) => (at === index ? item : existing));
+}
+
+/**
+ * 写失败 → 屏上那一句。
+ *
+ * 句子归宿主（`ClientError.message` 已按连接语言渲染好、也已把结构化原因写进那句话里：
+ * 「端点 x 上还挂着模型 y，先把它们换走或删掉」「交接阈值与防护阈值都必须是数字」…）。
+ * 客户端**不再**解析 `detail` 拼第二句：旧版那么做过，是因为旧宿主只回一份结构化原因、
+ * 句子要客户端拼；这一版回的就是能直接上屏的话，再拼一遍只会得到两处会漂的措辞。
+ */
+export function explainFailure(cause: unknown): string {
+  const failure = cause as { message?: unknown };
+  return typeof failure?.message === "string" && failure.message ? failure.message : String(cause);
+}
+
+// ==================== 引擎 ====================
+
 export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
-  const [config, setConfig] = useState(props.config);
+  const host: WizardHost = props.host;
+  const api = host.api;
+  const workspaceId = props.workspaceId;
+
+  const [config, setConfig] = useState<AppConfig>(props.config);
+  const [presets, setPresets] = useState<ReasoningPresets>(props.presets);
+  const [definitions, setDefinitions] = useState<AgentDefinition[]>(props.agents);
+  const [servers, setServers] = useState<McpEntry[]>(props.servers);
   const [step, setStep] = useState<WizardStep>(props.initialStep ?? { kind: "menu" });
   const [draft, setDraft] = useState<NewEndpointDraft>({ name: "", baseUrl: "", apiKey: "" });
-  const [mcp, setMcp] = useState<McpSnapshot>(
-    props.mcp ?? { global: { mcpServers: {} }, project: { mcpServers: {} } },
-  );
-  const [store, setStore] = useState<AgentStore>(() => props.agentStore ?? createAgentStore([], []));
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // 累加器放 ref：`commit()` 后需要立刻读到最新值再决定是否关闭
-  const acc = useRef<WizardCloseResult>({ dirty: false, summary: [], changedEndpointIds: [] });
+  // 累加器放 ref：写完要立刻读到最新值，再决定关闭时交什么
+  const acc = useRef<WizardCloseResult>({ dirty: false, summary: [] });
 
-  const snapshot = (): WizardCloseResult => {
-    const result: WizardCloseResult = {
-      dirty: acc.current.dirty,
-      summary: [...acc.current.summary],
-      changedEndpointIds: [...acc.current.changedEndpointIds],
-    };
-    if (acc.current.mcpChanged) result.mcpChanged = true;
-    if (acc.current.agentsChanged) result.agentsChanged = true;
-    if (acc.current.sessionOptionsChanged) result.sessionOptionsChanged = true;
-    return result;
-  };
+  const snapshot = (): WizardCloseResult => ({
+    dirty: acc.current.dirty,
+    summary: [...acc.current.summary],
+  });
 
   const go = (next: WizardStep) => {
     setError(null);
     setStep(next);
   };
 
-  /**
-   * 记一次成功写盘：置脏、累加变更摘要、刷新屏内提示。
-   *
-   * 收敛前 `record` / `persistMcp` / `saveAgent` / `deleteAgent` 各抄了一遍这三步，
-   * 外加 `mcpChanged` / `agentsChanged` 两个变体 —— 新增写入点时很容易漏掉其中一步
-   * （漏 `dirty` 会让「有没有改动」判错，关掉向导时该重建的会话不重建）。
-   */
-  const markDirty = (
-    message: string,
-    flags: { changedEndpointIds?: string[]; mcp?: boolean; agents?: boolean; sessionOptions?: boolean } = {},
-  ) => {
+  /** 记一次成功写入：置脏、累加摘要 */
+  const record = (message: string) => {
     acc.current.dirty = true;
     acc.current.summary.push(message);
-    if (flags.mcp) acc.current.mcpChanged = true;
-    if (flags.agents) acc.current.agentsChanged = true;
-    if (flags.sessionOptions) acc.current.sessionOptionsChanged = true;
-    for (const id of flags.changedEndpointIds ?? []) {
-      if (!acc.current.changedEndpointIds.includes(id)) acc.current.changedEndpointIds.push(id);
-    }
     setNotice(message);
   };
 
-  /** 记录一次成功写盘：更新配置快照、累加变更、刷新提示 */
-  const record = (
-    next: AppConfig,
-    message: string,
-    changedEndpointIds: string[] = [],
-    sessionOptions = false,
-    agentsChanged = false,
-  ) => {
-    setConfig(next);
-    markDirty(message, { changedEndpointIds, sessionOptions, agents: agentsChanged });
-  };
-
-  /** 写盘 + 记录变更，**原地停留**；返回错误信息或 `null`（供详情屏字段提交使用） */
-  const persist = async (
-    next: AppConfig,
-    message: string,
-    changedEndpointIds: string[] = [],
-    sessionOptions = false,
-    agentsChanged = false,
-  ): Promise<string | null> => {
+  /** 调一次 procedure：失败收敛成一句人话，不往外抛（屏上显示，不崩） */
+  const attempt = async <T>(
+    write: () => Promise<T>,
+  ): Promise<{ ok: true; result: T } | { ok: false; message: string }> => {
     try {
-      await props.onSave(next);
-    } catch (cause: any) {
-      return t("wiz.writeConfigFailed", { error: cause?.message ?? cause });
+      return { ok: true, result: await write() };
+    } catch (cause: unknown) {
+      return { ok: false, message: explainFailure(cause) };
     }
-    record(next, message, changedEndpointIds, sessionOptions, agentsChanged);
+  };
+
+  /** 再读一次配置 + 档位表（助手定义删除会连带清掉默认助手，那件事在配置里） */
+  const refreshConfig = async () => {
+    const outcome = await attempt(() => api.config.get.query());
+    if (!outcome.ok) return;
+    setConfig(outcome.result.config);
+    setPresets(outcome.result.presets);
+  };
+
+  // ---------- 端点 ----------
+  const addEndpoint: WizardWriters["addEndpoint"] = async (endpoint, message) => {
+    const outcome = await attempt(() => api.config.endpoint.add.mutate({ endpoint }));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
     return null;
   };
 
-  /** 写盘 MCP 配置 + 记录变更，**原地停留**；返回错误信息或 `null` */
-  const persistMcp = async (scope: McpScope, next: McpConfig, message: string): Promise<string | null> => {
-    try {
-      if (props.onSaveMcp) await props.onSaveMcp(scope, next);
-      else await writeMcpConfigAt(mcpConfigPath(scope), next);
-    } catch (cause: any) {
-      return t("wiz.writeMcpFailed", { error: cause?.message ?? cause });
-    }
-    // 写盘成功 = 那个坏文件已被替换成合法 JSON，屏上的「无法解析」不再成立
-    setMcp((prev) => ({
-      ...prev,
-      [scope]: next,
-      ...(prev.errors ? { errors: { ...prev.errors, [scope]: undefined } } : {}),
-    }));
-    markDirty(message, { mcp: true });
+  const updateEndpoint: FieldWriters["updateEndpoint"] = async (id, change, message) => {
+    // 改密钥之外的字段时 `apiKey` 不出现在 `change` 里：`update` 是合并语义，省略即不动它
+    const outcome = await attempt(() => api.config.endpoint.update.mutate({ id, change }));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
     return null;
   };
 
-  /** 写盘某个 Agent / Sub-agent 定义（创建或更新），刷新本地快照并记录变更 */
-  const saveAgent = async (kind: AgentKind, def: AgentDefinition, message: string): Promise<string | null> => {
-    const next: AgentDefinition = { ...def, updatedAt: new Date().toISOString() };
-    try {
-      await store.save(kind, next);
-    } catch (cause: any) {
-      return t("wiz.writeAgentFailed", { error: cause?.message ?? cause });
-    }
-    setStore((prev) => {
-      const list = [...agentList(prev, kind)];
-      const index = list.findIndex((item) => item.id === next.id);
-      if (index >= 0) list[index] = next;
-      else list.push(next);
-      return kind === "agent" ? { ...prev, agents: list } : { ...prev, subAgents: list };
-    });
-    markDirty(message, { agents: true });
+  const deleteEndpoint: WizardWriters["deleteEndpoint"] = async (endpointId, message) => {
+    const outcome = await attempt(() => api.config.endpoint.remove.mutate({ id: endpointId }));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
     return null;
   };
 
-  /** 静默删除某个定义（用于重命名时清理旧文件；不记录变更） */
-  const removeAgentQuiet = async (kind: AgentKind, id: string): Promise<string | null> => {
-    try {
-      await store.remove(kind, id);
-    } catch (cause: any) {
-      return t("wiz.deleteAgentFailed", { error: cause?.message ?? cause });
-    }
-    setStore((prev) => {
-      const list = agentList(prev, kind).filter((item) => item.id !== id);
-      return kind === "agent" ? { ...prev, agents: list } : { ...prev, subAgents: list };
-    });
+  // ---------- 默认项 / 上限 / 中断策略（一次改动一次调用）----------
+  const setDefaults: WizardWriters["setDefaults"] = async (change, message) => {
+    const outcome = await attempt(() => api.config.setDefaults.mutate(change));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
     return null;
   };
 
-  /** 删除某个定义并记录变更 */
-  const deleteAgent = async (kind: AgentKind, id: string): Promise<string | null> => {
-    const failure = await removeAgentQuiet(kind, id);
-    if (failure) return failure;
-    const message = t("wiz.agentDeleted", { kind: agentKindLabel(kind), id });
-    // 删的正是默认 Agent 时必须一并清掉 `defaultAgent`：下次启动 `resolveTarget()` 会
-    // 拿到一个已不存在的 id（`config.defaultAgent ?? agents[0]?.id` 只在它为空时才回退），
-    // 接着 `modelOf()` 抛「Agent 未绑定模型」→ 启动屏打印后退出；重启也一样，等于死锁。
-    if (kind === "agent" && id === config.defaultAgent) {
-      return persist({ ...config, defaultAgent: undefined }, message, [], false, true);
-    }
-    markDirty(message, { agents: true });
+  const setGlobal: WizardWriters["setGlobal"] = async (change, message) => {
+    const outcome = await attempt(() => api.config.setGlobal.mutate(change));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
     return null;
   };
 
-  /** 写盘 + 记录变更 + 跳转；成功且 `closeOnSave` 时直接关闭，否则跳到 `after` 步骤（默认回菜单） */
-  const commit = async (
-    next: AppConfig,
-    message: string,
-    changedEndpointIds: string[] = [],
-    after: WizardStep | "stay" = { kind: "menu" },
-    sessionOptions = false,
-  ) => {
+  // ---------- 模型 ----------
+  const createModel: WizardWriters["createModel"] = async (model, message) => {
+    const outcome = await attempt(() => api.config.model.add.mutate({ model }));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
+    return null;
+  };
+
+  const updateModel: FieldWriters["updateModel"] = async (id, change, message) => {
+    const outcome = await attempt(() => api.config.model.update.mutate({ id, change }));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
+    return null;
+  };
+
+  const deleteModel: WizardWriters["deleteModel"] = async (modelId, message) => {
+    const outcome = await attempt(() => api.config.model.remove.mutate({ id: modelId }));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
+    return null;
+  };
+
+  const resetModel: WizardWriters["resetModel"] = async (modelId, message) => {
+    const outcome = await attempt(() => api.config.model.reset.mutate({ id: modelId }));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
+    return null;
+  };
+
+  const createImageModel: WizardWriters["createImageModel"] = async (model, message) => {
+    const outcome = await attempt(() => api.config.imageModel.add.mutate({ model }));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
+    return null;
+  };
+
+  const updateImageModel: FieldWriters["updateImageModel"] = async (id, change, message) => {
+    const outcome = await attempt(() => api.config.imageModel.update.mutate({ id, change }));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
+    return null;
+  };
+
+  const deleteImageModel: WizardWriters["deleteImageModel"] = async (modelId, message) => {
+    const outcome = await attempt(() => api.config.imageModel.remove.mutate({ id: modelId }));
+    if (!outcome.ok) return outcome.message;
+    setConfig(outcome.result.config);
+    record(message);
+    return null;
+  };
+
+  // ---------- 助手 ----------
+  /** 换掉清单里的一条（定义清单只由 `agentDefinition.*` 改） */
+  const putDefinition = (definition: unknown) => {
+    const converted = toDefinition(definition);
+    setDefinitions((prev) => upsert(prev, converted));
+  };
+
+  const createAgent: WizardWriters["createAgent"] = async (definition, message) => {
+    const outcome = await attempt(() => api.agentDefinition.create.mutate({ definition }));
+    if (!outcome.ok) return outcome.message;
+    putDefinition(outcome.result.definition);
+    record(message);
+    return null;
+  };
+
+  const updateAgent: FieldWriters["updateAgent"] = async (agentId, change, message) => {
+    const outcome = await attempt(() => api.agentDefinition.update.mutate({ agentId, change }));
+    if (!outcome.ok) return outcome.message;
+    putDefinition(outcome.result.definition);
+    record(message);
+    return null;
+  };
+
+  const deleteAgent: WizardWriters["deleteAgent"] = async (agentId, message) => {
+    const outcome = await attempt(() => api.agentDefinition.remove.mutate({ agentId }));
+    if (!outcome.ok) return outcome.message;
+    setDefinitions((prev) => prev.filter((definition) => definition.id !== agentId));
+    record(message);
+    // 删的正好是默认助手时宿主会把 `defaultAgent` 一起清掉（同一次写盘，但那条出参只说
+    // `{ agentId }`）：配置那一侧要再读一次，否则菜单上还指着一个已经没有的助手
+    await refreshConfig();
+    return null;
+  };
+
+  const setAgentModel: FieldWriters["setAgentModel"] = async (agentId, modelId, message) => {
+    const outcome = await attempt(() =>
+      api.agentDefinition.update.mutate({ agentId, change: { modelId } }),
+    );
+    if (!outcome.ok) return outcome.message;
+    putDefinition(outcome.result.definition);
+    record(message);
+    return null;
+  };
+
+  const setAgentThinking: FieldWriters["setAgentThinking"] = async (agentId, change, message) => {
+    const outcome = await attempt(() => api.agentDefinition.update.mutate({ agentId, change }));
+    if (!outcome.ok) return outcome.message;
+    putDefinition(outcome.result.definition);
+    record(message);
+    return null;
+  };
+
+  // ---------- MCP（一次一条）----------
+  /** 把宿主写回的那份清单整份换进快照（每条自带 `scope`，不必自己拼层） */
+  const putServers = (next: readonly McpEntry[]) => setServers([...next]);
+
+  const saveMcp: WizardWriters["saveMcp"] = async (scope, server, message, previousName) => {
+    const outcome = await attempt(() =>
+      api.mcp.save.mutate({ workspaceId, scope: MCP_SCOPE_OF[scope], server }),
+    );
+    if (!outcome.ok) return outcome.message;
+    putServers(outcome.result.servers);
+    // 改名：新名字那条建好之后把旧名字删掉（`server.id` 就是文件里 mcpServers 的键）
+    if (previousName !== undefined && previousName !== server.id) {
+      const removal = await attempt(() =>
+        api.mcp.remove.mutate({
+          workspaceId,
+          scope: MCP_SCOPE_OF[scope],
+          name: previousName,
+        }),
+      );
+      if (!removal.ok) return removal.message;
+      putServers(removal.result.servers);
+    }
+    record(message);
+    return null;
+  };
+
+  const deleteMcp: WizardWriters["deleteMcp"] = async (scope, name, message) => {
+    const outcome = await attempt(() =>
+      api.mcp.remove.mutate({ workspaceId, scope: MCP_SCOPE_OF[scope], name }),
+    );
+    if (!outcome.ok) return outcome.message;
+    putServers(outcome.result.servers);
+    record(message);
+    return null;
+  };
+
+  // ---------- 跳转 / 关闭 ----------
+  const runWrite = async (
+    write: () => Promise<string | null>,
+    after: WizardStep | "stay" = "stay",
+  ): Promise<boolean> => {
     setError(null);
-    const failure = await persist(next, message, changedEndpointIds, sessionOptions);
+    const failure = await write();
     if (failure) {
       setError(failure);
-      return;
+      return false;
     }
-    if (props.closeOnSave) props.onClose(snapshot());
-    else if (after !== "stay") go(after);
+    if (props.closeOnSave) {
+      props.onClose(snapshot());
+      return true;
+    }
+    if (after !== "stay") go(after);
+    return true;
   };
 
-  // 条目可能在向导打开期间被外部删除：渲染前收敛回其列表，避免空指针
+  const close = () => props.onClose(snapshot());
+
+  const agents = agentListOf(definitions, config);
+
+  // 条目可能在向导打开期间被外部删掉：渲染前收敛回它所在的列表，避免空引用
   const normalize = (current: WizardStep): WizardStep => {
-    if ((current.kind === "edit" || current.kind === "endpoint") && !findEndpoint(config, current.endpointId)) {
+    if (
+      (current.kind === "edit" || current.kind === "endpoint") &&
+      !config.endpoints.some((endpoint) => endpoint.id === current.endpointId)
+    ) {
       return { kind: "endpoints" };
     }
-    if (current.kind === "model" && !findModel(config, current.modelId)) return { kind: "models" };
+    if (current.kind === "model" && !config.models.some((model) => model.id === current.modelId)) {
+      return { kind: "models" };
+    }
     if (
       current.kind === "image-model" &&
       !(config.imageModels ?? []).some((model) => model.id === current.modelId)
     ) {
       return { kind: "image-models" };
     }
-    if (
-      (current.kind === "mcp-server" || current.kind === "mcp-kv") &&
-      !findMcpServer(mcp[current.scope], current.serverId)
-    ) {
-      return { kind: "mcp", scope: current.scope };
+    if (current.kind === "mcp-server" || current.kind === "mcp-kv") {
+      const scope = MCP_SCOPE_OF[current.scope];
+      const exists = servers.some(
+        (entry) => entry.scope === scope && entry.server.id === current.serverName,
+      );
+      if (!exists) return { kind: "mcp", scope: current.scope };
     }
     if (
-      (current.kind === "agent" || current.kind === "agent-perms" || current.kind === "agent-text") &&
-      !findAgentDefinition(store, current.agentKind, current.agentId)
+      (current.kind === "agent" ||
+        current.kind === "agent-perms" ||
+        current.kind === "agent-text") &&
+      !findAgent(agents, current.agentId)
     ) {
       return { kind: "agents" };
     }
@@ -230,35 +433,50 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
   const activeStep = normalize(step);
 
-  // 字段构造器已抽到 ./fields.js
-  const { endpointFields, modelFields, imageModelFields, mcpServerFields, agentFields, agentPermFields } =
-    createFieldBuilders({ config, mcp, store, reasoningPresets: props.reasoningPresets ?? {}, persist, persistMcp, saveAgent, removeAgentQuiet, go });
+  const writers: WizardWriters = {
+    addEndpoint,
+    updateEndpoint,
+    deleteEndpoint,
+    setDefaults,
+    setGlobal,
+    createModel,
+    updateModel,
+    deleteModel,
+    resetModel,
+    createImageModel,
+    updateImageModel,
+    deleteImageModel,
+    createAgent,
+    updateAgent,
+    deleteAgent,
+    setAgentModel,
+    setAgentThinking,
+    saveMcp,
+    deleteMcp,
+  };
+
+  const fields = createFieldBuilders({ config, presets, writers, go });
 
   return {
+    ...writers,
+    ...fields,
     config,
-    mcp,
-    store,
+    presets,
+    agents,
+    servers,
+    sessionsByAgent: props.sessionsByAgent ?? null,
+    workspaceId,
     error,
     notice,
     draft,
-    acc,
     step,
     activeStep,
     snapshot,
     go,
-    commit,
-    persist,
-    persistMcp,
-    saveAgent,
-    deleteAgent,
+    runWrite,
+    close,
     setDraft,
     setError,
     setStep,
-    endpointFields,
-    modelFields,
-    imageModelFields,
-    mcpServerFields,
-    agentFields,
-    agentPermFields,
   };
 }

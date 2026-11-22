@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import { t } from "../../i18n/index.js";
 import {
   MAX_NOTICE_HISTORY,
   MAX_NOTICE_LINES,
   NoticeChannel,
+  noticeBarContent,
   noticeLines,
   type Notice,
 } from "./notice.js";
@@ -10,6 +12,7 @@ import {
 const notice = (text: string, tone: "info" | "error" = "info", seq = 1): Notice => ({
   text,
   tone,
+  origin: "app",
   seq,
 });
 
@@ -23,7 +26,10 @@ describe("NoticeChannel（通知旁路通道）", () => {
     channel.push("已保存");
     channel.push("读取出错", "error");
 
-    expect(seen.map((queue) => queue.map((n) => n.text))).toEqual([["已保存"], ["已保存", "读取出错"]]);
+    expect(seen.map((queue) => queue.map((n) => n.text))).toEqual([
+      ["已保存"],
+      ["已保存", "读取出错"],
+    ]);
     expect(seen.map((queue) => queue.map((n) => n.tone))).toEqual([["info"], ["info", "error"]]);
     const last = seen.at(-1)!;
     expect(last[0]!.seq).toBeLessThan(last[1]!.seq);
@@ -61,6 +67,29 @@ describe("NoticeChannel（通知旁路通道）", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("clearLog 只清日志转发来的那几条（origin: log），业务提示留着", () => {
+    const channel = new NoticeChannel();
+    channel.push("记不住 last-session.json", "warn", "log");
+    channel.push("宿主说的话", "info");
+    channel.push("又一条日志", "error", "log");
+
+    channel.clearLog();
+
+    expect(channel.notices.map((n) => n.text)).toEqual(["宿主说的话"]);
+    expect(channel.notices[0]!.origin).toBe("app");
+  });
+
+  it("clearLog 在一条 log 都没有时不广播（发送那一刻不该白重渲染一次）", () => {
+    const channel = new NoticeChannel();
+    channel.push("宿主说的话");
+    const spy = vi.fn();
+    channel.subscribe(spy);
+
+    channel.clearLog();
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it("取消订阅后不再收到", () => {
     const channel = new NoticeChannel();
     const spy = vi.fn();
@@ -71,10 +100,11 @@ describe("NoticeChannel（通知旁路通道）", () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it("缺省 tone 为 info", () => {
+  it("缺省 tone 为 info、origin 为 app（业务提示）", () => {
     const channel = new NoticeChannel();
     channel.push("hi");
     expect(channel.notices[0]!.tone).toBe("info");
+    expect(channel.notices[0]!.origin).toBe("app");
   });
 });
 
@@ -117,5 +147,26 @@ describe("noticeLines（通知栏文本行）", () => {
     const lines = noticeLines([notice("甲".repeat(200)), notice("乙".repeat(200))], 20);
     expect(lines.length).toBe(MAX_NOTICE_LINES);
     expect(lines.every((line) => line.text.includes("乙"))).toBe(true);
+  });
+});
+
+describe("noticeBarContent（正文 + 入口提示 + 高度）", () => {
+  it("栏位空着时不画提示、也不占高度", () => {
+    expect(noticeBarContent([], 80)).toEqual({ lines: [], hint: null, height: 0 });
+    expect(noticeBarContent([notice("")], 80)).toEqual({ lines: [], hint: null, height: 0 });
+  });
+
+  it("有通知时末尾多一行提示，高度把那一行算进去", () => {
+    const content = noticeBarContent([notice("就绪")], 80);
+    expect(texts(content.lines)).toEqual(["就绪"]);
+    expect(content.hint).toBe(t("notice.clearHint"));
+    // 布局与硬件光标都按 `height` 预留：少算一行，输入框就会整体偏上
+    expect(content.height).toBe(content.lines.length + 1);
+  });
+
+  it("提示不吃正文的行数上限（那个上限说的是「通知最多占几行」）", () => {
+    const content = noticeBarContent([notice("长".repeat(200))], 20);
+    expect(content.lines).toHaveLength(MAX_NOTICE_LINES);
+    expect(content.height).toBe(MAX_NOTICE_LINES + 1);
   });
 });

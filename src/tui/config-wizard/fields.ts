@@ -1,12 +1,70 @@
-import { AgentDefinition, AppConfig, Endpoint, ImageModel, Model, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { McpConfig, McpScope, McpServerEntry } from "../../config.js";
-import { agentKindLabel, agentList, AgentKind, AgentStore } from "../../agents-store.js";
-import { findEndpoint, findModel, formatAgentPermission, formatArgs, getAgentPrompt, kvSummary, maskApiKey, mcpServerIdTaken, mergeTokenThresholds, parseArgs, parsePermission, PERMISSION_DIMENSIONS, renameMcpServer, setAgentPermission, summarizePermissions, updateAgentDefinition, updateAgentFunction, updateEndpoint, updateImageModel, updateMcpServer, updateModel } from "../../config-editor.js";
-import { WizardStep, McpSnapshot } from "./types.js";
+// 详情屏字段构造器 —— 每个字段的提交 = 一次 procedure 调用
+//
+// ## 字段只做两件事
+//
+//   1. 把「用户敲进去的文本」变成 procedure 的入参（数字、argv、`KEY=VALUE`、权限策略）；
+//   2. 发出那一次写（`config.endpoint.update` / `config.model.update` /
+//      `agentDefinition.update` / `mcp.save`），失败原因原样上交详情屏。
+//
+// **不判断业务规则**：阈值是否越线、策略名是否存在、端点还在不在、模型能不能用，全是宿主的
+// 判断（`invalid_params` / `conflict` 带着一句能直接上屏的话回来，`engine.ts` 的
+// `explainFailure` 负责把它放到屏上）。客户端自己再判一遍只会得到第二套会漂的规则。
+//
+// ## 整体写入的三个例外，都是契约形状决定的
+//
+//   - 端点：`config.endpoint.update` 收的是 `{ id, change }`，`change` 是**合并**语义
+//     （`{...当前, ...change}`），所以改一个字段只发那一个字段；`apiKey` 只在用户真的改了
+//     输入框时出现在 `change` 里 —— 省略 = 保留原值（读回来的是明文，界面只显示掩码）。
+//   - MCP：`mcp.save` 一次只管一条，所以改哪一项就发哪一项（其余字段从当前这一条带上），
+//     层里别的条目不受影响。
+//   - 助手的提示词与函数定义：`agentDefinition.update` 对 `messages` 与 `function` 是**整份
+//     替换**（不是深合并），所以那两处的补丁要把整串 / 整个对象带上（`withAgentPrompt` /
+//     `withAgentFunction`），只发改的那一句会把兄弟字段冲掉；思考档位同理，整份
+//     `modelParams` 一起发（`modelParamsWithLevel`）。
+import type {
+  AgentDefinition,
+  AppConfig,
+  Endpoint,
+  ImageModel,
+  McpEditableScope,
+  McpServerConfig,
+  Model,
+  ReasoningPresets,
+} from "../../config.js";
+import {
+  agentPromptText,
+  findEndpoint,
+  findModel,
+  formatArgs,
+  kvSummary,
+  maskSecret,
+  parseArgs,
+  patchPermission,
+  PERMISSION_DIMENSIONS,
+  formatAgentPermission,
+  parsePermission,
+  summarizePermissions,
+} from "../../config-editor.js";
+import {
+  agentThinkingOf,
+  isAdjustable,
+  levelsOf,
+  modelParamsWithLevel,
+  presetOf,
+  thinkingView,
+} from "../../reasoning-effort.js";
+import { agentKindLabel } from "../../agents-store.js";
 import { t } from "../../i18n/index.js";
-import { DetailField } from "./detail.js";
-import { scopeLabel } from "./mcp-helpers.js";
+import type { DetailField } from "./detail.js";
+import type {
+  AgentChange,
+  EndpointChange,
+  ImageModelChange,
+  ModelChange,
+  WizardStep,
+} from "./types.js";
 import type { PermissionDimension } from "../../config-editor.js";
+import { scopeLabel } from "./mcp-helpers.js";
 
 /**
  * 权限四维的显示名。
@@ -21,9 +79,12 @@ const PERMISSION_DIMENSION_LABEL_KEY: Record<PermissionDimension, string> = {
   subagents: "perm.subagents",
 };
 
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 详情屏字段构造器（工厂）
-
-/** 多行文本在详情屏的**单行摘要**（避免换行撑破吸底布局）；内容一律走外部编辑器编辑 */
+/**
+ * 多行内容在详情屏那一行的**单行摘要**。
+ *
+ * 详情列表一行一个字段（帧高按行数算），正文里的换行会把吸底布局顶出可视区 —— 所以这里
+ * 只说「空 / 多少行 / 是什么」，正文本身进 `agent-text` 屏（`$EDITOR`）看与改。
+ */
 function summarizeMultiline(text: string): string {
   const body = text.replace(/\r\n/g, "\n").trim();
   if (!body) return t("common.emptyWithEditor");
@@ -33,74 +94,116 @@ function summarizeMultiline(text: string): string {
     : t("common.bodyWithEditor", { text: body });
 }
 
+/** 字段构造器要用的写函数（就是引擎上那几个，收窄成这一面便于单看） */
+export interface FieldWriters {
+  updateEndpoint: (id: string, change: EndpointChange, message: string) => Promise<string | null>;
+  updateModel: (id: string, change: ModelChange, message: string) => Promise<string | null>;
+  updateImageModel: (
+    id: string,
+    change: ImageModelChange,
+    message: string,
+  ) => Promise<string | null>;
+  updateAgent: (agentId: string, change: AgentChange, message: string) => Promise<string | null>;
+  setAgentModel: (agentId: string, modelId: string, message: string) => Promise<string | null>;
+  /** 改定义的思考参数（`change.modelParams`：档位展开成参数，见 `modelParamsWithLevel`） */
+  setAgentThinking: (
+    agentId: string,
+    change: AgentChange,
+    message: string,
+  ) => Promise<string | null>;
+  /**
+   * 存一条 MCP 条目（`mcp.save`）：同名即改、没有即建。
+   *
+   * `previousName` 与 `server.id` 不同时表示这是改名：旧名字那一条随后删掉（`mcp.remove`），
+   * 两次调用合成一条通知。
+   */
+  saveMcp: (
+    scope: McpEditableScope,
+    server: McpServerConfig,
+    message: string,
+    previousName?: string,
+  ) => Promise<string | null>;
+}
+
 export interface FieldBuilderDeps {
   config: AppConfig;
-  mcp: McpSnapshot;
-  store: AgentStore;
-  /** 思考策略表（模型详情页校验策略名用） */
-  reasoningPresets: ReasoningPresets;
-  persist: (next: AppConfig, message: string, changedEndpointIds?: string[]) => Promise<string | null>;
-  persistMcp: (scope: McpScope, next: McpConfig, message: string) => Promise<string | null>;
-  saveAgent: (kind: AgentKind, def: AgentDefinition, message: string) => Promise<string | null>;
-  removeAgentQuiet: (kind: AgentKind, id: string) => Promise<string | null>;
+  presets: ReasoningPresets;
+  writers: FieldWriters;
   go: (next: WizardStep) => void;
 }
 
-export function createFieldBuilders(deps: FieldBuilderDeps) {
-  const { config, mcp, store, reasoningPresets, persist, persistMcp, saveAgent, removeAgentQuiet, go } = deps;
+/** 详情屏要的那六个构造器 */
+export interface FieldBuilders {
+  endpointFields: (endpoint: Endpoint) => DetailField[];
+  modelFields: (model: Model) => DetailField[];
+  imageModelFields: (model: ImageModel) => DetailField[];
+  /** `siblingIds` 是同一层里其余条目的名字（改名时用来拦下「撞上已有那一条」） */
+  mcpServerFields: (
+    scope: McpEditableScope,
+    server: McpServerConfig,
+    siblingIds: readonly string[],
+  ) => DetailField[];
+  agentFields: (agent: AgentDefinition) => DetailField[];
+  agentPermFields: (agent: AgentDefinition) => DetailField[];
+}
+
+export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
+  const { config, presets, writers, go } = deps;
 
   // ---------- 共享字段 ----------
 
   /**
-   * 「名称」字段：端点 / 模型 / 图片模型三处的形状逐字相同，只有写回目标不同。
+   * 「名称」字段：端点 / 模型 / 图片模型 / 助手四处的形状逐字相同，只有写回目标不同。
    * 空名称一律拦下 —— 名称会进提示语与列表，写空等于把这一条「弄丢」。
    */
   const nameField = (
-    current: { id: string; name?: string },
-    save: (patch: { name: string }, label: string) => string | null | Promise<string | null>,
+    id: string,
+    name: string | undefined,
+    save: (name: string, label: string) => string | null | Promise<string | null>,
   ): DetailField => ({
     key: "name",
     label: t("field.name"),
     kind: "text",
-    value: current.name || current.id,
-    initial: current.name,
-    commit: (raw) => (raw.trim() ? save({ name: raw.trim() }, t("field.name")) : t("err.nameRequired")),
+    value: name || id,
+    initial: name,
+    commit: (raw) => (raw.trim() ? save(raw.trim(), t("field.name")) : t("err.nameRequired")),
   });
 
-  /** 「绑定端点」字段：模型 / 图片模型共用，选项是全局端点表 */
+  /** 「绑定端点」字段：模型 / 图片模型共用，选项是整份端点表 */
   const endpointIdField = (
     currentEndpointId: string,
-    save: (patch: { endpointId: string }, label: string) => string | null | Promise<string | null>,
+    save: (endpointId: string, label: string) => string | null | Promise<string | null>,
   ): DetailField => ({
     key: "endpointId",
     label: t("field.endpoint"),
     kind: "enum",
     value: findEndpoint(config, currentEndpointId)?.name ?? currentEndpointId,
-    options: config.endpoints.map((endpoint) => ({ label: endpoint.name || endpoint.id, value: endpoint.id })),
-    // 选回原端点不算改动：否则会白白写盘一次
-    commit: (raw) => (raw === currentEndpointId ? null : save({ endpointId: raw }, t("field.endpoint"))),
+    options: config.endpoints.map((endpoint) => ({
+      label: endpoint.name || endpoint.id,
+      value: endpoint.id,
+    })),
+    // 选回原端点不算改动：否则会白白发一次写
+    commit: (raw) => (raw === currentEndpointId ? null : save(raw, t("field.endpoint"))),
   });
 
-  /**
-   * 出厂托管条目的改动标记。
-   *
-   * 托管条目由 SDK 同步维护，**任何本地改动都必须打成 `custom: true`**，否则下次
-   * 同步会把改动覆盖掉。提示语后缀同步告知用户这一后果。
-   */
-  const customPatch = <T extends { custom?: boolean }>(entity: T, patch: Partial<T>): Partial<T> =>
-    entity.custom ? patch : { ...patch, custom: true };
-  /** 同上，用于「整份定义」写回（如 Agent 定义）：返回完整对象 */
-  const markCustom = <T extends { custom?: boolean }>(entity: T): T =>
-    entity.custom ? entity : { ...entity, custom: true };
-  const customNote = (managed: boolean) => (managed ? t("common.customOnlyNote") : "");
+  /** 出厂托管条目的提示后缀：宿主会在写的时候把它转成自定义（PRD F-F3），这里只是告知 */
+  const factoryNote = (custom: boolean | undefined) =>
+    custom === true ? "" : t("wiz.factoryEditNote");
 
-  /** 端点详情字段（editable：名称 / Base URL / API Key / 描述） */
+  // ---------- 端点 ----------
+
+  /**
+   * 端点详情字段（名称 / Base URL / API Key / 描述）。
+   *
+   * `config.endpoint.update` 是合并语义，所以每次提交只发改的那一项；`apiKey` 不提就不出现
+   * （= 保留原密钥）。
+   */
   const endpointFields = (endpoint: Endpoint): DetailField[] => {
     const name = endpoint.name || endpoint.id;
-    const save = (patch: Partial<Endpoint>, label: string) =>
-      persist(updateEndpoint(config, endpoint.id, patch), t("wiz.endpointUpdated", { name, label }), [endpoint.id]);
+    const save = (change: EndpointChange, label: string) =>
+      writers.updateEndpoint(endpoint.id, change, t("wiz.endpointUpdated", { name, label }));
     return [
-      nameField(endpoint, save),
+      nameField(endpoint.id, endpoint.name, (next, label) => save({ name: next }, label)),
       {
         key: "baseUrl",
         label: "Base URL",
@@ -114,9 +217,10 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
         key: "apiKey",
         label: "API Key",
         kind: "secret",
-        value: maskApiKey(endpoint.apiKey),
-        initial: endpoint.apiKey ?? "",
-        commit: (raw) => (raw ? save({ apiKey: raw }, "API Key") : t("err.apiKeyRequired")),
+        // 掩码只用于显示：初值留空，用户不动输入框就不会有写入
+        value: endpoint.apiKey ? maskSecret(endpoint.apiKey) : t("wiz.endpoint.noKey"),
+        initial: "",
+        commit: (raw) => (raw ? save({ apiKey: raw }, "API Key") : null),
       },
       {
         key: "description",
@@ -124,76 +228,64 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
         kind: "text",
         value: endpoint.description ?? t("common.empty"),
         initial: endpoint.description ?? "",
-        commit: (raw) => save({ description: raw || undefined }, t("field.description")),
+        // 空串是契约里「清掉描述」的写法（省略 = 不改这一项）
+        commit: (raw) => save({ description: raw }, t("field.description")),
       },
     ];
   };
 
-  /** 模型详情页「思考策略」的展示文案：附上该策略的档位，免得用户还得去翻 JSON */
-  const describePreset = (name?: string): string => {
-    if (!name) return t("common.notAdjustable");
-    const preset = Object.prototype.hasOwnProperty.call(reasoningPresets, name)
-      ? reasoningPresets[name]
-      : undefined;
-    const levels = Object.keys(preset?.levels ?? {});
-    return levels.length
-      ? t("wiz.presetLevels", { name, levels: levels.join(" / ") })
-      : t("wiz.presetMissingName", { name });
-  };
+  // ---------- 模型 ----------
 
-  /** 模型详情字段；编辑「出厂托管」模型时自动标记 `custom: true`（否则改动会被 SDK 同步覆盖） */
+  /** 模型详情字段；每个字段一次 `config.model.update`（宿主负责打上 `custom: true`） */
   const modelFields = (model: Model): DetailField[] => {
-    const managed = !model.custom;
-    const save = (patch: Partial<Model>, label: string) =>
-      persist(
-        updateModel(config, model.id, customPatch(model, patch)),
-        t("wiz.modelUpdated", { name: model.name || model.id, label, suffix: customNote(managed) }),
-        [model.endpointId],
+    const name = model.name || model.id;
+    const save = (change: ModelChange, label: string) =>
+      writers.updateModel(
+        model.id,
+        change,
+        t("wiz.modelUpdated", { name, label, suffix: factoryNote(model.custom) }),
       );
+    const thresholds = model.tokenThresholds;
+    // 可选档位 = 模型引用的策略在档位表里的键（客户端不抄策略表，只查它）
+    const levels = levelsOf(presetOf(presets, model.reasoningPreset));
+    const presetValue = model.reasoningPreset
+      ? t("wiz.presetLevels", {
+          name: model.reasoningPreset,
+          levels: levels.length ? levels.join(" / ") : t("common.empty"),
+        })
+      : t("common.notAdjustable");
     return [
-      nameField(model, save),
-      endpointIdField(model.endpointId, save),
+      nameField(model.id, model.name, (next, label) => save({ name: next }, label)),
+      endpointIdField(model.endpointId, (next, label) => save({ endpointId: next }, label)),
       {
         key: "modelName",
         label: t("field.modelName"),
         kind: "text",
         value: model.modelName ?? t("common.sameAsId"),
         initial: model.modelName ?? "",
-        commit: (raw) => save({ modelName: raw || undefined }, t("field.modelName")),
+        // 契约里 `modelName` 省略 = 不改，没有「清空」的表达；留空即不发写
+        commit: (raw) => (raw ? save({ modelName: raw }, t("field.modelName")) : null),
       },
       {
         key: "reasoningPreset",
         label: t("field.reasoningPreset"),
         kind: "text",
-        value: describePreset(model.reasoningPreset),
+        value: presetValue,
         initial: model.reasoningPreset ?? "",
-        commit: (raw) => {
-          const name = raw.trim();
-          if (!name) return save({ reasoningPreset: undefined }, t("field.reasoningPreset"));
-          // 名字写错等于静默失去调档能力，当场拦住
-          if (!Object.prototype.hasOwnProperty.call(reasoningPresets, name)) {
-            const available = Object.keys(reasoningPresets);
-            return available.length
-              ? t("err.presetNotFound", { name, options: available.join(" / ") })
-              : t("err.presetTableEmpty", { name });
-          }
-          return save({ reasoningPreset: name }, t("field.reasoningPreset"));
-        },
+        // 策略名是否存在由宿主判（`invalid_params` 带着一句能上屏的话回来）
+        commit: (raw) => (raw ? save({ reasoningPreset: raw }, t("field.reasoningPreset")) : null),
       },
       {
         key: "handoffTokens",
         label: t("field.handoffThreshold"),
         kind: "number",
-        value: String(model.tokenThresholds?.handoff ?? 0),
-        initial: String(model.tokenThresholds?.handoff ?? 0),
+        value: String(thresholds.handoff),
+        initial: String(thresholds.handoff),
         commit: (raw) => {
-          const n = Number(raw.trim());
-          if (!Number.isFinite(n) || n <= 0) return t("err.handoffPositive");
-          const guard = model.tokenThresholds?.guard ?? 0;
-          // 软线不得越过硬线，否则一启动就被阻断
-          if (guard > 0 && Math.floor(n) >= guard) return t("err.handoffLessThanGuard");
+          const n = Math.floor(Number(raw.trim()));
+          if (!Number.isFinite(n)) return t("err.positiveInteger");
           return save(
-            { tokenThresholds: mergeTokenThresholds(model.tokenThresholds, { handoff: Math.floor(n) }) },
+            { tokenThresholds: { ...thresholds, handoff: n } },
             t("field.handoffThreshold"),
           );
         },
@@ -202,17 +294,12 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
         key: "guardTokens",
         label: t("field.guardThreshold"),
         kind: "number",
-        value: String(model.tokenThresholds?.guard ?? 0),
-        initial: String(model.tokenThresholds?.guard ?? 0),
+        value: String(thresholds.guard),
+        initial: String(thresholds.guard),
         commit: (raw) => {
-          const n = Number(raw.trim());
-          if (!Number.isFinite(n) || n <= 0) return t("err.guardPositive");
-          const handoff = model.tokenThresholds?.handoff ?? 0;
-          if (Math.floor(n) <= handoff) return t("err.guardGreaterThanHandoff");
-          return save(
-            { tokenThresholds: mergeTokenThresholds(model.tokenThresholds, { guard: Math.floor(n) }) },
-            t("field.guardThreshold"),
-          );
+          const n = Math.floor(Number(raw.trim()));
+          if (!Number.isFinite(n)) return t("err.positiveInteger");
+          return save({ tokenThresholds: { ...thresholds, guard: n } }, t("field.guardThreshold"));
         },
       },
       {
@@ -220,7 +307,7 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
         label: t("field.vision"),
         kind: "bool",
         value: model.vision ? t("common.yes") : t("common.no"),
-        toggle: () => save({ vision: !model.vision }, t("field.vision")),
+        toggle: () => save({ vision: model.vision !== true }, t("field.vision")),
       },
       {
         key: "description",
@@ -228,30 +315,35 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
         kind: "text",
         value: model.description ?? t("common.empty"),
         initial: model.description ?? "",
-        commit: (raw) => save({ description: raw || undefined }, t("field.description")),
+        commit: (raw) => save({ description: raw }, t("field.description")),
       },
     ];
   };
 
-  /** 图片模型详情字段（同样对托管条目自动标记 `custom: true`） */
+  // ---------- 图片模型 ----------
+
+  /** 图片模型详情字段；每次提交都是那一项改动（`config.imageModel.update` 是合并语义） */
   const imageModelFields = (model: ImageModel): DetailField[] => {
-    const managed = !model.custom;
-    const save = (patch: Partial<ImageModel>, label: string) =>
-      persist(
-        updateImageModel(config, model.id, customPatch(model, patch)),
-        t("wiz.imageModelUpdated", { name: model.name || model.id, label, suffix: customNote(managed) }),
-        [model.endpointId],
+    const name = model.name || model.id;
+    const save = (change: ImageModelChange, label: string) =>
+      writers.updateImageModel(
+        model.id,
+        change,
+        t("wiz.imageModelUpdated", { name, label, suffix: factoryNote(model.custom) }),
       );
     return [
-      nameField(model, save),
-      endpointIdField(model.endpointId, save),
+      nameField(model.id, model.name, (next, label) => save({ name: next }, label)),
+      endpointIdField(model.endpointId, (next, label) => save({ endpointId: next }, label)),
       {
         key: "modelName",
         label: t("field.modelName"),
         kind: "text",
         value: model.modelName,
         initial: model.modelName,
-        commit: (raw) => (raw.trim() ? save({ modelName: raw.trim() }, t("field.modelName")) : t("err.modelNameRequired")),
+        commit: (raw) =>
+          raw.trim()
+            ? save({ modelName: raw.trim() }, t("field.modelName"))
+            : t("err.modelNameRequired"),
       },
       {
         key: "defaultSize",
@@ -259,7 +351,7 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
         kind: "text",
         value: model.defaultSize ?? t("common.defaultInParens"),
         initial: model.defaultSize ?? "",
-        commit: (raw) => save({ defaultSize: raw || undefined }, t("field.size")),
+        commit: (raw) => save({ defaultSize: raw }, t("field.size")),
       },
       {
         key: "defaultQuality",
@@ -267,88 +359,115 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
         kind: "text",
         value: model.defaultQuality ?? t("common.defaultInParens"),
         initial: model.defaultQuality ?? "",
-        commit: (raw) => save({ defaultQuality: raw || undefined }, t("field.quality")),
+        commit: (raw) => save({ defaultQuality: raw }, t("field.quality")),
+      },
+      {
+        key: "description",
+        label: t("field.description"),
+        kind: "text",
+        value: model.description ?? t("common.empty"),
+        initial: model.description ?? "",
+        commit: (raw) => save({ description: raw }, t("field.description")),
       },
     ];
   };
 
-  /** MCP 服务器详情字段（依 transport 呈现 stdio 或 http/sse 字段） */
-  const mcpServerFields = (scope: McpScope, id: string, entry: McpServerEntry): DetailField[] => {
+  // ---------- MCP ----------
+
+  /**
+   * MCP 服务器详情字段。
+   *
+   * `server` 就是 `mcp.list` 给回来的那一条（`McpServerConfig`），也是 `mcp.save` 收的那一格 ——
+   * 所以这里改哪一项就把那一项盖上去发一次写入，一次一条，层里别的条目不受影响
+   * （PRD F-F6：按名字增删改）。未知键不在这里：契约里没有 `extra` 这一格，写回时的保全由
+   * 宿主那侧与磁盘上那一条合并（`McpConfig.save`）。
+   */
+  const mcpServerFields = (
+    scope: McpEditableScope,
+    server: McpServerConfig,
+    siblingIds: readonly string[],
+  ): DetailField[] => {
     const scopeName = scopeLabel(scope);
-    const save = (patch: Partial<McpServerEntry>, label: string) =>
-      persistMcp(
+    const save = (change: Partial<McpServerConfig>, label: string) =>
+      writers.saveMcp(
         scope,
-        updateMcpServer(mcp[scope], id, patch),
-        t("wiz.mcpFieldUpdated", { id, label, scope: scopeName }),
+        { ...server, ...change },
+        t("wiz.mcpFieldUpdated", { id: server.id, label, scope: scopeName }),
       );
-    const type = entry.type ?? "stdio";
     const fields: DetailField[] = [
       {
         key: "id",
         label: t("field.name"),
         kind: "text",
-        value: id,
-        initial: id,
+        value: server.id,
+        initial: server.id,
         commit: (raw) => {
-          const name = raw.trim();
-          if (!name) return t("err.nameRequired");
-          if (name === id) return null;
-          if (mcpServerIdTaken(mcp[scope], name, id)) return t("err.mcpNameTaken", { name });
-          return persistMcp(
-            scope,
-            renameMcpServer(mcp[scope], id, name),
-            t("wiz.mcpRenamed", { id, name, scope: scopeName }),
-          ).then((failure) => {
-            if (!failure) go({ kind: "mcp-server", scope, serverId: name });
+          const nextId = raw.trim();
+          if (!nextId) return t("err.nameRequired");
+          if (nextId === server.id) return null;
+          // `mcp.save` 对已有的名字是「改那一条」，所以撞名只能在这里拦：否则会把那一条改掉
+          if (siblingIds.includes(nextId)) return t("err.mcpNameTaken", { name: nextId });
+          return (async () => {
+            // 改名 = 新名字建一条 + 旧名字删一条（`id` 就是 mcpServers 里的键）
+            const failure = await writers.saveMcp(
+              scope,
+              { ...server, id: nextId },
+              t("wiz.mcpRenamed", { id: server.id, name: nextId, scope: scopeName }),
+              server.id,
+            );
+            if (!failure) go({ kind: "mcp-server", scope, serverName: nextId });
             return failure;
-          });
+          })();
         },
       },
       {
-        key: "type",
+        key: "transport",
         label: t("field.transport"),
         kind: "enum",
-        value: type,
+        value: server.transport,
         options: [
           { label: t("common.transportStdio"), value: "stdio" },
           { label: t("common.transportHttp"), value: "http" },
           { label: t("common.transportSse"), value: "sse" },
         ],
         commit: (raw) =>
-          raw === type ? null : save({ type: raw as McpServerEntry["type"] }, t("common.transportMode")),
+          raw === server.transport
+            ? null
+            : save({ transport: raw as McpServerConfig["transport"] }, t("common.transportMode")),
       },
       {
         key: "enabled",
         label: t("field.enabled"),
         kind: "bool",
-        value: entry.disabled === true ? t("common.disabledInParens") : t("common.yes"),
-        toggle: () => save({ disabled: entry.disabled === true ? undefined : true }, t("common.enabledState")),
+        value: server.disabled === true ? t("common.disabledInParens") : t("common.yes"),
+        toggle: () =>
+          save({ disabled: server.disabled === true ? undefined : true }, t("common.enabledState")),
       },
       {
         key: "description",
         label: t("field.description"),
         kind: "text",
-        value: entry.description ?? t("common.empty"),
-        initial: entry.description ?? "",
+        value: server.description ?? t("common.empty"),
+        initial: server.description ?? "",
         commit: (raw) => save({ description: raw.trim() || undefined }, t("field.description")),
       },
     ];
-    if (type === "stdio") {
+    if (server.transport === "stdio") {
       fields.push(
         {
           key: "command",
           label: t("field.command"),
           kind: "text",
-          value: entry.command ?? t("common.empty"),
-          initial: entry.command ?? "",
+          value: server.command ?? t("common.empty"),
+          initial: server.command ?? "",
           commit: (raw) => save({ command: raw.trim() || undefined }, t("field.command")),
         },
         {
           key: "args",
           label: t("field.args"),
           kind: "text",
-          value: formatArgs(entry.args) || t("common.empty"),
-          initial: formatArgs(entry.args),
+          value: formatArgs(server.args) || t("common.empty"),
+          initial: formatArgs(server.args),
           commit: (raw) => {
             const args = parseArgs(raw.trim());
             return save({ args: args.length ? args : undefined }, t("field.args"));
@@ -358,8 +477,8 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
           key: "env",
           label: t("field.env"),
           kind: "open",
-          value: kvSummary(entry.env),
-          open: () => go({ kind: "mcp-kv", scope, serverId: id, field: "env" }),
+          value: kvSummary(server.env),
+          open: () => go({ kind: "mcp-kv", scope, serverName: server.id, field: "env" }),
         },
       );
     } else {
@@ -368,145 +487,168 @@ export function createFieldBuilders(deps: FieldBuilderDeps) {
           key: "url",
           label: "URL",
           kind: "text",
-          value: entry.url ?? t("common.empty"),
-          initial: entry.url ?? "",
+          value: server.url ?? t("common.empty"),
+          initial: server.url ?? "",
           commit: (raw) => save({ url: raw.trim() || undefined }, "URL"),
         },
         {
           key: "headers",
           label: t("field.headers"),
           kind: "open",
-          value: kvSummary(entry.headers),
-          open: () => go({ kind: "mcp-kv", scope, serverId: id, field: "headers" }),
+          value: kvSummary(server.headers),
+          open: () => go({ kind: "mcp-kv", scope, serverName: server.id, field: "headers" }),
         },
       );
     }
     return fields;
   };
 
-  /** Agent / Sub-agent 详情字段；编辑出厂托管 Agent（如 default）时自动标记 custom: true */
-  const agentFields = (kind: AgentKind, def: AgentDefinition): DetailField[] => {
-    const kindName = agentKindLabel(kind);
-    const managed = kind === "agent" && !def.custom;
-    const save = (nextDef: AgentDefinition, label: string) => {
-      const marked = markCustom(nextDef);
-      const suffix = customNote(managed);
-      return saveAgent(kind, marked, t("wiz.agentFieldUpdated", { kind: kindName, id: def.id, label, suffix }));
-    };
+  // ---------- 助手 ----------
+
+  /**
+   * Agent / Sub-agent 详情字段。
+   *
+   * 名称 / 描述 / 模型 / 思考档位 / 权限四维都是单值，改一项就发一项的补丁（宿主按字段合并）。
+   * 提示词与子 Agent 的函数说明 / 参数 schema 是**多行**内容：本屏只印一行摘要（正文换行
+   * 会把吸底帧撑破），Enter 进 `agent-text` 屏（`$EDITOR`），改完才由 `agentDefinition.update`
+   * 写回去。
+   */
+  const agentFields = (agent: AgentDefinition): DetailField[] => {
+    const kindName = agentKindLabel(agent);
+    const save = (change: AgentChange, label: string) =>
+      writers.updateAgent(
+        agent.id,
+        change,
+        t("wiz.agentFieldUpdated", { kind: kindName, id: agent.id, label, suffix: "" }),
+      );
+    const thinking = agentThinkingOf(agent, config, presets);
+    const modelLabel = findModel(config, agent.modelId ?? config.defaultModel)?.name;
     const fields: DetailField[] = [
-      {
-        key: "name",
-        label: t("field.name"),
-        kind: "text",
-        value: def.name || def.id,
-        initial: def.name,
-        commit: (raw) =>
-          raw.trim()
-            ? save(updateAgentDefinition(def, { name: raw.trim() }), t("field.name"))
-            : t("err.nameRequired"),
-      },
-      {
-        key: "id",
-        label: t("field.id"),
-        kind: "text",
-        value: def.id,
-        initial: def.id,
-        commit: (raw) => {
-          const name = raw.trim();
-          if (!name) return t("err.idRequired");
-          if (name === def.id) return null;
-          if (agentList(store, kind).some((item) => item.id === name)) return t("err.agentIdTaken", { name });
-          return (async () => {
-            const failure = await saveAgent(kind, { ...def, id: name }, t("wiz.agentRenamed", { kind: kindName, id: def.id, name }));
-            if (failure) return failure;
-            await removeAgentQuiet(kind, def.id);
-            go({ kind: "agent", agentKind: kind, agentId: name });
-            return null;
-          })();
-        },
-      },
+      nameField(agent.id, agent.name, (next, label) => save({ name: next }, label)),
       {
         key: "description",
         label: t("field.description"),
         kind: "text",
-        value: def.description ?? t("common.empty"),
-        initial: def.description ?? "",
-        commit: (raw) => save(updateAgentDefinition(def, { description: raw.trim() || undefined }), t("field.description")),
+        value: agent.description ?? t("common.empty"),
+        initial: agent.description ?? "",
+        commit: (raw) => save({ description: raw }, t("field.description")),
       },
       {
         key: "modelId",
         label: t("field.model"),
         kind: "enum",
-        value: findModel(config, def.modelId)?.name ?? def.modelId ?? t("common.unset"),
-        options: [
-          ...config.models.map((model) => ({ label: model.name || model.id, value: model.id })),
-          { label: t("common.unset"), value: "" },
-        ],
-        commit: (raw) => save(updateAgentDefinition(def, { modelId: raw || undefined }), t("field.model")),
-      },
-      {
-        key: "prompt",
-        label: t("field.prompt"),
-        kind: "open",
-        value: summarizeMultiline(getAgentPrompt(def)),
-        open: () => go({ kind: "agent-text", agentKind: kind, agentId: def.id, field: "prompt" }),
-      },
-      {
-        key: "permissions",
-        label: t("field.permissions"),
-        kind: "open",
-        value: summarizePermissions(def.permissions),
-        open: () => go({ kind: "agent-perms", agentKind: kind, agentId: def.id }),
+        // 定义没绑模型时显示它会落到的那一个（`AppConfig.defaultModel` 兜底，宿主按三级解析）
+        value:
+          (agent.modelId ? (modelLabel ?? agent.modelId) : t("common.unset")) || t("common.unset"),
+        options: config.models.map((model) => ({ label: model.name || model.id, value: model.id })),
+        commit: (raw) =>
+          raw === agent.modelId
+            ? null
+            : writers.setAgentModel(
+                agent.id,
+                raw,
+                t("wiz.agentFieldUpdated", {
+                  kind: kindName,
+                  id: agent.id,
+                  label: t("field.model"),
+                  suffix: "",
+                }),
+              ),
       },
     ];
-    if (kind === "subagent") {
+    if (isAdjustable(thinking)) {
+      fields.push({
+        key: "thinking",
+        label: t("field.thinking"),
+        kind: "enum",
+        value: thinkingView(thinking).text,
+        options: thinking.levels.map((level) => ({ label: level, value: level })),
+        commit: (raw) =>
+          raw === thinking.selected
+            ? null
+            : writers.setAgentThinking(
+                agent.id,
+                {
+                  modelParams: modelParamsWithLevel(
+                    agent.modelParams,
+                    presets,
+                    presetOf(presets, thinking.preset),
+                    raw,
+                  ),
+                },
+                t("wiz.agentThinkingUpdated", { id: agent.id, level: raw }),
+              ),
+      });
+    }
+    fields.push({
+      key: "prompt",
+      label: t("field.prompt"),
+      kind: "open",
+      value: summarizeMultiline(agentPromptText(agent.messages)),
+      open: () => go({ kind: "agent-text", agentId: agent.id, field: "prompt" }),
+    });
+    // 函数说明与参数 schema 只在子 Agent 上有（`function` 就是那一份定义）；没有就一个字段都不给
+    const fn = agent.function;
+    if (fn) {
       fields.push(
         {
-          key: "fnName",
-          label: t("field.functionName"),
-          kind: "text",
-          value: def.function?.name ?? t("common.empty"),
-          initial: def.function?.name ?? "",
-          commit: (raw) =>
-            raw.trim()
-              ? save(updateAgentFunction(def, { name: raw.trim() }), t("field.functionName"))
-              : t("err.functionNameRequired"),
-        },
-        {
-          key: "fnDesc",
+          key: "functionDescription",
           label: t("field.functionDescription"),
           kind: "open",
-          value: summarizeMultiline(def.function?.description ?? ""),
-          open: () => go({ kind: "agent-text", agentKind: kind, agentId: def.id, field: "fnDesc" }),
+          value: summarizeMultiline(fn.description),
+          open: () => go({ kind: "agent-text", agentId: agent.id, field: "function-description" }),
         },
         {
-          key: "fnParams",
+          key: "parameters",
           label: t("field.paramsSchema"),
           kind: "open",
-          value: summarizeMultiline(JSON.stringify(def.function?.parameters ?? {}, null, 2)),
-          open: () => go({ kind: "agent-text", agentKind: kind, agentId: def.id, field: "fnParams" }),
+          // 格式化后的 JSON：摘要那边会变成「N 行」；编辑器里看到的是能读的那一份
+          value: summarizeMultiline(JSON.stringify(fn.parameters ?? {}, null, 2)),
+          open: () => go({ kind: "agent-text", agentId: agent.id, field: "function-parameters" }),
         },
       );
     }
+    fields.push({
+      key: "permissions",
+      label: t("field.permissions"),
+      kind: "open",
+      value: summarizePermissions(agent.permissions),
+      open: () => go({ kind: "agent-perms", agentId: agent.id }),
+    });
     return fields;
   };
 
   /** 四维权限子屏字段（`allow: a, b` / `deny: x`；留空清除该维） */
-  const agentPermFields = (kind: AgentKind, def: AgentDefinition): DetailField[] =>
-    PERMISSION_DIMENSIONS.map((dim) => ({
+  const agentPermFields = (agent: AgentDefinition): DetailField[] => {
+    const kindName = agentKindLabel(agent);
+    // 权限是**定义**的一部分：改一次，所有用这个助手的会话都跟着变（PRD 1.6 / 4.2），
+    // 所以四维共用一个写前确认 —— 摆的是影响面，不是字段名
+    const confirm = { title: t("wiz.agentWrite.confirmTitle"), cost: [t("wiz.agentWrite.cost")] };
+    return PERMISSION_DIMENSIONS.map((dim) => ({
       key: dim,
       label: t(PERMISSION_DIMENSION_LABEL_KEY[dim]),
       kind: "text" as const,
-      value: formatAgentPermission(def.permissions, dim) || t("common.unset"),
-      initial: formatAgentPermission(def.permissions, dim),
+      value: formatAgentPermission(agent.permissions, dim) || t("common.unset"),
+      initial: formatAgentPermission(agent.permissions, dim),
+      confirm,
       commit: (raw: string) => {
         const parsed = parsePermission(raw);
         if (typeof parsed === "string") return parsed;
-        const managed = kind === "agent" && !def.custom;
-        const next = setAgentPermission(managed ? { ...def, custom: true } : def, dim, parsed);
-        return saveAgent(kind, next, t("wiz.agentPermissionUpdated", { kind: agentKindLabel(kind), id: def.id, dim }));
+        return writers.updateAgent(
+          agent.id,
+          { permissions: patchPermission(agent.permissions, dim, parsed) },
+          t("wiz.agentPermissionUpdated", { kind: kindName, id: agent.id, dim }),
+        );
       },
     }));
+  };
 
-  return { endpointFields, modelFields, imageModelFields, mcpServerFields, agentFields, agentPermFields };
+  return {
+    endpointFields,
+    modelFields,
+    imageModelFields,
+    mcpServerFields,
+    agentFields,
+    agentPermFields,
+  };
 }

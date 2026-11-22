@@ -54,11 +54,14 @@ export function killedText(before: string, after: string): string {
   let prefix = 0;
   while (prefix < b.length && a[prefix] === b[prefix]) prefix += 1;
   let suffix = 0;
-  while (suffix < b.length - prefix && a[a.length - 1 - suffix] === b[b.length - 1 - suffix]) suffix += 1;
+  while (suffix < b.length - prefix && a[a.length - 1 - suffix] === b[b.length - 1 - suffix])
+    suffix += 1;
   return a.slice(prefix, a.length - suffix).join("");
 }
 
-// ==================== kill ring（Ctrl+Y / Alt+Y）====================/** kill ring 最大长度（够 Alt+Y 循环几次即可，不做无限历史） */
+// ==================== kill ring（Ctrl+Y / Alt+Y）====================
+
+/** kill ring 最大长度（够 Alt+Y 循环几次即可，不做无限历史） */
 export const KILL_RING_SIZE = 5;
 
 /**

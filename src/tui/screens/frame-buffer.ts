@@ -2,10 +2,10 @@
  * 流式事件合帧缓冲 —— 把高频的流式 delta 合并为低频「帧」再交给 React 上屏。
  *
  * 背景：AI 流式响应每秒可产生数十到上百个 delta。若每个 delta 都触发一次 React
- * 更新，等价于每个 delta 一次「全量布局重算（含语法高亮 / 折行）+ 整屏重绘」。
- * Ink 每帧输出的是**整屏**（先擦除旧帧再写新帧，见 `ink/build/ink.js`），并不做
- * 行级差分；在 SSH 弱网（低带宽 / 高延迟）下，这会迅速填满 pty 缓冲、阻塞
- * stdout（Linux 上 TTY 写是同步阻塞的），表现为界面卡死，甚至把连接拖断。
+ * 更新，等价于每个 delta 一次「全量布局重算（含语法高亮 / 折行）+ 一帧输出的重建与差分」。
+ * 本项目开了 `incrementalRendering`（只重绘变化的行），它省的是**写出去的字节数**，省不掉
+ * 每帧那次布局重算与整屏字符串的重建；在 SSH 弱网（低带宽 / 高延迟）下，这会迅速填满 pty
+ * 缓冲、阻塞 stdout（Linux 上 TTY 写是同步阻塞的），表现为界面卡死，甚至把连接拖断。
  *
  * 本模块把 delta 先攒进缓冲，按固定间隔（默认 {@link STREAM_FRAME_MS} 毫秒，
  * 约 16fps）批量吐出；`user` / `done` / `error` 这类需要即时反馈或收尾的事件则
@@ -21,15 +21,6 @@
  * 而不是叠加在 Ink 节流之上。
  */
 export const STREAM_FRAME_MS = 60;
-
-/**
- * 需要立即上屏（不等下一帧）的事件类型：
- * - `user`：回车即回显，交互反馈不能延迟；
- * - `done` / `error`：本轮收尾 / 报错，立刻落定，避免「结束还挂着 spinner」。
- */
-export function isImmediateEvent(type: string): boolean {
-  return type === "user" || type === "done" || type === "error";
-}
 
 /**
  * 通用合帧缓冲：`push` 入队，按 `delayMs` 节流批量交给 `onFlush`。

@@ -7,10 +7,7 @@
  *    `setLocale()` 只是换一个引用，切换语言不需要重读磁盘、也不需要重启。
  * 2. **key 扁平化**（`status.lastTokens` 这种点号命名）：找词条靠 `dict[key]` 一次哈希，
  *    没有嵌套遍历；同一 `域.语义` 前缀在词典里天然聚在一起，读起来就是分组。
- * 3. **复数走 `Intl.PluralRules`**：英文需要 `1 tool` / `2 tools`，中文没有复数。
- *    词条可写 `key_one` / `key_other` 变体，`t()` 在 `params.n` 是数字时自动选；
- *    没有变体就用基础 key（中文只写基础 key 即可）。
- * 4. **缺词条返回 key 本身**：不做静默回退到另一种语言 —— 那样英文界面里会突然冒出
+ * 3. **缺词条返回 key 本身**：不做静默回退到另一种语言 —— 那样英文界面里会突然冒出
  *    中文，比直接显示 `notice.draftSaved` 更难定位。
  *
  * ## 语言怎么定
@@ -102,8 +99,8 @@ export function detectLocale(
  * - `{name}` 占位符用 params 替换，缺参数时保留原样（便于一眼看出漏传）；
  * - 词条不存在时返回 key 本身。
  *
- * 刻意不做复数变体（Intl.PluralRules）：本项目的数量词都写成「{n} 个 / (s)」，
- * 一套从未启用的复数机制只会让词条表看起来支持它、实际没有一条在用。
+ * 刻意不做复数变体：本项目的数量词都写成「{n} 个 / (s)」，一套没人用的复数机制只会让
+ * 词条表看起来支持它。
  */
 export function t(key: string, params?: InterpolateParams): string {
   const template = DICTS[currentLocale][key];

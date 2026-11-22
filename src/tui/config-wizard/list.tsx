@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 通用列表选择屏 ListStep
+// 通用列表选择屏 ListStep
 import { Box, Text, useCursor, useInput } from "ink";
 import { theme } from "../theme.js";
 import { SelectList, KeyHints, SelectItem } from "../components.js";
@@ -21,9 +21,18 @@ export interface ListStepProps<T> {
   onCancel: () => void;
 }
 
-export function ListStep<T>({ columns, rows, title, subtitle, warning, items, onPick, onCancel }: ListStepProps<T>) {
+export function ListStep<T>({
+  columns,
+  rows,
+  title,
+  subtitle,
+  warning,
+  items,
+  onPick,
+  onCancel,
+}: ListStepProps<T>) {
   const { setCursorPosition } = useCursor();
-  // 列表屏无文本编辑：显式隐藏硬件光标，避免沿用上一屏（对话屏）的位置
+  // 列表屏无文本编辑：显式隐藏硬件光标，避免沿用上一屏（会话屏）的位置
   setCursorPosition(undefined);
   useInput((_char, key) => {
     if (key.escape) onCancel();
@@ -38,7 +47,8 @@ export function ListStep<T>({ columns, rows, title, subtitle, warning, items, on
   const maxItems = Math.max(1, usableFrameRows(rows) - (headerRows.length + 3));
   const visible = items.slice(0, maxItems);
   const truncated = items.length > visible.length;
-  const contentLines = headerRows.length + 1 + Math.max(visible.length, 1) + (truncated ? 1 : 0) + 1;
+  const contentLines =
+    headerRows.length + 1 + Math.max(visible.length, 1) + (truncated ? 1 : 0) + 1;
 
   return (
     <WizardFrame columns={columns} rows={rows} contentLines={contentLines}>
@@ -58,8 +68,13 @@ export function ListStep<T>({ columns, rows, title, subtitle, warning, items, on
           </Text>
         ) : null}
       </Box>
-      <KeyHints hints={[["↑ ↓", t("ui.select")], ["Enter", t("ui.confirm")], ["Esc", t("ui.back")]]} />
+      <KeyHints
+        hints={[
+          ["↑ ↓", t("ui.select")],
+          ["Enter", t("ui.confirm")],
+          ["Esc", t("ui.back")],
+        ]}
+      />
     </WizardFrame>
   );
 }
-

@@ -1,8 +1,8 @@
-// 由 src/tui/screens.tsx 拆分而来 —— 输入区折行 / 硬件光标 / 跨词移动
+// 输入区折行 / 硬件光标 / 跨词移动
 import { displayWidth, graphemes, layoutInput, INPUT_PREFIX_WIDTH } from "../text.js";
 import { t } from "../../i18n/index.js";
 
-// ==================== 对话屏布局（吸底）====================
+// ==================== 会话屏布局（吸底）====================
 
 /** 输入区文本折行（不含提示符 `❯ `，交由渲染层补齐）；空输入用占位提示 */
 export function inputLines(text: string, columns: number): string[] {
@@ -11,7 +11,7 @@ export function inputLines(text: string, columns: number): string[] {
   return layoutInput(body, 0, width).lines;
 }
 
-/** 输入区最多占用几行（超出的折行开窗滚动，不把对话区挤没） */
+/** 输入区最多占用几行（超出的折行开窗滚动，不把会话区挤没） */
 export const INPUT_MAX_ROWS = 8;
 
 /**
@@ -40,22 +40,32 @@ export function inputWindow(
  *
  * y 必须把输入行**上方渲染的全部行**算进去，顺序与 `chat.tsx` 的渲染顺序严格一致：
  *
- *   对话区（`layout.lines`）→ Agent 栏目 → 通知栏（`noticeLines`）→ 附件提示行
- *   → 斜杠 / `@` 菜单（`hints`）→ 分隔线 → 输入行
+ *   会话区（`layout.lines`）→ Agent 栏目 → 通知栏（`noticeLines`）→ 附件提示行
+ *   → 斜杠 / `@` 菜单（`hints`）→ 阶段行（生成中那一行）→ 排队区（跑中排着的几句）
+ *   → 分隔线 → 输入行
  *
  * 漏算任何一段，硬件光标就会整体偏移那么多行（Ink 的 `moveUp = 总行数 − y`，
  * 所以 y 少几行，光标就高几行）。历史上「通知栏」就被漏过：`/help` 这类多行通知
  * 一出现，IME 候选框会浮到输入行上方好几行。
  */
 export function computeInputCursorPosition(input: {
-  /** 对话区行数（输入区之前的行偏移基数） */
+  /** 会话区行数（输入区之前的行偏移基数） */
   transcriptLines: number;
-  /** Agent 栏目行数（位于对话区与通知栏之间；不传视为 0） */
+  /** Agent 栏目行数（位于会话区与通知栏之间；不传视为 0） */
   agentTabCount?: number;
-  /** 通知栏行数（位于对话区与斜杠菜单之间；不传视为 0） */
+  /** 通知栏行数（位于会话区与斜杠菜单之间；不传视为 0） */
   noticeCount?: number;
   /** 待发送附件提示行数（位于通知栏与菜单之间；不传视为 0） */
   attachmentCount?: number;
+  /** 阶段行数（生成中那一行，位于菜单与分隔线之间；不传视为 0） */
+  phaseCount?: number;
+  /**
+   * 排队区行数（还压在队里、没被取走的那几句，位于阶段行与分隔线之间，0～3；不传视为 0）。
+   *
+   * 它与 `phaseCount` 同类：渲染那儿多画一行、这里少算一行，IME 候选框就整体偏高一行 ——
+   * 所以渲染走 `inboxAreaLines()`、布局走 `inboxLines`、这里走 `inboxCount`，三处同一个值。
+   */
+  inboxCount?: number;
   /** 斜杠命令菜单行数 */
   hintCount: number;
   /** 光标在输入框内的行 / 列（列以 code point 计） */
@@ -71,13 +81,15 @@ export function computeInputCursorPosition(input: {
     : graphemes(input.lineText).slice(0, input.cursorCol).join("");
   return {
     x: INPUT_PREFIX_WIDTH + displayWidth(before),
-    // 对话区 + Agent 栏目 + 通知栏 + 附件提示行 + 斜杠菜单 + 分隔线 + 输入行内偏移
+    // 会话区 + Agent 栏目 + 通知栏 + 附件提示行 + 斜杠菜单 + 阶段行 + 排队区 + 分隔线 + 输入行内偏移
     y:
       input.transcriptLines +
       (input.agentTabCount ?? 0) +
       (input.noticeCount ?? 0) +
       (input.attachmentCount ?? 0) +
       input.hintCount +
+      (input.phaseCount ?? 0) +
+      (input.inboxCount ?? 0) +
       1 +
       input.cursorRow,
   };
@@ -203,4 +215,3 @@ export function deleteToLineEnd(text: string, cursor: number): { text: string; c
     cursor: cp,
   };
 }
-

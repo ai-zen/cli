@@ -2,7 +2,7 @@
  * 状态栏的折行 —— 输入是「按优先级排好的信息块」，输出是「确定的若干行」
  *
  * 为什么不用 Ink 自己的 wrap：状态栏高度必须是**确定值**，`computeChatLayout` 要靠它
- * 算出对话区还能占几行（整帧高度恒等于终端行数，输入框才吸得住底）。让 Ink 在渲染时
+ * 算出会话区还能占几行（整帧高度恒等于终端行数，输入框才吸得住底）。让 Ink 在渲染时
  * 折行，行数只有渲染完才知道，布局预算就会算错——轻则顶部留白多一行，重则把输入框
  * 顶出屏幕。所以这里先在纯逻辑里折好，渲染层只负责按行铺颜色。
  *
@@ -160,7 +160,7 @@ export function packSegments(
 
   for (const block of blocks) {
     const blockWidth = segmentsWidth(block);
-    if (blockWidth === 0) continue; // 空块（如本轮没有速率）不占位，也不留分隔符
+    if (blockWidth === 0) continue; // 空块（如本次没有速率）不占位，也不留分隔符
     if (line.length > 0) {
       if (lineWidth + separatorWidth + blockWidth <= limit) {
         line = [...line, ...separator, ...block];

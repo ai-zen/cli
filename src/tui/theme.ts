@@ -2,7 +2,7 @@
  * TUI 主题与视觉元素 —— 颜色、渐变色与 ASCII Logo
  *
  * 设计原则：
- *   - 渐变只产出**每字符的 hex 颜色**，交由 Ink 的 `<Text color>` 渲染（不使用 chalk）；
+ *   - 渐变只产出**每字符的 hex 颜色**，交由 Ink 的 `<Text color>` 渲染；
  *   - 颜色是否生效由 Ink 依终端能力决定（无色终端自动退化为纯文本）；
  *   - Logo 提供「宽 / 窄」两套，按终端宽度选择，避免折行破坏构图。
  */
@@ -94,7 +94,10 @@ export function parseHex(hex: string): RGB {
 }
 
 export function toHex([r, g, b]: RGB): string {
-  const c = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+  const c = (n: number) =>
+    Math.max(0, Math.min(255, Math.round(n)))
+      .toString(16)
+      .padStart(2, "0");
   return `#${c(r)}${c(g)}${c(b)}`;
 }
 

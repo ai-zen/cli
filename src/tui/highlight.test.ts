@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { highlightJson, highlightCode, splitFences, supportedLanguages } from "./highlight.js";
+import { highlightJson, highlightCode, splitFences } from "./highlight.js";
 
 describe("highlight 数据层（lowlight → highlight.js）", () => {
   it("JSON：键 / 数字 / 标点各自带 scope", () => {
@@ -33,13 +33,6 @@ describe("highlight 数据层（lowlight → highlight.js）", () => {
     expect(highlightJson("")).toEqual([]);
     expect(highlightCode("", "json")).toEqual([]);
   });
-
-  it("注册了常用语言", () => {
-    const langs = supportedLanguages();
-    for (const l of ["json", "typescript", "python", "go", "rust", "bash", "sql", "yaml"]) {
-      expect(langs).toContain(l);
-    }
-  });
 });
 
 describe("splitFences（围栏切分）", () => {
@@ -56,6 +49,8 @@ describe("splitFences（围栏切分）", () => {
   });
 
   it("无语言标注的代码块 lang 为 undefined", () => {
-    expect(splitFences("```\ncode\n```")).toEqual([{ type: "code", lang: undefined, text: "code" }]);
+    expect(splitFences("```\ncode\n```")).toEqual([
+      { type: "code", lang: undefined, text: "code" },
+    ]);
   });
 });

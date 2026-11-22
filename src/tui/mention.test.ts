@@ -5,8 +5,8 @@ import {
   rankPaths,
   scorePath,
   MENTION_LIMIT,
-  type PathEntry,
 } from "./mention.js";
+import type { FileEntry } from "../session/types.js";
 
 /** 光标停在文本末尾的常用简写 */
 const at = (text: string) => ({ text, cursor: text.length });
@@ -72,25 +72,37 @@ describe("extractMention：光标在不在 @token 里", () => {
   });
 });
 
+/** 一条候选（宿主 `completion.files` 的出参元素：`path` / `name` / `kind`） */
+const file = (path: string): FileEntry => ({
+  path,
+  name: path.slice(path.lastIndexOf("/") + 1),
+  kind: "file",
+});
+const dir = (path: string): FileEntry => ({
+  path,
+  name: path.slice(path.lastIndexOf("/") + 1),
+  kind: "directory",
+});
+
 describe("mentionInsertText", () => {
   it("文件插 `@路径`，目录补尾斜杠（以便继续往下钻）", () => {
-    expect(mentionInsertText("src/tui/chat.tsx", false)).toBe("@src/tui/chat.tsx");
-    expect(mentionInsertText("src/tui", true)).toBe("@src/tui/");
+    expect(mentionInsertText(file("src/tui/chat.tsx"))).toBe("@src/tui/chat.tsx");
+    expect(mentionInsertText(dir("src/tui"))).toBe("@src/tui/");
   });
 });
 
 describe("scorePath / rankPaths：排序判据", () => {
-  const entries: PathEntry[] = [
-    { path: "src/tui/screens/chat.tsx", dir: false },
-    { path: "src/tui/screens/chat-commands.ts", dir: false },
-    { path: "src/tui", dir: true },
-    { path: "docs/zh/configuration.md", dir: false },
-    { path: "README.md", dir: false },
+  const entries: FileEntry[] = [
+    file("src/tui/screens/chat.tsx"),
+    file("src/tui/screens/chat-commands.ts"),
+    dir("src/tui"),
+    file("docs/zh/configuration.md"),
+    file("README.md"),
   ];
 
   it("整体前缀压过其他匹配（逐段敲路径时目录排最前）", () => {
     const ranked = rankPaths("src/tui", entries);
-    expect(ranked[0]).toEqual({ path: "src/tui", dir: true });
+    expect(ranked[0]).toEqual(dir("src/tui"));
   });
 
   it("文件名前缀优先于路径深处的散落命中", () => {
@@ -123,7 +135,7 @@ describe("scorePath / rankPaths：排序判据", () => {
   });
 
   it("limit 生效（默认 MENTION_LIMIT）", () => {
-    const many: PathEntry[] = Array.from({ length: 100 }, (_, i) => ({ path: `f${i}.ts`, dir: false }));
+    const many: FileEntry[] = Array.from({ length: 100 }, (_, i) => file(`f${i}.ts`));
     expect(rankPaths("f", many)).toHaveLength(MENTION_LIMIT);
     expect(rankPaths("f", many, 3)).toHaveLength(3);
     expect(rankPaths("f", many, 0)).toEqual([]);

@@ -1,3 +1,106 @@
+## [1.1.0-alpha.2] - 2026-11-14
+
+> You could not see what a sub-agent was doing — not "it was slow", not "it was hidden": the
+> sub-agent's tab stayed blank for the whole run. The host never sent its content; it only sent
+> "started" / "finished" and wrote the messages to the database at the very end, and this client
+> only read that view from the database. So the tab was empty until the sub-agent had already
+> stopped, and after reopening a conversation the tab was gone entirely.
+>
+> Both halves are fixed: the host now streams sub-agent deltas over the wire (`toolCallId` in the
+> payload), and the client keeps one live list per sub-agent.
+
+### 🐛 Fixed
+
+- **Sub-agent output appears as it is written** — deltas tagged with `toolCallId` are folded into
+  that sub-agent's own message list (`applyChunk`, the same rule as the main transcript) and
+  redraw the screen. They never enter the main transcript: a sub-agent is its own conversation.
+- **The sub-agent tab renders from live data**, not from a snapshot fetched once when you switched
+  to it. Previously the fetch only re-ran when `messageCount` changed — which only happened at the
+  end, so the tab froze on the first frame.
+- **No `message.list` round trip while the sub-agent is running**: the streamed copy is newer than
+  the database copy. The database path is still used for a sub-agent from an earlier run.
+
+### 🧪 Tests
+
+- 916 unit cases: three new ones pin the routing (deltas tagged with `toolCallId` land in that
+  sub-agent's lane and not in the main transcript; the live copy wins over `message.list`; a
+  sub-agent from a previous run falls back to the database). Removal of the routing turns two of
+  them red.
+
+## [1.1.0-alpha.1] - 2026-11-14
+
+> The status bar was showing the conversation as it looked the moment you opened it: the context
+> percentage, the model name, this turn's token count and the running-tools indicator never moved
+> again. `/model` and `/thinking` did not change their blocks either, and "this turn" was stuck at
+> 0 because that number came from a snapshot taken before the turn.
+>
+> Root cause was two copies of the same facts: the session kept every fact live (`run.state` /
+> `usage` events, the view, the state pull) while the bar rendered an assembled copy that only the
+> host's `conversation.state` could refresh. The copy is gone — `status-blocks.ts` assembles the
+> eight blocks **from live facts on every read**, so there is nothing left to go stale.
+
+### 🐛 Fixed
+
+- **Context percentage updates after every turn** (and after `/back`): the session re-pulls
+  `conversation.state` when a turn settles, and merges only what the host is authoritative for
+  there — `context` (last request's usage + the two thresholds) and `thinking`. `run` and `usage`
+  are *not* merged: the host forgets the run once it settles, so a pull returns `idle` + a zero
+  turn, which used to be exactly how "this turn" got wiped.
+- **`/model` now changes the model block**, since the block reads the live view instead of a copy.
+- **`/thinking` now changes the effort block**, same reason.
+- **The tools block shows what is actually running** (`run.generation.runningTools` while waiting
+  on tools), and the sub-agent count follows `run.subagents` — the same fact the tab bar above the
+  transcript already used.
+
+### 🧪 Tests
+
+- 907 unit cases: new ones pin the four symptoms above (context after settle, usage not being
+  clobbered by the pull, model block after `/model`, tools block per phase) plus `status-blocks`
+  order/narrowing. Two of them were verified red by reverting the fix (removing the re-pull;
+  making the merge wholesale).
+
+## [1.1.0-alpha.0] - 2026-11-14
+
+> The CLI is now a **client of a resident host**, not a standalone in-process agent. Session
+> orchestration, persistence, workspaces, MCP config and config recovery all live in
+> `@ai-zen/agents-host`, which the CLI launches on demand with `npx -y @ai-zen/agents-host@^0.1.0-alpha.5 serve`
+> and talks to over a loopback WebSocket. That is why this is a new minor: nothing in the bundle
+> changed provider SDKs — there is no provider SDK in the bundle any more.
+>
+> This is the first alpha of the rewrite line. Expect the copy and the command table to keep
+> moving; the wire contract it speaks is fixed at **62 methods** (host `0.1.0-alpha.5`).
+
+### ✨ Added
+
+- **A resident host on demand** — the CLI starts one if none is running, shows a staged download
+  screen while `npx` fetches it, and reconnects to it on the next launch. `--ai-zen-dir` picks the
+  data root; the discovery file in `<data root>/run/host.json` is what tells "crashed leftover"
+  from "a different build is running".
+- **`/ws`** — list / pick / create a workspace in one command; the CLI enters one automatically on
+  startup (the current directory locally, the last one for a remote host).
+- **`/shutdown`** — close the host, behind one confirmation. Exiting the CLI never closes it.
+- **Attachment limits come from the host** (`hello.limits`): the paste path and the "too large"
+  message both quote what this host actually accepts, instead of a second hardcoded copy.
+
+### 🧹 Changed
+
+- **`/help` no longer asks the host for anything.** Command descriptions live in the CLI's own
+  dictionary; the host's capability list (and the 63-entry one before it) is gone. A command
+  table that the host also has to describe is a table that drifts — the host said "项目", the CLI
+  said "工作区".
+- **Every user-visible string was rewritten** (zh + en): 助手 / 对话 / 宿主 / 令牌 / 技能 /
+  工作区, parentheses carry facts only, `✖` / `⚠` instead of mixed symbols, no Markdown in a
+  terminal that does not render it. The house style is written at the top of `src/i18n/zh.ts`.
+- **Status-bar block names are the CLI's own** — the host reports facts (`agent`, `model`,
+  `usage`, …), the client decides what to call them and how to lay them out.
+- **`/search` is gone** — search belongs to the desktop client.
+
+### 🧪 Tests
+
+- **907 unit cases in 60 files** + 18 e2e (1 skipped — it needs a real API key), `tsc` clean,
+  `format:check` clean, `check:imports` clean: the bundle still contains neither `openai` nor
+  `@modelcontextprotocol/sdk`, and `dist/` has no runtime import of `@ai-zen/agents-client`.
+
 ## [1.0.2] - 2026-11-09
 
 > The spinner no longer lies about what it is waiting for. A round can call several tools in

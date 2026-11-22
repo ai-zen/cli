@@ -1,342 +1,120 @@
 /**
- * 配置管理 — CLI 层
+ * 配置面的**词汇表** —— 形状全部来自 SDK（`@ai-zen/agents-sdk` 的 `types/index.ts`），一处不抄。
  *
- * 负责配置文件的路径管理和初始化。
- * 默认配置、Agent、SubAgent 全部委托给 @ai-zen/agents-sdk。
+ * ## 谁拥有配置
  *
- * 目录结构：
- *   ~/.ai-zen/                    ← 共享根（AI_ZEN_DIR）
- *   ├── config.json               ← 全局配置（端点、模型等，CLI/Desktop 共享）
- *   ├── agents/                   ← Agent 定义（共享）
- *   ├── sub-agents/               ← SubAgent 定义（共享）
- *   ├── skills/                   ← Skill 目录（共享）
- *   ├── tools/                    ← 用户工具（共享）
- *   ├── mcp.json                  ← MCP 配置（共享）
- *   ├── mcp-oauth/                ← MCP OAuth token（共享）
- *   └── cli/                      ← CLI 运行时数据
- *       ├── conversations/        ← 对话记录
- *       └── last-session.json     ← 「各 cwd 上一轮会话 id」指针（cwd → id）
+ * 宿主。读写都走 procedure：读 `api.config.get.query()` 一次给全（`AppConfig` + 档位表），
+ * 写各归各的门 —— `config.setDefaults` / `config.setGlobal` / `config.endpoint.*` /
+ * `config.model.*` / `config.imageModel.*` / `config.presets.set`，助手定义走
+ * `api.agentDefinition.*`，MCP 走 `api.mcp.*`。本进程既不持有第二份真相，也不在本地拼一份
+ * 「整个配置」再整体写回 —— 而且**每个写口都回整份 `AppConfig`**，界面拿到的是改完之后那一份，
+ * 不必自己把补丁叠到手里那份快照上。
  *
- *   项目/.ai-zen/                 ← 项目级配置与产物
- *   ├── skills/                   ← 项目级 Skill
- *   ├── tools/                    ← 项目级工具
- *   ├── sub-agents/               ← 项目级子 Agent
- *   ├── mcp.json                  ← 项目级 MCP 配置
- *   └── handoffs/                 ← 交接文档（任务交接的落盘产物）
+ * 于是这个文件只剩一件事：把界面要用的那几个形状与**契约里那两个常量**说清楚。形状本身不在这里
+ * 定义，客户端也不能自己再抄一份 —— 抄出来的第二份迟早与宿主存下来的那份对不上。
  *
- *   ~/.agents/                    ← 业界通用规范（如 Cursor、Windsurf、Cline）
- *   ├── skills/                   ← 用户级 Skill
- *   └── mcp.json                  ← 用户级 MCP 配置
+ * ## 数据根布局（唯一真相：宿主的 `HostPaths`，`agents/packages/host/src/config.ts`）
  *
- *   项目/.agents/                 ← 业界通用规范（如 Cursor、Windsurf、Cline）
- *   ├── skills/                   ← 项目级 Skill
- *   └── mcp.json                  ← 项目级 MCP 配置
+ *   <dataRoot>/                     ← `AI_ZEN_DIR`，缺省 `~/.ai-zen`
+ *   ├── ai-zen.db                   ← 库：会话、消息、通知、问题都在这里（没有「每条会话一个文件」）
+ *   ├── assets/                     ← 附件与上传上来的素材
+ *   ├── config.json                 ← SDK 的配置（端点 / 模型 / 默认项 / 上限 / 行为开关）
+ *   ├── reasoning-presets.json      ← 档位表（模型上的 `reasoningPreset` 指它的键）
+ *   ├── host.json                   ← 宿主自己的设置（端口、实例对外与否…）
+ *   ├── run/host.json               ← 这台机器上谁在服务（发现文件，客户端按它找宿主）
+ *   ├── run/token                   ← 本地凭证交付文件
+ *   ├── logs/                       ← 日志：一个进程一格目录，一格只归一个进程写
+ *   │   ├── host/                   ← 宿主进程（服务端）：host.log（5MB × 5）
+ *   │   ├── cli/                    ← CLI 进程：cli.log（2MB × 2）
+ *   │   │                             launch.log（每次拉起清空）
+ *   │   │                             keys.log（默认关）
+ *   │   └── desktop/                ← 将来的桌面端（今天只占名字，不建目录）
+ *   ├── agents/                     ← 助手定义（一实体一文件）
+ *   ├── sub-agents/                 ← 子 Agent 定义
+ *   ├── skills/  tools/             ← 用户级 Skill 与工具
+ *   └── mcp.json                    ← 用户级 MCP（MCP 五层链里的一层）
  *
- *   MCP 配置合并优先级（高 → 低）：
- *     1. 项目/.mcp.json
- *     2. 项目/.ai-zen/mcp.json
- *     3. 项目/.agents/mcp.json
- *     4. ~/.ai-zen/mcp.json
- *     5. ~/.agents/mcp.json
+ *   <cwd>/.mcp.json                 ← 项目侧 MCP（五层链最靠前，只读）
+ *   <cwd>/.ai-zen/mcp.json          ← 项目侧 MCP（唯一可写的项目层，写它时 scope = "workspaceAiZen"）
+ *   <cwd>/.agents/mcp.json          ← 项目侧 MCP（其它工具约定，只读）
+ *   <cwd>/.ai-zen/{skills,tools,sub-agents}/、<cwd>/.agents/{skills,tools,sub-agents}/
  *
- *   Skills 目录优先级（高 → 低）：
- *     1. 项目/.ai-zen/skills/
- *     2. 项目/.agents/skills/
- *     3. ~/.ai-zen/skills/
- *     4. ~/.agents/skills/
+ * 这些路径**不由本进程推导**：客户端与服务端可能不是同一台机器，算出来的第二份答案会在两机
+ * 部署时安静地错。要看某一层现在有什么，问 `api.mcp.list`（每条带 `scope`）；要问数据根在哪，
+ * 那不在配置里 —— `config.get` 回来的 `AppConfig` 没有这一格（旧版那个 `configDir` 已随旧契约
+ * 退场）。数据根是本进程自己的事实：`CliEnv.aiZenDir`（`--ai-zen-dir` / `AI_ZEN_DIR`）。
+ *
+ * 唯一例外是 `logs/cli/`：那一格归 CLI 自己写，三个文件都由本进程自己拼 —— `cli.log` 走
+ * `cli-log.ts` 的 `cliLogFile(dataRoot)`，拉起宿主那一回的 `launch.log` 走 `connection.ts` 的
+ * `launchLogFile(env)`，按键诊断的 `keys.log` 走 `tui/key-debug.ts` 的 `keyDebugFile()`
+ * （`dataRoot` 就是 `CliEnv.aiZenDir`）。它们都不经宿主，也就不存在「两机部署时算错」这个问题。
  */
 
-import { promises as fs } from "fs";
-import { dirname, join } from "path";
-import { ConfigManager as SdkConfigManager, getLogger } from "@ai-zen/agents-sdk";
-import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { t } from "./i18n/index.js";
+import type {
+  AgentDefinition,
+  AppConfig,
+  Endpoint,
+  ImageModel,
+  McpServerConfig,
+  Model,
+  ReasoningPreset,
+  ReasoningPresets,
+  TokenThresholds,
+} from "@ai-zen/agents-sdk";
 
-// ==================== 根目录 ====================
+export type {
+  AgentDefinition,
+  AppConfig,
+  Endpoint,
+  ImageModel,
+  McpServerConfig,
+  Model,
+  ReasoningPreset,
+  ReasoningPresets,
+  TokenThresholds,
+};
+
+/** `api.config.get.query()` 的全部出参：配置 + 档位表（一次给全，中间不夹第二次读） */
+export interface ConfigSnapshot {
+  config: AppConfig;
+  presets: ReasoningPresets;
+}
+
+// ==================== MCP 的五层 ====================
 
 /**
- * 解析配置根目录：显式 `AI_ZEN_DIR` 优先，否则 `$HOME/.ai-zen`。
+ * MCP 配置的五层（宿主 `McpConfig` 的 `McpScope`，`mcp.list` 每条都带着它）。
  *
- * 单独抽成函数是为了让 {@link refreshPaths} 能在测试用例之间重算。
+ * 「每条写在哪一层」是宿主回答的事实，客户端不按目录反推：两个 `.agents/mcp.json`、项目里
+ * 与其他工具共用的 `.mcp.json`、数据根那份 `mcp.json`，谁是近层只有它知道。
  */
-function resolveRoot(): string {
-  return (
-    process.env.AI_ZEN_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".ai-zen")
-  );
-}
+export type McpScope = "workspace" | "workspaceAiZen" | "workspaceAgents" | "user" | "userAgents";
 
 /**
- * 全部路径都导出为 `let`：ESM 的 import 是**活绑定**，导入方每次取值都读到最新值
- * （实测：跨模块 import 的常量在 `refreshPaths()` 之后立刻是新目录），所以 `refreshPaths()`
- * 不需要召回任何引用点。
+ * CLI 界面上那两层 —— 五层里**可写**的只有这两个（宿主 `McpConfig` 的 `WRITABLE`）。
  *
- * **会失效的是快照**：在模块顶层把路径塞进常量或实例（`const POINTER_FILE = join(CLI_DIR, …)`、
- * `new Repo(CONVERSATIONS_DIR)`、`new ConfigManager(CONFIG_FILE)`）—— 那个值在模块求值那一刻就定死了。
- * 这类地方一律改成函数（`pointerFile()` / `conversationRepository()` / `configManager()`），
- * 由调用时机决定读哪个目录。
+ * 另外三层要么在别人的仓库里、要么在别的工具的目录里：替人写那种文件等于替人改他仓库里的
+ * 内容，所以宿主对它们的写口一律 `unsupported`。界面因此也只给这两层，「切作用域」只在它们
+ * 之间切。
  */
-export let AI_ZEN_DIR = resolveRoot();
+export type McpEditableScope = "user" | "workspace";
 
-// ==================== CLI 运行时目录 ====================
-
-export let CLI_DIR = join(AI_ZEN_DIR, "cli");
-export let CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
-export let CONVERSATIONS_DIR = join(CLI_DIR, "conversations");
-
-// ==================== 共享目录 ====================
-
-export let AGENTS_DIR = join(AI_ZEN_DIR, "agents");
-export let SUB_AGENTS_DIR = join(AI_ZEN_DIR, "sub-agents");
-export let SKILLS_DIR = join(AI_ZEN_DIR, "skills");
-export let TOOLS_DIR = join(AI_ZEN_DIR, "tools");
-
-// ==================== 项目级目录（基于 CWD）====================
-
-export const PROJECT_SUB_AGENTS_DIR = join(process.cwd(), ".ai-zen", "sub-agents");
-export const PROJECT_SKILLS_DIR = join(process.cwd(), ".ai-zen", "skills");
-export const PROJECT_TOOLS_DIR = join(process.cwd(), ".ai-zen", "tools");
 /**
- * 交接文档目录（项目级）：`<cwd>/.ai-zen/handoffs/`。
+ * 界面上的那一层 → 契约里的那一层。
  *
- * 交接文档是「人也能直接读」的产物，放在项目内便于随仓库共享/评审；
- * 目录由交接时的 write 工具或服务落盘时自动创建，无需预先建立。
- */
-export const PROJECT_HANDOFFS_DIR = join(process.cwd(), ".ai-zen", "handoffs");
-
-// ==================== 业界通用规范 ~/.agents/ 目录 ====================
-
-function resolveUserAgentsDir(): string {
-  return join(process.env.HOME || process.env.USERPROFILE || "", ".agents");
-}
-
-let USER_AGENTS_DIR = resolveUserAgentsDir();
-
-export let USER_AGENTS_SKILLS_DIR = join(USER_AGENTS_DIR, "skills");
-export let USER_AGENTS_MCP_CONFIG_FILE = join(USER_AGENTS_DIR, "mcp.json");
-
-// ==================== 业界通用规范 项目/.agents/ 目录 ====================
-
-export const PROJECT_AGENTS_DIR = join(process.cwd(), ".agents");
-export const PROJECT_AGENTS_SKILLS_DIR = join(PROJECT_AGENTS_DIR, "skills");
-export const PROJECT_AGENTS_MCP_CONFIG_FILE = join(PROJECT_AGENTS_DIR, "mcp.json");
-
-// ==================== MCP 配置 ====================
-
-export let MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
-export const PROJECT_MCP_CONFIG_FILE = join(process.cwd(), ".ai-zen", "mcp.json");
-export const SHARED_MCP_CONFIG_FILE = join(process.cwd(), ".mcp.json");
-
-// ==================== SDK ConfigManager ====================
-
-/**
- * 按**当前** `CONFIG_FILE` 造一个 ConfigManager。
+ * `workspace` 在契约里是**只读**的项目根 `.mcp.json`（别的工具也读它）；宿主能写的项目层是
+ * `.ai-zen/mcp.json`，契约定名为 `workspaceAiZen`。界面上的「工作区」指的就是后者 —— 用户要的
+ * 是「写进这个项目的配置」，不是「写进那个谁都能改的文件」。
  *
- * 不缓存实例：`ConfigManager` 在构造时固化路径，缓存它等于把路径也缓存了 ——
- * 进程内共享模块时（测试换 `AI_ZEN_DIR`）就会一直读写旧目录。构造本身很轻，
- * 重活（bootstrap / 解析）在 `read()` 里，且由 `ensureConfigDir()` 兜住只做一次。
+ * **映射只有这一处**：往外的每一格（`mcp.list` 的筛选、`mcp.save` / `mcp.remove` 的入参）都读它。
  */
-function configManager(): SdkConfigManager {
-  return new SdkConfigManager(CONFIG_FILE);
-}
+export const MCP_SCOPE_OF: Record<McpEditableScope, McpScope> = {
+  user: "user",
+  workspace: "workspaceAiZen",
+};
 
-// ==================== 目录初始化 ====================
-
-/**
- * 一次性初始化的 Promise（进程生命周期内只跑一次）。
- *
- * 为什么必须缓存 **Promise** 而不是「已初始化」布尔：`readConfig()` 内部就会调它，而
- * `readConfig()` 被 TUI 的 effect、命令层、`createAgent()`、`getScope()` 反复调用 ——
- * 等于每次读配置都重跑一遍全量初始化（bootstrap + 多次 stat/mkdir）。而布尔判据在
- * `await` 窗口期内不成立，并发调用会一起穿透、重复 bootstrap。
- */
-let initPromise: Promise<void> | null = null;
-
-/**
- * 重新解析全部路径（**仅测试使用**）。
- *
- * 生产代码从不在运行期改 `AI_ZEN_DIR`，所以业务路径上不需要调用它。它存在只是因为
- * 测试会给每个用例换一个临时目录，而进程内共享模块（`vitest isolate: false`）时，
- * 模块顶层的路径常量只在首次加载时算过一次。
- *
- * 调用后：导入方靠活绑定自动看到新值（见文件顶部注释）；持有快照的模块由各自的
- * 工厂/重置负责 —— 测试侧统一走 `src/test-support/temp-dir.ts` 的 `useTempAiZenDir()`，
- * 它保证「设 env + 刷新路径 + 收尾还原」三件事一起做。
- */
-export function refreshPaths(): void {
-  AI_ZEN_DIR = resolveRoot();
-  CLI_DIR = join(AI_ZEN_DIR, "cli");
-  CONFIG_FILE = join(AI_ZEN_DIR, "config.json");
-  CONVERSATIONS_DIR = join(CLI_DIR, "conversations");
-  AGENTS_DIR = join(AI_ZEN_DIR, "agents");
-  SUB_AGENTS_DIR = join(AI_ZEN_DIR, "sub-agents");
-  SKILLS_DIR = join(AI_ZEN_DIR, "skills");
-  TOOLS_DIR = join(AI_ZEN_DIR, "tools");
-  MCP_CONFIG_FILE = join(AI_ZEN_DIR, "mcp.json");
-  USER_AGENTS_DIR = resolveUserAgentsDir();
-  USER_AGENTS_SKILLS_DIR = join(USER_AGENTS_DIR, "skills");
-  USER_AGENTS_MCP_CONFIG_FILE = join(USER_AGENTS_DIR, "mcp.json");
-  // 一次性初始化缓存是按旧目录算的，必须作废，否则新目录永远不会被 bootstrap
-  initPromise = null;
-}
-
-/**
- * 确保配置目录和默认文件存在（进程内只真正执行一次）。
- *
- * 共享实体（Agent、SubAgent、Skill 目录等）委托给 SDK 的 ConfigManager.bootstrap()。
- * CLI 自身的运行时目录（conversations/）由本函数额外创建。
- * SDK 的出厂默认配置会自动写入 config.json（如果不存在）。
- */
-export async function ensureConfigDir(): Promise<void> {
-  if (!initPromise) {
-    initPromise = initOnce().catch((error) => {
-      // 失败不缓存：否则一次瞬时故障（如磁盘短暂只读）会让整个进程永久失能
-      initPromise = null;
-      throw error;
-    });
-  }
-  return initPromise;
-}
-
-async function initOnce(): Promise<void> {
-  // SDK bootstrap：目录 + config.json + default Agent + default SubAgent + 出厂思考策略表
-  await configManager().bootstrap();
-
-  // CLI 运行时目录（recursive 模式已存在时不报错，无需先 access 探测）
-  for (const dir of [CLI_DIR, CONVERSATIONS_DIR]) {
-    try {
-      await fs.mkdir(dir, { recursive: true });
-    } catch (error: any) {
-      // 走统一日志出口：TUI 下已改道落盘、stdio 下走 stderr。
-      // 这里不能用 console.warn —— 那会绕过日志系统，界面里看不见、日志文件里也查不到。
-      getLogger().warn(t("app.mkdirFailed", { dir, error: error?.message ?? error }));
-    }
-  }
-}
-
-// ==================== 配置读写 ====================
-
-export async function readConfig(): Promise<AppConfig> {
-  await ensureConfigDir();
-  return await configManager().read();
-}
-
-/**
- * 读取思考策略表（`~/.ai-zen/reasoning-presets.json`）。
- *
- * 这张表**只属于 CLI**：档位与参数补丁的对应关系是产品的编织知识，不在 SDK 里。
- * 文件缺失或损坏时回落到出厂种子。
- */
-export async function readReasoningPresets(): Promise<ReasoningPresets> {
-  // 表归 SDK 管（CLI / 桌面端共享），此处只做透传；缺失/损坏时 SDK 会回落出厂种子
-  return await configManager().readReasoningPresets();
-}
-
-export async function saveConfig(config: AppConfig): Promise<void> {
-  await ensureConfigDir();
-  await configManager().write(config);
-}
-
-// ==================== MCP 配置读写 ====================
-
-/** MCP 配置的作用域：全局（~/.ai-zen/mcp.json） / 项目（<cwd>/.ai-zen/mcp.json） */
-export type McpScope = "global" | "project";
-
-/**
- * 单个 MCP 服务器条目（业界标准字段，外加保留未知字段）。
- * 与 SDK `discoverMcpServers` 的解析一致：`type` 缺省时按 command/url 推断，`disabled: true` 会被跳过。
- */
-export interface McpServerEntry {
-  /** 传输方式，业界标准字段名 `type`（与 SDK normalizeConfig 一致，缺省按 command/url 推断） */
-  type?: "stdio" | "http" | "sse";
-  /** 是否禁用（true 时 SDK 会跳过该服务器） */
-  disabled?: boolean;
-  /** 描述（供 load_mcp 呈现给 LLM，非连接必需） */
-  description?: string;
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  url?: string;
-  headers?: Record<string, string>;
-  /** OAuth 配置（本 CLI 暂不单独编辑，读写时原样保留） */
-  oauth?: Record<string, unknown>;
-  /** 其它未知字段原样保留，避免写回时丢字段（如 oauth 展开字段、厂商扩展） */
-  [key: string]: unknown;
-}
-
-export interface McpServersMap {
-  [name: string]: McpServerEntry;
-}
-
-export interface McpConfig {
-  /** 业界标准 mcpServers 顶层字段（与 SDK @ai-zen/agents-sdk 保持一致） */
-  mcpServers: McpServersMap;
-}
-
-/** 作用域对应的 mcp.json 路径 */
-export function mcpConfigPath(scope: McpScope): string {
-  return scope === "project" ? PROJECT_MCP_CONFIG_FILE : MCP_CONFIG_FILE;
-}
-
-/**
- * 读取 mcp.json 的结果。
- *
- * 「文件不存在」与「读取 / 解析失败」必须分开：前者是正常的空配置，后者是文件已损坏。
- * 以前两者都返回 `{ mcpServers: {} }`，于是损坏的文件在配置中心里看起来「没有服务器」，
- * 用户一保存就把原内容整个覆盖掉 —— 静默丢数据。
- */
-export type McpReadResult = { ok: true; config: McpConfig } | { ok: false; error: string };
-
-/** 读失败时按空配置继续（仅用于「读来只为做判断」的场景；界面上要显示损坏由编辑屏负责） */
-export function mcpConfigOrEmpty(result: McpReadResult): McpConfig {
-  return result.ok ? result.config : { mcpServers: {} };
-}
-
-/**
- * 读取指定路径的 mcp.json。
- * 采用业界标准 `mcpServers` 顶层字段（与 SDK discoverMcpServers 一致）。
- */
-export async function readMcpConfigAt(path: string): Promise<McpReadResult> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(path, "utf-8");
-  } catch (cause: any) {
-    // 只有「文件不存在」算正常空配置；权限 / 是目录这类真错误照样报上去
-    if (cause?.code === "ENOENT") return { ok: true, config: { mcpServers: {} } };
-    return { ok: false, error: cause?.message ?? String(cause) };
-  }
-  try {
-    const parsed = JSON.parse(raw) as Partial<McpConfig>;
-    return { ok: true, config: { mcpServers: parsed.mcpServers ?? {} } };
-  } catch (cause: any) {
-    return { ok: false, error: cause?.message ?? String(cause) };
-  }
-}
-
-/**
- * 原子写入指定路径的 mcp.json（必要时创建父目录）。
- */
-export async function writeMcpConfigAt(path: string, mcpConfig: McpConfig): Promise<void> {
-  await fs.mkdir(dirname(path), { recursive: true });
-  const tmp = path + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(mcpConfig, null, 2), "utf-8");
-  await fs.rename(tmp, path);
-}
-
-/**
- * 读取某个作用域的 mcp.json（默认全局 ~/.ai-zen/mcp.json）。
- */
-export async function readMcpConfig(scope: McpScope = "global"): Promise<McpReadResult> {
-  return readMcpConfigAt(mcpConfigPath(scope));
-}
-
-/**
- * 原子写入某个作用域的 mcp.json（默认全局 ~/.ai-zen/mcp.json）。
- */
-export async function writeMcpConfig(mcpConfig: McpConfig, scope: McpScope = "global"): Promise<void> {
-  await writeMcpConfigAt(mcpConfigPath(scope), mcpConfig);
-}
-
-/** 读取项目级 <cwd>/.ai-zen/mcp.json（等价于 readMcpConfig("project")） */
-export async function readProjectMcpConfig(): Promise<McpReadResult> {
-  return readMcpConfigAt(PROJECT_MCP_CONFIG_FILE);
+/** `api.mcp.list.query()` 的一行：这一条 + 它写在哪一层 */
+export interface McpEntry {
+  scope: McpScope;
+  server: McpServerConfig;
 }

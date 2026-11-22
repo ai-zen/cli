@@ -16,8 +16,8 @@
  * | Windows | PowerShell `Get-Clipboard -Format Image` → PNG → base64 | `Get-Clipboard -Raw` |
  *
  * **一律不落盘**：macOS 那条给的是十六进制文本，Linux 给的是二进制，Windows 给的是
- * base64 —— 三者都能在内存里还原成 base64，而 SDK 的 `fileToContentSection()` 正好接受
- * `{ base64, mime }`，于是粘贴一张图片不需要写任何临时文件。
+ * base64 —— 三者都能在内存里还原成 base64，而粘贴链路（`buildUserContent`）把它解成字节
+ * 经 `content.upload` 交给服务端，于是粘贴一张图片不需要写任何临时文件。
  *
  * 命令不存在 / 退出码非 0 / 输出为空，一律当作「没有」，由调用方回退到文本。
  * 这条约定让「没装 `wl-paste`」「剪贴板是文本」「剪贴板是图片」三种情况不会互相阻塞。
@@ -42,13 +42,25 @@ export type ClipboardImageResult =
   | { kind: "too-large"; bytes: number }
   | { kind: "none" };
 
-/** 单张粘贴图片上限：与 SDK 默认内联上限（8MB）同量级，留出 base64 膨胀余量 */
+/**
+ * 单张粘贴图片上限的**兜底值**。
+ *
+ * ## 它现在**一直**在用（口径⑥）
+ *
+ * 宿主这一版不再报附件上限（新契约的 `session.open` 里没有 `limits` 那一格），于是
+ * `ChatSessionLike.attachmentLimits` 恒为 `null`，粘贴时的预检就落在这个常量上。
+ *
+ * 代价写在明处：**这一份与宿主真实的上限可能不一致** —— 宿主改了自己的上限，客户端这边
+ * 仍然按 20MB 提示与预检，症状是「提示放得下、实际被拒」（或者反过来，白白拒掉一张能发的图）。
+ * 留着它而不是「不检查」，是因为不检查的话大图会一路传到宿主才失败，用户等的是几十秒的
+ * 上传换一句「太大了」。宿主把上限重新报出来那天，这里改回「读宿主给的那份」。
+ */
 export const MAX_CLIPBOARD_IMAGE_BYTES = 20 * 1024 * 1024;
 
 /**
  * 单次粘贴文本上限 256KB。
  *
- * 超了**报错而不是截断**：半截代码 / 半截 JSON 粘进对话比不粘更坑（用户会以
+ * 超了**报错而不是截断**：半截代码 / 半截 JSON 粘进会话比不粘更坑（用户会以
  * 为粘全了，基于残缺内容提问）。需要大段内容时让他存成文件用 `@` 引用。
  */
 export const MAX_CLIPBOARD_TEXT_BYTES = 256 * 1024;
@@ -117,8 +129,18 @@ function imageCommands(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): Image
   if (platform === "linux") {
     const wayland = Boolean(env.WAYLAND_DISPLAY) || env.XDG_SESSION_TYPE === "wayland";
     const wl: ImageCommand[] = [
-      { cmd: "wl-paste", args: ["--type", "image/png"], mime: "image/png", parse: (stdout) => stdout },
-      { cmd: "wl-paste", args: ["--type", "image/jpeg"], mime: "image/jpeg", parse: (stdout) => stdout },
+      {
+        cmd: "wl-paste",
+        args: ["--type", "image/png"],
+        mime: "image/png",
+        parse: (stdout) => stdout,
+      },
+      {
+        cmd: "wl-paste",
+        args: ["--type", "image/jpeg"],
+        mime: "image/jpeg",
+        parse: (stdout) => stdout,
+      },
     ];
     const x11: ImageCommand[] = [
       {
@@ -175,13 +197,21 @@ function textCommands(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): TextCo
     return wayland ? [...wl, ...x11] : [...x11, ...wl];
   }
   if (platform === "win32") {
-    return [{ cmd: "powershell", args: ["-NoProfile", "-NonInteractive", "-Command", "Get-Clipboard -Raw"] }];
+    return [
+      {
+        cmd: "powershell",
+        args: ["-NoProfile", "-NonInteractive", "-Command", "Get-Clipboard -Raw"],
+      },
+    ];
   }
   return [];
 }
 
 /** 读剪贴板里的图片；没有图片时返回 `{ kind: "none" }`（调用方据此回退到文本） */
-export async function readClipboardImage(deps: ClipboardDeps = {}): Promise<ClipboardImageResult> {
+export async function readClipboardImage(
+  deps: ClipboardDeps = {},
+  maxBytes: number = MAX_CLIPBOARD_IMAGE_BYTES,
+): Promise<ClipboardImageResult> {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
   const run = deps.run ?? defaultRun;
@@ -191,7 +221,8 @@ export async function readClipboardImage(deps: ClipboardDeps = {}): Promise<Clip
     if (!stdout || stdout.length === 0) continue;
     const bytes = candidate.parse(stdout);
     if (!bytes || bytes.length === 0) continue;
-    if (bytes.length > MAX_CLIPBOARD_IMAGE_BYTES) return { kind: "too-large", bytes: bytes.length };
+    // 上限由调用方给（这一版是本地兜底常量：宿主不再报它，见 `MAX_CLIPBOARD_IMAGE_BYTES`）
+    if (bytes.length > maxBytes) return { kind: "too-large", bytes: bytes.length };
     return { kind: "image", image: { base64: bytes.toString("base64"), mime: candidate.mime } };
   }
   return { kind: "none" };
@@ -204,9 +235,7 @@ export async function readClipboardImage(deps: ClipboardDeps = {}): Promise<Clip
  * `too-large` = 真问题（用户以为粘上了其实没有），空文本 = 剪贴板确实空着。
  */
 export type ClipboardTextResult =
-  | { kind: "text"; text: string }
-  | { kind: "too-large"; bytes: number }
-  | { kind: "unavailable" };
+  { kind: "text"; text: string } | { kind: "too-large"; bytes: number } | { kind: "unavailable" };
 
 /**
  * 读剪贴板里的文本。

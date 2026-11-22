@@ -31,6 +31,55 @@ The CLI has two **non-mixing** run modes, chosen automatically from the launch a
 
 In pure stdio mode, logs / progress / tool activity / error summaries all go to **stderr**; stdout carries the result only (no ANSI, no emoji prefix, no spinner). Exit code is `0` on success and non-zero on failure. Nothing is persisted by default (no conversation archive).
 
+Pure stdio also **runs against a host**: `ai "…"` makes sure a host is reachable (spawning one locally when none is running, see below) and opens a **one-off session** for that single turn — same agent assembly, tools, MCP connections and context guard as the TUI, so the answer does not depend on which mode you used. The cost is a one-time cold start of a second or two, plus `<data root>/run/` being writable and `node` being able to spawn a child process. With an explicit host address ([below](#which-server-to-connect-to)) neither applies: nothing is spawned locally, and the cold start (if any) belongs to that host.
+
+## Which Server to Connect To
+
+On a one-machine setup there is nothing to configure and **nothing to install**. Without an explicit address, `ai` looks for the discovery file `~/.ai-zen/run/host.json` (`$AI_ZEN_DIR/run/host.json` when `AI_ZEN_DIR` is set): the host writes the port it actually got, so a restarted host is found again without anyone caching a port. When nothing is listening there, a host is **started through `npx`** — the CLI never bundles one:
+
+```bash
+npx -y @ai-zen/agents-host@<range> serve --ai-zen-dir <data root>
+```
+
+`<range>` is the `@ai-zen/agents-host` range this CLI was built with, so the host always matches the client. The first launch therefore **downloads** the host, and the TUI says so on a stage screen (resolve the version → download & install → start the host → connected): it reports stages, never a percentage (npm output is not parsed), draws nothing at all when a host is already running, offers `R` to retry on failure with the child process's last words, and `Esc` / `Ctrl+C` cancels the launch and drops you back on the connect screen **without quitting**. Pipe mode (`ai "…"`) has no screen: a failed launch is one line on stderr plus a non-zero exit code.
+
+The credential defaults to `~/.ai-zen/run/token` in the same directory — the host reads or generates it at startup, mode `0600`. It is **not** in `host.json`.
+
+Two consequences worth knowing:
+
+- **First run does nothing on its own.** With no saved choice (`<data root>/cli/connection.json` missing) and no explicit address, the TUI opens the **connect screen** (local / remote / quit) and performs no I/O until you pick one — otherwise "first launch" would silently install a host nobody asked for. Pipe mode goes further and fails with a pointer: exit code `2`, one line of guidance on stderr, nothing spawned.
+- **Choosing "local" on that screen launches (and possibly downloads) the host**; choosing "remote" only ever connects.
+
+To reach a server elsewhere, name it explicitly:
+
+| Setting | Meaning |
+|---------|---------|
+| `--server <url>` | Talk to this server for this run |
+| `AI_ZEN_SERVER_URL` | Same thing, for shells where the address is always the same |
+| `AI_ZEN_SERVER_TOKEN` | Credential for that server |
+
+- **Priority** — address: `--server` > `AI_ZEN_SERVER_URL` > discovery file; credential: `AI_ZEN_SERVER_TOKEN` > `run/token`.
+- **Schemes** — `ws:` / `wss:` / `http:` / `https:` (`http→ws`, `https→wss`, same port), and a path is allowed for an nginx sub-path mount: `wss://your.domain/ai-zen`.
+- **An explicit address never spawns a local server.** Whatever would get started here is not listening on that address, so `ai` connects to the address and to nothing else.
+- **There is no `--token`.** The address is not a secret, so it may sit in argv. The credential is a secret, and argv is copied into `ps` output and into your shell history — so the credential only ever comes from the environment.
+- **The server listens on loopback only and speaks no TLS.** Reaching it from another machine is a tunnel in front of it (SSH forwarding, tailscale) or a TLS-terminating reverse proxy (nginx).
+- **A malformed address fails early** — one plain sentence on stderr, exit code `2`, and neither a connection attempt nor a spawn.
+
+```bash
+# Local: nothing to configure
+ai
+
+# An explicit address: ask the server behind a reverse proxy for its status
+ai --server-status --server wss://your.domain/ai-zen
+
+# Through a tunnel (ssh -L 9999:127.0.0.1:<port> …): the address looks local,
+# but the credential is the one from the machine on the other end
+AI_ZEN_SERVER_TOKEN="$(ssh host cat ~/.ai-zen/run/token)" \
+  ai --server ws://127.0.0.1:9999 "summarize the changes on this branch"
+```
+
+The full remote setup — tunnel, nginx, where the credential lives, what to check when the handshake is refused — is in `agents/docs/en/deploy.md` (in the ai-zen workspace, next to this repo).
+
 ## Quick Start
 
 ```bash
@@ -66,10 +115,10 @@ When run with no arguments on an interactive terminal, the CLI opens a full-scre
 ╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝
 
               AI workbench in your terminal
-              v1.0.2 · sdk x · core y
+              v1.1.0-alpha.2 · sdk 1.2.0-alpha.2 · core 4.6.0-alpha.0
 ```
 
-You land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**: a divider, the input line, and a **status bar** (three priority-ordered blocks: model · agent · reasoning effort | this-round / cumulative tokens · generation rate | key hints; a block that does not fit moves to the next line whole, so nothing is truncated and no block gets split) always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the spinner replaces the input line and its label shows **which phase** the round is in: connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming; the two tool phases name the tool(s), and while a parallel round is waiting it lists only the tools still running (so a finished `edit` drops out and the label points at `exec`). The generation rate shows a live value while streaming (2-second sliding window, estimated from output deltas) and switches to this round's average once it finishes (preferring the real `completion_tokens` from the API).
+You land **directly in the chat screen** (resuming the last session if there is one, otherwise starting a new conversation). The chat screen is **bottom-pinned**, and from the bottom up the order is: **status bar** (three priority-ordered blocks: model · agent · reasoning effort | this-round / cumulative tokens · generation rate | key hints; a block that does not fit moves to the next line whole, so nothing is truncated and no block gets split) → input line → divider → phase line → command menu, with the conversation scrolling above that stack. The **phase line** only exists while busy and says **which phase** the round is in: connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming; the two tool phases name the tool(s), and while a parallel round is waiting it lists only the tools still running (so a finished `edit` drops out and the label points at `exec`). It sits **above the divider, above the input row, and is always exactly one line** — it never replaces the input box. **You can keep typing while generating**: typing, the `/` menu and Enter all keep working; such a message is queued into the round that is already running (you get a "queued" notice) and lands as a message when the current tool round finishes, so nothing the model is already saying gets interrupted. The generation rate shows a live value while streaming (2-second sliding window, estimated from output deltas) and switches to this round's average once it finishes (preferring the real `completion_tokens` from the API).
 
 While sub-agents are running, a **main / sub-agent bar** appears below the transcript (`主AGENT　◈子AGENT1　◈子AGENT2`): `←` / `→` switches which agent's conversation the transcript shows, the status diamond tells you where each one stands (blue blinking while running / green when done / red when failed), and the bar disappears once this round's inner loop finishes.
 
@@ -113,6 +162,7 @@ Key map (aligned with [Claude Code](https://docs.claude.com/en/docs/claude-code/
 | `Ctrl+S` | Stash the draft / press again to restore |
 | `Ctrl+V` | Paste: attaches the clipboard image if there is one, otherwise pastes text (text over 256KB is refused, not truncated) |
 | `Ctrl+L` | Clear the screen (context kept) |
+| `Alt+X` | Clear the notice bar — the entries on screen **and** this conversation's notices on the host (`notice.clear`); other conversations' notices are left alone. The hint is the last line of the notice bar |
 | `PgUp` / `PgDn` | Page through the transcript |
 | Mouse wheel | Scroll by line (3 lines per notch). With mouse reporting on, text selection needs `Shift` (native terminal selection); `tmux` users need `set -g mouse off`, otherwise the wheel is swallowed by copy-mode |
 | `Shift+↑ ↓`, `Alt+↑ ↓`, `⌘;` / `⌘'`* | Scroll by line |
@@ -122,7 +172,7 @@ Key map (aligned with [Claude Code](https://docs.claude.com/en/docs/claude-code/
 
 Not implemented (no counterpart here): `Ctrl+O` transcript viewer, `Ctrl+R` reverse search, `Ctrl+B` background tasks, `Ctrl+T` task list, `Shift+Tab` permission modes.
 
-`Ctrl+V` is **image first, text as fallback**: it asks the system clipboard for an image (via `osascript` on macOS, `wl-paste` / `xclip` on Linux, PowerShell on Windows) and, if there is one, attaches it to the message (an `📎 N attached` line appears above the input, up to 4 images, `Esc` clears them). With no image on the clipboard it behaves like a normal paste and inserts the text at the cursor. Text over 256KB is **refused, not truncated** — half a file in the draft is worse than none — and the notice points at `@`-referencing it from a file instead. Nothing is written to disk — the image becomes a content block straight from base64, and whether it goes through the Files API or inline is decided by the SDK based on the current endpoint; when the model does not declare `vision: true`, the SDK degrades it to a path hint and says so in the notice bar. Note that macOS maps `⌘⌫` to `Ctrl+U`, which is why `Ctrl+U` kills to line start here; use `Esc` to clear the draft.
+`Ctrl+V` is **image first, text as fallback**: it asks the system clipboard for an image (via `osascript` on macOS, `wl-paste` / `xclip` on Linux, PowerShell on Windows) and, if there is one, attaches it to the message (an `📎 N attached` line appears above the input, up to 4 images, `Esc` clears them). With no image on the clipboard it behaves like a normal paste and inserts the text at the cursor. Text over 256KB is **refused, not truncated** — half a file in the draft is worse than none — and the notice points at `@`-referencing it from a file instead. Nothing is written to disk — the bytes go to the server through `content.upload`, and whether they go through the Files API or inline is decided by the **server** from that session's endpoint; when the model does not declare `vision: true` it degrades to a path hint and says so in the notice bar. Note that macOS maps `⌘⌫` to `Ctrl+U`, which is why `Ctrl+U` kills to line start here; use `Esc` to clear the draft.
 
 \* `⌘` combos only carry the `super` bit when the terminal **enables the kitty keyboard protocol** (and for iTerm2, when Cmd is mapped to Super). Terminals without it (e.g. Apple Terminal) can only map `⌘` to `ESC` sequences (e.g. `⌘←` → `ESC[1;9D`, equivalent to `Alt+←`), or you can use the Alt combos above.
 
@@ -135,7 +185,7 @@ If a key still does nothing, turn on the key diagnostics and press it once:
 ```bash
 AIZ_DEBUG_KEYS=1 aiz
 # in another shell
-tail -f /tmp/aiz-key-debug.log
+tail -f ~/.ai-zen/logs/cli/keys.log
 ```
 
 The first line records the terminal environment (`TERM`, `TERM_PROGRAM`, ...); every keypress then appends one line:
@@ -166,7 +216,14 @@ On first launch, if the endpoint bound to the selected model has no API Key yet,
 
 ### Session Recovery
 
-Every conversation is persisted directly as its own file (`cli/conversations/<id>.json`) while you chat — there is no separate draft store. A single pointer (`cli/last-session.json`) remembers the **last session id**; next time you start `ai`, that session is **resumed automatically** so you pick up where you left off.
+Conversations are **not** files in a tree: workspaces, conversations, messages, notices and pending questions all live in the host's single database — `<data root>/ai-zen.db` (`HostPaths.dbFile` in `agents/packages/host/src/config.ts`). So "resume the last conversation" is two things stapled together:
+
+- **The client only remembers *which* conversation it opened last**: `<data root>/cli/last-conversation.json` (one slot per workspace id, `memoryPath` in `src/session.ts`). On startup it asks the host about that id; if the conversation is gone (deleted, or the host switched databases) it opens a new one — that is not an error.
+- **The conversation itself is in the host's database**: opened by id (`conversation.get` + `conversation.state`), and every message comes back (`loadConversation` in `src/session.ts`).
+
+Workspaces work the same way: a workspace is not a directory, it is a row in the host's database (`folder.cwd` is just one of its fields). With the host on the same machine the workspace is the directory you typed `ai` in (registered with `workspace.create` when `workspace.list` has no match); against a remote host the client only accepts "the one I entered last time" and otherwise asks you to pick with `/ws` — it **never** sends this machine's path up (`enterWorkspace` in `src/workspace.ts`).
+
+One-off stdio runs (`ai "…"`, `cat f | ai`) are the exception: they do not even create a conversation (`conversation.transient`, one request per run); `--save` goes through a real conversation, and `remember: false` keeps that run from moving `last-conversation.json` (`src/stdio.ts`).
 
 ### UI language (Chinese / English)
 
@@ -187,38 +244,42 @@ While in a conversation, all commands start with `/`. Typing `/` lists the avail
 
 ```
 💬 You: /b
-  /back         Undo messages (roll back to a specific point and resend)
+  /back /revert  Retract the last message (edit and resend)
 ```
 
 > Typing `/` lists candidate commands below the input line (↑↓ to choose, `Tab` to complete, `Enter` to submit/run). Commands are matched by their full names; an unrecognized `/xxx` reports "Unknown command".
 
 | Command | Description |
 |---------|-------------|
-| `/exit` `/quit` | Exit the conversation (offers to save) |
-| `/save [name]` | Save the conversation (already flushed every turn); with a name it is saved as that file name (a rename — it asks first if the name already exists) |
-| `/load` | Load a conversation (replaces this one; the picker lists saved conversation file names only) |
-| `/new` | Reset the conversation (clear history) |
-| `/back` | Retract a message (roll back to a point and resend) |
-| `/editor` | Compose a long message in your editor (vim/nano) |
-| `/clear` | Clear the screen |
+| `/new` | Start another conversation (same agent, current workspace). **Nothing is interrupted**: the running one keeps running in the background, switch back any time |
+| `/load` | Switch to another conversation that already exists on the host (picker). Also non-disruptive — only "which one this screen shows" changes |
+| `/sessions` `/ps` | Active sessions: those held by this process ∪ those running on the host; each row says whether it is running (with phase or start time) and which one is current; pick to switch |
+| `/ws` | Workspaces. `/ws` lists them and switches (each entry shows its directory and whether that directory still exists — both facts come from the host); `/ws new [path]` registers a directory: the current one on a local host, an absolute path on a remote one |
+| `/pin [on\|off]` | Pin / unpin **this** conversation. One field is written; the order itself (pinned first, then newest) is what `conversation.list` returns |
+| `/back` `/revert` | Retract: roll back to before one of your messages and resend it. The host truncates **by message id** (not by an index the client counted) and hands the removed content back, which lands in the input box |
+| `/editor` | Compose this message in your editor (`$EDITOR` → `$VISUAL` → `vi`, `notepad` on Windows) |
+| `/clear` | Clear the screen only (the context is kept). The queue is not touched — that is `/free` |
+| `/free` | Drop the queue: messages typed during a run that have not been sent yet (they would otherwise run as soon as the current turn ends) |
 | `/config` | Open the configuration center (endpoints / models / image models / MCP / agent definitions / defaults incl. interrupt strategies / tool-output cap) |
-| `/model` | Switch model (writes the Agent's `modelId`; thinking level resets to the model default) |
-| `/agent` | Switch the main Agent (writes `defaultAgent` and rebuilds the session; unusable Agents are marked with the reason) |
-| `/reload` | Refresh the runtime (rediscovers tools / MCP; messages and context are kept) |
-| `/update` | Upgrade the CLI to the newest published release (the highest semver across **all** dist-tags, so an alpha newer than `latest` wins; shows each step, then offers to restart into the new version) |
-| `/mcp` | Manage MCP servers (add / remove / edit / toggle; `/mcp global` and `/mcp project` pick a scope) |
+| `/model` | Switch model: `/model <id>` changes **this session**; `-a`/`--agent <id>` changes the Agent definition (thinking level resets); `-g`/`--global <id>` changes the global fallback; no argument opens a picker (it says which layer is in effect) |
+| `/think` `/effort` | Switch reasoning effort for this session (`default` clears the session value and follows the Agent definition); `-a`/`--agent [level]` writes the Agent definition instead. The levels offered are the ones the host reports for the model — nothing is assumed here |
+| `/agent` | Pick which Agent later conversations use (writes `defaultAgent`; unusable Agents are shown with the host's reason) |
+| `/mcp [user\|workspace]` | Manage MCP servers (add / remove / edit / enable) in the configuration center's MCP screen; the scope defaults to the layer that already has entries |
+| `/key` | Set the current endpoint's API key (the session is rebuilt on save, so it applies immediately) |
+| `/reload` | Re-read config / agents / tools / skills / MCP from disk on the host (messages and context are kept) |
+| `/upgrade` | Move the host to **the highest version across all release tags**: query the registry → pull that version with npx → confirm → record it and shut the host down cleanly (the reconnect screen starts it from that version; this process never restarts itself) |
 | `/lang` | Switch the interface language (`/lang zh`, `/lang en` set it explicitly; no argument toggles) |
-| `/think` `/effort` | Switch reasoning effort (`/think default` follows the model default) |
-| `/key` | Set the endpoint API key (rebuilds the session on save) |
-| `/handoff` | Write a handoff document (keeps the session) |
-| `/migrate` | Hand off and start a new session |
-| `/help` | Show help |
+| `/handoff` | Write a handoff document (keeps the conversation) |
+| `/migrate` | Hand off and start a new conversation |
+| `/help` | Show the command list; descriptions come from the host's capability list wherever a command maps to a contract method |
+| `/shutdown` | Shut down the host (`host.shutdown`). One confirmation — and the confirmation says what it costs: **one host per machine may be shared by several clients (the desktop app never kills it), so this drops everybody else too**. After it is accepted the CLI goes **back to the connect screen**, saying the host is gone, instead of exiting |
+| `/exit` `/quit` | Exit the conversation |
 
 ### Task Handoff & Migration
 
 Two related commands, one pipeline:
 
-- **`/handoff`** — the original agent stops what it is doing and writes a handoff document to `<project>/.ai-zen/handoffs/<timestamp>-<conversation id>.md`, using its own tools to verify the real state (branch, uncommitted changes, tests, ports). The session keeps running, so you can keep refining the document.
+- **`/handoff`** — the original agent stops what it is doing and writes a handoff document to `<project>/.ai-zen/handoffs/<YYYYMMDD-HHmmss>.md`, using its own tools to verify the real state (branch, uncommitted changes, tests, ports). The session keeps running, so you can keep refining the document.
 - **`/migrate`** — the same handoff, then history is cleared and a new session starts from the document (the breakpoint message carries only the path; the new agent reads it).
 
 Two executors: `self` (default — the original agent writes it in-session, highest fidelity) and `summary` (a single independent model call, cheap but lossy). `self` degrades to `summary` one-way on failure. Pass it explicitly with `/handoff summary` or `/migrate self`.
@@ -301,52 +362,71 @@ The `tokenThresholds` field on each model sets two usage lines: `handoff` (soft 
 
 > Note: entries in `models` / `imageModels` **without `custom: true`** are **factory-managed** — on every launch they are reconciled with (and replaced by) the SDK factory catalog; add `"custom": true` for your own entries. `endpoints` are never managed and always keep your configuration.
 >
-> The model is **not** selected in `config.json`: each Agent binds one in its own definition file (`agents/<id>.json`, field `modelId`), which is the single source of truth at runtime. `/model` writes exactly that field.
+> Models resolve in **three levels**: session override > Agent definition (`modelId` in `agents/<id>.json`) > `defaultModel` in `config.json` (fallback, not set by default). The everyday model lives on the Agent definition; `/model <id>` changes only this session, `/model -a <id>` the definition, `/model -g <id>` the fallback.
 
 ### Environment Variable
 
 - `AI_ZEN_DIR` — Override the shared root directory (default: `~/.ai-zen`). CLI runtime data goes to `$AI_ZEN_DIR/cli/`, and shared resources (agents, skills, tools, MCP, etc.) go to `$AI_ZEN_DIR/`.
-- `AIZ_DEBUG_KEYS=1` — Enables key diagnostics logging (off by default, zero overhead); `AIZ_KEYS_FILE=<path>` overrides the target file (default `/tmp/aiz-key-debug.log`).
-- `AIZ_DEBUG_SDK=0` — Disables SDK global logging. **On by default**: everything is written to `$AI_ZEN_DIR/logs/sdk.log` (no library logs ever reach the screen), rotated to `sdk.log.1` once the file passes 2MB; `AIZ_SDK_LOG_FILE=<path>` overrides the location. Check this file when debugging "MCP won't connect" or "Skill failed to parse".
+- `AIZ_DEBUG_KEYS=1` — Enables key diagnostics logging (off by default, zero overhead); `AIZ_KEYS_FILE=<path>` overrides the target file (default `<data root>/logs/cli/keys.log`).
+- `AI_ZEN_SERVER_URL` — Explicit server address; same as `--server <url>`, which wins when both are given ([details](#which-server-to-connect-to)).
+- `AI_ZEN_SERVER_TOKEN` — Credential for an explicit server; it wins over `~/.ai-zen/run/token`. There is deliberately no `--token` flag (argv ends up in `ps` and in your shell history).
 
 ## Filesystem Layout
 
+Under the data root (`AI_ZEN_DIR`, default `~/.ai-zen`) there is exactly one dividing line: **the host's facts** vs **this client's own**. Every entry below points back at a line of code — the host's paths are all in `HostPaths` (`agents/packages/host/src/config.ts`), the four client files are in their own implementations.
+
 ```
-~/.ai-zen/                    ← Shared root (AI_ZEN_DIR)
-├── config.json               ← Endpoints & models (shared with other AI-Zen clients)
-├── cli/                      ← CLI runtime data
-│   ├── conversations/        ← CLI conversations
-│   ├── last-session.json     ← Pointer to the last session id
-│   └── preferences.json      ← CLI-local preferences (interface language, etc.)
-├── agents/                   ← Agent definitions (shared)
-│   ├── default.json          ← Default agent (created on first run)
-│   └── my-custom-agent.json
-├── sub-agents/               ← SubAgent definitions (shared)
-│   ├── general-assistant.json ← Default sub-agent (created on first run)
-│   └── my-coder.json
-├── skills/                   ← Skill directory (shared)
-│   └── my-skill/
-│       └── SKILL.md
-├── tools/                    ← User-defined tools (shared)
-│   └── my-tool.js
-├── mcp.json                  ← MCP config (shared)
-├── mcp-oauth/                ← MCP OAuth tokens (shared)
-└── logs/                     ← Diagnostics (sdk.log: SDK global log, 2MB rotation)
+~/.ai-zen/                     ← data root (AI_ZEN_DIR)
+├── ai-zen.db                  ← the host's single database: workspaces / conversations / messages / notices / questions
+├── assets/                    ← attachments and uploaded assets (owned by the host)
+├── config.json                ← SDK config: endpoints / models / defaults / limits / behaviour switches
+├── host.json                  ← the host's own settings (port, …)
+├── run/                       ← "who is serving on this machine"
+│   ├── host.json              ← discovery file: which port the host is on
+│   └── token                  ← local credential (0600; this is why local instances need no typing)
+├── logs/                      ← one directory per process; each is written by exactly one process
+│   ├── host/host.log          ← the host's log (size-based rotation: host.log.1 …)
+│   └── cli/                   ← this CLI's own
+│       ├── cli.log            ← CLI log (2MB rotation); warn/error also surface in the notice bar and are cleared when you send a message
+│       ├── launch.log         ← output of the host process this CLI spawned (rewritten on every launch — the failure reason lives here)
+│       └── keys.log           ← key diagnostics (only with `AIZ_DEBUG_KEYS=1`)
+├── agents/                    ← Agent definitions (one entity per file) — the only layer agents have
+├── sub-agents/                ← SubAgent definitions (user level)
+├── skills/                    ← Skills (user level)
+├── tools/                     ← Custom tools (user level)
+├── mcp.json                   ← MCP config (user level)
+├── mcp-oauth/                 ← MCP OAuth credentials
+└── cli/                       ← runtime data that belongs to **this machine's CLI only**
+    ├── connection.json        ← which host this CLI talks to (address + credential when remote)
+    ├── preferences.json       ← interface language and other local preferences
+    ├── last-workspace.json    ← "which workspace I entered last on this host"
+    └── last-conversation.json ← "which conversation I opened last in this workspace"
+
+~/.agents/                     ← vendor-convention dirs (Cursor / Windsurf / Cline): skills/, mcp.json
 
 /path/to/project/
-├── .mcp.json                 ← Project-shared MCP config (committable)
-└── .ai-zen/
-    ├── mcp.json              ← Project-personal MCP config (not committed)
-    ├── skills/               ← Project Skill directory
-    │   └── my-skill/
-    │       └── SKILL.md
-    ├── tools/                ← Project tool directory
-    │   └── my-tool.js
-    ├── sub-agents/           ← Project SubAgent directory
-    │   └── project-helper.json
-    └── agents/               ← Project Agent directory (overrides user-level)
-        └── project-agent.json
+├── .mcp.json                  ← project-shared MCP config (committable)
+├── .ai-zen/
+│   ├── mcp.json               ← project-personal MCP config (not committed; the only writable project layer)
+│   └── skills/                ← project Skill directory
+└── .agents/                   ← directories other tools agree on
+    ├── mcp.json
+    ├── skills/
+    ├── tools/
+    └── sub-agents/
 ```
+
+Layers per capability (nearest first, same id overridden by the nearer one). `agents/` does **not** take part in this chain — agent definitions are global config, unrelated to the project:
+
+| Capability | Layers (near → far) |
+|---|---|
+| Agent definitions | `<data root>/agents/` (the only place) |
+| Skills | `<project>/.ai-zen/skills` → `<project>/.agents/skills` → `<data root>/skills` → `~/.agents/skills` |
+| Tools | `<project>/.agents/tools` → `<data root>/tools` |
+| Sub-agents | `<project>/.agents/sub-agents` → `<data root>/sub-agents` |
+| MCP | `<project>/.mcp.json` → `<project>/.ai-zen/mcp.json` → `<project>/.agents/mcp.json` → `<data root>/mcp.json` → `~/.agents/mcp.json` |
+
+This table is `DiscoveryService`'s output, not a convention: `agentsDir` / `skillLayers` / `toolLayers` / `subAgentLayers` / `mcpLayers` (`agents/packages/host/src/services/DiscoveryService.ts`). The client does **not** assemble these paths itself — a second answer computed on this side goes quietly wrong when the two machines differ; to see what a layer actually holds, ask `config.getDiscovery`.
 
 ### MCP Config Merge Priority
 
@@ -475,19 +555,37 @@ The OAuth 2.0 authorization flow (the `oauth` field in `mcp.json`) has its types
 
 ```bash
 pnpm install
-pnpm build
-pnpm start
+pnpm build     # same as `npx rolldown -c rolldown.config.mjs`
+pnpm start     # build, then run the built CLI
 ```
 
-## Testing
+## Testing (the five gates)
+
+Every change has to pass all five; they are what CI and a reviewer run:
 
 ```bash
-# Unit tests
-pnpm test
+# 1. Types — 0 errors (test files included)
+npx tsc --noEmit -p tsconfig.test.json
 
-# E2E tests (requires API key in .env.local)
-pnpm test:e2e
+# 2. Unit / integration tests (the default gate; e2e is excluded here)
+npx vitest run
+
+# 3. Build — produces dist/ (gates 4 and 5 need it)
+npx rolldown -c rolldown.config.mjs
+
+# 4. Four artifact-graph guards: no `openai` / `@modelcontextprotocol` in the
+#    client bundle, and commands / session / stdio must not reach into ink / react / tui
+npm run check:imports
+
+# 5. End-to-end: real built CLI → real host process → fake LLM endpoint
+npx vitest run --config vitest.e2e.config.ts
 ```
+
+Notes:
+
+- **The e2e suite needs the build** (it runs `dist/index.js`) and a built host from the neighbouring `agents` repo; the local-launch path is exercised through a fake `npx` that forwards to it, so no network is involved.
+- **Do not run the e2e suite in parallel with other suites that start real hosts** — they compete for the same machine-level resources and the ports they hand out.
+- `npm run test:all` chains the same five (`pretest` + `format:check` + `vitest run` + `build` + `check:imports` + e2e).
 
 ## License
 

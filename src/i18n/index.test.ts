@@ -47,8 +47,11 @@ describe("detectLocale", () => {
   });
 
   it("完全识别不出来时回落英文", () => {
-    expect(detectLocale({} as any, undefined)).toBe("en");
-    expect(detectLocale({ LANG: "C" } as any, undefined)).toBe(DEFAULT_LOCALE);
+    // 系统 locale 用 `"und"`（BCP 47 的「未定」）而不是 `undefined`：显式传 `undefined`
+    // 会**触发默认参数** `systemLocale()`，于是这条用例在中文机器上会读到 `zh-CN` ——
+    // 那验的是宿主环境，不是「识别不出来」这一支。
+    expect(detectLocale({} as any, "und")).toBe("en");
+    expect(detectLocale({ LANG: "C" } as any, "und")).toBe(DEFAULT_LOCALE);
     expect(detectLocale({ LANG: "fr_FR.UTF-8" } as any, "fr-FR")).toBe("en");
   });
 });
@@ -63,14 +66,14 @@ describe("t", () => {
 
   it("插值替换占位符", () => {
     setLocale("zh");
-    expect(t("status.lastTokens", { n: 1284 })).toBe("本轮\u00a01284\u00a0tok");
+    expect(t("cmd.sessions.inboxPending", { n: 1284 })).toBe("排队 1284 条待送出");
     setLocale("en");
-    expect(t("status.lastTokens", { n: 1284 })).toBe("turn\u00a01284\u00a0tok");
+    expect(t("cmd.sessions.inboxPending", { n: 1284 })).toBe("1284 pending");
   });
 
   it("缺参数时保留占位符原样（便于发现漏传）", () => {
     setLocale("zh");
-    expect(t("status.lastTokens")).toBe("本轮\u00a0{n}\u00a0tok");
+    expect(t("cmd.sessions.inboxPending")).toBe("排队 {n} 条待送出");
   });
 
   it("词条缺失时返回 key 本身（不做跨语言静默回退）", () => {

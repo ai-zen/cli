@@ -21,8 +21,7 @@ export interface HlToken {
 
 /** 围栏代码块切分结果 */
 export type CodeSegment =
-  | { type: "text"; text: string }
-  | { type: "code"; lang?: string; text: string };
+  { type: "text"; text: string } | { type: "code"; lang?: string; text: string };
 
 function shortScope(className: string): string {
   return className.replace(/^hljs-/, "");
@@ -80,11 +79,6 @@ export function highlightCode(code: string, lang?: string): HlToken[] {
 /** JSON 高亮（工具调用参数）：等价于 `highlightCode(code, "json")` */
 export function highlightJson(code: string): HlToken[] {
   return highlightCode(code, "json");
-}
-
-/** 已注册语言列表（供文档 / 调试） */
-export function supportedLanguages(): string[] {
-  return lowlight.listLanguages().sort();
 }
 
 // ==================== 围栏切分 ====================

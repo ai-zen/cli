@@ -2,7 +2,10 @@
  * shell 钩子安装 / 卸载测试。
  *
  * 全部在临时 HOME 下进行：`detectShell()` 读 `SHELL`，rc 路径来自 `homedir()`，
- * 所以改这两个环境变量就能完全隔离，**绝不触碰真实 `~/.bashrc`**。
+ * 所以改这几个环境变量就能完全隔离，**绝不触碰真实 `~/.bashrc`**。
+ *
+ * `HOME` 与 `USERPROFILE` 两个都要设：`os.homedir()` 在 Windows 上取的是后者，只设 `HOME`
+ * 时这些用例会在**开发机的真实主目录**下找不到刚写的文件（在 bash/zsh 里则完全没问题）。
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -17,12 +20,14 @@ const MARKER_END = "# === ai hook (结束) ===";
 let home: string;
 let rcFile: string;
 const originalHome = process.env.HOME;
+const originalUserProfile = process.env.USERPROFILE;
 const originalShell = process.env.SHELL;
 
 beforeEach(async () => {
   home = await fs.mkdtemp(join(tmpdir(), "aiz-hook-test-"));
   rcFile = join(home, ".bashrc");
   process.env.HOME = home;
+  process.env.USERPROFILE = home;
   process.env.SHELL = "/bin/bash";
   // 安装过程会打印提示，测试里静音（同时避免污染 vitest 输出）
   vi.spyOn(console, "log").mockImplementation(() => {});
@@ -33,24 +38,25 @@ afterEach(async () => {
   vi.restoreAllMocks();
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
+  if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = originalUserProfile;
   if (originalShell === undefined) delete process.env.SHELL;
   else process.env.SHELL = originalShell;
   await fs.rm(home, { recursive: true, force: true });
 });
 
 const read = () => fs.readFile(rcFile, "utf-8");
-const countBlocks = (content: string) =>
-  content.split(MARKER_START).length - 1;
+const countBlocks = (content: string) => content.split(MARKER_START).length - 1;
 
 describe("installHook", () => {
-  it("写入 bash 钩子，函数体为 `ai --tui --new \"$@\"`", async () => {
+  it('写入 bash 钩子，函数体为 `ai --tui --new "$@"`', async () => {
     await installHook();
     const content = await read();
     expect(content).toContain(MARKER_START);
     expect(content).toContain(MARKER_END);
     expect(content).toContain("command_not_found_handle() {");
     expect(content).toContain('  ai --tui --new "$@"');
-    // 钩子会话总是新开一条对话：不续接该目录的上一轮会话
+    // 钩子总是开一条新会话：不续接该目录的上一轮会话
     expect(countBlocks(content)).toBe(1);
   });
 
@@ -71,7 +77,7 @@ describe("installHook", () => {
     expect(countBlocks(second)).toBe(1);
   });
 
-  it("已装旧函数体（`ai --tui \"$@\"`）时原地升级到最新版本", async () => {
+  it('已装旧函数体（`ai --tui "$@"`）时原地升级到最新版本', async () => {
     // 模拟上一个版本装下的钩子（MARKER 未变，函数体是旧写法）
     await fs.writeFile(
       rcFile,
@@ -96,28 +102,6 @@ describe("installHook", () => {
     expect(content).toContain("export FOO=1");
   });
 
-  it("历史 aiz 块被迁移掉，只留一个新块", async () => {
-    await fs.writeFile(
-      rcFile,
-      [
-        "export FOO=1",
-        "# === aiz hook (开始) ===",
-        "command_not_found_handle() {",
-        '  aiz "$@"',
-        "}",
-        "# === aiz hook (结束) ===",
-        "",
-      ].join("\n"),
-      "utf-8",
-    );
-
-    await installHook();
-    const content = await read();
-    expect(content).not.toContain("aiz hook");
-    expect(content).toContain('ai --tui --new "$@"');
-    expect(countBlocks(content)).toBe(1);
-  });
-
   it("rc 里残留两个块、且第一块已是最新版时，仍会收敛成一个块", async () => {
     // 复现场景：正常装过一次（第一块 = 当前版本），其后又被老版本追加了一块。
     // 旧实现只看第一块 → 判定「已安装」→ 第二块永远清不掉。
@@ -126,7 +110,15 @@ describe("installHook", () => {
     await fs.writeFile(
       rcFile,
       // 第二个块用**当前**标记但函数体是老版本（老版本与新版本共用同一对标记）
-      [installed.replace(/\n+$/, ""), MARKER_START, "command_not_found_handle() {", '  aiz "$@"', "}", MARKER_END, ""].join("\n"),
+      [
+        installed.replace(/\n+$/, ""),
+        MARKER_START,
+        "command_not_found_handle() {",
+        '  aiz "$@"',
+        "}",
+        MARKER_END,
+        "",
+      ].join("\n"),
       "utf-8",
     );
     expect(countBlocks(await read())).toBe(2);
@@ -136,6 +128,18 @@ describe("installHook", () => {
     expect(countBlocks(content)).toBe(1);
     expect(content).not.toContain('aiz "$@"');
     expect(content).toContain('ai --tui --new "$@"');
+  });
+
+  it("rc 读不出来（不是「不存在」）：命令失败，rc 一个字节都没动", async () => {
+    // 只给写权限（0o200）：读必定 EACCES，而「写」本来是能成的 —— 于是这条用例能分辨
+    // 「读失败就收手」与「读失败当空内容、然后写回去」两种行为（后者会把 FOO 抹掉）
+    await fs.writeFile(rcFile, "export FOO=1\n", "utf-8");
+    await fs.chmod(rcFile, 0o200);
+
+    await expect(installHook()).rejects.toThrow(/EACCES/);
+
+    await fs.chmod(rcFile, 0o600);
+    expect(await read()).toBe("export FOO=1\n");
   });
 
   it("zsh 用 command_not_found_handler 并写入 .zshrc", async () => {
@@ -168,5 +172,17 @@ describe("uninstallHook", () => {
 
   it("rc 文件不存在时不报错", async () => {
     await expect(uninstallHook()).resolves.toBeUndefined();
+  });
+
+  it("rc 读不出来（不是「不存在」）：如实失败，不说「没装过」", async () => {
+    await fs.writeFile(rcFile, "export FOO=1\n", "utf-8");
+    await fs.chmod(rcFile, 0o200);
+
+    await expect(uninstallHook()).rejects.toThrow(/EACCES/);
+
+    // 「没有安装（文件不存在）」是一句假话：文件在，只是读不出来
+    expect(console.log).not.toHaveBeenCalled();
+    await fs.chmod(rcFile, 0o600);
+    expect(await read()).toBe("export FOO=1\n");
   });
 });

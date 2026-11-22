@@ -1,19 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FrameBuffer, STREAM_FRAME_MS, isImmediateEvent } from "./frame-buffer.js";
-
-describe("isImmediateEvent（即时上屏判定）", () => {
-  it("user / done / error 立即上屏，不参与合帧", () => {
-    expect(isImmediateEvent("user")).toBe(true);
-    expect(isImmediateEvent("done")).toBe(true);
-    expect(isImmediateEvent("error")).toBe(true);
-  });
-
-  it("流式增量与过程事件走合帧", () => {
-    for (const type of ["assistant-start", "reasoning", "content", "tool", "notice", "subagent-start"]) {
-      expect(isImmediateEvent(type)).toBe(false);
-    }
-  });
-});
+import { FrameBuffer, STREAM_FRAME_MS } from "./frame-buffer.js";
 
 describe("FrameBuffer（流式合帧）", () => {
   beforeEach(() => vi.useFakeTimers());

@@ -1,9 +1,8 @@
 {
   "name": "@ai-zen/cli",
-  "version": "1.0.2",
+  "version": "1.1.0-alpha.2",
   "description": "AI-ZEN CLI - dual-mode AI terminal: pure stdio pipelines and an interactive TUI",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "type": "module",
   "bin": {
     "ai": "dist/index.js",
@@ -11,15 +10,21 @@
     "zen": "dist/index.js"
   },
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
+    "scan:secrets": "node scripts/scan-secrets.mjs --all",
+    "scan:secrets:history": "node scripts/scan-secrets.mjs --history",
     "clean": "rimraf ./dist",
     "prebuild": "npm run clean",
-    "build": "tsc",
+    "build": "rolldown -c rolldown.config.mjs",
     "start": "npm run build && node ./dist/index.js",
-    "prepublishOnly": "node scripts/check-publish-tool.mjs && npm run test:all",
+    "prepublishOnly": "node scripts/check-publish.mjs && npm run scan:secrets && npm run test:all",
     "pretest": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
+    "check:imports": "node scripts/check-imports.mjs dist/index.js --forbid @ai-zen/agents-client --forbid openai --forbid @modelcontextprotocol --forbid dayjs --forbid ink --forbid react && node scripts/check-imports.mjs dist/commands/index.js --forbid @ai-zen/agents-client --forbid ink --forbid react --forbid ./tui/ && node scripts/check-imports.mjs dist/session.js --forbid @ai-zen/agents-client --forbid ink --forbid react --forbid ./tui/ && node scripts/check-imports.mjs dist/stdio.js --forbid @ai-zen/agents-client --forbid ink --forbid react --forbid ./tui/",
     "test:e2e": "npm run pretest && npm run build && vitest run --config vitest.e2e.config.ts",
-    "test:all": "npm run pretest && vitest run && npm run build && vitest run --config vitest.e2e.config.ts"
+    "test:all": "npm run pretest && npm run format:check && vitest run && npm run build && npm run check:imports && vitest run --config vitest.e2e.config.ts",
+    "format": "prettier --write --ignore-path .prettierignore \"src/**/*.{ts,tsx,js,mjs,cjs,json}\" \"scripts/**/*.{mjs,js,cjs}\" \"*.{ts,js,mjs,cjs,json}\"",
+    "format:check": "prettier --check --ignore-path .prettierignore \"src/**/*.{ts,tsx,js,mjs,cjs,json}\" \"scripts/**/*.{mjs,js,cjs}\" \"*.{ts,js,mjs,cjs,json}\""
   },
   "keywords": [
     "ai",
@@ -32,24 +37,27 @@
   "author": "LZQCN",
   "license": "MIT",
   "dependencies": {
-    "@ai-zen/agents-core": "^4.5.5",
-    "@ai-zen/agents-sdk": "1.1.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "dayjs": "^1.11.21",
     "highlight.js": "^11.12.0",
     "ink": "^7.1.1",
     "lowlight": "^3.3.0",
     "react": "^19.3.0",
-    "string-width": "^8.3.0",
-    "zod": "^4.4.3"
+    "string-width": "^8.3.0"
   },
   "devDependencies": {
+    "@ai-zen/agents-client": "link:../agents/packages/client",
+    "@ai-zen/agents-core": "link:../agents/packages/core",
+    "@ai-zen/agents-host": "link:../agents/packages/host",
+    "@ai-zen/agents-logger": "link:../agents/packages/logger",
+    "@ai-zen/agents-sdk": "link:../agents/packages/sdk",
+    "@ai-zen/agents-testing": "link:../agents/packages/testing",
     "@types/hast": "^3.0.5",
     "@types/node": "^24.12.2",
     "@types/react": "^19.3.0",
     "dotenv": "^17.4.2",
     "ink-testing-library": "^4.0.0",
+    "prettier": "^3.9.5",
     "rimraf": "^6.0.0",
+    "rolldown": "^1.2.16",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.1.0"

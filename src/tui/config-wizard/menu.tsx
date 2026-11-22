@@ -1,14 +1,12 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 配置中心菜单 MenuStep
+// 配置中心菜单 MenuStep —— 每一行都是宿主给的现成事实，不在这里算
 import { Box, useCursor, useInput } from "ink";
-import { AppConfig } from "@ai-zen/agents-sdk";
 import { theme } from "../theme.js";
 import { SelectList, KeyHints, SelectItem } from "../components.js";
-import { CONFIG_FILE } from "../../config.js";
-import { AgentStore } from "../../agents-store.js";
-import { summarizeEndpoints } from "../../config-editor.js";
-import { McpSnapshot } from "./types.js";
+import { subAgentList, topLevelAgents, type AgentList } from "../../agents-store.js";
+import { DEFAULT_MAX_TOOL_OUTPUT, summarizeEndpoints } from "../../config-editor.js";
+import type { AppConfig, McpEntry } from "../../config.js";
+import { mcpEntriesOf } from "../../mcp-command.js";
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
-import { mcpCount } from "./mcp-helpers.js";
 import { t } from "../../i18n/index.js";
 
 // ==================== 配置中心菜单 ====================
@@ -17,24 +15,39 @@ export interface MenuStepProps {
   columns: number;
   /** 终端行数（吸底布局用） */
   rows: number;
+  /** `config.get` 的那份配置 */
   config: AppConfig;
-  mcp: McpSnapshot;
-  agentStore: AgentStore;
+  /** 助手定义清单（+ 默认助手 id） */
+  agents: AgentList;
+  /** `mcp.list` 的那份服务器清单（每条带 `scope`，两层的条数从这里数） */
+  servers: readonly McpEntry[];
   savedCount: number;
-  /** 最近一次保存提示 */
+  /** 最近一次保存提示（已带上宿主的生效报告） */
   notice?: string | null;
   onPick: (action: string) => void;
   onClose: () => void;
 }
 
-export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, notice, onPick, onClose }: MenuStepProps) {
+export function MenuStep({
+  columns,
+  rows,
+  config,
+  agents,
+  servers,
+  savedCount,
+  notice,
+  onPick,
+  onClose,
+}: MenuStepProps) {
   const { setCursorPosition } = useCursor();
   setCursorPosition(undefined); // 无文本编辑：隐藏硬件光标
   useInput((_char, key) => {
     if (key.escape) onClose();
   });
 
-  const defaultImage = (config.imageModels ?? []).find((model) => model.id === config.defaultImageModel);
+  const imageModels = config.imageModels ?? [];
+  const defaultImage = imageModels.find((model) => model.id === config.defaultImageModel);
+  const defaultAgent = agents.agents.find((agent) => agent.id === agents.defaultAgentId);
   const items: SelectItem<string>[] = [
     {
       label: t("wiz.menu.endpoints"),
@@ -50,7 +63,7 @@ export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, n
       label: t("wiz.menu.imageModels"),
       value: "imageModels",
       hint: t("wiz.menu.imageModelsSummary", {
-        n: config.imageModels?.length ?? 0,
+        n: imageModels.length,
         name: defaultImage?.name ?? config.defaultImageModel ?? t("common.unsetPlain"),
       }),
     },
@@ -58,16 +71,17 @@ export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, n
       label: t("wiz.menu.mcp"),
       value: "mcp",
       hint: t("wiz.menu.mcpSummary", {
-        global: mcpCount(mcp, "global"),
-        project: mcpCount(mcp, "project"),
+        user: mcpEntriesOf(servers, "user").length,
+        workspace: mcpEntriesOf(servers, "workspace").length,
       }),
     },
     {
       label: t("wiz.menu.agents"),
       value: "agents",
       hint: t("wiz.menu.agentsSummary", {
-        agent: agentStore.agents.length,
-        sub: agentStore.subAgents.length,
+        agent: topLevelAgents(agents).length,
+        sub: subAgentList(agents).length,
+        default: defaultAgent?.name ?? agents.defaultAgentId ?? t("common.unsetPlain"),
       }),
     },
     {
@@ -81,7 +95,9 @@ export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, n
     {
       label: t("wiz.menu.maxToolOutput"),
       value: "maxToolOutput",
-      hint: t("wiz.menu.maxToolOutputSummary", { n: config.maxToolOutput ?? 32768 }),
+      hint: t("wiz.menu.maxToolOutputSummary", {
+        n: config.maxToolOutput ?? DEFAULT_MAX_TOOL_OUTPUT,
+      }),
     },
     {
       label: t("wiz.menu.done"),
@@ -92,7 +108,6 @@ export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, n
 
   const headerRows: Row[] = [
     ...textRows(t("wiz.menu.title"), columns, theme.highlight, true),
-    ...textRows(t("wiz.menu.configFile", { path: CONFIG_FILE }), columns, theme.faint),
     ...textRows(t("wiz.menu.hint"), columns, theme.dim),
     ...(notice ? textRows(`✔ ${notice}`, columns, theme.ok) : []),
   ];
@@ -104,8 +119,13 @@ export function MenuStep({ columns, rows, config, mcp, agentStore, savedCount, n
       <Box marginTop={1}>
         <SelectList items={items} onSelect={onPick} columns={columns} />
       </Box>
-      <KeyHints hints={[["↑ ↓", t("ui.select")], ["Enter", t("ui.confirm")], ["Esc", t("wiz.menu.doneReturn")]]} />
+      <KeyHints
+        hints={[
+          ["↑ ↓", t("ui.select")],
+          ["Enter", t("ui.confirm")],
+          ["Esc", t("wiz.menu.doneReturn")],
+        ]}
+      />
     </WizardFrame>
   );
 }
-

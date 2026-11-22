@@ -29,7 +29,6 @@ describe("附件行参与布局与硬件光标", () => {
     rows: 24,
     transcript: [],
     input: "",
-    busy: false,
     hintCount: 0,
     overlay: "none" as const,
     pickerItems: 0,

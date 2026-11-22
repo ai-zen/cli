@@ -13,11 +13,8 @@ outline: deep
 ## Requirements
 
 - **Node.js**: the package is published as ESM (`"type": "module"`). `package.json` does not declare an `engines` field, so the actual required version follows the Node ecosystem (a recent LTS is recommended).
-- **Runtime dependencies** (declared in `package.json`):
-  - `@ai-zen/agents-core` `^4.5.5`
-  - `@ai-zen/agents-sdk` `1.1.0`
-  - `@modelcontextprotocol/sdk` `^1.29.0`
-  - `dayjs`, `ink`, `react`, `zod`, `highlight.js`, `lowlight`
+- **Runtime dependencies** (declared under `dependencies` in `package.json`): `ink`, `react`, `highlight.js`, `lowlight`, `string-width`. `@ai-zen/agents-client` (a private, unpublished package) and `@ai-zen/agents-sdk` / `@ai-zen/agents-core` (published, but not meant to be installed by consumers at runtime) are all **inlined into the bundle** at build time — `check:imports` pins that `@ai-zen/agents-client` never reappears in `dist/*.js`.
+- **The host does not need to be installed beforehand**: the host package is `@ai-zen/agents-host` (the wire contract is its `@ai-zen/agents-host/protocol` subpath), but it only lives in `devDependencies` as a **version-range declaration** — local mode pulls it on demand with `npx -y @ai-zen/agents-host@<range> serve --ai-zen-dir <data root>`, where `<range>` is the semver range injected at build time.
 - **Platform**: the underlying tools and the Shell hook depend on a Unix shell (`bash`/`zsh`) and `process.env.SHELL`; the Shell hook is unavailable on Windows (`hook` will report "unsupported shell").
 
 ## Installation
@@ -51,6 +48,12 @@ The CLI has two **non-mixing** run modes, chosen automatically from the launch a
 
 In pure stdio mode, logs / progress / errors all go to **stderr**; stdout carries the result only (no ANSI / emoji / spinner). Exit code is `0` on success and non-zero on failure; nothing is persisted by default (use `--save` to keep a conversation archive).
 
+**Pure stdio runs on the host too.** Both modes are the same pipeline: `ai "…"` first makes sure a local host is up (spawning one with `npx` if needed), then opens a **one-off session** and runs a single turn — so the agent assembly, tools, MCP connections and context guard are exactly the same as in the TUI (there is no "pipe mode with a few plugins missing"), and conversations land in the same place (the host's `<data root>/ai-zen.db`, owned per workspace).
+
+The trade-off is that the **first call has to get the host up**: `npx` resolves the version → downloads and installs → starts the host → connects, which the TUI shows as a **staged download screen** (indeterminate progress, no fake percentage); later calls reuse the host that is already running and pay none of it. In addition `<data root>/run/` must be writable and `node` must be able to spawn a child process. Three behaviours stay as they were: nothing is persisted by default; `--save` only archives and **does not** move the "last session" pointer (so the next `ai` will not resume a pipe result); stdout still carries the answer only.
+
+**The workspace follows your directory.** When the host and the CLI are on the same machine (the default — the CLI pulls a local host with `npx` on demand), the directory you type `ai` in **is** the session's workspace: created on first use (via `workspace.create` with the current directory), then resumed from that workspace's last conversation. Connect to a host on **another machine** and it flips: the client sends **no** directory of its own, only remembers the last workspace you entered, and falls back to the picker (`/ws` to list / choose / create) when there is none.
+
 Two modifiers refine this: `--tui` forces the interactive UI (the arguments are auto-sent as the first message; in a non-TTY environment it fails instead of degrading to pipe mode), and `--new` starts a **fresh conversation** instead of resuming the last one in this directory (TUI only; ignored on the stdio path, where a run is always a one-off session).
 
 ## Quick example
@@ -66,11 +69,13 @@ ai Hello, please introduce yourself.
 cat README.md | ai "summarize in three sentences"
 ```
 
-Startup goes **directly into the chat screen** (rendered with Ink/React) — there is no splash animation — resuming the last session if there is one, otherwise starting a new conversation. An empty conversation shows the brand block (logo, tagline, CLI / SDK / core versions) at the top of the transcript, and it scrolls away with the conversation. The chat screen is **bottom-pinned**: a divider, the input line, and the status bar always sit at the bottom of the terminal, while the conversation scrolls above them. While generating, the input row is replaced by a **phase indicator** (connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming).
+Startup goes **directly into the chat screen** (rendered with Ink/React) — there is no splash animation — resuming the last session if there is one, otherwise starting a new conversation. An empty conversation shows the brand block (logo, tagline, CLI / SDK / core versions) at the top of the transcript, and it scrolls away with the conversation. The chat screen is **bottom-pinned**, and from the bottom up the order is: status bar → input line → divider → phase line → command menu. The **phase line** only exists while busy (while generating it says what the round is doing — connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming; while a blocking command runs it falls back to the command name); it sits **above the divider, above the input row, and is always exactly one line** — it never replaces the input box.
+
+**You can keep typing while generating.** The input box stays put: you can type, bring up the `/` menu, and press Enter. That message is handed to the host, which queues it into **the round that is already running** (the host answers "queued" and a notice says so right away); it lands as a user message when the current tool round finishes, so nothing the model is already saying gets interrupted, and once the round ends it shows up in the transcript together with its answer. While a round is running, the only keys whose meaning changes are `Ctrl+C` / `Esc` (they still abort this round); everything else stays put (paging, scrolling, double `Ctrl+D` to exit).
 
 If the round spawns sub-agents, a **main / sub-agent bar** appears below the transcript (`主AGENT　◈子AGENT1　◈子AGENT2`): `←` / `→` switches which agent's conversation the transcript shows, the diamond shows each one's state (blue blinking while running / green when done / red when failed), and the bar disappears once this round's inner loop finishes.
 
-The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word, `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word, `Ctrl+K` kills to end of line, `Ctrl+U` kills to line start, `Esc` clears the input, `Ctrl+V` pastes (an image if the clipboard holds one, otherwise text — text is capped at 256KB and refused, not truncated) / `↑` `↓` move the cursor inside a multi-line draft (history only at the first / last row) / the input area is capped at 8 rows and the window follows the cursor / `PgUp` / `PgDn` (or `Alt+V`) scroll the transcript), and an inline `/` command menu. Tool calls render as `⚙ name(args)` with **JSON highlighting**; the answer/reasoning is **Markdown-source-colored** (headings / bold / italic / inline code / lists / quotes / links), and fenced code blocks are highlighted by language with the **fence markers kept**.
+The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word, `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word, `Ctrl+K` kills to end of line, `Ctrl+U` kills to line start, `Esc` clears the input, `Ctrl+V` pastes (an image if the clipboard holds one, otherwise text — text is capped at 256KB and refused, not truncated) / `↑` `↓` move the cursor inside a multi-line draft (history only at the first / last row) / the input area is capped at 8 rows and the window follows the cursor / `PgUp` / `PgDn` (or `Alt+V`) scroll the transcript), and an inline `/` command menu (still available while generating). Tool calls render as `⚙ name(args)` with **JSON highlighting**; the answer/reasoning is **Markdown-source-colored** (headings / bold / italic / inline code / lists / quotes / links), and fenced code blocks are highlighted by language with the **fence markers kept**.
 
 ### First-run setup (API Key)
 
@@ -98,26 +103,31 @@ All in-conversation commands start with `/`; use `/help` to list them. Typing `/
 
 | Command | Description |
 |---------|-------------|
-| `/exit` `/quit` | Exit the conversation (offers to save) |
-| `/save [name]` | Save the conversation; with a name it is saved as that file name (asks first if it exists) |
-| `/new` | Reset the session (clear history) |
-| `/back` | Retract the last message (edit and resend) |
+| `/new` | Start another conversation (nothing that is running gets interrupted) |
+| `/load` | Load an existing conversation of this workspace (nothing that is running gets interrupted) |
+| `/sessions` `/ps` | Active sessions: held by this process + running on the host; pick one to switch |
+| `/ws` | Workspaces: list / switch / register a directory (`/ws new [path]`) |
+| `/pin [on\|off]` | Pin / unpin this conversation (no argument toggles it) |
+| `/back` `/revert` | Retract the last message (edit and resend) |
 | `/editor` | Compose a long message in your editor |
-| `/clear` | Clear the screen |
-| `/config` | Open the configuration center (model / endpoints) |
-| `/model` | Switch model (writes to config) |
-| `/agent` | Switch the primary agent (rebuilds the session) |
-| `/reload` | Refresh the runtime (rediscovers tools / MCP) |
-| `/update` | Upgrade the CLI to the newest published release (highest semver across all dist-tags; shows each step and offers to restart into the new version) |
-| `/mcp` | Manage MCP servers (add / remove / edit / toggle) |
-| `/lang` | Switch interface language |
-| `/think` `/effort` | Switch reasoning effort |
+| `/clear` | Clear the screen only (the context is kept) |
+| `/free` | Clear the queue: messages typed during a run that were not sent yet (`/clear` is the screen) |
+| `/config` | Open the configuration center (endpoints / models / image models / MCP / agent definitions / defaults / tool-output cap) |
+| `/model` | Switch model: `/model <id>` changes this session only, `-a`/`--agent <id>` the agent definition, `-g`/`--global <id>` the global fallback; no argument opens a picker |
+| `/think` `/effort` | Switch reasoning effort (written into the layer the effective model came from; the global fallback layer has nowhere to keep params, so it is refused) |
+| `/agent` | Pick which Agent later conversations use (writes `defaultAgent`; unusable Agents show the host's reason) |
+| `/mcp [user\|workspace]` | Manage MCP servers (add / remove / edit / toggle); without a scope it opens the layer that already has entries |
 | `/key` | Set the endpoint API key |
-| `/migrate` | Hand off and start a new session |
-| `/load` | Load a conversation (replaces this one; the picker lists saved conversation file names only) |
+| `/reload` | Make the host re-read config / agent definitions / tools / skills / MCP from disk (messages and context are kept) |
+| `/upgrade` | Move the host to the highest version across all release tags (query the registry → pull that version with npx → confirm → record it and shut the host down cleanly; the reconnect screen starts it from that version. This process never restarts itself) |
+| `/lang` | Switch the interface language (`/lang zh` / `/lang en` set it explicitly, no argument toggles) |
+| `/handoff` | Write a handoff document (keeps the conversation) |
+| `/migrate` | Hand off and start a new conversation |
 | `/help` | Show help |
+| `/shutdown` | Shut the host down (back to the connect screen; quitting the CLI itself does **not** stop the host) |
+| `/exit` `/quit` | Exit the conversation |
 
-> Note: typing `/` lists candidate commands below the input line (↑↓ to choose, `Tab` to complete, `Enter` to submit/run; the menu is anchored right above the input). Commands are matched by their full names; an unrecognized `/xxx` reports "Unknown command".
+> Note: typing `/` lists candidate commands below the input line (↑↓ to choose, `Tab` to complete, `Enter` to submit/run; the menu is anchored right above the input). Commands are matched by their full names; an unrecognized `/xxx` reports "Unknown command". The full list is `src/commands/registry.ts` — both `/help` and the slash menu render from it.
 
 ## Shell fallback hook
 
@@ -146,8 +156,8 @@ ai hook uninstall
 | First launch, endpoint has no key | The **credential screen** appears automatically; entering a key saves it and enters the chat |
 | Change the key of the **endpoint used by the current model** | `/key` in the chat (the session is rebuilt on save, so it takes effect immediately) |
 | Endpoint key / base URL, default model, add endpoint | `/config` → "Endpoint management" |
-| Model used by the current session | `/model` in the chat (writes the Agent's `modelId`) |
-| Reasoning effort | `/think` in the chat (written into the current Agent's `reasoningEffort`; available levels come from the preset referenced by the model in `~/.ai-zen/reasoning-presets.json`, which you can extend) |
+| Model used by the current session | `/model` in the chat (this session only by default; `/model -a` writes the agent definition's `modelId`) |
+| Reasoning effort | `/think` in the chat (the params land in `modelParams` of **the layer the effective model came from**; available levels come from the preset referenced by the model in `~/.ai-zen/reasoning-presets.json`, which you can extend) |
 | Models / image models / MCP servers / agent definitions / defaults / tool-output cap | `/config` → configuration center |
 
 > Note: the CLI entry only implements the `hook` subcommand (`ai hook install|uninstall`); there is **no `config` subcommand** — configuration editing happens inside the TUI (endpoints, models, image models, MCP servers, agent definitions, defaults and the tool-output cap can all be added/edited/deleted under `/config`). See [Configuration](./configuration.md).

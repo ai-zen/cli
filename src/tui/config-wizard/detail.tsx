@@ -1,4 +1,4 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 通用详情屏 DetailStep（就地编辑）
+// 通用详情屏 DetailStep（就地编辑）
 import { useEffect, useState } from "react";
 import { Box, Text, useCursor, useInput } from "ink";
 import { theme } from "../theme.js";
@@ -10,7 +10,7 @@ import { t } from "../../i18n/index.js";
 
 // ==================== 通用详情屏（就地编辑）====================
 
-/** 字段形态；`open` = 按 Enter 进子屏（此前叫 `map`，但实际语义与 key-value 无关） */
+/** 字段形态；`open` = 按 Enter 进子屏（进的不一定是 key-value 子屏，故不叫 `map`） */
 export type DetailFieldKind = "text" | "secret" | "number" | "enum" | "bool" | "open";
 
 /** 详情屏的一个可编辑字段 */
@@ -28,13 +28,25 @@ export interface DetailField {
    * 提交文本 / 枚举值：返回错误信息或 `null`（成功）。
    *
    * **同步校验直接返回字符串即可**：字段构造器里大量「格式不对就报错」的判断本就没有
-   * 异步动作，此前被签名逼着写成 `Promise.resolve(t(...))`，纯噪音。
+   * 异步动作，只为满足签名写成 `Promise.resolve(t(...))` 是纯噪音。
    */
   commit?: (raw: string) => string | null | Promise<string | null>;
   /** bool 切换（同上：同步可用） */
   toggle?: () => string | null | Promise<string | null>;
   /** `open` 类型：按 Enter 进入子屏（键值编辑 / 权限 / 函数参数） */
   open?: () => void;
+  /**
+   * 只读行：把事实摆出来但不能改（`AgentView` 里没有提示词 / 函数定义的那几项就是这一类）。
+   * Enter 不做事，键位提示也不说「编辑」。
+   */
+  readOnly?: boolean;
+  /**
+   * 写之前先出一次确认（PRD 1.6「二次确认要能先给代价、再真做」）。
+   *
+   * `title` 是一句问话、`cost` 是要摆出来的那几行事实（影响面）。没有它就直接写 ——
+   * 改一个名字、填一个 Base URL 不必每次问一遍。
+   */
+  confirm?: { title: string; cost: readonly string[] };
 }
 
 /** 详情屏底部的整体动作（如「删除」「恢复出厂设置」），危险动作以红色呈现并可二次确认 */
@@ -43,6 +55,13 @@ export interface DetailAction {
   run: () => Promise<string | null>;
   /** 危险动作（删除）：红色呈现。恢复出厂这类「重置」用它为 `false` */
   danger?: boolean;
+  /**
+   * 删之前的「代价」：删它会连累谁（PRD 3.4「删东西之前要说清还有谁指它」）。
+   *
+   * 事实**事前**摆出来，不等宿主拒一次才知道 —— 宿主拒的那句话仍会照原样上屏，那是事后。
+   * 每一行只写从手里已有的配置里数得出来的东西，数不出来就不给数字。
+   */
+  cost?: readonly string[];
 }
 
 export interface DetailStepProps {
@@ -68,7 +87,16 @@ export interface DetailStepProps {
  * 文本编辑时光标「就地」落在所选字段的值上（硬件光标同步，IME 候选框跟随）；
  * 帧高恒为「终端行数 − 1」，与其它屏一致。
  */
-export function DetailStep({ columns, rows, title, details, fields, actions, notice, onBack }: DetailStepProps) {
+export function DetailStep({
+  columns,
+  rows,
+  title,
+  details,
+  fields,
+  actions,
+  notice,
+  onBack,
+}: DetailStepProps) {
   const { setCursorPosition } = useCursor();
   const rowCount = Math.max(1, fields.length + (actions?.length ?? 0));
   const [index, setIndex] = useState(0);
@@ -80,6 +108,8 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
   const [choosing, setChoosing] = useState(false);
   /** 待确认的动作在 `actions` 里的下标；`null` 表示没在确认 */
   const [confirming, setConfirming] = useState<number | null>(null);
+  /** 待写的字段值（字段上带 `confirm` 时，先把值停在这里、屏上换确认）；`null` = 没在确认 */
+  const [pendingWrite, setPendingWrite] = useState<string | null>(null);
 
   // 行数变化（如 Agent 详情 ↔ 权限子屏共用本组件）时收敛高亮索引，避免越界导致无高亮
   useEffect(() => {
@@ -97,7 +127,7 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
   const masked = field?.kind === "secret" && !revealed;
 
   const beginEdit = () => {
-    if (!field) return;
+    if (!field || field.readOnly) return;
     const current = field.initial ?? field.value;
     setValue(current);
     setCursor(graphemes(current).length);
@@ -110,7 +140,10 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
     setCursor(nextCursor);
   };
   const insert = (text: string) =>
-    update(chars.slice(0, caret).join("") + text + chars.slice(caret).join(""), caret + graphemes(text).length);
+    update(
+      chars.slice(0, caret).join("") + text + chars.slice(caret).join(""),
+      caret + graphemes(text).length,
+    );
   const deleteBefore = () => {
     if (caret === 0) return;
     update(chars.slice(0, caret - 1).join("") + chars.slice(caret).join(""), caret - 1);
@@ -126,6 +159,19 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
     if (failure) setError(failure);
   };
 
+  /** 真的把那一次写发出去（字段确认之后的落地） */
+  const writeField = async (raw: string) => {
+    setPendingWrite(null);
+    if (!field?.commit) return;
+    const failure = await field.commit(raw);
+    if (failure) {
+      setError(failure);
+      return;
+    }
+    setEditing(false);
+    setError(null);
+  };
+
   const submit = async () => {
     if (!field?.commit) return;
     const raw = value.trim();
@@ -135,13 +181,12 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
       setError(null);
       return;
     }
-    const failure = await field.commit(raw);
-    if (failure) {
-      setError(failure);
+    // 带 `confirm` 的字段：先把代价摆出来（这一次一个写请求都不发）
+    if (field.confirm) {
+      setPendingWrite(raw);
       return;
     }
-    setEditing(false);
-    setError(null);
+    await writeField(raw);
   };
 
   useInput(
@@ -211,6 +256,7 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
           return;
         }
         if (!field) return;
+        if (field.readOnly) return;
         if (field.kind === "bool") {
           if (field.toggle) void apply(field.toggle);
           return;
@@ -226,7 +272,7 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
         beginEdit();
       }
     },
-    { isActive: !choosing && confirming === null },
+    { isActive: !choosing && confirming === null && pendingWrite === null },
   );
 
   // ---- 子屏：枚举选择 ----
@@ -238,12 +284,42 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
         columns={columns}
         rows={rows}
         title={t("wiz.pickTitle", { label: target.label })}
-        items={enumOptions.map((option) => ({ label: option.label || t("common.empty"), value: option.value }))}
+        items={enumOptions.map((option) => ({
+          label: option.label || t("common.empty"),
+          value: option.value,
+        }))}
         onPick={(picked) => {
           setChoosing(false);
           if (target.commit) void apply(() => target.commit!(picked));
         }}
         onCancel={() => setChoosing(false)}
+      />
+    );
+  }
+
+  // ---- 子屏：字段写入前的确认（代价摆在上面，是 / 否两档） ----
+  if (pendingWrite !== null && field?.confirm) {
+    const pending = pendingWrite;
+    return (
+      <ListStep
+        columns={columns}
+        rows={rows}
+        title={field.confirm.title}
+        subtitle={field.confirm.cost.join("\n")}
+        items={[
+          { label: t("common.yes"), value: "yes" },
+          { label: t("common.no"), value: "no" },
+        ]}
+        onPick={(picked) => {
+          if (picked === "yes") void writeField(pending);
+          else {
+            // 「否」：什么都不写，回到字段列表（草稿不进撤销栈，也没发过一次请求）
+            setPendingWrite(null);
+            setEditing(false);
+            setError(null);
+          }
+        }}
+        onCancel={() => setPendingWrite(null)}
       />
     );
   }
@@ -256,7 +332,8 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
         columns={columns}
         rows={rows}
         title={t("wiz.confirmTitle", { label: target.label })}
-        subtitle={t("wiz.irreversible", { title })}
+        // 代价排在「撤不回来」之后：先把影响面读一遍，再问要不要按下去
+        subtitle={[t("wiz.irreversible", { title }), ...(target.cost ?? [])].join("\n")}
         items={[
           { label: t("wiz.confirmAction", { label: target.label }), value: "yes" },
           { label: t("ui.cancel"), value: "no" },
@@ -307,29 +384,34 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
           ["↑ ↓", t("ui.move")],
           ["Esc", t("ui.back")],
         ]
-      : field?.kind === "bool"
+      : field?.readOnly
         ? [
-            ["Enter", t("ui.toggle")],
             ["↑ ↓", t("ui.move")],
             ["Esc", t("ui.back")],
           ]
-        : field?.kind === "enum"
+        : field?.kind === "bool"
           ? [
-              ["Enter", t("ui.select")],
+              ["Enter", t("ui.toggle")],
               ["↑ ↓", t("ui.move")],
               ["Esc", t("ui.back")],
             ]
-          : field?.kind === "open"
+          : field?.kind === "enum"
             ? [
-                ["Enter", t("ui.open")],
+                ["Enter", t("ui.select")],
                 ["↑ ↓", t("ui.move")],
                 ["Esc", t("ui.back")],
               ]
-            : [
-              ["Enter", t("ui.edit")],
-              ["↑ ↓", t("ui.move")],
-              ["Esc", t("ui.back")],
-            ];
+            : field?.kind === "open"
+              ? [
+                  ["Enter", t("ui.open")],
+                  ["↑ ↓", t("ui.move")],
+                  ["Esc", t("ui.back")],
+                ]
+              : [
+                  ["Enter", t("ui.edit")],
+                  ["↑ ↓", t("ui.move")],
+                  ["Esc", t("ui.back")],
+                ];
 
   return (
     <WizardFrame columns={columns} rows={rows} contentLines={contentLines}>
@@ -386,4 +468,3 @@ export function DetailStep({ columns, rows, title, details, fields, actions, not
     </WizardFrame>
   );
 }
-

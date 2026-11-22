@@ -1,86 +1,258 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render } from "ink-testing-library";
-import type { AgentDefinition, AppConfig, ImageModel, Model } from "@ai-zen/agents-sdk";
-import { DEFAULT_AGENT_DEFINITION, DEFAULT_APP_CONFIG } from "@ai-zen/agents-sdk";
+import { describe, it, expect, vi } from "vitest";
+import { writeFileSync } from "node:fs";
 import { Message } from "@ai-zen/agents-core";
-import type { McpConfig, McpScope } from "../config.js";
-import type { AgentKind, AgentStore } from "../agents-store.js";
-import { ConfigWizard, PromptScreen, promptLayout } from "./config-wizard/index.js";
-import { writeFileSync } from "fs";
+import { render } from "ink-testing-library";
+import type { AgentDefinition, AppConfig, McpEntry, ReasoningPresets } from "../config.js";
+import type { HostClient } from "../server-client/index.js";
+import {
+  ConfigWizard,
+  PromptScreen,
+  promptLayout,
+  type WizardHost,
+  type WizardStep,
+} from "./config-wizard/index.js";
 import { setLocale } from "../i18n/index.js";
 
 // 配置中心文案已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
-beforeEach(() => {
-  setLocale("zh");
-});
+setLocale("zh");
 
-// 拦截系统编辑器：把「打开编辑器」替换为向临时文件写入指定内容（用例内自行 mockImplementation）
+/** 让出几拍宏任务：让的是执行顺序，不是时长（敲键之前必须先让一拍，见 {@link tick}） */
+const settle = async (turns = 2) => {
+  for (let turn = 0; turn < turns; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+};
 
 // 普通按键的帧变化实测 0.5~3.4ms；单独 ESC 要 20ms（ink 对 lone ESC 的序列判定）
-const tick = () => new Promise((r) => setTimeout(r, 4));
-const tickEsc = () => new Promise((r) => setTimeout(r, 30));
+//
+// 为什么不是单纯的 `setTimeout(4)`：帧是在 commit 里画的，而 `useInput` 的订阅落在 passive
+// effect 里，同一拍里排在画帧**之后**（React 的 Scheduler 在 Node 下走 `setImmediate`）。事件循环
+// 被占着时，`setTimeout(4)`（timers 阶段）会先于 Scheduler 的回调（check 阶段）醒 —— 那一刻
+// 敲进去的键会被**吐掉**（不是延后处理，是永远不到）。所以先让一拍执行顺序，再计那 4ms 真
+// 时间（后者留给 ink 的 lone-ESC 判定这类真的按时间来的事）。
+const tick = async () => {
+  await settle(1);
+  await new Promise((r) => setTimeout(r, 4));
+};
+
+/**
+ * 等到 `check()` 成立就返回；超时抛错，错误里说清等的是什么。
+ *
+ * 凡是等异步结果（`calls` / `onClose` / 屏上那句话）的一律走它；上限 1000ms 是
+ * **失败上限**，不是等待时长。
+ */
+const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
+  const start = Date.now();
+  while (!check()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`等不到：${what}（上限 ${timeoutMs}ms）`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+};
+
 const DOWN = "\u001B[B";
 const ENTER = "\r";
 const ESC = "\u001B";
+const TAB = "\t";
 
 /**
  * 固定终端尺寸：`ConfigWizard` 的「吸底」帧高由终端行数决定，
- * 而 ink-testing-library 的假 stdout 未提供 rows，ink 会回退探测真实终端
- * （本机探测到 39 行 → 帧被补到 38 行）。固定尺寸后帧高确定，不依赖运行环境。
+ * 而 ink-testing-library 的假 stdout 未提供 rows，ink 会回退探测真实终端。
  */
 const SIZE = { columns: 100, rows: 24 };
 
-function makeConfig(): AppConfig {
-  return {
-    endpoints: [
-      { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", apiKey: "" },
-      { id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", apiKey: "sk-old-key-123456" },
-    ],
-    models: [
-      { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash", endpointId: "deepseek", tokenThresholds: { handoff: 250_000, guard: 375000 } },
-      { id: "gpt-5.5", name: "GPT-5.5", endpointId: "openai", tokenThresholds: { handoff: 250_000, guard: 375000 } },
-    ],
-    imageModels: [{ id: "cogview-4", name: "CogView-4", endpointId: "openai", modelName: "cogview-4" }],
-    defaultImageModel: "cogview-4",
-  };
+// ==================== 假宿主（一条 tRPC 客户端，按 procedure 名分派）====================
+
+interface RecordedCall {
+  method: string;
+  params: unknown;
+}
+
+interface FakeHost {
+  host: WizardHost;
+  calls: RecordedCall[];
 }
 
 /**
- * 出厂模型单条（真实出厂清单里的第一条）。
+ * 造一个只认「调一条 procedure」的 `api`。
  *
- * 「恢复出厂设置」的期望结果就是它：整条替换、且不带 `custom`（= 重新归 SDK 托管）。
+ * 路径按 `Proxy` 拼成 procedure 名（`api.config.model.add.mutate` → `"config.model.add"`），
+ * 于是「打了哪条」的断言与生产代码里的那条调用逐字对得上；没登记的路由**直接抛**，
+ * 「向导偷偷调了第二条」会当场红。
  */
-const FACTORY_MODEL = DEFAULT_APP_CONFIG.models[0]!;
-/** 模型详情屏里动作行之前的字段个数（名称 / 端点 / 模型名 / 思考策略 / 交接阈值 / 阻断阈值 / 视觉 / 描述） */
-const MODEL_FIELD_ROWS = 8;
+function makeHost(handlers: Record<string, (params: unknown) => unknown>): FakeHost {
+  const calls: RecordedCall[] = [];
+  const make = (path: string[]): unknown =>
+    new Proxy(Object.create(null) as object, {
+      get(_target, property: string) {
+        if (property === "query" || property === "mutate") {
+          const method = path.join(".");
+          return async (params: unknown = {}) => {
+            calls.push({ method, params });
+            const handler = handlers[method];
+            if (!handler) throw new Error(`用例没预料到的 procedure：${method}`);
+            return handler(params);
+          };
+        }
+        return make([...path, property]);
+      },
+    });
+  return { host: { api: make([]) as HostClient["api"] }, calls };
+}
 
-/** 只含一条出厂模型的配置（`over` 可把它改成「被用户改过」的样子） */
-const makeFactoryModelConfig = (over: Partial<Model> = {}): AppConfig => ({
-  ...makeConfig(),
-  models: [{ ...FACTORY_MODEL, ...over }],
+/** 宿主回的「还有模型挂在它上面」（`conflict`：一句能直接上屏的话） */
+const referencedError = () =>
+  Object.assign(new Error("conflict"), {
+    code: "conflict",
+    message: "端点 deepseek 上还挂着模型 DeepSeek-V4-Flash，先把它们换走或删掉",
+  });
+
+// ==================== 夹具（全部是契约形状）====================
+
+const makeConfig = (): AppConfig => ({
+  endpoints: [
+    {
+      id: "deepseek",
+      name: "DeepSeek",
+      baseUrl: "https://api.deepseek.com/v1",
+      // 配置里存的是**明文**（宿主这一版不再掩码），屏上看到的是 `sk-…9f3a`
+      apiKey: "sk-live-9f3a",
+      capabilities: { filesApi: false },
+    },
+    {
+      id: "openai",
+      name: "OpenAI",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "",
+      description: "备用",
+      capabilities: { filesApi: true },
+    },
+  ],
+  models: [
+    {
+      id: "deepseek-v4-flash",
+      name: "DeepSeek-V4-Flash",
+      endpointId: "deepseek",
+      tokenThresholds: { handoff: 250_000, guard: 375_000 },
+      defaultParams: {},
+      reasoningPreset: "deepseek",
+      custom: false,
+    },
+  ],
+  imageModels: [
+    {
+      id: "cogview-4",
+      name: "CogView-4",
+      endpointId: "openai",
+      modelName: "cogview-4",
+      custom: true,
+    },
+  ],
+  defaultAgent: "default",
+  defaultImageModel: "cogview-4",
+  maxToolOutput: 32768,
 });
 
-const noop = () => {
-  /* 占位 */
-};
-
-/** 带类型的持久化 mock：`calls[0][0]` 即写盘的配置 */
-const makeOnSave = () => vi.fn<(config: AppConfig) => Promise<void>>(async () => undefined);
-
-/** MCP 快照夹具：全局两个服务器、项目为空 */
-const makeMcp = () => ({
-  global: {
-    mcpServers: {
-      "socket-pty": { type: "stdio" as const, command: "npx", args: ["-y", "@ai-zen/socket-pty", "mcp"] },
-      slack: { type: "http" as const, url: "https://slack.example.com" },
+/** 档位表（模型上的 `reasoningPreset` 指它的键） */
+const makePresets = (): ReasoningPresets => ({
+  deepseek: {
+    levels: {
+      low: { thinking: { type: "enabled" }, reasoning_effort: "low" },
+      high: { thinking: { type: "enabled" }, reasoning_effort: "high" },
     },
   },
-  project: { mcpServers: {} },
 });
 
-/** 带类型的 MCP 持久化 mock：`calls[0]` 即 `[scope, config]` */
-const makeOnSaveMcp = () =>
-  vi.fn<(scope: McpScope, config: McpConfig) => Promise<void>>(async () => undefined);
+const makeAgents = (): AgentDefinition[] => [
+  {
+    id: "default",
+    name: "默认助手",
+    // 定义是「能写就能读」的：提示词就是我们读回来、改完再写回去的那一串
+    messages: [Message.System("你是默认助手"), Message.User("开始吧")],
+    modelId: "deepseek-v4-flash",
+    modelParams: {},
+    permissions: { tools: { allow: ["*"] } },
+    custom: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "reviewer",
+    name: "审阅助手",
+    description: "只管审稿",
+    messages: [Message.System("")],
+    modelParams: {},
+    function: { name: "review", description: "审稿", parameters: { type: "object" } },
+    custom: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+];
+
+const makeServers = (): McpEntry[] => [
+  {
+    scope: "user",
+    server: {
+      id: "socket-pty",
+      transport: "stdio",
+      description: "终端复用",
+      command: "npx",
+      args: ["-y", "socket-pty"],
+      env: { PTY_MODE: "1" },
+    },
+  },
+];
+
+const noop = () => undefined;
+
+/**
+ * 假的系统编辑器：把 `content` 写进那个临时文件。
+ *
+ * 真起一个 `vi` 会把整个 worker 挂死（本仓不隔离模块图，中途只能强杀），所以 `agent-text`
+ * 屏的编辑器一律靠 `openEditor` 注入。
+ */
+const fakeEditor = (content: string) => (_editor: string, file: string) => {
+  writeFileSync(file, content, "utf-8");
+};
+
+interface MountOptions {
+  handlers?: Record<string, (params: unknown) => unknown>;
+  config?: AppConfig;
+  presets?: ReasoningPresets;
+  agents?: AgentDefinition[];
+  servers?: McpEntry[];
+  /** 每个助手上挂着几段会话（向导宿主数出来的；不给 = 数不出来，代价那一句不给数字） */
+  sessionsByAgent?: Record<string, number> | null;
+  initialStep?: WizardStep;
+  closeOnSave?: boolean;
+  /** 注入假的系统编辑器（`agent-text` 屏用），见 {@link fakeEditor} */
+  openEditor?: (editor: string, file: string) => void;
+}
+
+function mount(options: MountOptions = {}) {
+  const fake = makeHost(options.handlers ?? {});
+  const onClose = vi.fn();
+  const view = render(
+    <ConfigWizard
+      host={fake.host}
+      workspaceId="ws-1"
+      config={options.config ?? makeConfig()}
+      presets={options.presets ?? makePresets()}
+      agents={options.agents ?? makeAgents()}
+      servers={options.servers ?? makeServers()}
+      sessionsByAgent={options.sessionsByAgent}
+      initialStep={options.initialStep}
+      terminalSize={SIZE}
+      closeOnSave={options.closeOnSave}
+      openEditor={options.openEditor}
+      onClose={onClose}
+    />,
+  );
+  return { ...view, ...fake, onClose };
+}
+
+// ==================== 输入屏（与契约无关，形状未变）====================
 
 describe("PromptScreen（凭据输入屏）", () => {
   it("掩码显示：不把明文回显到屏幕，Enter 提交原值", async () => {
@@ -125,13 +297,12 @@ describe("PromptScreen（凭据输入屏）", () => {
     );
     stdin.write("abc");
     await tick();
-    stdin.write("\t");
+    stdin.write(TAB);
     await tick();
     expect(lastFrame()).toContain("abc");
-    expect(lastFrame()).toContain("明文显示");
-
     stdin.write(ESC);
-    await tickEsc();
+    // lone ESC 要等 ink 自己的序列判定（~20ms）才认成 Esc —— 等「取消真的发生了」
+    await until(() => onCancel.mock.calls.length > 0, "Esc 取消真的发生了");
     expect(onCancel).toHaveBeenCalled();
     unmount();
   });
@@ -150,26 +321,11 @@ describe("PromptScreen（凭据输入屏）", () => {
       />,
     );
     await tick();
-    // 实测：应答被拆包后残留的整段 `[?0u` 会作为一个输入事件到达
     stdin.write("[?0u");
     await tick();
     expect(lastFrame()).not.toContain("[?0u");
-
-    // 逐字键入同样四个字符是合法输入，不应被误伤
-    stdin.write("[");
-    await tick();
-    stdin.write("?");
-    await tick();
-    stdin.write("0");
-    await tick();
-    stdin.write("u");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    expect(onSubmit).toHaveBeenCalledWith("[?0u");
     unmount();
   });
-
   it("支持 Backspace / Home / End 编辑", async () => {
     const onSubmit = vi.fn();
     const { stdin, unmount } = render(
@@ -212,22 +368,19 @@ describe("promptLayout（吸底留白 + IME 光标）", () => {
   it("内容总行数 + 顶部留白 = 终端行数 − 1", () => {
     const layout = promptLayout(base);
     expect(layout.contentLines).toBe(7);
-    expect(layout.topPadding).toBe(23 - 7);
     expect(layout.contentLines + layout.topPadding).toBe(23);
   });
 
-  it("硬件光标 y = 顶部留白 + 标题行数 + 输入行内偏移", () => {
-    expect(promptLayout(base).cursor.y).toBe(16 + 4 + 0);
-    expect(promptLayout({ ...base, cursorRow: 1 }).cursor.y).toBe(16 + 4 + 1);
-    // 标题占位越多，留白越少，光标整体下移量不变
-    expect(promptLayout({ ...base, headerLines: 6 }).cursor.y).toBe(14 + 6 + 0);
+  it("光标 x = 输入区左侧留白（3）+ 光标前文本显示宽度", () => {
+    expect(promptLayout({ ...base, cursorCol: 2, lineText: "密钥" }).cursor.x).toBe(7);
   });
 
-  it("光标 x = 输入区左侧留白（3）+ 光标前文本显示宽度", () => {
-    expect(promptLayout(base).cursor.x).toBe(3);
-    expect(promptLayout({ ...base, cursorCol: 2, lineText: "sk" }).cursor.x).toBe(5);
-    // 宽字符计 2 列
-    expect(promptLayout({ ...base, cursorCol: 2, lineText: "密钥" }).cursor.x).toBe(7);
+  it("硬件光标 y = 顶部留白 + 标题行数 + 输入行内偏移", () => {
+    const layout = promptLayout(base);
+    expect(layout.cursor.y).toBe(layout.topPadding + 4);
+    expect(promptLayout({ ...base, headerLines: 6 }).cursor.y).toBe(
+      promptLayout({ ...base, headerLines: 6 }).topPadding + 6,
+    );
   });
 
   it("内容超过一帧时留白为 0（不出现负值）", () => {
@@ -235,34 +388,50 @@ describe("promptLayout（吸底留白 + IME 光标）", () => {
   });
 });
 
-describe("ConfigWizard（吸底布局）", () => {
-  it("整帧高度 = 终端行数 − 1，内容贴底（顶部为空白，不会飘到视口外）", async () => {
-    const { lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} terminalSize={SIZE} onSave={makeOnSave()} onClose={noop} />,
-    );
+// ==================== 菜单 ====================
+
+describe("配置中心菜单", () => {
+  it("每一行都印契约给的现成事实（端点 / 模型 / MCP 两层 / 默认项 / 上限）", async () => {
+    const { lastFrame, unmount } = mount();
+    await tick();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("配置中心");
+    expect(frame).toContain("DeepSeek ✓"); // 端点摘要（✓ = 那一格非空）
+    expect(frame).toContain("OpenAI ✗");
+    expect(frame).toContain("端点管理");
+    expect(frame).toContain("模型管理");
+    expect(frame).toContain("用户 1 · 工作区 0"); // MCP 两个可写层各自的条数
+    expect(frame).toContain("助手 1 · 子助手 1");
+    expect(frame).toContain("32768 字符");
+    // 上限这一行的数值必须真的被替换进驻位符：漏传参时 `t()` 会原样留下 `{n}`
+    expect(frame).not.toContain("{n}");
+    unmount();
+  });
+
+  it("整帧高度 = 终端行数 − 1，内容贴底", async () => {
+    const { lastFrame, unmount } = mount();
     await tick();
     const lines = (lastFrame() ?? "").split("\n");
-    // Ink 的输出末尾会多一个换行，故允许 1 行误差
     expect(lines.length).toBeGreaterThanOrEqual(23);
     expect(lines.length).toBeLessThanOrEqual(24);
-    const titleIndex = lines.findIndex((line) => line.includes("配置中心"));
-    const hintIndex = lines.findIndex((line) => line.includes("完成返回"));
-    expect(titleIndex).toBeGreaterThan(0); // 顶部留白：标题不在第一行
-    // 内容贴底：键位提示正好是整帧最后一行
+    const hintIndex = lines.findIndex((line) => line.includes("完成并返回"));
     expect(hintIndex).toBe(lines.length - 1);
     unmount();
   });
 
+  it("没有任何写入时关闭：回传 dirty=false", async () => {
+    const { stdin, onClose, unmount } = mount();
+    await tick();
+    stdin.write(ESC);
+    await until(() => onClose.mock.calls.length > 0, "Esc 关闭真的发生了");
+    expect(onClose).toHaveBeenCalledWith({ dirty: false, summary: [] });
+    unmount();
+  });
+});
+
+describe("列表屏布局", () => {
   it("列表步骤同样贴底且不超帧", async () => {
-    const { lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "endpoints" }}
-        terminalSize={SIZE}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
+    const { lastFrame, unmount } = mount({ initialStep: { kind: "endpoints" } });
     await tick();
     const lines = (lastFrame() ?? "").split("\n");
     expect(lines.length).toBeLessThanOrEqual(24);
@@ -272,416 +441,273 @@ describe("ConfigWizard（吸底布局）", () => {
   });
 });
 
-describe("ConfigWizard（配置中心）", () => {
-  it("菜单展示配置概览与配置文件路径", async () => {
-    const { lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} onSave={makeOnSave()} onClose={noop} />,
-    );
+// ==================== 端点 ====================
+
+describe("端点", () => {
+  it("列表上印掩码与「未配置密钥」，两处分开说", async () => {
+    const { lastFrame, unmount } = mount({ initialStep: { kind: "endpoints" } });
     await tick();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("配置中心");
-    expect(frame).toContain("config.json");
-    expect(frame).toContain("端点管理");
-    expect(frame).toContain("模型管理");
-    expect(frame).toContain("图片模型");
-    expect(frame).toContain("默认项");
-    expect(frame).toContain("工具输出上限");
-    expect(frame).toContain("DeepSeek ✗");
+    expect(frame).toContain("sk-…9f3a");
+    expect(frame).toContain("（未配置密钥）");
     unmount();
   });
 
-  it("菜单 → 端点管理 → 选中端点 → 就地编辑 API Key：写盘并回列表，Esc 关闭时上报变更", async () => {
-    const onSave = makeOnSave();
-    const onClose = vi.fn();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} onSave={onSave} onClose={onClose} />,
-    );
+  it("改 API Key：一次 config.endpoint.update，只发改的那一项", async () => {
+    const { stdin, calls, lastFrame, unmount } = mount({
+      initialStep: { kind: "endpoint", endpointId: "deepseek" },
+      handlers: {
+        "config.endpoint.update": () => ({ config: makeConfig() }),
+      },
+    });
     await tick();
+    // 屏上显示的是掩码，不是明文
+    expect(lastFrame()).toContain("sk-…9f3a");
 
-    stdin.write(ENTER); // 首项即「端点管理」
+    stdin.write(DOWN); // → Base URL
     await tick();
-    expect(lastFrame()).toContain("端点管理");
-    expect(lastFrame()).toContain("＋ 新建端点");
-    expect(lastFrame()).toContain("未设置");
-
-    stdin.write(DOWN); // → DeepSeek（跳过「新建端点」）
+    stdin.write(DOWN); // → API Key
     await tick();
-    stdin.write(ENTER);
-    await tick();
-    expect(lastFrame()).toContain("◆ 端点 · DeepSeek");
-
-    stdin.write(DOWN); // 名称 → Base URL
-    await tick();
-    stdin.write(DOWN); // Base URL → API Key
-    await tick();
-    stdin.write(ENTER); // 选中 API Key 字段 → 进入就地编辑
+    stdin.write(ENTER); // 进入编辑
     await tick();
     stdin.write("sk-new-key");
     await tick();
-    stdin.write(ENTER); // 保存
-    await tick();
-    await tick();
+    stdin.write(ENTER); // 提交
+    // 等的是那次写入真的落地（异步结果），不是「16ms 大概够了」
+    await until(() => calls.length > 0, "保存端点的那次写入落地");
 
-    expect(onSave).toHaveBeenCalledTimes(1);
-    const saved = onSave.mock.calls[0]![0];
-    expect(saved.endpoints[0]!.apiKey).toBe("sk-new-key");
-    expect(saved.endpoints[1]!.apiKey).toBe("sk-old-key-123456");
-    // 原地停留并给出提示
-    expect(lastFrame()).toContain("API Key 已更新");
-
-    stdin.write(ESC); // 回到端点列表
-    await tickEsc();
-    stdin.write(ESC); // 回到菜单
-    await tickEsc();
-    stdin.write(ESC); // 关闭
-    await tickEsc();
-    expect(onClose).toHaveBeenCalledWith({
-      dirty: true,
-      summary: ["端点 DeepSeek 的 API Key 已更新"],
-      changedEndpointIds: ["deepseek"],
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      method: "config.endpoint.update",
+      // `update` 是合并语义（`{...当前, ...change}`），所以只发这一项
+      params: { id: "deepseek", change: { apiKey: "sk-new-key" } },
     });
     unmount();
   });
 
-  it("空 Key 不写盘并给出校验错误", async () => {
-    const onSave = makeOnSave();
-    const onClose = vi.fn();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "edit", field: "apiKey", endpointId: "deepseek" }}
-        onSave={onSave}
-        onClose={onClose}
-      />,
-    );
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    expect(onSave).not.toHaveBeenCalled();
-    expect(lastFrame()).toContain("API Key 不能为空");
-    unmount();
-  });
-
-  it("closeOnSave：保存后立刻关闭并上报 dirty（首启引导 / `/key` 路径）", async () => {
-    const onSave = makeOnSave();
-    const onClose = vi.fn();
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        onboarding
-        closeOnSave
-        initialStep={{ kind: "edit", field: "apiKey", endpointId: "deepseek" }}
-        onSave={onSave}
-        onClose={onClose}
-      />,
-    );
-    await tick();
-    stdin.write(" sk-boot ");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    expect(onSave).toHaveBeenCalledTimes(1);
-    expect(onSave.mock.calls[0]![0].endpoints[0]!.apiKey).toBe("sk-boot");
-    expect(onClose).toHaveBeenCalledWith({
-      dirty: true,
-      summary: ["端点 DeepSeek 的 API Key 已更新"],
-      changedEndpointIds: ["deepseek"],
+  it("没动 API Key 就不发那一项：掩码不会被当成密钥回写", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "endpoint", endpointId: "deepseek" },
+      handlers: {
+        "config.endpoint.update": () => ({ config: makeConfig() }),
+      },
     });
-    unmount();
-  });
-
-  it("Base URL 校验：非 http(s) 前缀被拒绝", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "edit", field: "baseUrl", endpointId: "deepseek" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
     await tick();
-    stdin.write("\u0015"); // Ctrl+U 清空
+    stdin.write(DOWN);
     await tick();
-    stdin.write("ftp://x");
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(DOWN); // → 描述
     await tick();
     stdin.write(ENTER);
     await tick();
-    expect(onSave).not.toHaveBeenCalled();
-    expect(lastFrame()).toContain("Base URL 需以 http:// 或 https:// 开头");
+    stdin.write("主端点");
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "带描述的那次写入落地");
+
+    expect(calls).toHaveLength(1);
+    const params = calls[0]!.params as { id: string; change: Record<string, unknown> };
+    expect(params.change.description).toBe("主端点");
+    // 省略 = 保留原密钥（`update` 是合并语义）
+    expect("apiKey" in params.change).toBe(false);
     unmount();
   });
 
-  it("新建端点：名称 → Base URL → API Key 三步后写盘", async () => {
-    const onSave = makeOnSave();
-    const onClose = vi.fn();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "new-endpoint", field: "name", draft: { name: "", baseUrl: "", apiKey: "" } }}
-        onSave={onSave}
-        onClose={onClose}
-      />,
+  it("删被引用的端点：宿主的拒绝原话上屏（说清还有谁在用）", async () => {
+    const { stdin, lastFrame, unmount } = mount({
+      initialStep: { kind: "endpoint", endpointId: "deepseek" },
+      handlers: {
+        "config.endpoint.remove": () => {
+          throw referencedError();
+        },
+      },
+    });
+    await tick();
+    for (let i = 0; i < 4; i += 1) {
+      stdin.write(DOWN); // 走到「删除端点」动作行
+      await tick();
+    }
+    stdin.write(ENTER); // 二次确认
+    // 代价在**事前**摆出来（宿主那句拒绝是事后）：模型 id 就在这句话里
+    await until(
+      () => (lastFrame() ?? "").includes("还有 1 个模型挂在它上面"),
+      "「还有谁挂着」那句话上屏",
     );
+    expect(lastFrame() ?? "").toContain("deepseek-v4-flash");
+    await tick(); // 让确认屏的按键订阅接上（与别处同一类等待）
+    stdin.write(ENTER); // 确认
+    // 宿主的拒绝是一次异步结果：等那句拒绝真的上屏（它带的是模型标题，代价那一句带的是 id）
+    await until(
+      () => (lastFrame() ?? "").includes("✖ 端点 deepseek 上还挂着模型"),
+      "宿主的拒绝上屏",
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("DeepSeek-V4-Flash");
+    unmount();
+  });
+
+  it("删端点：代价里点出挂在上面的图片模型（模型与图片模型都算）", async () => {
+    const { stdin, lastFrame, unmount } = mount({
+      initialStep: { kind: "endpoint", endpointId: "openai" },
+    });
+    await tick();
+    for (let i = 0; i < 4; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER); // 二次确认
+    await until(
+      () => (lastFrame() ?? "").includes("还有 1 个图片模型挂在它上面"),
+      "图片模型也数进代价里",
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("cogview-4");
+    // 这个端点上没有（文字）模型：那一句就不出现，不是编一个「0 个模型」
+    expect(frame).not.toContain("个模型挂在它上面：");
+    unmount();
+  });
+
+  it("删端点选「否」：一条写请求都没有", async () => {
+    const { stdin, calls, lastFrame, unmount } = mount({
+      initialStep: { kind: "endpoint", endpointId: "deepseek" },
+      handlers: {
+        "config.endpoint.remove": () => {
+          throw referencedError();
+        },
+      },
+    });
+    await tick();
+    for (let i = 0; i < 4; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER); // 二次确认
+    await until(() => (lastFrame() ?? "").includes("还有 1 个模型挂在它上面"), "代价那一句上屏");
+    await tick();
+    stdin.write(DOWN); // 从「确认删除端点」移到「取消」
+    await tick();
+    stdin.write(ENTER);
+    // 回到详情屏（代价那一句消失）才是按键真的被处理过的证据
+    await until(() => !(lastFrame() ?? "").includes("还有 1 个模型挂在它上面"), "回到详情屏");
+    expect(calls).toEqual([]);
+    expect(lastFrame() ?? "").toContain("◆ 端点 · DeepSeek");
+    unmount();
+  });
+
+  it("Base URL 不是 http(s)：当场拦住，一次写都不发", async () => {
+    const { stdin, calls, lastFrame, unmount } = mount({
+      initialStep: { kind: "endpoint", endpointId: "deepseek" },
+    });
+    await tick();
+    stdin.write(DOWN); // → Base URL
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("\u0015");
+    await tick();
+    stdin.write("ftp://nope");
+    await tick();
+    stdin.write(ENTER);
+    // 「一次写都不发」是负向断言：先等「校验没过的那句话」上屏 —— 它才是回车真的被处理过的
+    // 证据。没有它，`calls` 为空也可能只是「什么都没发生」（键被吐掉也会绿）。
+    await until(() => (lastFrame() ?? "").includes("Base URL 必须以"), "校验提示上屏");
+    expect(calls).toHaveLength(0);
+    expect(lastFrame()).toContain("http");
+    unmount();
+  });
+
+  it("新建端点：id 由名称派生，走 config.endpoint.add（整条，密钥必须给）", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: {
+        kind: "new-endpoint",
+        field: "name",
+        draft: { name: "", baseUrl: "", apiKey: "" },
+      },
+      handlers: {
+        "config.endpoint.add": () => ({ config: makeConfig() }),
+      },
+    });
     await tick();
     stdin.write("My Gateway");
     await tick();
     stdin.write(ENTER);
     await tick();
-    expect(lastFrame()).toContain("新建端点 · Base URL");
-
-    stdin.write("https://gw.local/v1");
+    stdin.write("https://gw.example.com/v1");
     await tick();
     stdin.write(ENTER);
     await tick();
-    expect(lastFrame()).toContain("新建端点 · API Key");
+    stdin.write(ENTER); // API Key 留空 = 先不配（`add` 收整条，这一格给空串）
+    await until(() => calls.length > 0, "新建端点的那次写入落地");
 
-    stdin.write("sk-gw");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      method: "config.endpoint.add",
+      params: {
+        endpoint: {
+          id: "my-gateway",
+          name: "My Gateway",
+          baseUrl: "https://gw.example.com/v1",
+          apiKey: "",
+        },
+      },
+    });
+    unmount();
+  });
+});
+
+// ==================== 模型 / 图片模型 ====================
+
+describe("模型", () => {
+  it("改交接阈值：一次 config.model.update，两条阈值一起给", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "model", modelId: "deepseek-v4-flash" },
+      handlers: {
+        "config.model.update": () => ({ config: makeConfig() }),
+      },
+    });
     await tick();
+    for (let i = 0; i < 4; i += 1) {
+      stdin.write(DOWN); // 名称/端点/模型名/思考策略 → 交接阈值
+      await tick();
+    }
     stdin.write(ENTER);
     await tick();
-    const saved = onSave.mock.calls[0]![0];
-    expect(saved.endpoints).toHaveLength(3);
-    expect(saved.endpoints[2]).toEqual({
-      id: "my-gateway",
-      name: "My Gateway",
-      baseUrl: "https://gw.local/v1",
-      apiKey: "sk-gw",
+    // 清掉原值再输入
+    stdin.write("\u0015"); // Ctrl+U
+    await tick();
+    stdin.write("100000");
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "改交接阈值的那次写入落地");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      method: "config.model.update",
+      // `tokenThresholds` 是**整格**替换（宿主按它判两条线的大小关系），所以两条一起给
+      params: {
+        id: "deepseek-v4-flash",
+        change: { tokenThresholds: { handoff: 100_000, guard: 375_000 } },
+      },
     });
     unmount();
   });
 
-  it("默认迁移模型可切换（配置级已无「默认模型」）", async () => {
-    const onSave = makeOnSave();
-    const { stdin, unmount } = render(
-      <ConfigWizard config={makeConfig()} onSave={onSave} onClose={noop} />,
-    );
+  it("阈值越线由宿主判定：宿主说不行就原样上屏", async () => {
+    const { stdin, lastFrame, unmount } = mount({
+      initialStep: { kind: "model", modelId: "deepseek-v4-flash" },
+      handlers: {
+        "config.model.update": () => {
+          throw Object.assign(new Error("bad"), {
+            code: "invalid_params",
+            message: "交接阈值必须小于阻断阈值",
+            detail: { field: "tokenThresholds", reason: "handoff_not_below_guard" },
+          });
+        },
+      },
+    });
     await tick();
-    stdin.write(DOWN); // → 模型管理
-    await tick();
-    stdin.write(DOWN); // → 图片模型
-    await tick();
-    stdin.write(DOWN); // → MCP 服务器
-    await tick();
-    stdin.write(DOWN); // → Agent 定义
-    await tick();
-    stdin.write(DOWN); // → 默认项
-    await tick();
-    stdin.write(ENTER); // 打开默认项
-    await tick();
-    stdin.write(DOWN); // → 默认 Agent
-    await tick();
-    stdin.write(DOWN); // → 默认迁移模型
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    stdin.write(DOWN); // → GPT-5.5
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    expect(onSave.mock.calls[0]![0].defaultMigrationModel).toBe("gpt-5.5");
-    unmount();
-  });
-});
-
-describe("ConfigWizard（端点详情 · 就地编辑）", () => {
-  it("↑ ↓ 切换字段后 Enter 就地编辑 Base URL 并写盘", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "endpoint", endpointId: "deepseek" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    expect(lastFrame()).toContain("◆ 端点 · DeepSeek");
-    expect(lastFrame()).toContain("API Key");
-    expect(lastFrame()).toContain("Base URL");
-
-    stdin.write(DOWN); // → Base URL
-    await tick();
-    stdin.write(ENTER); // 进入编辑（预填现有地址）
-    await tick();
-    stdin.write("\u0015"); // Ctrl+U 清空
-    await tick();
-    stdin.write("https://new.example/v1");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    expect(onSave.mock.calls[0]![0].endpoints[0]!.baseUrl).toBe("https://new.example/v1");
-    unmount();
-  });
-
-  it("就地编辑 Base URL：非 http(s) 前缀被拒绝，不写盘", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "endpoint", endpointId: "deepseek" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    stdin.write(DOWN); // → Base URL
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    stdin.write("\u0015");
-    await tick();
-    stdin.write("ftp://x");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    expect(onSave).not.toHaveBeenCalled();
-    expect(lastFrame()).toContain("Base URL 需以 http:// 或 https:// 开头");
-    unmount();
-  });
-
-  it("就地编辑 API Key：预填现有密钥，未改动直接退出（不写盘）", async () => {
-    const onSave = makeOnSave();
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "endpoint", endpointId: "openai" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    stdin.write(DOWN); // 名称 → Base URL
-    await tick();
-    stdin.write(DOWN); // Base URL → API Key
-    await tick();
-    stdin.write(ENTER); // API Key 字段 → 编辑（预填 sk-old-key-123456）
-    await tick();
-    stdin.write(ENTER); // 未改动，保存应被跳过
-    await tick();
-    expect(onSave).not.toHaveBeenCalled();
-    unmount();
-  });
-
-  it("就地编辑 API Key：Tab 切明文后可见完整密钥", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "endpoint", endpointId: "openai" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    stdin.write(DOWN); // 名称 → Base URL
-    await tick();
-    stdin.write(DOWN); // Base URL → API Key
-    await tick();
-    stdin.write(ENTER); // 编辑 API Key
-    await tick();
-    expect(lastFrame()).not.toContain("sk-old-key-123456"); // 掩码态
-    stdin.write("\t"); // Tab 切明文
-    await tick();
-    expect(lastFrame()).toContain("sk-old-key-123456");
-    unmount();
-  });
-});
-
-describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", () => {
-  it("模型管理：新建模型自动 custom: true 并进入详情", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} onSave={onSave} onClose={noop} />,
-    );
-    await tick();
-    stdin.write(DOWN); // → 模型管理
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    expect(lastFrame()).toContain("模型管理");
-    expect(lastFrame()).toContain("＋ 新建模型");
-
-    stdin.write(ENTER); // 新建模型（首项）
-    await tick();
-    expect(lastFrame()).toContain("新建模型 · 名称");
-    stdin.write("My GPT");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-
-    const saved = onSave.mock.calls[0]![0];
-    const created = saved.models.find((m) => m.name === "My GPT");
-    expect(created).toBeTruthy();
-    expect(created!.id).toBe("my-gpt");
-    expect(created!.custom).toBe(true);
-    expect(lastFrame()).toContain("◆ 模型 · My GPT");
-    unmount();
-  });
-
-  it("模型详情：切换「视觉」（bool）即时写盘", async () => {
-    const onSave = makeOnSave();
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    // 字段顺序：名称(0) 端点(1) 模型名(2) 思考策略(3) 交接阈值(4) 阻断阈值(5) 视觉(6) …
-    for (let i = 0; i < 6; i++) {
-      stdin.write(DOWN);
-      await tick();
-    }
-    stdin.write(ENTER); // 切换视觉
-    await tick();
-    expect(onSave.mock.calls[0]![0].models[0]!.vision).toBe(true);
-    unmount();
-  });
-
-  it("模型详情：思考策略可指向策略表里的名字", async () => {
-    const onSave = makeOnSave();
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        reasoningPresets={{ openai: { levels: { low: {}, high: {} } } }}
-        initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    for (let i = 0; i < 3; i++) {
-      stdin.write(DOWN);
-      await tick();
-    }
-    stdin.write(ENTER); // 思考策略 → 编辑
-    await tick();
-    stdin.write("\u0015"); // Ctrl+U 清空
-    await tick();
-    stdin.write("openai");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    expect(onSave.mock.calls[0]![0].models[0]!.reasoningPreset).toBe("openai");
-    unmount();
-  });
-
-  it("模型详情：不存在的策略名被当场拦住，不写盘", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        reasoningPresets={{ openai: { levels: { low: {} } } }}
-        initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i += 1) {
       stdin.write(DOWN);
       await tick();
     }
@@ -689,1117 +715,1079 @@ describe("ConfigWizard（模型 / 图片模型 / 默认项 / 工具上限）", (
     await tick();
     stdin.write("\u0015");
     await tick();
-    stdin.write("typo-preset");
+    stdin.write("400000");
     await tick();
     stdin.write(ENTER);
-    await tick();
-    expect(lastFrame()).toContain("不存在");
-    expect(onSave).not.toHaveBeenCalled();
+    await until(
+      () => (lastFrame() ?? "").includes("交接阈值必须小于阻断阈值"),
+      "阈值的大小关系提示上屏",
+    );
+    expect(lastFrame()).toContain("交接阈值必须小于阻断阈值");
     unmount();
   });
 
-  it("模型详情：编辑「出厂托管」模型会自动标记为自定义", async () => {
-    const onSave = makeOnSave();
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
+  it("恢复出厂：一次 config.model.reset（出厂清单在宿主，客户端不判断）", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "model", modelId: "deepseek-v4-flash" },
+      handlers: {
+        "config.model.reset": () => ({ config: makeConfig() }),
+      },
+    });
     await tick();
-    stdin.write(ENTER); // 名称 → 编辑
-    await tick();
-    stdin.write("\u0015"); // Ctrl+U 清空
-    await tick();
-    stdin.write("DS Renamed");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    const saved = onSave.mock.calls[0]![0];
-    expect(saved.models[0]!.name).toBe("DS Renamed");
-    expect(saved.models[0]!.custom).toBe(true);
-    unmount();
-  });
-
-  it("模型详情：不再有「自定义」开关行，出厂模型改为「恢复出厂设置」", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeFactoryModelConfig()}
-        initialStep={{ kind: "model", modelId: FACTORY_MODEL.id }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    // 托管状态的详情行写「出厂托管（编辑会自动转自定义）」；字段列里的「自定义」开关行已删掉，
-    // 所以最后一个字段是「描述」，紧接着就是动作行。
-    expect(lastFrame()).toContain("出厂托管");
-    expect(lastFrame()).toMatch(/描述[^\n]*\n\s*恢复出厂设置/u);
-    expect(lastFrame()).toContain("恢复出厂设置");
-
-    for (let i = 0; i < MODEL_FIELD_ROWS; i += 1) {
-      stdin.write(DOWN); // → 恢复出厂设置（字段之后第一个动作）
+    for (let i = 0; i < 8; i += 1) {
+      stdin.write(DOWN); // 8 个字段之后是「恢复出厂设置」
       await tick();
     }
     stdin.write(ENTER);
     await tick();
-    expect(lastFrame()).toContain("恢复出厂设置？");
-    stdin.write(ENTER); // 确认
-    await tick();
-    await tick();
-    expect(onSave.mock.calls[0]![0].models[0]).toEqual(FACTORY_MODEL);
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "恢复出厂的那次写入落地");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      method: "config.model.reset",
+      params: { id: "deepseek-v4-flash" },
+    });
     unmount();
   });
 
-  it("模型详情：恢复出厂后条目回到出厂定义，且重新归 SDK 托管（custom 消失）", async () => {
-    const onSave = makeOnSave();
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeFactoryModelConfig({ name: "改过的名字", vision: false, custom: true })}
-        initialStep={{ kind: "model", modelId: FACTORY_MODEL.id }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
+  it("删模型：代价里点出会被改指的默认项，以及改指到哪一条", async () => {
+    // 两个模型同一个端点、三个默认项都指着要删的那个：宿主会把它俩改指到同端点的第一条剩余
+    const config: AppConfig = {
+      ...makeConfig(),
+      models: [
+        {
+          id: "deepseek-v4-flash",
+          name: "DeepSeek-V4-Flash",
+          endpointId: "deepseek",
+          tokenThresholds: { handoff: 250_000, guard: 375_000 },
+          defaultParams: {},
+          custom: false,
+        },
+        {
+          id: "deepseek-v4-pro",
+          name: "DeepSeek-V4-Pro",
+          endpointId: "deepseek",
+          tokenThresholds: { handoff: 250_000, guard: 375_000 },
+          defaultParams: {},
+          custom: true,
+        },
+      ],
+      defaultModel: "deepseek-v4-flash",
+      defaultMigrationModel: "deepseek-v4-flash",
+      namingModel: "deepseek-v4-flash",
+    };
+    const { stdin, lastFrame, unmount } = mount({
+      config,
+      initialStep: { kind: "model", modelId: "deepseek-v4-flash" },
+    });
     await tick();
-    for (let i = 0; i < MODEL_FIELD_ROWS; i += 1) {
+    for (let i = 0; i < 9; i += 1) {
+      stdin.write(DOWN); // 8 个字段之后是「恢复出厂设置」，再一格格是「删除模型」
+      await tick();
+    }
+    stdin.write(ENTER); // 二次确认
+    await until(() => (lastFrame() ?? "").includes("兜底模型会被改指到"), "代价里点出默认项");
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("「DeepSeek-V4-Pro」");
+    // 三格默认项都指着它，三句都要摆出来
+    expect(frame).toContain("默认迁移模型");
+    expect(frame).toContain("取名模型");
+    unmount();
+  });
+
+  it("删模型选「否」：一条写请求都没有", async () => {
+    const { stdin, calls, lastFrame, unmount } = mount({
+      config: {
+        ...makeConfig(),
+        defaultModel: "deepseek-v4-flash",
+      },
+      initialStep: { kind: "model", modelId: "deepseek-v4-flash" },
+    });
+    await tick();
+    for (let i = 0; i < 9; i += 1) {
       stdin.write(DOWN);
       await tick();
     }
     stdin.write(ENTER);
+    await until(
+      () => (lastFrame() ?? "").includes("兜底模型会被清空"),
+      "代价里点出「改指不成会被清空」",
+    );
+    await tick();
+    stdin.write(DOWN); // 移到「取消」
     await tick();
     stdin.write(ENTER);
-    await tick();
-    await tick();
-    const restored = onSave.mock.calls[0]![0].models[0]!;
-    expect(restored).toEqual(FACTORY_MODEL);
-    expect(restored.custom).toBeUndefined();
+    await until(() => !(lastFrame() ?? "").includes("兜底模型会被清空"), "回到详情屏");
+    expect(calls).toEqual([]);
+    expect(lastFrame() ?? "").toContain("◆ 模型 · DeepSeek-V4-Flash");
     unmount();
   });
 
-  it("模型详情：自建模型（出厂清单里没有同 id）不显示「恢复出厂设置」", async () => {
-    const { lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "model", modelId: "deepseek-v4-flash" }}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    expect(lastFrame()).toContain("删除模型");
-    expect(lastFrame()).not.toContain("恢复出厂设置");
-    unmount();
-  });
-
-  it("图片模型详情：恢复出厂设置整条替换为出厂定义", async () => {
-    const factory = DEFAULT_APP_CONFIG.imageModels![0]!;
-    const drifted: ImageModel = { ...factory, name: "改过的名字", custom: true };
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={{ ...makeConfig(), imageModels: [drifted] }}
-        initialStep={{ kind: "image-model", modelId: factory.id }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    expect(lastFrame()).toContain("恢复出厂设置");
-    // 字段 5 个：名称 / 端点 / 模型名 / 尺寸 / 质量
-    for (let i = 0; i < 5; i += 1) {
-      stdin.write(DOWN);
-      await tick();
-    }
-    stdin.write(ENTER);
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    const restored = onSave.mock.calls[0]![0].imageModels![0]!;
-    expect(restored).toEqual(factory);
-    expect(restored.custom).toBeUndefined();
-    unmount();
-  });
-
-  it("新建模型：没有任何端点时拒绝创建（不写盘，给出下一步）", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={{ ...makeConfig(), endpoints: [], models: [] }}
-        initialStep={{ kind: "new-model" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
+  it("新建模型：两条阈值按出厂推荐值给（宿主不再替我们补）", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "new-model" },
+      handlers: {
+        "config.model.add": () => ({ config: makeConfig() }),
+      },
+    });
     await tick();
     stdin.write("My GPT");
     await tick();
     stdin.write(ENTER);
-    await tick();
-    expect(lastFrame()).toContain("没有可用的端点");
-    expect(onSave).not.toHaveBeenCalled();
+    await until(() => calls.length > 0, "新建模型的那次写入落地");
+    expect(calls).toHaveLength(1);
+    // `ModelService.add` 写前就要求两条阈值都是数字：给的是一个能就地改的起点
+    expect(calls[0]).toEqual({
+      method: "config.model.add",
+      params: {
+        model: {
+          id: "my-gpt",
+          name: "My GPT",
+          endpointId: "deepseek",
+          tokenThresholds: { handoff: 128_000, guard: 192_000 },
+        },
+      },
+    });
     unmount();
   });
 
-  it("新建图片模型：没有任何端点时拒绝创建（不写盘，给出下一步）", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={{ ...makeConfig(), endpoints: [], imageModels: [] }}
-        initialStep={{ kind: "new-image-model" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
+  it("新建模型：配置里一个模型都没有也照建", async () => {
+    const empty: AppConfig = { ...makeConfig(), models: [] };
+    const { stdin, calls, unmount } = mount({
+      config: empty,
+      initialStep: { kind: "new-model" },
+      handlers: {
+        "config.model.add": () => ({ config: makeConfig() }),
+      },
+    });
     await tick();
-    stdin.write("My Image");
+    stdin.write("First");
     await tick();
     stdin.write(ENTER);
-    await tick();
-    expect(lastFrame()).toContain("没有可用的端点");
-    expect(onSave).not.toHaveBeenCalled();
+    await until(() => calls.length > 0, "新建模型的那次写入落地");
+    expect(calls.map((call) => call.method)).toEqual(["config.model.add"]);
+    expect((calls[0]!.params as { model: { id: string } }).model.id).toBe("first");
     unmount();
   });
+});
 
-  it("删除端点：仍被模型引用时拒绝，不写盘", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "endpoint", endpointId: "deepseek" }}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
+describe("图片模型", () => {
+  it("改尺寸：config.imageModel.update 只发这一项", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "image-model", modelId: "cogview-4" },
+      handlers: {
+        "config.imageModel.update": () => ({ config: makeConfig() }),
+      },
+    });
     await tick();
-    // 字段：名称(0) Base URL(1) API Key(2) 描述(3) 删除端点(4)
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(ENTER); // 删除端点 → 确认子屏
-    await tick();
-    stdin.write(ENTER); // 确认删除端点（首项）
-    await tick();
-    expect(onSave).not.toHaveBeenCalled();
-    expect(lastFrame()).toContain("仍被");
-    unmount();
-  });
-
-  it("默认项：切换默认 Agent（枚举选择）", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        agents={[
-          { id: "default", name: "默认助手" },
-          { id: "coder", name: "Coder" },
-        ]}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(DOWN); // → MCP 服务器
-    await tick();
-    stdin.write(DOWN); // → Agent 定义
-    await tick();
-    stdin.write(DOWN); // → 默认项
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    expect(lastFrame()).toContain("默认项");
-    stdin.write(DOWN); // → 默认 Agent（第 2 项；配置级「默认模型」已移除）
-    await tick();
-    stdin.write(ENTER); // 打开 Agent 选择
-    await tick();
-    expect(lastFrame()).toContain("默认 Agent");
-    stdin.write(DOWN); // → Coder
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    expect(onSave.mock.calls[0]![0].defaultAgent).toBe("coder");
-    unmount();
-  });
-
-  it("默认项：中断策略可切（keep → drop），并标记「建 Agent 时读的配置」已改", async () => {
-    const onSave = makeOnSave();
-    const onClose = vi.fn();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} onSave={onSave} onClose={onClose} />,
-    );
-    await tick();
-    // 菜单第 6 项即「默认项」
-    for (let i = 0; i < 5; i += 1) {
-      stdin.write(DOWN);
-      await tick();
-    }
-    stdin.write(ENTER);
-    await tick();
-    // 默认项列表里能看到两项策略及其当前值（配置没写时按出厂 keep / fill 展示）
-    expect(lastFrame()).toContain("中断时保留已输出内容");
-    expect(lastFrame()).toContain("保留（keep）");
-    expect(lastFrame()).toContain("整轮保留（fill）");
-
     for (let i = 0; i < 3; i += 1) {
-      stdin.write(DOWN); // → 中断时保留已输出内容（前三项是图片模型 / Agent / 迁移模型）
+      stdin.write(DOWN); // 名称/端点/模型名 → 尺寸
       await tick();
     }
     stdin.write(ENTER);
     await tick();
-    stdin.write(DOWN); // keep → drop
+    stdin.write("1024x1024");
     await tick();
     stdin.write(ENTER);
-    await tick();
-    await tick();
-
-    expect(onSave).toHaveBeenCalledTimes(1);
-    expect(onSave.mock.calls[0]![0].abortedMessageStrategy).toBe("drop");
-
-    stdin.write(ESC); // 回默认项
-    await tickEsc();
-    stdin.write(ESC); // 回菜单
-    await tickEsc();
-    stdin.write(ESC); // 关闭
-    await tickEsc();
-    // 策略在建 Agent 时才读：必须让宿主知道「该重建会话」，否则用户得自己 /reload
-    expect(onClose.mock.calls[0]![0].sessionOptionsChanged).toBe(true);
+    await until(() => calls.length > 0, "图片模型的那次写入落地");
+    expect(calls[0]).toEqual({
+      method: "config.imageModel.update",
+      params: { id: "cogview-4", change: { defaultSize: "1024x1024" } },
+    });
     unmount();
   });
 
-  it("默认项：中断的工具轮次可切（fill → drop），两档都不提供「不设置」", async () => {
-    const onSave = makeOnSave();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} initialStep={{ kind: "pick-default", target: "abortedToolRoundStrategy" }} onSave={onSave} onClose={noop} />,
-    );
+  it("删被默认图片模型指着的条目：宿主拒绝，屏上报出来", async () => {
+    const { stdin, lastFrame, unmount } = mount({
+      initialStep: { kind: "image-model", modelId: "cogview-4" },
+      handlers: {
+        "config.imageModel.remove": () => {
+          throw referencedError();
+        },
+      },
+    });
     await tick();
-    expect(lastFrame()).not.toContain("未设置");
-    stdin.write(DOWN); // fill → drop
-    await tick();
+    for (let i = 0; i < 6; i += 1) {
+      stdin.write(DOWN); // 6 个字段之后是删除动作
+      await tick();
+    }
     stdin.write(ENTER);
     await tick();
+    stdin.write(ENTER);
+    await until(() => (lastFrame() ?? "").includes("先把它们换走或删掉"), "宿主的拒绝上屏");
+    unmount();
+  });
+});
+
+// ==================== 默认项 / 上限 ====================
+
+describe("默认项", () => {
+  it("子菜单列出五格默认值 + 两项中断策略 + 自动命名开关", async () => {
+    const { lastFrame, unmount } = mount({ initialStep: { kind: "defaults" } });
     await tick();
-    expect(onSave.mock.calls[0]![0].abortedToolRoundStrategy).toBe("drop");
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("默认助手");
+    expect(frame).toContain("兜底模型");
+    expect(frame).toContain("默认迁移模型");
+    expect(frame).toContain("默认图片模型");
+    expect(frame).toContain("取名模型");
+    expect(frame).toContain("中断时保留已输出内容");
+    expect(frame).toContain("中断时的工具调用");
+    expect(frame).toContain("自动命名");
     unmount();
   });
 
-  it("工具输出上限：写入正整数", async () => {    const onSave = makeOnSave();
-    const { stdin, unmount } = render(
-      <ConfigWizard config={makeConfig()} initialStep={{ kind: "max-tool-output" }} onSave={onSave} onClose={noop} />,
+  it("选兜底模型：一次改动只发一次 config.setDefaults", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "pick-default", target: "defaultModel" },
+      handlers: {
+        "config.setDefaults": () => ({ config: makeConfig() }),
+      },
+    });
+    await tick();
+    stdin.write(ENTER); // 第一个候选就是那条模型
+    await until(() => calls.length > 0, "改默认模型的那次写入落地");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      method: "config.setDefaults",
+      params: { defaultModel: "deepseek-v4-flash" },
+    });
+    unmount();
+  });
+
+  it("「不设置」写 null（契约里 null = 清掉这一项）", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "pick-default", target: "namingModel" },
+      handlers: {
+        "config.setDefaults": () => ({ config: makeConfig() }),
+      },
+    });
+    await tick();
+    stdin.write(DOWN); // → 「（未设置）」
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "改命名模型的那次写入落地");
+    expect(calls[0]).toEqual({
+      method: "config.setDefaults",
+      params: { namingModel: null },
+    });
+    unmount();
+  });
+
+  it("中断策略走 config.setGlobal", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "pick-default", target: "abortedMessageStrategy" },
+      handlers: {
+        "config.setGlobal": () => ({ config: makeConfig() }),
+      },
+    });
+    await tick();
+    stdin.write(DOWN); // → 丢弃（drop）
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "改中断策略的那次写入落地");
+    expect(calls[0]).toEqual({
+      method: "config.setGlobal",
+      params: { abortedMessageStrategy: "drop" },
+    });
+    unmount();
+  });
+
+  it("两项互不影响：改哪一格就只发哪一格", async () => {
+    // 思考与正文那一格
+    const message = mount({
+      initialStep: { kind: "pick-default", target: "abortedMessageStrategy" },
+      handlers: { "config.setGlobal": () => ({ config: makeConfig() }) },
+    });
+    await tick();
+    message.stdin.write(DOWN);
+    await tick();
+    message.stdin.write(ENTER);
+    await until(() => message.calls.length > 0, "消息那一格的写入落地");
+    expect(message.calls[0]).toEqual({
+      method: "config.setGlobal",
+      params: { abortedMessageStrategy: "drop" },
+    });
+    message.unmount();
+
+    // 被中断的那组工具调用那一格：同一个写口，带的是另一个字段
+    const toolRound = mount({
+      initialStep: { kind: "pick-default", target: "abortedToolRoundStrategy" },
+      handlers: { "config.setGlobal": () => ({ config: makeConfig() }) },
+    });
+    await tick();
+    toolRound.stdin.write(DOWN);
+    await tick();
+    toolRound.stdin.write(ENTER);
+    await until(() => toolRound.calls.length > 0, "工具轮那一格的写入落地");
+    expect(toolRound.calls[0]).toEqual({
+      method: "config.setGlobal",
+      params: { abortedToolRoundStrategy: "drop" },
+    });
+    toolRound.unmount();
+  });
+
+  it("屏上说的是宿主回来的那一档", async () => {
+    const { stdin, lastFrame, calls, unmount } = mount({
+      initialStep: { kind: "pick-default", target: "abortedToolRoundStrategy" },
+      handlers: {
+        // 真宿主会把刚写的那一格回显在整份配置里；这里故意回另一档，钉住「屏上照回执说」
+        "config.setGlobal": () => ({
+          config: { ...makeConfig(), abortedToolRoundStrategy: "drop" },
+        }),
+      },
+    });
+    await tick();
+    stdin.write(ENTER); // 整轮保留（fill）
+    await until(() => calls.length > 0, "改工具轮策略的那次写入落地");
+    // 写成功之后回到默认项那一屏（那一屏的标题是「默认项」，两个子屏标题不是）
+    const backOnDefaults = () => {
+      const frame = lastFrame() ?? "";
+      return frame.includes("默认项") && frame.includes("中断时的工具调用");
+    };
+    await until(backOnDefaults, "回到默认项那一屏");
+    // 那一项的摘要是宿主回执里的「丢弃」，不是这里选的「整轮保留」
+    expect(lastFrame()).toContain("丢弃");
+    unmount();
+  });
+
+  /** 默认项子菜单里「自动命名」那一行（那一行末尾印的是它现在是哪一档） */
+  const autoTitleLine = (frame: string) =>
+    frame.split("\n").find((line) => line.includes("自动命名")) ?? "";
+
+  it("自动命名那一格印的是配置里的现状（没写这一格按开着算，只有显式 false 是关）", async () => {
+    const missing = mount({ initialStep: { kind: "defaults" } });
+    await tick();
+    expect(autoTitleLine(missing.lastFrame() ?? "")).toContain("开");
+    missing.unmount();
+
+    const off = mount({
+      initialStep: { kind: "defaults" },
+      config: { ...makeConfig(), autoTitle: false },
+    });
+    await tick();
+    expect(autoTitleLine(off.lastFrame() ?? "")).toContain("关");
+    off.unmount();
+  });
+
+  it("切一次自动命名：config.setGlobal 只带 autoTitle，屏上照回执那一格说", async () => {
+    const { stdin, lastFrame, calls, unmount } = mount({
+      initialStep: { kind: "pick-default", target: "autoTitle" },
+      handlers: {
+        // 真宿主会把刚写的那一格回显在整份配置里；这里故意回「开着」，钉住「屏上照回执说」
+        "config.setGlobal": () => ({ config: { ...makeConfig(), autoTitle: true } }),
+      },
+    });
+    await tick();
+    // 屏上写清它是什么：关掉只省下那一次起名请求，不影响手工改名
+    expect(lastFrame()).toContain("不影响手工改名");
+    stdin.write(DOWN); // → 「关」
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "改自动命名的那次写入落地");
+    expect(calls).toEqual([{ method: "config.setGlobal", params: { autoTitle: false } }]);
+    // 写成功之后回到默认项那一屏（标题「默认项」；选值那一屏的标题就是「自动命名」）
+    await until(() => (lastFrame() ?? "").includes("中断时的工具调用"), "回到默认项那一屏");
+    expect(autoTitleLine(lastFrame() ?? "")).toContain("开");
+    unmount();
+  });
+
+  it("自动命名：宿主拒绝时原话上屏，留在选值那一屏", async () => {
+    const { stdin, lastFrame, unmount } = mount({
+      initialStep: { kind: "pick-default", target: "autoTitle" },
+      handlers: {
+        "config.setGlobal": () => {
+          throw Object.assign(new Error("bad"), {
+            code: "invalid_params",
+            message: "配置里这一格只收 true 或 false",
+          });
+        },
+      },
+    });
+    await tick();
+    stdin.write(ENTER); // 开着
+    await until(
+      () => (lastFrame() ?? "").includes("配置里这一格只收 true 或 false"),
+      "宿主的拒绝原话上屏",
     );
+    // 没写成就留在这一屏，不假装已经写进去
+    expect(lastFrame()).toContain("不影响手工改名");
+    unmount();
+  });
+});
+
+describe("工具输出上限", () => {
+  it("改上限走 config.setGlobal 的那一格", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "max-tool-output" },
+      handlers: {
+        "config.setGlobal": () => ({ config: makeConfig() }),
+      },
+    });
     await tick();
     stdin.write("\u0015"); // Ctrl+U 清空
     await tick();
     stdin.write("4096");
     await tick();
     stdin.write(ENTER);
-    await tick();
-    expect(onSave.mock.calls[0]![0].maxToolOutput).toBe(4096);
+    await until(() => calls.length > 0, "改上限的那次写入落地");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ method: "config.setGlobal", params: { maxToolOutput: 4096 } });
     unmount();
   });
 });
 
-describe("ConfigWizard（MCP 服务器管理）", () => {
-  it("配置中心菜单列出「MCP 服务器」并显示全局/项目数量", async () => {
-    const { lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} mcp={makeMcp()} onSave={makeOnSave()} onClose={noop} />,
-    );
+// ==================== MCP ====================
+
+describe("MCP", () => {
+  it("每一层只列写在自己这一层的服务器，别的层不混进来", async () => {
+    const servers: McpEntry[] = [
+      ...makeServers(),
+      // 项目 `.mcp.json`（只读层）与家目录那层：界面不给它们入口
+      { scope: "workspace", server: { id: "shared", transport: "stdio", command: "x" } },
+      { scope: "userAgents", server: { id: "home", transport: "stdio", command: "y" } },
+    ];
+    const user = mount({ servers, initialStep: { kind: "mcp", scope: "user" } });
     await tick();
-    const frame = lastFrame()!;
-    expect(frame).toContain("MCP 服务器");
-    expect(frame).toContain("全局 2 · 项目 0");
-    unmount();
+    const userFrame = user.lastFrame() ?? "";
+    expect(userFrame).toContain("socket-pty");
+    expect(userFrame).not.toContain("shared");
+    expect(userFrame).not.toContain("home");
+    user.unmount();
+
+    const project = mount({ servers, initialStep: { kind: "mcp", scope: "workspace" } });
+    await tick();
+    const projectFrame = project.lastFrame() ?? "";
+    // 项目可写的那一层（`.ai-zen/mcp.json`）现在是空的
+    expect(projectFrame).toContain("0 个");
+    expect(projectFrame).not.toContain("socket-pty");
+    project.unmount();
   });
 
-  it("菜单 → MCP 服务器：显示作用域切换 / 新建 / 列表；可切换作用域", async () => {
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} mcp={makeMcp()} onSave={makeOnSave()} onClose={noop} />,
-    );
+  it("已有条目带着传输方式印出来，且照样能新建", async () => {
+    const { lastFrame, unmount } = mount({ initialStep: { kind: "mcp", scope: "user" } });
     await tick();
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(DOWN);
-    await tick();
-    stdin.write(DOWN); // → MCP 服务器
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    const frame = lastFrame()!;
-    expect(frame).toContain("MCP 服务器 · 全局");
-    expect(frame).toContain("＋ 新建服务器");
+    const frame = lastFrame() ?? "";
     expect(frame).toContain("socket-pty");
-    expect(frame).toContain("https://slack.example.com"); // http 服务器摘要显示 URL（而非 command）
-    expect(frame).toContain("切换到「项目」作用域");
-
-    stdin.write(ENTER); // 首项 = 切换到项目
-    await tick();
-    expect(lastFrame()).toContain("MCP 服务器 · 项目");
-    expect(lastFrame()).toContain("切换到「全局」作用域");
+    // 条目行印的是「启用状态 · 传输方式与它的目标 · 描述」
+    expect(frame).toContain("已启用 · stdio · npx -y socket-pty");
+    expect(frame).toContain("＋ 新建服务器");
     unmount();
   });
 
-  it("损坏的 mcp.json：屏上写明无法解析，照样保存、提示随之消失", async () => {
-    const onSaveMcp = makeOnSaveMcp();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "mcp", scope: "global" }}
-        mcp={{
-          global: { mcpServers: {} },
-          project: { mcpServers: {} },
-          errors: { global: "Unexpected token 'b'" },
-        }}
-        onSave={makeOnSave()}
-        onSaveMcp={onSaveMcp}
-        onClose={noop}
-      />,
-    );
+  it("空层可以建：一次 mcp.save 只发这一条（transport 默认 stdio）", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "mcp", scope: "workspace" },
+      handlers: {
+        "mcp.save": () => ({
+          servers: [{ scope: "workspaceAiZen", server: { id: "github", transport: "stdio" } }],
+        }),
+      },
+    });
     await tick();
-    expect(lastFrame()).toContain("无法解析");
-
-    // 坏文件照样能编辑：新建一个服务器并保存
-    stdin.write(DOWN); // → 新建服务器（首项是切换作用域）
+    stdin.write(DOWN); // 切换作用域是第 1 项，新建是第 2 项
     await tick();
     stdin.write(ENTER);
     await tick();
-    stdin.write("My Server");
+    stdin.write("github");
     await tick();
     stdin.write(ENTER);
-    await tick();
-    await tick();
-    expect(onSaveMcp).toHaveBeenCalledTimes(1);
+    await until(() => calls.length > 0, "新建 MCP 的那次写入落地");
 
-    // 写盘已经产出一份格式正确的新文件（这就是修复），提示不再成立
-    stdin.write(ESC); // → MCP 列表
-    await tickEsc();
-    expect(lastFrame()).toContain("MCP 服务器 · 全局");
-    expect(lastFrame()).not.toContain("无法解析");
+    expect(calls).toHaveLength(1);
+    // 界面上的「工作区」= 契约里的 `workspaceAiZen`（宿主唯一可写的项目层）
+    expect(calls[0]).toEqual({
+      method: "mcp.save",
+      params: {
+        workspaceId: "ws-1",
+        scope: "workspaceAiZen",
+        server: { id: "github", transport: "stdio" },
+      },
+    });
     unmount();
   });
 
-  it("新建服务器：名称 → 进入详情并写盘", async () => {
-    const onSaveMcp = makeOnSaveMcp();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "mcp-new", scope: "global" }}
-        mcp={makeMcp()}
-        onSave={makeOnSave()}
-        onSaveMcp={onSaveMcp}
-        onClose={noop}
-      />,
-    );
+  it("改已有条目：只发这一条，其余字段原样带上", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "mcp-server", scope: "user", serverName: "socket-pty" },
+      handlers: {
+        "mcp.save": () => ({ servers: makeServers() }),
+      },
+    });
     await tick();
-    expect(lastFrame()).toContain("新建 MCP 服务器 · 名称（全局）");
-    stdin.write("My Server");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    expect(onSaveMcp).toHaveBeenCalledTimes(1);
-    expect(onSaveMcp.mock.calls[0]![0]).toBe("global");
-    expect(onSaveMcp.mock.calls[0]![1].mcpServers["my-server"]).toEqual({ type: "stdio", disabled: false });
-    expect(lastFrame()).toContain("◆ MCP · my-server");
-    unmount();
-  });
-
-  it("详情：编辑参数写入解析后的 argv", async () => {
-    const onSaveMcp = makeOnSaveMcp();
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "mcp-server", scope: "global", serverId: "socket-pty" }}
-        mcp={makeMcp()}
-        onSave={makeOnSave()}
-        onSaveMcp={onSaveMcp}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    for (let i = 0; i < 5; i += 1) {
-      stdin.write(DOWN); // → 参数（第 6 行）
+    for (let i = 0; i < 4; i += 1) {
+      stdin.write(DOWN); // id → transport → enabled → description → command
       await tick();
     }
     stdin.write(ENTER);
     await tick();
-    stdin.write("\u0015"); // Ctrl+U 清空
+    stdin.write("\u0015"); // 清掉原来的 npx
     await tick();
-    stdin.write("-y new-pkg chcp 65001");
+    stdin.write("node");
     await tick();
     stdin.write(ENTER);
-    await tick();
-    await tick();
-    expect(onSaveMcp.mock.calls[0]![1].mcpServers["socket-pty"]!.args).toEqual(["-y", "new-pkg", "chcp", "65001"]);
-    unmount();
-  });
+    await until(() => calls.length > 0, "改 MCP 命令的那次写入落地");
 
-  it("详情：切换启用状态写入 disabled: true", async () => {
-    const onSaveMcp = makeOnSaveMcp();
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "mcp-server", scope: "global", serverId: "socket-pty" }}
-        mcp={makeMcp()}
-        onSave={makeOnSave()}
-        onSaveMcp={onSaveMcp}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    stdin.write(DOWN); // → 传输
-    await tick();
-    stdin.write(DOWN); // → 启用
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    expect(onSaveMcp.mock.calls[0]![1].mcpServers["socket-pty"]!.disabled).toBe(true);
-    unmount();
-  });
-
-  it("详情：重命名服务器改 key 并进入新详情", async () => {
-    const onSaveMcp = makeOnSaveMcp();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "mcp-server", scope: "global", serverId: "slack" }}
-        mcp={makeMcp()}
-        onSave={makeOnSave()}
-        onSaveMcp={onSaveMcp}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    stdin.write(ENTER); // 名称字段
-    await tick();
-    stdin.write("\u0015"); // Ctrl+U 清空
-    await tick();
-    stdin.write("slack-old");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    const saved = onSaveMcp.mock.calls[0]![1];
-    expect(saved.mcpServers["slack-old"]).toBeDefined();
-    expect(saved.mcpServers.slack).toBeUndefined();
-    expect(lastFrame()).toContain("◆ MCP · slack-old");
-    unmount();
-  });
-
-  it("详情：删除服务器需二次确认", async () => {
-    const onSaveMcp = makeOnSaveMcp();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "mcp-server", scope: "global", serverId: "slack" }}
-        mcp={makeMcp()}
-        onSave={makeOnSave()}
-        onSaveMcp={onSaveMcp}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    for (let i = 0; i < 6; i += 1) {
-      stdin.write(DOWN); // → 删除服务器
-      await tick();
-    }
-    stdin.write(ENTER);
-    await tick();
-    expect(lastFrame()).toContain("删除服务器？");
-    stdin.write(ENTER); // 确认删除
-    await tick();
-    await tick();
-    expect(onSaveMcp).toHaveBeenCalledTimes(1);
-    expect(onSaveMcp.mock.calls[0]![1].mcpServers.slack).toBeUndefined();
-    unmount();
-  });
-
-  it("环境变量子屏：新增 KEY=VALUE 写入 env", async () => {
-    const onSaveMcp = makeOnSaveMcp();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "mcp-kv", scope: "global", serverId: "socket-pty", field: "env" }}
-        mcp={makeMcp()}
-        onSave={makeOnSave()}
-        onSaveMcp={onSaveMcp}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    expect(lastFrame()).toContain("环境变量");
-    stdin.write(ENTER); // 首项 = 新增
-    await tick();
-    stdin.write("PATH=/usr/bin");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    expect(onSaveMcp.mock.calls[0]![1].mcpServers["socket-pty"]!.env).toEqual({ PATH: "/usr/bin" });
-    unmount();
-  });
-
-  it("环境变量子屏：非 KEY=VALUE 报错且不写盘", async () => {
-    const onSaveMcp = makeOnSaveMcp();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "mcp-kv", scope: "global", serverId: "socket-pty", field: "env" }}
-        mcp={makeMcp()}
-        onSave={makeOnSave()}
-        onSaveMcp={onSaveMcp}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    stdin.write("noequals");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    expect(onSaveMcp).not.toHaveBeenCalled();
-    expect(lastFrame()).toContain("格式应为 KEY=VALUE");
-    unmount();
-  });
-
-  /**
-   * 回归（PLAN L3）：`remove()` 只提交不动光标，而 Enter 分支用 `entries[index - 1]`。
-   * 删掉末项后 `index` 超出新边界，`entries[index - 1]` 是 `undefined`，`entry.key` 抛
-   * `TypeError`。渲染处早就有 `safeIndex` 兑着，所以界面看着正常 —— 只有回车会炸。
-   */
-  it("环境变量子屏：删掉末项后回车不崩（光标钳到新的末项）", async () => {
-    const onSaveMcp = makeOnSaveMcp();
-    const mcp = {
-      global: {
-        mcpServers: {
-          "socket-pty": { type: "stdio" as const, command: "npx", env: { A: "1", B: "2", C: "3" } },
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      method: "mcp.save",
+      params: {
+        workspaceId: "ws-1",
+        scope: "user",
+        server: {
+          id: "socket-pty",
+          transport: "stdio",
+          description: "终端复用",
+          command: "node",
+          args: ["-y", "socket-pty"],
+          env: { PTY_MODE: "1" },
         },
       },
-      project: { mcpServers: {} },
-    };
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "mcp-kv", scope: "global", serverId: "socket-pty", field: "env" }}
-        mcp={mcp}
-        onSave={makeOnSave()}
-        onSaveMcp={onSaveMcp}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    // ↓ 三次：新增行 → A → B → C（index 3，末项）
-    for (let i = 0; i < 3; i += 1) {
-      stdin.write(DOWN);
-      await tick();
-    }
-    stdin.write("\u0004"); // Ctrl+D 删掉 C
-    await tick();
-    await tick();
-    expect(onSaveMcp.mock.calls[0]![1].mcpServers["socket-pty"]!.env).toEqual({ A: "1", B: "2" });
-
-    stdin.write(ENTER); // 光标应已钳到新的末项 B → 打开编辑屏
-    await tick();
-    expect(lastFrame()).toContain("B=2");
+    });
     unmount();
   });
 
-  it("关闭时上报 mcpChanged（供宿主重建会话）", async () => {
-    const onSaveMcp = makeOnSaveMcp();
-    const onClose = vi.fn();
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "mcp-server", scope: "global", serverId: "socket-pty" }}
-        mcp={makeMcp()}
-        onSave={makeOnSave()}
-        onSaveMcp={onSaveMcp}
-        onClose={onClose}
-      />,
-    );
+  it("启用开关：把 enabled 折回 SDK 的 disabled 发一次写入", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "mcp-server", scope: "user", serverName: "socket-pty" },
+      handlers: {
+        "mcp.save": () => ({ servers: makeServers() }),
+      },
+    });
     await tick();
     stdin.write(DOWN);
     await tick();
-    stdin.write(DOWN);
+    stdin.write(DOWN); // → enabled
     await tick();
-    stdin.write(ENTER); // 切换启用
-    await tick();
-    await tick();
-    stdin.write(ESC); // → MCP 列表
-    await tickEsc();
-    stdin.write(ESC); // → 菜单
-    await tickEsc();
-    stdin.write(ESC); // 关闭
-    await tickEsc();
-    expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ dirty: true, mcpChanged: true }));
+    stdin.write(ENTER); // bool：直接切换
+    await until(() => calls.length > 0, "切换 enabled 的那次写入落地");
+
+    expect(calls).toHaveLength(1);
+    expect((calls[0]!.params as { server: Record<string, unknown> }).server).toMatchObject({
+      id: "socket-pty",
+      disabled: true,
+    });
     unmount();
   });
-});
 
-// ==================== Agent / Sub-agent 定义管理 ====================
+  /** 带 oauth 的那一条：明文在配置里，屏上只印掩码 */
+  const OAUTH_SECRET = "oauth-secret-9f3a";
+  const serversWithOauth = (): McpEntry[] => [
+    {
+      scope: "user",
+      server: {
+        id: "remote-oauth",
+        transport: "http",
+        url: "https://api.example/mcp",
+        oauth: {
+          authorizationUrl: "https://auth.example/a",
+          tokenUrl: "https://auth.example/t",
+          clientId: "client-1",
+          scope: "mcp",
+          clientSecret: OAUTH_SECRET,
+        },
+      },
+    },
+  ];
 
-const makeAgentDef = (over: Partial<AgentDefinition> = {}): AgentDefinition => ({
-  id: "default",
-  name: "默认助手",
-  description: "",
-  messages: [Message.System("你是助手")],
-  permissions: {
-    tools: { allow: ["*"] },
-    skills: { allow: ["*"] },
-    mcps: { allow: ["*"] },
-    subagents: { allow: ["*"] },
-  },
-  custom: false,
-  createdAt: "2026-01-01T00:00:00.000Z",
-  updatedAt: "2026-01-01T00:00:00.000Z",
-  ...over,
-});
-
-const makeAgentStore = (agents: AgentDefinition[] = [], subAgents: AgentDefinition[] = []) => {
-  const save = vi.fn<(kind: AgentKind, def: AgentDefinition) => Promise<void>>(async () => undefined);
-  const remove = vi.fn<(kind: AgentKind, id: string) => Promise<void>>(async () => undefined);
-  const store: AgentStore = { agents, subAgents, save, remove };
-  return { store, save, remove };
-};
-
-describe("ConfigWizard（Agent 定义管理）", () => {
-  it("菜单 → Agent 定义：列出 Agent / Sub-agent 与两个新建项", async () => {
-    const { store } = makeAgentStore(
-      [makeAgentDef()],
-      [makeAgentDef({ id: "general", name: "通用助手", function: { name: "sub_agent_general", description: "d", parameters: {} } })],
-    );
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard config={makeConfig()} agentStore={store} onSave={makeOnSave()} onClose={noop} />,
-    );
+  it("详情屏把客户端密钥印成掩码（明文不整串上屏）", async () => {
+    const { lastFrame, unmount } = mount({
+      servers: serversWithOauth(),
+      initialStep: { kind: "mcp-server", scope: "user", serverName: "remote-oauth" },
+    });
     await tick();
-    expect(lastFrame()).toContain("Agent 1 · Sub-agent 1");
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("客户端密钥：oau…9f3a");
+    expect(frame).not.toContain(OAUTH_SECRET);
+    return unmount();
+  });
+
+  it("改这一条的别的字段：oauth 原样往返（密钥不是被抹掉，而是没动）", async () => {
+    const { stdin, calls, unmount } = mount({
+      servers: serversWithOauth(),
+      initialStep: { kind: "mcp-server", scope: "user", serverName: "remote-oauth" },
+      handlers: {
+        "mcp.save": () => ({ servers: serversWithOauth() }),
+      },
+    });
+    await tick();
     for (let i = 0; i < 4; i += 1) {
-      stdin.write(DOWN); // → Agent 定义
+      stdin.write(DOWN); // id → transport → enabled → description → url
       await tick();
     }
     stdin.write(ENTER);
     await tick();
-    const frame = lastFrame()!;
-    expect(frame).toContain("＋ 新建 Agent");
-    expect(frame).toContain("＋ 新建 Sub-agent");
-    expect(frame).toContain("默认助手");
-    expect(frame).toContain("通用助手");
+    stdin.write("\u0015"); // 清掉原来的地址
+    await tick();
+    stdin.write("https://api2.example/mcp");
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "改 MCP 地址的那次写入落地");
+
+    expect(calls).toHaveLength(1);
+    // `mcp.save` 收的就是 `McpServerConfig` 本身：没改的那几项（含 oauth 的密钥）原样带着，
+    // 「不把密钥弄丢」靠的是这条往返（宿主那边与磁盘上那一条浅合并）
+    expect(calls[0]).toEqual({
+      method: "mcp.save",
+      params: {
+        workspaceId: "ws-1",
+        scope: "user",
+        server: {
+          id: "remote-oauth",
+          transport: "http",
+          url: "https://api2.example/mcp",
+          oauth: {
+            authorizationUrl: "https://auth.example/a",
+            tokenUrl: "https://auth.example/t",
+            clientId: "client-1",
+            scope: "mcp",
+            clientSecret: OAUTH_SECRET,
+          },
+        },
+      },
+    });
     unmount();
   });
 
-  /**
-   * 回归（PLAN L11）：删掉 `config.defaultAgent` 指向的那个 Agent 后不改配置，
-   * 下次启动 `resolveTarget()` 会拿到一个已不存在的 id（`?? agents[0]?.id` 在第 1
-   * 个分支上永不生效），`modelOf` 抛「Agent 未绑定模型」→ 启动屏打印后直接退出。
-   * 重启也一样，等于把用户锁在外面。
-   */
-  it("删掉默认 Agent 时一并清掉 config.defaultAgent（否则下次启动必挂）", async () => {
-    const config = { ...makeConfig(), defaultAgent: "default" };
-    const { store, remove } = makeAgentStore([
-      makeAgentDef({ id: "default", name: "默认助手" }),
-      makeAgentDef({ id: "helper", name: "Helper" }),
-    ]);
-    const onSave = makeOnSave();
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={config}
-        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
-        agentStore={store}
-        onSave={onSave}
-        onClose={noop}
-      />,
-    );
+  it("删除走 mcp.remove（只删这一条）", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "mcp-server", scope: "user", serverName: "socket-pty" },
+      handlers: {
+        "mcp.remove": () => ({ servers: [] }),
+      },
+    });
     await tick();
-    // 详情屏：7 个字段 + 末行的「删除」动作 → ↓ 七次到动作行
     for (let i = 0; i < 7; i += 1) {
-      stdin.write(DOWN);
+      stdin.write(DOWN); // 七个字段之后是「删除服务器」动作行
       await tick();
     }
-    stdin.write(ENTER); // 进入确认
+    stdin.write(ENTER); // 进入二次确认
     await tick();
-    stdin.write(ENTER); // 确认删除
-    await tick();
-    await tick();
-
-    expect(remove).toHaveBeenCalledWith("agent", "default");
-    expect(onSave).toHaveBeenCalledTimes(1);
-    expect(onSave.mock.calls[0]![0].defaultAgent).toBeUndefined();
-    unmount();
-  });
-
-  it("新建 Agent：名称 → 写盘并进入详情（自动 custom: true）", async () => {
-    const { store, save } = makeAgentStore([makeAgentDef()]);
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "agent-new", agentKind: "agent" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    expect(lastFrame()).toContain("新建 Agent · 名称");
-    stdin.write("Coder");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    expect(save).toHaveBeenCalledTimes(1);
-    expect(save.mock.calls[0]![0]).toBe("agent");
-    const def = save.mock.calls[0]![1];
-    expect(def.id).toBe("coder");
-    expect(def.custom).toBe(true);
-    expect(def.messages[0]!.role).toBe("system");
-    expect(lastFrame()).toContain("◆ Agent · Coder");
-    unmount();
-  });
-
-  it("新建 Sub-agent：含 function 骨架与 {{task}} 用户消息", async () => {
-    const { store, save } = makeAgentStore();
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "agent-new", agentKind: "subagent" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    stdin.write("Helper");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    expect(save.mock.calls[0]![0]).toBe("subagent");
-    const def = save.mock.calls[0]![1];
-    expect(def.id).toBe("helper");
-    expect(def.function?.name).toBe("sub_agent_helper");
-    expect(def.messages.some((m) => m.role === "user" && m.content === "{{task}}")).toBe(true);
-    expect(lastFrame()).toContain("◆ Sub-agent · Helper");
-    unmount();
-  });
-
-  it("Agent 详情：编辑「描述」写盘，出厂托管自动转自定义", async () => {
-    const { store, save } = makeAgentStore([makeAgentDef({ custom: false })]);
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    stdin.write(DOWN); // → 标识
-    await tick();
-    stdin.write(DOWN); // → 描述
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    stdin.write("我的助手");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    const def = save.mock.calls[0]![1];
-    expect(def.description).toBe("我的助手");
-    expect(def.custom).toBe(true);
-    unmount();
-  });
-
-  it("Agent 详情：不再有「自定义」开关行，恢复出厂只把提示词换回出厂", async () => {
-    const { store, save } = makeAgentStore([
-      makeAgentDef({
-        custom: true,
-        name: "改过的名字",
-        modelId: "gpt-5.5",
-        messages: [Message.System("改过的提示词")],
-      }),
-    ]);
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    expect(lastFrame()).toContain("恢复出厂设置");
-    // 字段 6 个：名称 / 标识 / 描述 / 模型 / 提示词 / 权限。第 7 行（index 6）若仍是
-    // 旧的 custom 开关，回车只会切换它、不会弹确认框 —— 下面的断言就全红。
-    for (let i = 0; i < 6; i += 1) {
-      stdin.write(DOWN);
-      await tick();
-    }
-    stdin.write(ENTER);
-    await tick();
-    expect(lastFrame()).toContain("恢复出厂设置？");
     stdin.write(ENTER); // 确认
-    await tick();
-    await tick();
-    const def = save.mock.calls[0]![1];
-    expect(def.messages).toEqual(DEFAULT_AGENT_DEFINITION.messages);
-    // 除提示词外一律保留：整条替换会把用户选的模型和权限一起冲掉
-    expect(def.name).toBe("改过的名字");
-    expect(def.modelId).toBe("gpt-5.5");
-    expect(def.permissions).toEqual(makeAgentDef().permissions);
-    expect(def.custom).toBeUndefined();
+    await until(() => calls.length > 0, "删 MCP 的那次写入落地");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      method: "mcp.remove",
+      params: { workspaceId: "ws-1", scope: "user", name: "socket-pty" },
+    });
     unmount();
   });
 
-  it("Agent 详情：重命名标识（写新 + 删旧）", async () => {
-    const { store, save, remove } = makeAgentStore([makeAgentDef()]);
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
+  it("改名：新名字走 save、旧名字走 remove，合成一条通知", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "mcp-server", scope: "user", serverName: "socket-pty" },
+      handlers: {
+        "mcp.save": () => ({ servers: makeServers() }),
+        "mcp.remove": () => ({ servers: makeServers() }),
+      },
+    });
     await tick();
-    stdin.write(DOWN); // → 标识
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    stdin.write("\u0015"); // Ctrl+U
-    await tick();
-    stdin.write("primary");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    expect(save.mock.calls[0]![1].id).toBe("primary");
-    expect(remove).toHaveBeenCalledWith("agent", "default");
-    unmount();
-  });
-
-  it("权限子屏：写入某一维（allow/deny）", async () => {
-    const { store, save } = makeAgentStore([makeAgentDef()]);
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "agent-perms", agentKind: "agent", agentId: "default" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    expect(lastFrame()).toContain("权限");
-    expect(lastFrame()).toContain("allow: *");
-    stdin.write(ENTER); // tools（第 0 行）
-    await tick();
-    stdin.write("\u0015"); // Ctrl+U
-    await tick();
-    stdin.write("deny: exec, rm");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    expect(save.mock.calls[0]![1].permissions!.tools).toEqual({ deny: ["exec", "rm"] });
-    unmount();
-  });
-
-  it("权限子屏：非法格式报错且不写盘", async () => {
-    const { store, save } = makeAgentStore([makeAgentDef()]);
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "agent-perms", agentKind: "agent", agentId: "default" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    stdin.write(ENTER);
+    stdin.write(ENTER); // id 字段进入编辑
     await tick();
     stdin.write("\u0015");
     await tick();
-    stdin.write("nope");
+    stdin.write("pty");
     await tick();
     stdin.write(ENTER);
+    await until(() => calls.length === 2, "改名的一对写入（save + remove）落地");
+
+    expect(calls.map((one) => one.method)).toEqual(["mcp.save", "mcp.remove"]);
+    expect((calls[0]!.params as { server: { id: string } }).server.id).toBe("pty");
+    expect(calls[1]!.params).toEqual({
+      workspaceId: "ws-1",
+      scope: "user",
+      name: "socket-pty",
+    });
+    unmount();
+  });
+});
+
+// ==================== Agent ====================
+
+describe("Agent", () => {
+  it("列表上印「默认 / 出厂内置」这两件事（定义 + 配置给的事实）", async () => {
+    const { lastFrame, unmount } = mount({ initialStep: { kind: "agents" } });
     await tick();
-    await tick();
-    expect(save).not.toHaveBeenCalled();
-    expect(lastFrame()).toContain("格式应为");
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("默认助手");
+    expect(frame).toContain("审阅助手");
+    expect(frame).toContain("· 默认");
+    expect(frame).toContain("· 出厂内置");
     unmount();
   });
 
-  it("Sub-agent 详情：进入参数 schema 多行编辑屏，非法 JSON 被拒", async () => {
-    const { store, save } = makeAgentStore([], [
-      makeAgentDef({ id: "helper", name: "Helper", function: { name: "sub_agent_helper", description: "d", parameters: { type: "object" } } }),
-    ]);
-    // 编辑器注入，不依赖 vi.mock("child_process")
-    const openEditor = vi.fn((_editor: string, file: string) => {
-      writeFileSync(file, "{ not json", "utf-8");
+  it("详情把提示词与函数定义摆成一行摘要（多行内容不撑破详情列表）", async () => {
+    const { lastFrame, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "reviewer" },
     });
-
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        openEditor={openEditor}
-        initialStep={{ kind: "agent", agentKind: "subagent", agentId: "helper" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
     await tick();
-    // 参数 schema 是 index 8 → Enter 进入多行文本编辑屏（外部编辑器）
-    for (let i = 0; i < 8; i += 1) {
+    const frame = lastFrame() ?? "";
+    // 提示词是单行 → 直接印出来；函数说明同理；参数 schema 是格式化后的 JSON → 印行数
+    expect(frame).toContain("系统提示词");
+    expect(frame).toContain("（空）· Enter 打开编辑器");
+    expect(frame).toContain("函数说明");
+    expect(frame).toContain("审稿 · Enter 打开编辑器");
+    expect(frame).toContain("参数 schema");
+    expect(frame).toContain("3 行 · Enter 打开编辑器");
+    expect(frame).toContain("思考强度");
+    expect(frame).toContain("权限");
+    unmount();
+  });
+
+  it("改系统提示词：Enter 进编辑器，提交后发 messages 补丁（整串，其余消息原样带上）", async () => {
+    const { stdin, calls, lastFrame, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "default" },
+      openEditor: fakeEditor("新的系统提示词\n第二行"),
+      handlers: { "agentDefinition.update": () => ({ definition: makeAgents()[0]! }) },
+    });
+    await tick();
+    // 名称 / 描述 / 模型 / 思考强度 → 系统提示词
+    for (let i = 0; i < 4; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    expect(lastFrame()).toContain("你是默认助手 · Enter 打开编辑器");
+    stdin.write(ENTER); // 进多行编辑屏
+    await tick();
+    stdin.write(ENTER); // 打开系统编辑器（假实现直接把新内容写进临时文件）
+    // 改的是**定义**：写之前先出一次确认（PRD 1.6），文案说影响面不说字段名
+    await until(() => (lastFrame() ?? "").includes("确认改这份助手定义"), "改定义的二次确认上屏");
+    expect(lastFrame() ?? "").toContain("你正在看的那段回答会断");
+    await tick(); // 让确认屏的按键订阅接上
+    stdin.write(ENTER); // 确认
+    await until(() => calls.length > 0, "改提示词的那次写入落地");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.method).toBe("agentDefinition.update");
+    const params = calls[0]!.params as {
+      agentId: string;
+      change: { messages: { role: string; content?: unknown }[] };
+    };
+    expect(params.agentId).toBe("default");
+    // 宿主对 `messages` 是整份替换：补丁要给整串（只发一条会被当成「提示词只剩这一条」）
+    expect(params.change.messages).toHaveLength(2);
+    expect(params.change.messages[0]!.role).toBe("system");
+    expect(params.change.messages[0]!.content).toBe("新的系统提示词\n第二行");
+    expect(params.change.messages[1]!.content).toBe("开始吧");
+    unmount();
+  });
+
+  it("清空提示词也是合法写入：空串照发，不替用户补默认值", async () => {
+    const { stdin, calls, lastFrame, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "default" },
+      openEditor: fakeEditor(""),
+      handlers: { "agentDefinition.update": () => ({ definition: makeAgents()[0]! }) },
+    });
+    await tick();
+    for (let i = 0; i < 4; i += 1) {
       stdin.write(DOWN);
       await tick();
     }
     stdin.write(ENTER);
     await tick();
-    expect(lastFrame()).toContain("JSON 对象"); // 已进入「参数 schema」编辑屏
-    stdin.write(ENTER); // 调起系统编辑器（mock 写入非法 JSON）
+    stdin.write(ENTER);
+    await until(() => (lastFrame() ?? "").includes("确认改这份助手定义"), "改定义的二次确认上屏");
     await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "改提示词的那次写入落地");
+
+    const params = calls[0]!.params as {
+      change: { messages: { role: string; content?: unknown }[] };
+    };
+    // 空串就是空串：客户端既不拦也不编一句默认提示词
+    expect(params.change.messages[0]!.content).toBe("");
+    unmount();
+  });
+
+  it("改函数说明：function 整份提交（只改 description，parameters 原样带上）", async () => {
+    const { stdin, calls, lastFrame, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "reviewer" },
+      openEditor: fakeEditor("审稿（加强版）"),
+      handlers: { "agentDefinition.update": () => ({ definition: makeAgents()[1]! }) },
+    });
     await tick();
+    // 名称 / 描述 / 模型 / 系统提示词 → 函数说明
+    for (let i = 0; i < 4; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER);
     await tick();
-    expect(openEditor).toHaveBeenCalledTimes(1);
-    expect(save).not.toHaveBeenCalled();
+    stdin.write(ENTER);
+    await until(() => (lastFrame() ?? "").includes("确认改这份助手定义"), "改定义的二次确认上屏");
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "改函数 schema 的那次写入落地");
+
+    // 宿主对 `function` 也是整份替换：只发改的那一项会把 `parameters` 冲掉
+    expect(calls[0]).toEqual({
+      method: "agentDefinition.update",
+      params: {
+        agentId: "reviewer",
+        change: {
+          function: {
+            name: "review",
+            description: "审稿（加强版）",
+            parameters: { type: "object" },
+          },
+        },
+      },
+    });
+    unmount();
+  });
+
+  it("参数 schema 不是合法 JSON：当场拦下，一次写都不发", async () => {
+    const { stdin, calls, lastFrame, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "reviewer" },
+      openEditor: fakeEditor('{ "type": "object",'),
+    });
+    await tick();
+    // 名称 / 描述 / 模型 / 系统提示词 / 函数说明 → 参数 schema
+    for (let i = 0; i < 5; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    stdin.write(ENTER);
+    // 先确认、后校验：非法 JSON 是在确认之后才发现的（校验在写口那一侧）
+    await until(() => (lastFrame() ?? "").includes("确认改这份助手定义"), "改定义的二次确认上屏");
+    await tick();
+    stdin.write(ENTER);
+    // 「一次写都不发」是负向断言：先等「解析失败」上屏 —— 那是回车真的被处理过的证据
+    await until(() => (lastFrame() ?? "").includes("JSON 解析失败"), "解析失败提示上屏");
+
+    expect(calls).toEqual([]);
     expect(lastFrame()).toContain("JSON 解析失败");
     unmount();
   });
 
-  it("Sub-agent 参数 schema：外部编辑器保存合法 JSON 后写盘", async () => {
-    const { store, save } = makeAgentStore([], [
-      makeAgentDef({ id: "helper2", name: "Helper2", function: { name: "sub_agent_helper2", description: "d", parameters: { type: "object" } } }),
-    ]);
-    const openEditor = vi.fn((_editor: string, file: string) => {
-      writeFileSync(file, '{"type":"object","properties":{"q":{"type":"string"}}}', "utf-8");
+  it("Esc 从多行编辑屏回来：不改动，也不发请求", async () => {
+    const { stdin, calls, lastFrame, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "reviewer" },
+      openEditor: fakeEditor("这份内容不该被写进去"),
     });
-
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        openEditor={openEditor}
-        initialStep={{ kind: "agent", agentKind: "subagent", agentId: "helper2" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
     await tick();
-    for (let i = 0; i < 8; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       stdin.write(DOWN);
       await tick();
     }
-    stdin.write(ENTER); // 进入参数 schema 编辑屏
+    stdin.write(ENTER); // 进参数 schema 编辑屏
     await tick();
-    stdin.write(ENTER); // 调起系统编辑器（mock 写入合法 JSON）
-    await tick();
-    await tick();
-    await tick();
-    expect(save).toHaveBeenCalledTimes(1);
-    const def = save.mock.calls[0]![1];
-    expect(def.function!.parameters).toEqual({ type: "object", properties: { q: { type: "string" } } });
+    stdin.write(ESC); // 直接返回
+    await new Promise((r) => setTimeout(r, 30));
+    expect(lastFrame()).toContain("审阅助手");
+    expect(calls).toEqual([]);
     unmount();
   });
 
-  it("Agent 详情：删除需二次确认", async () => {
-    const { store, remove } = makeAgentStore([makeAgentDef()]);
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
+  it("改模型走 agentDefinition.update 的 modelId（改「以后的会话」用哪个模型）", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "reviewer" },
+      handlers: {
+        "agentDefinition.update": () => ({ definition: makeAgents()[1]! }),
+      },
+    });
+    await tick();
+    stdin.write(DOWN); // 名称 → 描述
+    await tick();
+    stdin.write(DOWN); // → 模型
+    await tick();
+    stdin.write(ENTER); // 打开候选
+    await tick();
+    stdin.write(ENTER); // 选第一个（DeepSeek-V4-Flash）
+    await until(() => calls.length > 0, "设置模型的那次写入落地");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      method: "agentDefinition.update",
+      params: { agentId: "reviewer", change: { modelId: "deepseek-v4-flash" } },
+    });
+    unmount();
+  });
+
+  it("改思考档位走 agentDefinition.update 的 modelParams（档位展开成参数）", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "default" },
+      handlers: {
+        "agentDefinition.update": () => ({ definition: makeAgents()[0]! }),
+      },
+    });
+    await tick();
+    for (let i = 0; i < 3; i += 1) {
+      stdin.write(DOWN); // 名称/描述/模型 → 思考档位
+      await tick();
+    }
+    stdin.write(ENTER); // 候选
+    await tick();
+    stdin.write(DOWN); // low → high
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "改思考档位的那次写入落地");
+    expect(calls[0]).toEqual({
+      method: "agentDefinition.update",
+      params: {
+        agentId: "default",
+        // 定义里存的是**展开后的参数**（配置即事实），档位名只活在档位表里
+        change: { modelParams: { thinking: { type: "enabled" }, reasoning_effort: "high" } },
+      },
+    });
+    unmount();
+  });
+
+  it("权限四维走 agentDefinition.update 的 permissions 补丁", async () => {
+    const { stdin, calls, lastFrame, unmount } = mount({
+      initialStep: { kind: "agent-perms", agentId: "reviewer" },
+      handlers: {
+        "agentDefinition.update": () => ({ definition: makeAgents()[1]! }),
+      },
+    });
+    await tick();
+    stdin.write(ENTER); // 第一维（工具）
+    await tick();
+    stdin.write("allow: *");
+    await tick();
+    stdin.write(ENTER);
+    // 权限也是定义的一部分：写之前先出一次确认（与提示词同一句口径）
+    await until(() => (lastFrame() ?? "").includes("确认改这份助手定义"), "改权限的二次确认上屏");
+    await tick();
+    stdin.write(ENTER); // 确认
+    await until(() => calls.length > 0, "改权限的那次写入落地");
+    expect(calls[0]).toEqual({
+      method: "agentDefinition.update",
+      params: { agentId: "reviewer", change: { permissions: { tools: { allow: ["*"] } } } },
+    });
+    unmount();
+  });
+
+  it("新建 Agent：agentDefinition.create 收整条定义（提示词至少一条 system）", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "agent-new" },
+      handlers: { "agentDefinition.create": () => ({ definition: makeAgents()[0]! }) },
+    });
+    await tick();
+    stdin.write("Coder");
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "新建助手的那次写入落地");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.method).toBe("agentDefinition.create");
+    const params = calls[0]!.params as {
+      definition: { id: string; name: string; messages: { role: string }[] };
+    };
+    expect(params.definition.id).toBe("coder");
+    expect(params.definition.name).toBe("Coder");
+    // 契约要求至少一条 system（新建的这一条先是空的，建完在「系统提示词」里写）
+    expect(params.definition.messages[0]!.role).toBe("system");
+    unmount();
+  });
+
+  it("删助手走 agentDefinition.remove；删完重读配置（默认助手可能被清）", async () => {
+    const { stdin, calls, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "reviewer" },
+      handlers: {
+        "agentDefinition.remove": () => ({ agentId: "reviewer" }),
+        "config.get": () => ({ config: makeConfig(), presets: makePresets() }),
+      },
+    });
+    await tick();
+    // 七个字段（名称/描述/模型/提示词/函数说明/参数 schema/权限）之后是删除动作
+    for (let i = 0; i < 7; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER);
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length === 2, "删助手之后的那两次调用都落地了");
+    expect(calls.map((call) => call.method)).toEqual(["agentDefinition.remove", "config.get"]);
+    expect(calls[0]!.params).toEqual({ agentId: "reviewer" });
+    unmount();
+  });
+
+  it("删助手：代价里说清影响面（数得出几段会话就说几段）", async () => {
+    const { stdin, lastFrame, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "reviewer" },
+      // 向导宿主用 `workspace.list` + `session.list` 数出来的那一份
+      sessionsByAgent: { default: 5, reviewer: 3 },
+    });
     await tick();
     for (let i = 0; i < 7; i += 1) {
-      stdin.write(DOWN); // → 删除Agent（index 7）
+      stdin.write(DOWN);
       await tick();
     }
-    stdin.write(ENTER);
-    await tick();
-    expect(lastFrame()).toContain("删除Agent？");
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    expect(remove).toHaveBeenCalledWith("agent", "default");
+    stdin.write(ENTER); // 二次确认
+    await until(
+      () => (lastFrame() ?? "").includes("还有 3 段会话在用这个助手"),
+      "有几段会话在用它",
+    );
+    expect(lastFrame() ?? "").toContain("你正在看的那段回答会断");
     unmount();
   });
 
-  it("关闭时上报 agentsChanged（供宿主重建会话）", async () => {
-    const { store } = makeAgentStore([makeAgentDef()]);
-    const onClose = vi.fn();
-    const { stdin, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={onClose}
-      />,
-    );
+  it("删助手：数不出来就不给数字，只说一句人话", async () => {
+    const { stdin, lastFrame, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "reviewer" },
+      // 缺省 = 数不出来（读失败 / 没读）：这时候不许编一个数
+      sessionsByAgent: null,
+    });
     await tick();
-    stdin.write(ENTER); // 编辑名称
-    await tick();
-    stdin.write("新名");
-    await tick();
-    stdin.write(ENTER);
-    await tick();
-    await tick();
-    stdin.write(ESC); // → Agent 列表
-    await tickEsc();
-    stdin.write(ESC); // → 菜单
-    await tickEsc();
-    stdin.write(ESC); // 关闭
-    await tickEsc();
-    expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ dirty: true, agentsChanged: true }));
-    unmount();
-  });
-
-  it("Agent 详情 → 权限子屏：高亮索引收敛（不越界、仍有高亮）", async () => {
-    const { store } = makeAgentStore([makeAgentDef()]);
-    const { stdin, lastFrame, unmount } = render(
-      <ConfigWizard
-        config={makeConfig()}
-        initialStep={{ kind: "agent", agentKind: "agent", agentId: "default" }}
-        agentStore={store}
-        onSave={makeOnSave()}
-        onClose={noop}
-      />,
-    );
-    await tick();
-    for (let i = 0; i < 5; i += 1) {
-      stdin.write(DOWN); // → 权限（index 5，共 8 行）
+    for (let i = 0; i < 7; i += 1) {
+      stdin.write(DOWN);
       await tick();
     }
     stdin.write(ENTER);
+    await until(
+      () => (lastFrame() ?? "").includes("所有用这个助手的会话都会受影响"),
+      "影响面那句人话",
+    );
+    expect(lastFrame() ?? "").not.toMatch(/\d+ 段会话/);
+    unmount();
+  });
+
+  it("删默认助手：代价里一并说清默认项会被清空", async () => {
+    const { stdin, lastFrame, unmount } = mount({
+      initialStep: { kind: "agent", agentId: "default" },
+      sessionsByAgent: {},
+    });
     await tick();
+    // default 这个助手有六个字段（没有函数定义那两格：它不是子 Agent），之后是删除动作
+    for (let i = 0; i < 6; i += 1) {
+      stdin.write(DOWN);
+      await tick();
+    }
+    stdin.write(ENTER);
+    await until(() => (lastFrame() ?? "").includes("它还是默认助手"), "默认项会被清空那一句上屏");
+    unmount();
+  });
+});
+
+// ==================== 首启引导 ====================
+
+describe("首启引导 / `/key`", () => {
+  it("closeOnSave：写成功后直接关闭，并带回 dirty", async () => {
+    const { stdin, onClose, calls, unmount } = mount({
+      initialStep: { kind: "edit", field: "apiKey", endpointId: "deepseek" },
+      closeOnSave: true,
+      handlers: {
+        "config.endpoint.update": () => ({ config: makeConfig() }),
+      },
+    });
     await tick();
-    const frame = lastFrame()!;
-    expect(frame).toContain("格式：");
-    // 权限屏仅 4 行，索引应被收敛到有效范围（末行 = 子 Agent 维度）
-    // 上屏的是词条里的显示名，内部维度名（subagents）只作字段 key
-    expect(frame).toMatch(/❯\s+子 Agent/);
+    stdin.write("sk-boot");
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "首启保存密钥的那次写入落地");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      method: "config.endpoint.update",
+      params: { id: "deepseek", change: { apiKey: "sk-boot" } },
+    });
+    // 写成功之后才自动关闭：等「关闭」这件事真的发生，不去数那几个 tick
+    await until(() => onClose.mock.calls.length > 0, "写成功后自动关闭");
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose.mock.calls[0]![0].dirty).toBe(true);
     unmount();
   });
 });

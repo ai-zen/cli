@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { packSegments, segmentsWidth, wrapSegments, type StatusSegment } from "./status-segments.js";
+import {
+  packSegments,
+  segmentsWidth,
+  wrapSegments,
+  type StatusSegment,
+} from "./status-segments.js";
 import { displayWidth } from "./text.js";
 
 /** 把折行结果还原成纯文本，便于断言 */

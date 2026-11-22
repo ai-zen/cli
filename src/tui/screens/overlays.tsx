@@ -1,11 +1,10 @@
-// 由 src/tui/screens.tsx 拆分而来 —— 选择覆盖层 / 确认框
-import { useState } from "react";
+// 选择覆盖层（选择器：/load、/back、/model、/agent、交接方式、问题对象…）
 import { Box, Text, useInput } from "ink";
 import { theme } from "../theme.js";
 import { SelectList, KeyHints, SelectItem } from "../components.js";
 import { t } from "../../i18n/index.js";
 
-// ==================== 选择覆盖层（/back）====================
+// ==================== 选择覆盖层 ====================
 
 export function PickerOverlay({
   title,
@@ -25,50 +24,34 @@ export function PickerOverlay({
     if (key.escape || (key.ctrl && input === "c")) onPick(null);
   });
   return (
-    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.border} paddingX={2}>
-      <Text color={theme.warn} wrap="truncate">? {title}</Text>
+    <Box
+      flexDirection="column"
+      marginTop={1}
+      borderStyle="round"
+      borderColor={theme.border}
+      paddingX={2}
+    >
+      {/*
+        标题**折行**而不裁切：有一类选择器是「破坏性动作之前的那一问」（`/shutdown`、`/upgrade`、
+        `/delete`），它要说的是代价 —— 裁掉后半截等于少说一个事实，用户在 80 列的终端上会把
+        「其他客户端也会断开」这种话正好切掉。条目仍然单行（`fitItem` 那条规矩不变：列表高度
+        是按行数算的），折行的只有这一句问题本身。
+      */}
+      <Text color={theme.warn} wrap="wrap">
+        ? {title}
+      </Text>
       <Box marginTop={1}>
         <SelectList items={items} columns={columns} onSelect={(v) => onPick(v)} />
       </Box>
       <Box marginTop={1}>
-        <KeyHints hints={[["↑ ↓", t("ui.select")], ["Enter", t("ui.confirm")], ["Esc", t("ui.cancel")]]} />
+        <KeyHints
+          hints={[
+            ["↑ ↓", t("ui.select")],
+            ["Enter", t("ui.confirm")],
+            ["Esc", t("ui.cancel")],
+          ]}
+        />
       </Box>
     </Box>
   );
 }
-
-// ==================== 确认框 ====================
-
-export function Confirm({
-  question,
-  onAnswer,
-}: {
-  question: string;
-  onAnswer: (value: boolean) => void;
-}) {
-  const [yes, setYes] = useState(true);
-  useInput((input, key) => {
-    if (key.ctrl && input === "c") onAnswer(false);
-    else if (key.leftArrow || key.rightArrow) setYes((v) => !v);
-    else if (input === "y" || input === "Y") onAnswer(true);
-    else if (input === "n" || input === "N") onAnswer(false);
-    else if (key.return) onAnswer(yes);
-    else if (key.escape) onAnswer(false);
-  });
-
-  return (
-    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.border} paddingX={2}>
-      <Text color={theme.warn} wrap="truncate">? {question}</Text>
-      <Box marginTop={1} gap={2}>
-        <Text inverse={yes} color={yes ? theme.ok : theme.dim}>
-          {` ${t("common.yes")} `}
-        </Text>
-        <Text inverse={!yes} color={!yes ? theme.error : theme.dim}>
-          {` ${t("common.no")} `}
-        </Text>
-        <Text color={theme.faint} wrap="truncate">{t("confirm.hint")}</Text>
-      </Box>
-    </Box>
-  );
-}
-

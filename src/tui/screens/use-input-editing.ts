@@ -1,8 +1,8 @@
 // 输入编辑 —— 草稿文本与光标、历史、kill ring、撤销栈、暂存区的唯一实现
 //
-// 从 `chat.tsx` 抽出来的理由：这一整块（`input` / `cursor` / `history` / kill ring /
-// undo / stash + 20 个编辑动作）是**纯编辑器语义**，与「对话屏」毫无关系，却和会话、
-// 向导、渲染挤在同一个组件里 —— 于是既不能单测，也每次都被误认为「对话的一部分」。
+// 单独成模块的理由：这一整块（`input` / `cursor` / `history` / kill ring /
+// undo / stash + 全部编辑动作）是**纯编辑器语义**，与「会话屏」毫无关系 —— 混在会话屏里
+// 时既不能单测，也每次都被误认为「会话的一部分」。
 //
 // 两条贯穿全篇的约定：
 //
@@ -47,8 +47,13 @@ export interface InputEditingDeps {
    * 自带图片；内部再存一份 `string[]` 就只能存文本，`↑` 回到带图消息时图会静默丢失。
    */
   historySource: () => readonly HistoryEntry[];
-  /** 把历史里的附件放回输入区（`↑` 回到带图片的消息时） */
-  restoreImages: (images: readonly ClipboardImage[]) => void;
+  /**
+   * 把历史里的附件放回输入区（`↑` 回到带图的消息时）：内联图片的字节 + 已经传上去的素材 id。
+   *
+   * 两样一起给：只放回字节的话，走素材上传那种图在 `↑` 时静默丢失（PRD 3.9「带图的那条
+   * 连图一起恢复」）。没有附件时两边都是空数组 —— 那不是「没变化」，是「这一条没有图」。
+   */
+  restoreAttachments: (images: readonly ClipboardImage[], assetIds: readonly string[]) => void;
 }
 
 export interface InputEditing {
@@ -101,7 +106,12 @@ export interface InputEditing {
   clearDraft: () => void;
 }
 
-export function useInputEditing({ initialText, notify, historySource, restoreImages }: InputEditingDeps): InputEditing {
+export function useInputEditing({
+  initialText,
+  notify,
+  historySource,
+  restoreAttachments,
+}: InputEditingDeps): InputEditing {
   const [input, setInput] = useState(initialText ?? "");
   const [cursor, setCursor] = useState(graphemes(initialText ?? "").length);
   /** 历史游标：-1 = 不在浏览历史（当前是草稿）；具体内容每次现取 `historySource()` */
@@ -253,7 +263,7 @@ export function useInputEditing({ initialText, notify, historySource, restoreIma
   /** 把一条历史草稿放回输入区：文本 + 附件（`↑` 回到带图消息时图也跟着回来） */
   const recall = (entry: HistoryEntry) => {
     setInputText(entry.text);
-    restoreImages(entry.images);
+    restoreAttachments(entry.images, entry.assetIds);
   };
 
   const historyPrev = () => {
@@ -272,7 +282,7 @@ export function useInputEditing({ initialText, notify, historySource, restoreIma
     if (idx >= entries.length) {
       historyIndex.current = -1;
       setInputText("");
-      restoreImages([]);
+      restoreAttachments([], []);
       return;
     }
     historyIndex.current = idx;

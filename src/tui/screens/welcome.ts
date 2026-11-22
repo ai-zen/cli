@@ -1,8 +1,7 @@
-// 欢迎块 —— 空对话时对话区顶部的品牌区（logo + 标语 + 版本）
+// 欢迎块 —— 空会话时会话区顶部的品牌区（logo + 标语 + 版本）
 //
-// 这一块曾经是启动时的全屏开屏动画（splash）：显现 + 扫光 + 停 1.1s 才进对话，
-// 每次启动强阻塞约 1.8s。现在改为**对话区的普通内容**：不阻塞、随消息自然上滚、
-// 滚回来还能看到。渐变相位固定为 0（静态），不持有任何定时器。
+// 它是**会话区的普通内容**：不阻塞、随消息自然上滚、滚回来还能看到。渐变相位固定为 0
+// （静态），不持有任何定时器。
 import { CLI_VERSION, CORE_VERSION, SDK_VERSION } from "../../version.js";
 import { t } from "../../i18n/index.js";
 import { displayWidth } from "../text.js";
@@ -23,7 +22,8 @@ export function welcomeLines({ columns }: { columns: number }): RLine[] {
   const versions = `v${CLI_VERSION} · sdk ${SDK_VERSION} · core ${CORE_VERSION}`;
 
   /** 逐行居中（不按最宽行对齐 —— 否则 logo 会因版本行更长而看起来偏左） */
-  const center = (text: string) => " ".repeat(Math.max(0, Math.floor((columns - displayWidth(text)) / 2)));
+  const center = (text: string) =>
+    " ".repeat(Math.max(0, Math.floor((columns - displayWidth(text)) / 2)));
 
   const lines: RLine[] = logo.map((line, i) => {
     const spans: Span[] = [{ text: center(line) }];
@@ -32,7 +32,17 @@ export function welcomeLines({ columns }: { columns: number }): RLine[] {
   });
 
   lines.push({ key: "welcome-gap", kind: "gap", text: "" });
-  lines.push(spanLine("welcome-tagline", "content", [{ text: center(tagline) }, { text: tagline, color: theme.accent }]));
-  lines.push(spanLine("welcome-versions", "content", [{ text: center(versions) }, { text: versions, color: theme.dim }]));
+  lines.push(
+    spanLine("welcome-tagline", "content", [
+      { text: center(tagline) },
+      { text: tagline, color: theme.accent },
+    ]),
+  );
+  lines.push(
+    spanLine("welcome-versions", "content", [
+      { text: center(versions) },
+      { text: versions, color: theme.dim },
+    ]),
+  );
   return lines;
 }

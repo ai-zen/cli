@@ -9,8 +9,33 @@ import { setLocale } from "../../i18n/index.js";
 import { useInputEditing } from "./use-input-editing.js";
 import type { HistoryEntry } from "../chat-history.js";
 
-const flush = async () => {
-  await new Promise((resolve) => setTimeout(resolve, 4));
+/**
+ * 等到 `check()` 成立就返回；超时抛错，错误里说清等的是什么。
+ *
+ * **别用「睡够 4ms」代替它**：那是赌「够久」，而这里要的是「真的发生了」。上限 1000ms 是
+ * **失败上限**，不是等待时长。
+ */
+const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
+  const start = Date.now();
+  while (!check()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`等不到：${what}（上限 ${timeoutMs}ms）`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+};
+
+/**
+ * 让出几拍宏任务 —— 让这一拍里**排在后面**的活先跑完。让的是执行顺序，不是一个时长。
+ *
+ * 为什么敲键之前要它：帧是在 commit 里画的，而 `useInput` 的订阅落在 passive effect 里，
+ * 同一拍里排在画帧**之后**（React 的 Scheduler 在 Node 下走 `setImmediate`）。所以「探针已经
+ * 画出来了」还不等于「按键有人接」：这一刻塞进去的键会被直接**丢掉**，不是延后处理，是永远不到。
+ */
+const settle = async (turns = 2) => {
+  for (let turn = 0; turn < turns; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 };
 
 function Probe({
@@ -23,52 +48,79 @@ function Probe({
   log: string[];
   /** 历史数据源（模拟 `session.messages` 派生出来的草稿） */
   entries: HistoryEntry[];
-  /** `↑` 把历史里的附件放回输入区时记在这里 */
+  /** `↑` 把历史里的附件放回输入区时记在这里（字节在前、素材 id 在后，同一个数组） */
   restored: string[];
 }) {
   const e = useInputEditing({
     initialText,
     notify: (text, tone) => log.push(`${tone ?? "info"}:${text}`),
     historySource: () => entries,
-    restoreImages: (images) => {
+    restoreAttachments: (images, assetIds) => {
       for (const image of images) restored.push(image.base64);
+      for (const assetId of assetIds) restored.push(`asset:${assetId}`);
     },
   });
   useInput((char) => {
     switch (char) {
-      case "i": return e.insertAtCursor("!");
-      case "e": return e.insertAtCursor("❤️"); // 2 个 code point 的单个字素簇
-      case "b": return e.deleteBeforeCursor();
-      case "d": return e.deleteAfterCursor();
-      case "w": return e.deleteWordBeforeCursor();
-      case "W": return e.deletePrevWhitespace();
-      case "k": return e.deleteToEndOfLine();
-      case "K": return e.deleteToStartOfLine();
-      case "y": return e.yank(false);
-      case "Y": return e.yank(true);
-      case "u": return e.undoEdit();
-      case "s": return e.toggleStash();
-      case "h": return e.moveCursorToLineStart();
-      case "l": return e.moveCursorToLineEnd();
-      case "<": return e.moveCursor(-1);
-      case ">": return e.moveCursor(1);
-      case ",": return e.moveCursorByWord(-1);
-      case ".": return e.moveCursorByWord(1);
-      case "p": return e.historyPrev();
-      case "n": return e.historyNext();
-      case "r": return e.setInputText("reset");
+      case "i":
+        return e.insertAtCursor("!");
+      case "e":
+        return e.insertAtCursor("❤️"); // 2 个 code point 的单个字素簇
+      case "b":
+        return e.deleteBeforeCursor();
+      case "d":
+        return e.deleteAfterCursor();
+      case "w":
+        return e.deleteWordBeforeCursor();
+      case "W":
+        return e.deletePrevWhitespace();
+      case "k":
+        return e.deleteToEndOfLine();
+      case "K":
+        return e.deleteToStartOfLine();
+      case "y":
+        return e.yank(false);
+      case "Y":
+        return e.yank(true);
+      case "u":
+        return e.undoEdit();
+      case "s":
+        return e.toggleStash();
+      case "h":
+        return e.moveCursorToLineStart();
+      case "l":
+        return e.moveCursorToLineEnd();
+      case "<":
+        return e.moveCursor(-1);
+      case ">":
+        return e.moveCursor(1);
+      case ",":
+        return e.moveCursorByWord(-1);
+      case ".":
+        return e.moveCursorByWord(1);
+      case "p":
+        return e.historyPrev();
+      case "n":
+        return e.historyNext();
+      case "r":
+        return e.setInputText("reset");
       // `@` 补全的落字方式：整段区间替换
-      case "R": return e.replaceRange(0, 5, "@xy");
-      case "Z": return e.replaceRange(0, 999, "z"); // 右端越界要能钳制
-      case "a": return e.setInputText("aaa");
-      case "z": return e.setInputText("zzz");
+      case "R":
+        return e.replaceRange(0, 5, "@xy");
+      case "Z":
+        return e.replaceRange(0, 999, "z"); // 右端越界要能钳制
+      case "a":
+        return e.setInputText("aaa");
+      case "z":
+        return e.setInputText("zzz");
       // 提交：消息进入 `messages`（历史数据源）+ 清草稿（与 Chat 的 runSubmit 一致）
       case "m": {
-        entries.push({ text: e.input, images: [] });
+        entries.push({ text: e.input, images: [], assetIds: [] });
         e.clearDraft();
         return;
       }
-      case "c": return e.clearDraft();
+      case "c":
+        return e.clearDraft();
     }
   });
   return <Text>{`[${e.input.replace(/\n/g, "⏎")}]@${e.cursor}`}</Text>;
@@ -81,15 +133,19 @@ async function probe(initialText?: string) {
   const { stdin, lastFrame, unmount } = render(
     <Probe initialText={initialText} log={log} entries={entries} restored={restored} />,
   );
-  await flush();
+  const frame = () => (lastFrame() ?? "").trim();
+  // 先等第一帧真的画出来，再让一拍：画完 ≠ 有人接键（`useInput` 的订阅在 passive effect 里）
+  await until(() => frame().startsWith("["), "探针画出来");
+  await settle();
   const press = async (char: string) => {
+    await settle();
     stdin.write(char);
-    await flush();
+    await settle();
   };
   const type = async (text: string) => {
     for (const ch of text) await press(ch);
   };
-  return { log, entries, restored, press, type, frame: () => (lastFrame() ?? "").trim(), unmount };
+  return { log, entries, restored, press, type, frame, unmount };
 }
 
 describe("useInputEditing", () => {
@@ -216,12 +272,24 @@ describe("useInputEditing", () => {
   it("翻到带图片的历史：文本回来，附件也一并放回输入区", async () => {
     const p = await probe("");
     // 模拟「上一条发的是带图消息」：历史数据源里直接放一条带附件的草稿
-    p.entries.push({ text: "看图", images: [{ base64: "QUJD", mime: "image/png" }] });
+    p.entries.push({ text: "看图", images: [{ base64: "QUJD", mime: "image/png" }], assetIds: [] });
 
     await p.press("p");
 
     expect(p.frame()).toBe("[看图]@2");
     expect(p.restored).toEqual(["QUJD"]); // 旧实现只恢复文本，图片静默丢失
+    p.unmount();
+  });
+
+  it("翻到走素材上传的那条：放回的是素材 id（不塞空壳字节）", async () => {
+    const p = await probe("");
+    // 已经传上去的图在段上只剩 `__asset_id`：本地没有字节，也不该编一份假的
+    p.entries.push({ text: "看图", images: [], assetIds: ["a-1", "a-2"] });
+
+    await p.press("p");
+
+    expect(p.frame()).toBe("[看图]@2");
+    expect(p.restored).toEqual(["asset:a-1", "asset:a-2"]);
     p.unmount();
   });
 

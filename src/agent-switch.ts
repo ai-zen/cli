@@ -1,120 +1,99 @@
 /**
- * 主 Agent 切换 —— `/agent` 的校验与写配置策略（纯逻辑，可单测）
+ * 主助手的选择与预检 —— `/agent` 的选择器数据与一句话结果（纯逻辑，可单测）。
  *
- * ## 「主 Agent」是哪一个
+ * ## 这里一个规则都不算
  *
- * 配置里只有一个主 Agent 概念：**`AppConfig.defaultAgent`**（缺省时 SDK 取
- * `~/.ai-zen/agents/` 下的第一个）。`/agent` 就是把用户选中的那个写回这里，
- * 与 `/config` →「默认 Agent」写的是同一个字段，不存在第二套状态。
+ * 「这个助手现在能不能用、不能用是为什么」在新契约里**没有**这一格：`agentDefinition.list`
+ * 回的是定义本身（`AgentDefinition`），旧契约的 `AgentView.available` / `unavailableReason`
+ * 随那一组形状一起退场了。要判「跑不跑得起来」得先解析模型（会话级 → 定义 → 全局兜底）、
+ * 再看端点有没有密钥 —— 那是宿主的判断，客户端算一遍就是第二份会漂的规则（症状是「界面说切
+ * 不过去、宿主其实能跑」）。
  *
- * ## 切换前必须能跑起来
+ * 于是本文件只剩两件事：
+ *   - 把助手定义 + 配置摊成选择器要的那几行（主助手、它指着哪个模型）；
+ *   - 回答「选它行不行」并给出一句能直接上屏的话。
  *
- * Agent 定义里的 `modelId` 是运行期唯一真相源（`createAgent` 只认它）。所以切换
- * 前先做完整链路校验：Agent 存在 → 绑定了模型 → 模型还在配置里 → 端点在 → 端点有 Key。
- * 少任何一环都直接抛错并把原因说清楚，绝不「先切过去再看它崩不崩」——切完是要
- * 重挂载对话屏的，崩了用户连 `/model` 都敲不进去。
+ * ## 切换本身写的是**默认助手**，不是这一段会话
  *
- * ## 不动 Agent 定义本身
- *
- * 切 Agent 只改「用哪个」，不改「那个 Agent 长什么样」：不写 `modelParams`、
- * 不碰提示词、不碰权限。要改这些走 `/model`、`/think`、`/config`。
+ * 助手在会话创建时就定死了（PRD L7：没有 `session.setAgent` 这种东西），所以 `/agent`
+ * 写的只能是「以后的会话用哪个助手」= `config.setDefaults` 的 `defaultAgent`。
  */
 
-import type { AgentDefinition, AppConfig } from "@ai-zen/agents-sdk";
-import { resolveCredential } from "./config-editor.js";
+import type { AgentList } from "./agents-store.js";
+import { topLevelAgents } from "./agents-store.js";
+import type { AppConfig } from "./config.js";
+import { findModel } from "./config-editor.js";
 import { t } from "./i18n/index.js";
 
-/** 选择器里的一行：一个可选的主 Agent */
+/** 选择器里的一行：一个可选的主助手 */
 export interface AgentChoice {
   id: string;
   /** 展示名（`name` 缺失时回落 id） */
   name: string;
-  /** 绑定的模型名（未绑定 / 模型已删时为 undefined） */
+  /** 它实际会用的模型 id（定义没绑时取全局兜底那一级） */
+  modelId?: string;
+  /** 模型的显示名（模型已被删时回落 id） */
   modelName?: string;
-  /** 是否可切换（模型与端点凭据齐备） */
-  selectable: boolean;
-  /** 不可切换的原因（可切换时为 undefined） */
-  reason?: string;
 }
 
 /**
- * 列出全部主 Agent 及其可用性，供 `/agent` 选择器渲染。
+ * 列出全部主助手，供 `/agent` 选择器渲染。
  *
- * 不可用的也列出来（而不是隐藏）：用户能看到「那个 Agent 为什么切不过去」，
- * 比列表里凭空少一个更容易排查。
+ * 只列主助手：子 Agent 不是入口（定义里有没有 `function` 明说了这件事）。
  */
-export function listAgentChoices(
-  config: AppConfig,
-  agents: readonly AgentDefinition[],
-): AgentChoice[] {
-  return agents.map((agent) => {
-    const name = agent.name || agent.id;
-    if (!agent.modelId) {
-      return { id: agent.id, name, selectable: false, reason: t("agentSwitch.err.noModel") };
-    }
-    const credential = resolveCredential(config, agent.modelId);
-    if (!credential) {
-      return { id: agent.id, name, selectable: false, reason: t("agentSwitch.err.modelMissing", { id: agent.modelId }) };
-    }
-    if (!credential.configured) {
-      return {
-        id: agent.id,
-        name,
-        modelName: credential.modelName,
-        selectable: false,
-        reason: t("agentSwitch.err.missingKey", { endpoint: credential.endpointName }),
-      };
-    }
-    return { id: agent.id, name, modelName: credential.modelName, selectable: true };
+export function listAgentChoices(config: AppConfig, list: AgentList): AgentChoice[] {
+  return topLevelAgents(list).map((agent) => {
+    // 定义没绑模型时落全局兜底那一级 —— 只为了把「它其实会用哪个模型」显示出来，
+    // 不参与任何判断（这一版没有「能不能用」那一格）
+    const modelId = agent.modelId ?? config.defaultModel ?? undefined;
+    const model = findModel(config, modelId);
+    return {
+      id: agent.id,
+      name: agent.name || agent.id,
+      modelId,
+      modelName: model ? model.name || model.id : modelId,
+    };
   });
 }
 
-export interface SwitchAgentOptions {
+/** 预检结果：要么一句话结果，要么「哪个助手、为什么不行」 */
+export type AgentSwitchCheck =
+  { ok: true; summary: string } | { ok: false; name: string; reason?: string };
+
+/** {@link checkAgentSwitch} 的入参 */
+export interface CheckAgentSwitchOptions {
   config: AppConfig;
-  /** 可选的主 Agent 列表（`~/.ai-zen/agents/*.json` 快照） */
-  agents: readonly AgentDefinition[];
-  /** 目标 Agent id */
+  /** 助手定义清单（+ 默认助手 id） */
+  list: AgentList;
   targetAgentId: string;
 }
 
-export interface SwitchAgentResult {
-  /** 已写入 `defaultAgent` 的新配置（调用方负责落盘） */
-  config: AppConfig;
-  /** 面向用户的一句话结果 */
-  summary: string;
-}
-
 /**
- * 校验目标 Agent 能否切换，并返回「写好 `defaultAgent` 的新配置」。
+ * 校验目标主助手能否选用，并给出「跟用户说一句」的内容。
  *
- * 抛错场景：Agent 不存在、未绑定模型、模型不在配置里、端点不存在、端点缺 Key。
+ * **不写任何东西**：`defaultAgent` 由调用方走 `config.setDefaults` 写。
+ * 这里唯一会拒的是「清单里根本没有这个 id」（选错了 / 定义刚被删）。
  */
-export function switchAgent(options: SwitchAgentOptions): SwitchAgentResult {
-  const { config, agents, targetAgentId } = options;
-
-  const agent = agents.find((item) => item.id === targetAgentId);
-  if (!agent) throw new Error(t("agentSwitch.err.agentMissing", { id: targetAgentId }));
-
-  const name = agent.name || agent.id;
-  if (!agent.modelId) {
-    throw new Error(t("agentSwitch.err.agentNoModel", { name }));
-  }
-
-  const credential = resolveCredential(config, agent.modelId);
-  if (!credential) {
-    throw new Error(t("agentSwitch.err.modelGone", { name, id: agent.modelId }));
-  }
-  if (!credential.configured) {
-    throw new Error(t("agentSwitch.err.noKey", { endpoint: credential.endpointName }));
+export function checkAgentSwitch(options: CheckAgentSwitchOptions): AgentSwitchCheck {
+  const choice = listAgentChoices(options.config, options.list).find(
+    (item) => item.id === options.targetAgentId,
+  );
+  if (!choice) {
+    return {
+      ok: false,
+      name: options.targetAgentId,
+      reason: t("agentSwitch.err.agentMissing", { id: options.targetAgentId }),
+    };
   }
 
   return {
-    config: { ...config, defaultAgent: agent.id },
+    ok: true,
     summary: t("agentSwitch.summary", {
-      name,
-      id: agent.id,
-      model: credential.modelName,
-      modelId: credential.modelId,
+      name: choice.name,
+      id: choice.id,
+      // 模型名与 id 只用于显示；两样都没有时留空比编一个值诚实
+      model: choice.modelName ?? choice.modelId ?? "",
+      modelId: choice.modelId ?? "",
     }),
   };
 }

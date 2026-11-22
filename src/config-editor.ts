@@ -1,39 +1,51 @@
 /**
- * 配置编辑 —— 纯函数层
+ * 配置中心 / 凭据屏要的**纯函数**：挑字段、派生 id、把用户的输入文本变成契约里的值。
  *
- * TUI 的「凭据设置屏」与「配置中心」只做渲染与键盘分发，所有对 `AppConfig` 的
- * 读取与不可变改写集中在本模块，以便脱离 Ink 单测。
+ * ## 这里不写配置
  *
- * 设计原则：
- *   - 每个改写函数都返回**新对象**，调用方负责持久化（`saveConfig()`）；
- *   - 不抛异常、不写盘、不读盘，纯输入 → 输出。
+ * 写入全部走 procedure，而且**一次改动一次调用**：默认项走 `config.setDefaults`，上限与中断策略
+ * 走 `config.setGlobal`，端点 / 模型 / 图片模型各走 `config.endpoint.*` / `config.model.*` /
+ * `config.imageModel.*`，助手走 `agentDefinition.*`，MCP 走 `mcp.save` / `mcp.remove`。而且每个
+ * 写口都回**整份** `AppConfig`，所以这一层连「改完拼一份新的」都不需要：宿主已经是那个落点。
+ *
+ * 于是剩下来的都是**不碰真相**的事：
+ *   - 在宿主给的形状上挑字段（`AppConfig` / `AgentDefinition` 里找一条）；
+ *   - 由名称派生 id（`config.model.add` / `config.endpoint.add` 的 id 由客户端定，宿主只负责落盘）；
+ *   - 把用户敲进去的文本解析成契约里的值（argv、`KEY=VALUE`、权限策略、函数参数 schema）；
+ *   - 把「改了这一处」拼成一次 procedure 的入参（如提示词 → `agentDefinition.update` 的 `messages`）。
+ *
+ * 一条底线：**不在这里推导业务判断**。MCP 层谁盖住谁、现在第几档思考 —— 宿主已经算好放在形状里
+ * （或由档位表现查，见 `reasoning-effort.ts`），这里只显示。
  */
 
-import type {
-  AgentDefinition,
-  AgentPermissions,
-  AppConfig,
-  Endpoint,
-  ImageModel,
-  Model,
-  PermissionPolicy,
-  TokenThresholds,
-} from "@ai-zen/agents-sdk";
-import type { AgentNS } from "@ai-zen/agents-core";
-import { Message } from "@ai-zen/agents-core";
-import type { McpConfig, McpServerEntry, McpServersMap } from "./config.js";
+import { AgentNS, Message } from "@ai-zen/agents-core";
+import type { AgentDefinition, AppConfig, Endpoint, Model } from "./config.js";
 import { t } from "./i18n/index.js";
 
-// ==================== 查询 ====================
+/**
+ * 工具输出上限的**缺省值**（SDK `AppConfig.maxToolOutput` 的缺省：32768 字符）。
+ *
+ * 配置里没写这一格时，屏上要有个能读能改的起点；「没写」不等于 0，而这一格只有客户端看得见
+ * （宿主读它的时候自己也有同样的缺省）。想改成别的数就在这里改一处。
+ */
+export const DEFAULT_MAX_TOOL_OUTPUT = 32768;
 
-/** 按 id 查找模型 */
-export function findModel(config: AppConfig, modelId: string | undefined): Model | undefined {
+// ==================== 查询（在宿主给的形状上挑）====================
+
+/** 按 id 查找模型（只要给得出模型表就够 —— 档位派生那一层手上没有整份配置） */
+export function findModel(
+  config: Pick<AppConfig, "models">,
+  modelId: string | undefined,
+): Model | undefined {
   if (!modelId) return undefined;
   return config.models.find((model) => model.id === modelId);
 }
 
 /** 按 id 查找端点 */
-export function findEndpoint(config: AppConfig, endpointId: string | undefined): Endpoint | undefined {
+export function findEndpoint(
+  config: AppConfig,
+  endpointId: string | undefined,
+): Endpoint | undefined {
   if (!endpointId) return undefined;
   return config.endpoints.find((endpoint) => endpoint.id === endpointId);
 }
@@ -43,20 +55,38 @@ export function modelsUsingEndpoint(config: AppConfig, endpointId: string): Mode
   return config.models.filter((model) => model.endpointId === endpointId);
 }
 
-/** API Key 是否已设置（空白视为未设置） */
-export function isApiKeySet(apiKey: string | undefined): boolean {
-  return Boolean(apiKey && apiKey.trim());
+/**
+ * 一串密钥的**掩码**：只留头三尾四，中间一个省略号（`sk-…9f3a`）。
+ *
+ * `config.get` 回的是**明文** `apiKey`（宿主不再掩码），于是「显示时掩码」这件事落在客户端：
+ * 明文可以显示在屏上，但它不该整串留在一个人正对着的终端里，也不该出现在任何一条日志里。
+ * 少了中间那几个字符，用户仍然认得出「是不是我上个月那把」；要核对就整串重填一次。
+ *
+ * 太短的串（≤ 8 位）连头尾都不留 —— 3 + 4 就等于把它印出来了。
+ */
+export function maskSecret(secret: string): string {
+  if (!secret) return "";
+  if (secret.length <= 8) return "…";
+  return `${secret.slice(0, 3)}…${secret.slice(-4)}`;
 }
 
-/** 一次「凭据检查」的结果：某模型绑定的端点及其密钥状态 */
+/**
+ * 一次「凭据检查」的结果：某模型绑定的端点及其密钥状态。
+ *
+ * 密钥在配置里是**明文**（宿主这一版不再掩码）：`configured` = 「这一格非空」，
+ * `apiKeyMasked` 是 {@link maskSecret} 现算的显示值。掩码只用于显示 —— 回写掩码会把掩码
+ * 当成密钥存下来，所以「换密钥」只能在用户真的改了输入框时发出（`update` 省略 `apiKey`
+ * = 保留原值）。
+ */
 export interface CredentialInfo {
   modelId: string;
   modelName: string;
   endpointId: string;
   endpointName: string;
   baseUrl: string;
-  apiKey: string;
-  /** 密钥是否已设置 */
+  /** 掩码，如 `sk-…9f3a` */
+  apiKeyMasked: string;
+  /** 密钥是否已配置（宿主算的） */
   configured: boolean;
 }
 
@@ -66,7 +96,10 @@ export interface CredentialInfo {
  * 模型缺失或端点缺失时返回 `undefined`（此时无法给出「输入 Key」的引导，
  * 属于配置本身残缺，交由调用方报错）。
  */
-export function resolveCredential(config: AppConfig, modelId: string | undefined): CredentialInfo | undefined {
+export function resolveCredential(
+  config: AppConfig,
+  modelId: string | undefined,
+): CredentialInfo | undefined {
   const model = findModel(config, modelId);
   if (!model) return undefined;
   const endpoint = findEndpoint(config, model.endpointId);
@@ -77,28 +110,37 @@ export function resolveCredential(config: AppConfig, modelId: string | undefined
     endpointId: endpoint.id,
     endpointName: endpoint.name || endpoint.id,
     baseUrl: endpoint.baseUrl,
-    apiKey: endpoint.apiKey ?? "",
-    configured: isApiKeySet(endpoint.apiKey),
+    apiKeyMasked: maskSecret(endpoint.apiKey),
+    configured: endpoint.apiKey !== "",
   };
 }
 
-/** 端点清单的一行摘要，如 `OpenAI ✗ · DeepSeek ✓` */
+/** 端点清单的一行摘要，如 `OpenAI ✗ · DeepSeek ✓`（✓/✗ 这一格非空：`update` 省略 = 不动它） */
 export function summarizeEndpoints(config: AppConfig): string {
   if (config.endpoints.length === 0) return t("common.noEndpoints");
   return config.endpoints
-    .map((endpoint) => `${endpoint.name || endpoint.id} ${isApiKeySet(endpoint.apiKey) ? "✓" : "✗"}`)
+    .map((endpoint) => `${endpoint.name || endpoint.id} ${endpoint.apiKey ? "✓" : "✗"}`)
     .join(" · ");
 }
 
 /**
- * 密钥掩码：保留首 4 / 末 4 位，中间省略。未设置时返回 `未设置`。
- * 已知密钥（如 `sk-` 开头）同样按此规则裁剪，避免整串回显到屏幕。
+ * 某模型的端点密钥状态（给「这个模型现在能不能真的跑」那一格提示用）。
+ *
+ * 它是**配置里两格的事实**（模型的 `endpointId` + 那端点的 `apiKey` 空不空），不是宿主的
+ * 「可用性」判断：旧契约曾把 `available` / `unavailableReason` 算好放在模型与助手上，这一版
+ * 没有了。所以这里只说得出「端点还在不在、密钥填没填」—— 而这也正是用户当下能改的那两件事。
  */
-export function maskApiKey(apiKey: string | undefined): string {
-  const key = (apiKey ?? "").trim();
-  if (!key) return t("common.unsetPlain");
-  if (key.length <= 8) return "*".repeat(key.length);
-  return `${key.slice(0, 4)}…${key.slice(-4)}`;
+export interface EndpointKeyState {
+  /** 端点显示名；端点不在配置里时是 `null`（模型指着一个不存在的端点） */
+  endpointName: string | null;
+  /** 密钥填没填（端点不存在时为 `false`：那条路一定跑不起来） */
+  ready: boolean;
+}
+
+export function endpointKeyState(config: AppConfig, model: Model): EndpointKeyState {
+  const endpoint = findEndpoint(config, model.endpointId);
+  if (!endpoint) return { endpointName: null, ready: false };
+  return { endpointName: endpoint.name || endpoint.id, ready: endpoint.apiKey !== "" };
 }
 
 /** 凭据申请指引：按 baseUrl 识别厂商 */
@@ -109,10 +151,22 @@ export interface ApiKeyGuide {
 }
 
 const VENDOR_GUIDES: ReadonlyArray<{ match: string; vendorKey: string; url: string }> = [
-  { match: "bigmodel.cn", vendorKey: "vendor.zhipu", url: "https://open.bigmodel.cn/usercenter/apikeys" },
-  { match: "deepseek.com", vendorKey: "vendor.deepseek", url: "https://platform.deepseek.com/api_keys" },
+  {
+    match: "bigmodel.cn",
+    vendorKey: "vendor.zhipu",
+    url: "https://open.bigmodel.cn/usercenter/apikeys",
+  },
+  {
+    match: "deepseek.com",
+    vendorKey: "vendor.deepseek",
+    url: "https://platform.deepseek.com/api_keys",
+  },
   { match: "openai.com", vendorKey: "vendor.openai", url: "https://platform.openai.com/api-keys" },
-  { match: "moonshot", vendorKey: "vendor.moonshot", url: "https://platform.moonshot.cn/console/api-keys" },
+  {
+    match: "moonshot",
+    vendorKey: "vendor.moonshot",
+    url: "https://platform.moonshot.cn/console/api-keys",
+  },
   { match: "dashscope", vendorKey: "vendor.dashscope", url: "https://bailian.console.aliyun.com/" },
 ];
 
@@ -124,32 +178,16 @@ export function apiKeyGuide(baseUrl: string | undefined): ApiKeyGuide {
   return { vendor: t("vendor.openaiCompatible") };
 }
 
-// ==================== 不可变改写 ====================
-
-/** 写入某端点的 API Key（去除首尾空白） */
-export function setEndpointApiKey(config: AppConfig, endpointId: string, apiKey: string): AppConfig {
-  return {
-    ...config,
-    endpoints: config.endpoints.map((endpoint) =>
-      endpoint.id === endpointId ? { ...endpoint, apiKey: apiKey.trim() } : endpoint,
-    ),
-  };
-}
-
-/** 写入某端点的 Base URL（去除首尾空白） */
-export function setEndpointBaseUrl(config: AppConfig, endpointId: string, baseUrl: string): AppConfig {
-  return {
-    ...config,
-    endpoints: config.endpoints.map((endpoint) =>
-      endpoint.id === endpointId ? { ...endpoint, baseUrl: baseUrl.trim() } : endpoint,
-    ),
-  };
-}
+// ==================== 由名称派生 id ====================
 
 /** 由名称派生唯一 id：小写、非字母数字折叠为 `-`，冲突时追加序号 */
 function deriveUniqueId(taken: Set<string>, name: string, fallback: string): string {
   const base =
-    name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || fallback;
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32) || fallback;
   if (!taken.has(base)) return base;
   for (let i = 2; ; i += 1) {
     const candidate = `${base}-${i}`;
@@ -169,226 +207,19 @@ export function uniqueModelId(config: AppConfig, name: string): string {
 
 /** 由图片模型名派生唯一的图片模型 id */
 export function uniqueImageModelId(config: AppConfig, name: string): string {
-  return deriveUniqueId(new Set((config.imageModels ?? []).map((model) => model.id)), name, "image");
+  return deriveUniqueId(
+    new Set((config.imageModels ?? []).map((model) => model.id)),
+    name,
+    "image",
+  );
 }
 
-/** 新增端点（id 由名称派生） */
-export function addEndpoint(
-  config: AppConfig,
-  input: { name: string; baseUrl: string; apiKey: string },
-): { config: AppConfig; endpoint: Endpoint } {
-  const id = uniqueEndpointId(config, input.name);
-  const endpoint: Endpoint = {
-    id,
-    name: input.name.trim() || id,
-    baseUrl: input.baseUrl.trim(),
-    apiKey: input.apiKey.trim(),
-  };
-  return { config: { ...config, endpoints: [...config.endpoints, endpoint] }, endpoint };
+/** 由助手名派生唯一 id（在既有 id 集合内避让） */
+export function uniqueAgentId(taken: Iterable<string>, name: string, fallback = "agent"): string {
+  return deriveUniqueId(new Set(taken), name, fallback);
 }
 
-// ==================== 通用改写（配置中心）====================
-
-/** 通用端点字段改写（不可变） */
-export function updateEndpoint(config: AppConfig, endpointId: string, patch: Partial<Endpoint>): AppConfig {
-  return {
-    ...config,
-    endpoints: config.endpoints.map((endpoint) =>
-      endpoint.id === endpointId ? { ...endpoint, ...patch } : endpoint,
-    ),
-  };
-}
-
-/** 删除端点（调用方负责确认它不再被任何模型引用） */
-export function removeEndpoint(config: AppConfig, endpointId: string): AppConfig {
-  return { ...config, endpoints: config.endpoints.filter((endpoint) => endpoint.id !== endpointId) };
-}
-
-/** 通用模型字段改写（不可变） */
-export function updateModel(config: AppConfig, modelId: string, patch: Partial<Model>): AppConfig {
-  return {
-    ...config,
-    models: config.models.map((model) => (model.id === modelId ? { ...model, ...patch } : model)),
-  };
-}
-
-/**
- * 合并写入模型的上下文阈值 —— **不做整对象替换**。
- *
- * `updateModel` 是浅合并，所以调用方若直接构造 `{ handoff, guard }`，会把
- * `tokenThresholds` 里其它字段（SDK 后续新增的压缩阈值 / 额外档位等）一并清空：
- * 用户在配置中心改一次阈值，那些字段就被静默丢掉。所有阈值写入都必须走这里。
- */
-export function mergeTokenThresholds(
-  current: TokenThresholds | undefined,
-  patch: Partial<TokenThresholds>,
-): TokenThresholds {
-  return { ...(current ?? { handoff: 0, guard: 0 }), ...patch };
-}
-
-/**
- * 删除模型；若 `defaultMigrationModel` 指向它，则改指剩余的第一个模型（无剩余则清空）。
- *
- * 模型真相源是 `AgentDefinition.modelId`（不在配置里），所以这里无需处理任何
- * 「默认模型」——删除后由 `createAgent` 报错引导用户重选，而不是静默回退。
- */
-export function removeModel(config: AppConfig, modelId: string): AppConfig {
-  const models = config.models.filter((model) => model.id !== modelId);
-  const ids = new Set(models.map((model) => model.id));
-  const fallback = models[0]?.id;
-  return {
-    ...config,
-    models,
-    defaultMigrationModel:
-      config.defaultMigrationModel && ids.has(config.defaultMigrationModel)
-        ? config.defaultMigrationModel
-        : fallback,
-  };
-}
-
-/**
- * 「恢复出厂设置」—— 用出厂定义**整条**替换同 id 的模型。
- *
- * 不能写成 `updateModel(config, id, factory)`：那是浅合并，出厂定义里没有的字段
- * （尤其 `custom: true`）会原样留下 —— 点了恢复出厂，条目仍被当成自建，
- * 下次 SDK 同步依旧不动它，按钮等于失效。
- */
-export function restoreFactoryModel(config: AppConfig, factory: Model): AppConfig {
-  return {
-    ...config,
-    models: config.models.map((model) => (model.id === factory.id ? { ...factory } : model)),
-  };
-}
-
-/** 同上，图片模型版 */
-export function restoreFactoryImageModel(config: AppConfig, factory: ImageModel): AppConfig {
-  return {
-    ...config,
-    imageModels: (config.imageModels ?? []).map((model) =>
-      model.id === factory.id ? { ...factory } : model,
-    ),
-  };
-}
-
-/**
- * 默认 Agent 的「恢复出厂设置」：提示词换回出厂、`custom` 去掉，其余字段一律保留。
- *
- * 与 SDK `ensureDefaultAgent` 的同步语义一致（它也只同步 `messages`）：整条替换会把
- * 用户自己选的 `modelId` 与四维权限一起冲掉。
- */
-export function restoreFactoryAgent(
-  def: AgentDefinition,
-  factory: Pick<AgentDefinition, "messages">,
-): AgentDefinition {
-  const restored = { ...def };
-  delete restored.custom;
-  return { ...restored, messages: factory.messages };
-}
-
-/** 新增模型（id 由名称派生；默认 `custom: true`，避免被 SDK 出厂清单托管覆盖） */
-export function addModel(
-  config: AppConfig,
-  input: { name: string; endpointId: string; modelName?: string },
-): { config: AppConfig; model: Model } {
-  const id = uniqueModelId(config, input.name);
-  const model: Model = {
-    id,
-    name: input.name.trim() || id,
-    endpointId: input.endpointId,
-    modelName: input.modelName?.trim() || id,
-    // 交接软线 128K / 阻断硬线 192K（与 SDK 迁移兜底一致）
-    tokenThresholds: { handoff: 128_000, guard: 192_000 },
-    custom: true,
-  };
-  return { config: { ...config, models: [...config.models, model] }, model };
-}
-
-/** 通用图片模型字段改写（不可变） */
-export function updateImageModel(config: AppConfig, modelId: string, patch: Partial<ImageModel>): AppConfig {
-  return {
-    ...config,
-    imageModels: (config.imageModels ?? []).map((model) =>
-      model.id === modelId ? { ...model, ...patch } : model,
-    ),
-  };
-}
-
-/** 删除图片模型；若 `defaultImageModel` 指向它，则改指剩余的第一个（无剩余则清空） */
-export function removeImageModel(config: AppConfig, modelId: string): AppConfig {
-  const imageModels = (config.imageModels ?? []).filter((model) => model.id !== modelId);
-  const ids = new Set(imageModels.map((model) => model.id));
-  return {
-    ...config,
-    imageModels,
-    defaultImageModel:
-      config.defaultImageModel && ids.has(config.defaultImageModel)
-        ? config.defaultImageModel
-        : imageModels[0]?.id,
-  };
-}
-
-/** 新增图片模型（id 由名称派生；默认 `custom: true`） */
-export function addImageModel(
-  config: AppConfig,
-  input: { name: string; endpointId: string },
-): { config: AppConfig; model: ImageModel } {
-  const id = uniqueImageModelId(config, input.name);
-  const model: ImageModel = {
-    id,
-    name: input.name.trim() || id,
-    endpointId: input.endpointId,
-    modelName: id,
-    custom: true,
-  };
-  return { config: { ...config, imageModels: [...(config.imageModels ?? []), model] }, model };
-}
-
-/** 设置默认图片模型（传 `undefined` 表示清空） */
-export function setDefaultImageModel(config: AppConfig, modelId: string | undefined): AppConfig {
-  return { ...config, defaultImageModel: modelId };
-}
-
-/** 设置默认 Agent（传 `undefined` 表示清空，交给 SDK 选第一个 Agent） */
-export function setDefaultAgent(config: AppConfig, agentId: string | undefined): AppConfig {
-  return { ...config, defaultAgent: agentId };
-}
-
-/** 设置默认迁移模型（传 `undefined` 表示清空，交由 SDK 回退出厂默认） */
-export function setDefaultMigrationModel(config: AppConfig, modelId: string | undefined): AppConfig {
-  return { ...config, defaultMigrationModel: modelId };
-}
-
-/** 中断策略的取值（从 SDK 的 `AppConfig` 派生，不另外维护一份字面量联合） */
-export type AbortedMessageStrategyValue = NonNullable<AppConfig["abortedMessageStrategy"]>;
-export type AbortedToolRoundStrategyValue = NonNullable<AppConfig["abortedToolRoundStrategy"]>;
-
-/**
- * 被中断的 assistant 消息（已输出的思考 / 正文）如何处置：`keep` 保留 / `drop` 丢弃。
- *
- * 只是config 层改写：真正生效点在 `createAgent()`（SDK 读 `scope.config`），
- * 所以改完要重建会话（向导关闭时宿主会自动 `/reload` 一次）。
- */
-export function setAbortedMessageStrategy(
-  config: AppConfig,
-  strategy: AbortedMessageStrategyValue,
-): AppConfig {
-  return { ...config, abortedMessageStrategy: strategy };
-}
-
-/** 被中断 / 结果不完整的工具轮次如何归一：`fill` 整轮保留 / `drop` 整轮出列 */
-export function setAbortedToolRoundStrategy(
-  config: AppConfig,
-  strategy: AbortedToolRoundStrategyValue,
-): AppConfig {
-  return { ...config, abortedToolRoundStrategy: strategy };
-}
-
-/** 设置工具输出上限（字符数） */
-export function setMaxToolOutput(config: AppConfig, value: number): AppConfig {
-  return { ...config, maxToolOutput: value };
-}
-
-// ==================== MCP 配置改写 ====================
+// ==================== argv / KEY=VALUE 文本 ====================
 
 /**
  * 解析参数串为 argv：支持单 / 双引号包裹，以及反斜杠转义空白。
@@ -440,7 +271,11 @@ export function parseArgs(raw: string): string[] {
 export function formatArgs(args: string[] | undefined): string {
   if (!args || args.length === 0) return "";
   return args
-    .map((arg) => (arg === "" || /[\s"'\\]/.test(arg) ? `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : arg))
+    .map((arg) =>
+      arg === "" || /[\s"'\\]/.test(arg)
+        ? `"${arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+        : arg,
+    )
     .join(" ");
 }
 
@@ -454,7 +289,9 @@ export function parseKvInput(raw: string): { key: string; value: string } | null
 }
 
 /** 键值映射 → 有序数组（保持插入顺序） */
-export function kvEntries(map: Record<string, string> | undefined): { key: string; value: string }[] {
+export function kvEntries(
+  map: Record<string, string> | undefined,
+): { key: string; value: string }[] {
   return Object.entries(map ?? {}).map(([key, value]) => ({ key, value }));
 }
 
@@ -465,78 +302,15 @@ export function kvSummary(map: Record<string, string> | undefined): string {
   return t("common.kvSummary", { n: keys.length, keys: keys.join(", ") });
 }
 
-/** 按 id 查找 MCP 服务器 */
-export function findMcpServer(mcp: McpConfig, id: string | undefined): McpServerEntry | undefined {
-  if (!id) return undefined;
-  return mcp.mcpServers[id];
-}
-
-/** id 是否已被占用（`except` 用于重命名时排除自身） */
-export function mcpServerIdTaken(mcp: McpConfig, id: string, except?: string): boolean {
-  return id !== except && Object.prototype.hasOwnProperty.call(mcp.mcpServers, id);
-}
-
-/** 由名称派生唯一的 MCP 服务器 id */
-export function uniqueMcpServerId(mcp: McpConfig, name: string): string {
-  return deriveUniqueId(new Set(Object.keys(mcp.mcpServers)), name, "server");
-}
-
-/** 新增 MCP 服务器（id 由名称派生；默认 stdio、启用） */
-export function addMcpServer(mcp: McpConfig, name: string): { mcp: McpConfig; id: string } {
-  const id = uniqueMcpServerId(mcp, name);
-  const entry: McpServerEntry = { type: "stdio", disabled: false };
-  return { mcp: { ...mcp, mcpServers: { ...mcp.mcpServers, [id]: entry } }, id };
-}
-
-/** 改写某 MCP 服务器的字段（不可变；未列出的字段原样保留） */
-export function updateMcpServer(mcp: McpConfig, id: string, patch: Partial<McpServerEntry>): McpConfig {
-  const current = mcp.mcpServers[id];
-  if (!current) return mcp;
-  return { ...mcp, mcpServers: { ...mcp.mcpServers, [id]: { ...current, ...patch } } };
-}
-
-/** 删除 MCP 服务器 */
-export function removeMcpServer(mcp: McpConfig, id: string): McpConfig {
-  if (!Object.prototype.hasOwnProperty.call(mcp.mcpServers, id)) return mcp;
-  const mcpServers: McpServersMap = { ...mcp.mcpServers };
-  delete mcpServers[id];
-  return { ...mcp, mcpServers };
-}
-
-/** 重命名 MCP 服务器（改 key；保持原有顺序；假定新名已通过唯一性校验） */
-export function renameMcpServer(mcp: McpConfig, oldId: string, newId: string): McpConfig {
-  const mcpServers: McpServersMap = {};
-  for (const [key, value] of Object.entries(mcp.mcpServers)) {
-    mcpServers[key === oldId ? newId : key] = value;
-  }
-  return { ...mcp, mcpServers };
-}
-
-// ==================== Agent / Sub-agent 定义改写 ====================
+// ==================== 权限四维 ====================
 
 /** Agent 四维权限的维度顺序 */
 export const PERMISSION_DIMENSIONS = ["tools", "skills", "mcps", "subagents"] as const;
 export type PermissionDimension = (typeof PERMISSION_DIMENSIONS)[number];
-
-/** 由名称派生唯一的 Agent id（在既有 id 集合内避让） */
-export function uniqueAgentId(taken: Iterable<string>, name: string, fallback = "agent"): string {
-  return deriveUniqueId(new Set(taken), name, fallback);
-}
-
-/** 提示词 = 首条 system 消息的文本内容（无则空串） */
-export function getAgentPrompt(def: AgentDefinition): string {
-  const sys = (def.messages ?? []).find((m) => m.role === "system" && typeof m.content === "string");
-  return typeof sys?.content === "string" ? sys.content : "";
-}
-
-/** 写入提示词：替换首条 system 消息；不存在则前插一条 */
-export function setAgentPrompt(def: AgentDefinition, text: string): AgentDefinition {
-  const messages = [...(def.messages ?? [])];
-  const index = messages.findIndex((m) => m.role === "system");
-  if (index >= 0) messages[index] = { ...messages[index], content: text };
-  else messages.unshift(Message.System(text));
-  return { ...def, messages };
-}
+/** 一条权限策略（`allow: [...]` 或 `deny: [...]`） */
+export type PermissionPolicy = NonNullable<
+  NonNullable<AgentDefinition["permissions"]>[PermissionDimension]
+>;
 
 /** 权限策略 → 紧凑文本（`allow: a, b` / `deny: *`）；未设置 → 空串 */
 export function formatPermission(policy: PermissionPolicy | undefined): string {
@@ -567,121 +341,109 @@ export function parsePermission(raw: string): PermissionPolicy | null | string {
 
 /** 读某维权限的紧凑文本 */
 export function formatAgentPermission(
-  permissions: AgentPermissions | undefined,
+  permissions: AgentDefinition["permissions"] | null,
   dim: PermissionDimension,
 ): string {
   return formatPermission(permissions?.[dim]);
 }
 
 /** 权限总览：列出已配置的维度（如 `4 维（tools, skills, mcps, subagents）`） */
-export function summarizePermissions(permissions: AgentPermissions | undefined): string {
+export function summarizePermissions(permissions: AgentDefinition["permissions"] | null): string {
   const set = PERMISSION_DIMENSIONS.filter((dim) => permissions?.[dim]);
   if (set.length === 0) return t("common.unset");
   return t("common.permissionSummary", { n: set.length, dims: set.join(", ") });
 }
 
-/** 写入某一维权限（`policy` 为 null 时删除该维） */
-export function setAgentPermission(
-  def: AgentDefinition,
+/**
+ * 改写某一维权限（`policy` 为 null 时删掉该维），返回**要交给 `agent.update` 的那份**。
+ *
+ * 浅合并的活归宿主：这里给出的是「这一版权限四维应该长成的样子」，而 `agent.update` 收的
+ * 就是 `permissions` 的完整值。
+ */
+export function patchPermission(
+  permissions: AgentDefinition["permissions"] | null,
   dim: PermissionDimension,
   policy: PermissionPolicy | null,
-): AgentDefinition {
-  const permissions: AgentPermissions = { ...(def.permissions ?? {}) };
-  if (policy) permissions[dim] = policy;
-  else delete permissions[dim];
-  return { ...def, permissions };
+): NonNullable<AgentDefinition["permissions"]> {
+  const next = { ...(permissions ?? {}) };
+  if (policy) next[dim] = policy;
+  else delete next[dim];
+  return next;
 }
 
-/** 通用 Agent 字段改写（纯合并；`updatedAt` 由写盘侧统一刷新） */
-export function updateAgentDefinition(def: AgentDefinition, patch: Partial<AgentDefinition>): AgentDefinition {
-  return { ...def, ...patch };
+// ==================== 助手提示词 / 函数定义 ====================
+
+/**
+ * 一条助手的函数定义。
+ *
+ * 只有子 Agent 才有（`AgentDefinition.function` 不在 = 不是子 Agent）。
+ */
+export type AgentFunction = NonNullable<AgentDefinition["function"]>;
+
+/** 函数参数 schema（SDK 那边是 JSON Schema）。客户端只当「一个 JSON 对象」搬运，不解释语义 */
+export type AgentParameters = AgentFunction["parameters"];
+
+/**
+ * 读提示词：首条 system 消息的纯文本。
+ *
+ * 只认 `content` 是字符串的那一种。分段内容（`MessageContentSection[]`）没法用一段纯文本
+ * 表示 —— 拼成字符串再写回去等于悄悄把用户的分段结构换成纯文本；读不到（`messages` 为
+ * `null` / 没有 system 消息 / 内容是分段）时就当空，屏上显示为「空」，改不改由用户决定。
+ */
+export function agentPromptText(messages: AgentDefinition["messages"] | null | undefined): string {
+  const system = (messages ?? []).find((message) => message.role === AgentNS.Role.System);
+  return typeof system?.content === "string" ? system.content : "";
 }
 
-/** 函数参数 schema → 紧凑 JSON 文本 */
-export function formatFunctionParameters(fn: AgentNS.FunctionDefine | undefined): string {
-  return fn?.parameters ? JSON.stringify(fn.parameters) : "{}";
+/**
+ * 编辑后的文本 → `agent.update` 的 `messages` 补丁（**整串**）。
+ *
+ * 宿主对 `messages` 是整份替换（`requireMessages`：非空且至少一条 system），所以每次都要给
+ * 全串：换掉首条 system 的 `content`，其余消息连同它们自己的 id 原样带上；没有 system 时在
+ * 前面补一条。构造出来的这一串天然满足「非空 + 有 system」，于是「清空提示词」（content 为空
+ * 串）也是一次合法的写入 —— 客户端不替用户补任何默认值。
+ */
+export function withAgentPrompt(
+  messages: AgentDefinition["messages"] | null | undefined,
+  text: string,
+): NonNullable<AgentDefinition["messages"]> {
+  const list = [...(messages ?? [])];
+  const index = list.findIndex((message) => message.role === AgentNS.Role.System);
+  if (index < 0) return [Message.System(text), ...list];
+  list[index] = { ...list[index], content: text };
+  return list;
 }
 
-/** 解析函数参数 JSON；合法返回对象，非法返回错误文本 */
-export function parseFunctionParameters(raw: string): Record<string, unknown> | string {
+/**
+ * 改写函数定义的若干项。
+ *
+ * 宿主对 `function` 是**整份替换**（`definedOnly` 只把 `undefined` 当「这一项不改」，不做深
+ * 合并），所以每次都在这条定义现有的那份上盖一项 —— 只发 `{ description }` 会把
+ * `parameters` 一起冲掉，反过来也一样。
+ */
+export function withAgentFunction(fn: AgentFunction, patch: Partial<AgentFunction>): AgentFunction {
+  return { ...fn, ...patch };
+}
+
+/**
+ * 参数 schema 文本 → 契约里的 JSON 对象；有格式问题就返回**一句人话**。
+ *
+ * 与 `parsePermission` 同一个口径：能当场判的格式（空 / 不是 JSON / 不是对象）在客户端判，
+ * 「这份 schema 语义上是否成立」归宿主 —— 这里再实现一套只会漂的规则。
+ */
+export function parseFunctionParameters(raw: string): AgentParameters | string {
   const text = raw.trim();
   if (!text) return t("err.paramsSchemaEmpty");
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
-  } catch (cause: any) {
-    return t("err.jsonParseFailed", { error: cause?.message ?? cause });
+  } catch (cause: unknown) {
+    return t("err.jsonParseFailed", {
+      error: cause instanceof Error ? cause.message : String(cause),
+    });
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return t("err.paramsSchemaNotObject");
-  return parsed as Record<string, unknown>;
-}
-
-/** 改写 Sub-agent 的 `function`（缺省时补一个骨架） */
-export function updateAgentFunction(
-  def: AgentDefinition,
-  patch: { name?: string; description?: string; parameters?: Record<string, unknown> },
-): AgentDefinition {
-  const fn: AgentNS.FunctionDefine =
-    def.function ?? { name: `sub_agent_${def.id.replace(/-/g, "_")}`, description: "", parameters: {} };
-  return { ...def, function: { ...fn, ...patch } };
-}
-
-/** 新建顶层 Agent 定义 */
-export function createAgentDefinition(input: {
-  id: string;
-  name: string;
-  prompt?: string;
-  now?: string;
-}): AgentDefinition {
-  const now = input.now ?? new Date().toISOString();
-  return {
-    id: input.id,
-    name: input.name,
-    description: "",
-    messages: [Message.System(input.prompt ?? "")],
-    permissions: {
-      tools: { allow: ["*"] },
-      skills: { allow: ["*"] },
-      mcps: { allow: ["*"] },
-      subagents: { allow: ["*"] },
-    },
-    custom: true,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-/** 新建 Sub-agent 定义（带 function 骨架，尾部保留 `{{task}}` 用户消息） */
-export function createSubAgentDefinition(input: {
-  id: string;
-  name: string;
-  prompt?: string;
-  now?: string;
-}): AgentDefinition {
-  const now = input.now ?? new Date().toISOString();
-  return {
-    id: input.id,
-    name: input.name,
-    description: "",
-    messages: [Message.System(input.prompt ?? ""), Message.User("{{task}}")],
-    permissions: {
-      tools: { allow: ["*"] },
-      skills: { allow: ["*"] },
-      mcps: { allow: ["*"] },
-      subagents: { deny: ["*"] },
-    },
-    function: {
-      name: `sub_agent_${input.id.replace(/-/g, "_")}`,
-      description: input.name,
-      parameters: {
-        type: "object",
-        properties: { task: { type: "string", description: t("agent.subAgentTaskParam") } },
-        required: ["task"],
-        additionalProperties: false,
-      },
-    },
-    custom: true,
-    createdAt: now,
-    updatedAt: now,
-  };
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return t("err.paramsSchemaNotObject");
+  }
+  return parsed as AgentParameters;
 }

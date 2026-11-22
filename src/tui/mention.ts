@@ -4,14 +4,21 @@
  * ## 三层分工
  *
  *   · `mention.ts`（本文件）：无 IO、无 React，全是可单测的纯函数；
- *   · `file-index.ts`：扫描项目文件（git 优先 / `fs.glob` 兜底）并缓存；
+ *   · 文件清单：会话层给（问宿主 `workspace.files`，扫的是**跑会话的那台机器**）——
+ *     本模块只做「拿到条目之后怎么过滤与插入」；
  *   · `screens/chat.tsx`：只做「按键 → 调上面两者 → 落字」的接线。
+ *
+ * ## 候选的形状就是契约那一份
+ *
+ * 条目是宿主 `workspace.files` 给的相对路径折成的 `FileEntry`（`path` / `name` / `kind`，见
+ * `session/types.ts` 与 `session.ts` 的 `toFileEntry`）。这里不另立一个「补全用的条目」：那种平行
+ * 形状迟早与宿主那侧分叉。
  *
  * ## 为什么只插路径文本，不附带文件内容
  *
  * `@` 只把**相对路径**写进草稿，消息本身仍是普通文本，模型用 `read` 工具自己去读。
  * 这样消息契约（core 的 `Message`）一点不动、插入可撤销、超大文件也不会把一条消息
- * 撑成巨型 payload —— 代价是多一轮工具调用，这是刻意的取舍。
+ * 撑成巨型 payload —— 代价是多一次工具调用，这是刻意的取舍。
  *
  * ## 判据落在字符事实上
  *
@@ -23,6 +30,7 @@
  *   · 光标停在 token 中间（`@src|/foo.ts`）也算，且 `end` 会**向后吃掉整个 token**：
  *     补全要替换的是整段，只替换到光标会留下半截残字。
  */
+import type { FileEntry } from "../session/types.js";
 import { graphemes } from "./text.js";
 
 /**
@@ -33,14 +41,48 @@ import { graphemes } from "./text.js";
  * 属于极少数情况，且补全仍可手动补完。
  */
 const BOUNDARY = new Set([
-  "(", ")", "[", "]", "{", "}", "<", ">",
-  '"', "'", "`", "“", "”", "‘", "’",
-  ",", "，", ":", "：", ";", "；",
+  "(",
+  ")",
+  "[",
+  "]",
+  "{",
+  "}",
+  "<",
+  ">",
+  '"',
+  "'",
+  "`",
+  "“",
+  "”",
+  "‘",
+  "’",
+  ",",
+  "，",
+  ":",
+  "：",
+  ";",
+  "；",
   // 中文行文的标点：`@src/x。这里有问题` 里的 `。` 必须收住 token，否则补全会把
   // 后面整句一起替换掉，用户写句子时菜单也会一直弹着不走
-  "。", "、", "！", "？", "（", "）", "《", "》",
-  "【", "】", "〔", "〕", "「", "」", "『", "』",
-  "…", "—", "～",
+  "。",
+  "、",
+  "！",
+  "？",
+  "（",
+  "）",
+  "《",
+  "》",
+  "【",
+  "】",
+  "〔",
+  "〕",
+  "「",
+  "」",
+  "『",
+  "』",
+  "…",
+  "—",
+  "～",
 ]);
 
 /** 一次 `@` 补全的上下文 */
@@ -51,14 +93,6 @@ export interface Mention {
   start: number;
   /** token 结束位置（字素簇索引，不含）：补全时替换 `[start, end)` */
   end: number;
-}
-
-/** 索引里的一条候选路径 */
-export interface PathEntry {
-  /** 相对 cwd 的路径（`/` 分隔，不带 `./` 前缀） */
-  path: string;
-  /** 是否目录 —— 决定补全后是否补一个 `/`，让用户可以继续往里钻 */
-  dir: boolean;
 }
 
 /** 候选上限：再多也没人翻；同时给每次按键的内存过滤定个上界（10k 候选实测约 9ms） */
@@ -103,9 +137,15 @@ export function extractMention(text: string, cursor: number): Mention | null {
   return { query: chars.slice(start + 1, cp).join(""), start, end };
 }
 
-/** 补全要插入的文本：`@路径`，目录补一个 `/` 以便继续往下钻 */
-export function mentionInsertText(path: string, dir: boolean): string {
-  return `@${path}${dir ? "/" : ""}`;
+/**
+ * 补全要插入的文本：`@路径`，目录补一个 `/` 以便继续往下钻。
+ *
+ * 判据取条目上的 `kind`（`directory` 才补斜杠）：屏幕这边不自己猜「以 `/` 结尾就是目录」。
+ * 宿主这一版给的清单只有文件（`kind` 恒 `"file"`），所以现实里就是插一段完整路径；这一支留着
+ * 是因为类型与 `mention.test.ts` 都还认它。
+ */
+export function mentionInsertText(entry: FileEntry): string {
+  return `@${entry.path}${entry.kind === "directory" ? "/" : ""}`;
 }
 
 function basename(path: string): string {
@@ -163,14 +203,17 @@ export function scorePath(query: string, path: string): number | null {
  */
 export function rankPaths(
   query: string,
-  entries: readonly PathEntry[],
+  entries: readonly FileEntry[],
   limit = MENTION_LIMIT,
-): PathEntry[] {
-  const scored: { entry: PathEntry; score: number }[] = [];
+): FileEntry[] {
+  const scored: { entry: FileEntry; score: number }[] = [];
   for (const entry of entries) {
     const score = scorePath(query, entry.path);
     if (score !== null) scored.push({ entry, score });
   }
-  scored.sort((a, b) => a.score - b.score || (a.entry.path < b.entry.path ? -1 : a.entry.path > b.entry.path ? 1 : 0));
+  scored.sort(
+    (a, b) =>
+      a.score - b.score || (a.entry.path < b.entry.path ? -1 : a.entry.path > b.entry.path ? 1 : 0),
+  );
   return scored.slice(0, Math.max(0, limit)).map((item) => item.entry);
 }

@@ -1,21 +1,23 @@
 // 通知栏渲染：断言「多条通知真的都画出来了」。
 //
-// 这条路径以前没有任何测试——内联在 `Chat` 的 JSX 里，而 `Chat` 依赖整条会话链路
-// （读配置 / 建 Agent / 连 MCP），没法单独渲染。而「只显示最后一条」这个 bug 恰恰
-// 就出在这一层之上（单槽 state），所以渲染映射必须可测。
+// 为什么单独成文件：内联在 `Chat` 的 JSX 里时没法单独渲染（`Chat` 依赖整条会话链路：
+// 读配置 / 建 Agent / 连 MCP）。而「只显示最后一条」这个 bug 恰恰就出在这一层之上
+// （单槽 state），所以渲染映射必须可测。
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
 import { NoticeBar } from "./notice-bar.js";
-import { noticeLines, type Notice } from "./notice.js";
+import { noticeBarContent, type Notice } from "./notice.js";
 
 const notice = (text: string, tone: "info" | "error" = "info", seq = 1): Notice => ({
   text,
   tone,
+  origin: "app",
   seq,
 });
 
 const draw = (notices: Notice[], columns = 80): string => {
-  const { lastFrame, unmount } = render(<NoticeBar lines={noticeLines(notices, columns)} />);
+  const content = noticeBarContent(notices, columns);
+  const { lastFrame, unmount } = render(<NoticeBar lines={content.lines} hint={content.hint} />);
   const frame = lastFrame() ?? "";
   unmount();
   return frame;
@@ -48,6 +50,21 @@ describe("NoticeBar（通知栏渲染）", () => {
   });
 
   it("空队列不渲染任何内容", () => {
+    expect(draw([])).toBe("");
+  });
+});
+
+describe("NoticeBar（全部清空的入口）", () => {
+  it("有通知时「全部清空」的提示跟着栏位一起上屏", () => {
+    const content = noticeBarContent([notice("配置已更新")], 80);
+    const frame = draw([notice("配置已更新")]);
+    expect(frame).toContain("配置已更新");
+    // 提示文字就是栏位那一行（键位在 common-keys 的 handleClearNoticesKey）
+    expect(content.hint).not.toBeNull();
+    expect(frame).toContain(content.hint!);
+  });
+
+  it("没有通知时既不画正文，也不画入口（空栏位上按什么也没有可清的）", () => {
     expect(draw([])).toBe("");
   });
 });

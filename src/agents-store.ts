@@ -1,25 +1,60 @@
 /**
- * Agent / Sub-agent 定义仓储 —— CLI 层
+ * 助手清单的三个投影 —— CLI 层唯一的「数据整形」。
  *
- * 管理两处定义目录（均为「每实体一个 JSON，文件名 = `<id>.json`」）：
- *   - 顶层 Agent：`~/.ai-zen/agents/*.json`（`/config`「默认 Agent」可选的那些）
- *   - 子 Agent：  `~/.ai-zen/sub-agents/*.json`（可被委派，额外带 `function` 定义）
+ * ## 这里没有读写，也没有目录
  *
- * 单文件读写委托 SDK 的 `AgentRepository`（`EntityRepository`），本模块只做「按 kind 分派」
- * 与「快照 + 写操作」的组装，便于 TUI 与单测共用。
+ * 助手定义的真相在**宿主**：一份清单就是 `api.agentDefinition.list.query()` 的返回
+ * （`AgentDefinition[]`），增删改各走 `agentDefinition.create` / `update` / `remove` /
+ * `reset`。所以本文件只做「从清单里挑」：主助手、子 Agent、按 id 找一条。没有仓储形状，
+ * 也没有第二个 `AgentDefinition` 类型。
+ *
+ * ## 两个「宿主不再给」的格子，在这里各有一行推导
+ *
+ * 旧契约的 `AgentView` 有 `isSubAgent` / `isDefault` / `available` 三格；今天的
+ * `AgentDefinition` 只有定义本身。前两格是**定义里的字段**能算出来的事实（有 `function` 就是
+ * 子 Agent；`AppConfig.defaultAgent` 指着它就是默认），所以在这里现算：
+ *
+ *   · {@link isSubAgent} —— `function` 在不在；
+ *   · {@link agentListOf} —— 顺手把「默认助手是谁」也放进清单（它来自配置，不来自定义）。
+ *
+ * 第三格 `available` **没有**对应：能不能跑起来要解析模型、查端点密钥，那是宿主的判断，客户端
+ * 算一遍就是第二份会漂的规则。所以这一格随契约一起退场，界面也不再印「不可用」。
  */
 
-import { AgentRepository } from "@ai-zen/agents-sdk";
-import type { AgentDefinition, AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { AGENTS_DIR, SUB_AGENTS_DIR, readConfig, readReasoningPresets } from "./config.js";
-import { patchOf, presetFor } from "./reasoning-presets.js";
+import type { AgentDefinition, AppConfig } from "./config.js";
 
-/** Agent 定义的类型：顶层 Agent / 子 Agent */
-export type AgentKind = "agent" | "subagent";
+/** 助手清单：全部定义 + 默认助手的 id（`AppConfig.defaultAgent`，没有就是 `null`） */
+export interface AgentList {
+  agents: AgentDefinition[];
+  defaultAgentId: string | null;
+}
 
-/** 某个 kind 对应的定义目录 */
-export function agentDir(kind: AgentKind): string {
-  return kind === "agent" ? AGENTS_DIR : SUB_AGENTS_DIR;
+/**
+ * wire 上的定义 → 本仓认的 `AgentDefinition`。
+ *
+ * 与 `server-client/mirror.ts` 的 `toCoreMessages` 同一个理由：过了 JSON 通道之后只剩**字段**
+ * （tRPC 从宿主推出来的那一份里，`AgentNS.Message` 的带方法的成员被摊成了纯对象），而这里读的
+ * 全是字段（`modelId` / `messages` / `function` / `permissions`），一个方法都不调。转换写在这一处，
+ * 屏与命令层就拿不到「两种定义」。
+ */
+export function toDefinition(value: unknown): AgentDefinition {
+  return value as AgentDefinition;
+}
+
+/** 把 `agentDefinition.list` 的定义数组与 `config.defaultAgent` 折成清单 */
+export function agentListOf(
+  definitions: readonly unknown[],
+  config: Pick<AppConfig, "defaultAgent">,
+): AgentList {
+  return {
+    agents: definitions.map(toDefinition),
+    defaultAgentId: config.defaultAgent ?? null,
+  };
+}
+
+/** 是不是子 Agent：定义里有 `function` 就是（SDK 与宿主用的是同一个判据） */
+export function isSubAgent(agent: AgentDefinition): boolean {
+  return agent.function !== undefined;
 }
 
 /**
@@ -28,99 +63,22 @@ export function agentDir(kind: AgentKind): string {
  * 刻意**不本地化**：这两个词在配置中心的英文界面与中文界面里是同一个行业惯用写法，
  * 翻译成「代理 / 子代理」反而难认。真要本地化，应该走 `t()` 而不是在这里硬编码。
  */
-export function agentKindLabel(kind: AgentKind): string {
-  return kind === "agent" ? "Agent" : "Sub-agent";
+export function agentKindLabel(agent: AgentDefinition): string {
+  return isSubAgent(agent) ? "Sub-agent" : "Agent";
 }
 
-/** 「Agent 定义」管理用的仓储：快照 + 写 / 删操作 */
-export interface AgentStore {
-  agents: AgentDefinition[];
-  subAgents: AgentDefinition[];
-  save: (kind: AgentKind, def: AgentDefinition) => Promise<void>;
-  remove: (kind: AgentKind, id: string) => Promise<void>;
+/** 能开一段会话的主助手（子 Agent 不是入口，SDK 用 `function` 明说了这件事） */
+export function topLevelAgents(list: AgentList): AgentDefinition[] {
+  return list.agents.filter((agent) => !isSubAgent(agent));
 }
 
-/** 取某 kind 的定义列表 */
-export function agentList(store: AgentStore, kind: AgentKind): AgentDefinition[] {
-  return kind === "agent" ? store.agents : store.subAgents;
+/** 子 Agent（能被主助手当函数调用的那些） */
+export function subAgentList(list: AgentList): AgentDefinition[] {
+  return list.agents.filter(isSubAgent);
 }
 
-/** 按 id 查找某 kind 的定义 */
-export function findAgentDefinition(
-  store: AgentStore,
-  kind: AgentKind,
-  id: string | undefined,
-): AgentDefinition | undefined {
+/** 按 id 查一条（主助手与子 Agent 一起找；`id` 为空时返回 undefined） */
+export function findAgent(list: AgentList, id: string | undefined): AgentDefinition | undefined {
   if (!id) return undefined;
-  return agentList(store, kind).find((def) => def.id === id);
-}
-
-/** 用给定快照 + 真实文件读写构造仓储 */
-export function createAgentStore(agents: AgentDefinition[], subAgents: AgentDefinition[]): AgentStore {
-  return {
-    agents,
-    subAgents,
-    save: async (kind, def) => {
-      await new AgentRepository(agentDir(kind)).write(def);
-    },
-    remove: async (kind, id) => {
-      await new AgentRepository(agentDir(kind)).delete(id);
-    },
-  };
-}
-
-/** 从磁盘读取 Agent / Sub-agent 快照，并附带真实读写能力 */
-export async function readAgentStore(): Promise<AgentStore> {
-  const repoAgents = new AgentRepository(AGENTS_DIR);
-  const repoSubAgents = new AgentRepository(SUB_AGENTS_DIR);
-  const [rawAgents, rawSubAgents] = await Promise.all([repoAgents.list(), repoSubAgents.list()]);
-
-  // 旧版 `/think` 把档位名写在 `reasoningEffort` 上；现在档位在写入时就展开成参数。
-  // 这里做一次性迁移：能查到策略就展开进 `modelParams`，查不到就只删旧字段。
-  const isLegacy = (def: AgentDefinition) =>
-    "reasoningEffort" in (def as unknown as Record<string, unknown>);
-  const legacy = (defs: AgentDefinition[]) => defs.filter(isLegacy);
-  const needsMigration = legacy(rawAgents).length + legacy(rawSubAgents).length > 0;
-
-  if (!needsMigration) return createAgentStore(rawAgents, rawSubAgents);
-
-  const [config, presets] = await Promise.all([readConfig(), readReasoningPresets()]);
-  const migrate = async (
-    repo: AgentRepository,
-    defs: AgentDefinition[],
-  ): Promise<AgentDefinition[]> => {
-    const out: AgentDefinition[] = [];
-    for (const def of defs) {
-      if (!isLegacy(def)) {
-        out.push(def);
-        continue;
-      }
-      out.push(await migrateDefinition(repo, def, config, presets));
-    }
-    return out;
-  };
-
-  const agents = await migrate(repoAgents, rawAgents);
-  const subAgents = await migrate(repoSubAgents, rawSubAgents);
-  return createAgentStore(agents, subAgents);
-}
-
-/** 把旧 `reasoningEffort` 展开成 `modelParams` 并写回（只跑一次：写完旧字段就没了） */
-async function migrateDefinition(
-  repo: AgentRepository,
-  def: AgentDefinition,
-  config: AppConfig,
-  presets: ReasoningPresets,
-): Promise<AgentDefinition> {
-  const { reasoningEffort, ...rest } = def as AgentDefinition & { reasoningEffort?: string };
-  // 模型只认 Agent 定义自身的 modelId（配置层已无 defaultModel）
-  const modelId = rest.modelId;
-  const model = (config.models ?? []).find((item) => item.id === modelId);
-  const preset = model ? presetFor(model.id, model.reasoningPreset, presets) : undefined;
-  const patch = reasoningEffort ? patchOf(preset, reasoningEffort) : undefined;
-  const next: AgentDefinition = patch
-    ? { ...rest, modelParams: { ...(rest.modelParams ?? {}), ...patch } }
-    : rest;
-  await repo.write(next);
-  return next;
+  return list.agents.find((agent) => agent.id === id);
 }

@@ -1,9 +1,8 @@
 // 两个输入处理器共用的键位 —— 「滚轮 / 翻页 / ⌘ 习惯键 / Ctrl+D 双击退出」
 //
-// 对话屏有两个 `useInput`：一个是空闲态（编辑输入框），一个是忙碌态（生成 / 迁移中，
+// 会话屏有两个 `useInput`：一个是空闲态（编辑输入框），一个是忙碌态（生成 / 迁移中，
 // 只放行中止与回看）。两者对**同一批键**的处理必须一致 —— 否则「生成时能滚、空闲时
-// 不能滚」这类不一致迟早会出现。此前这段逻辑在两个处理器里各写一遍（约 40 行重复），
-// 现在收敛到这里：纯函数，不碰 React，键盘回归可以直接断言。
+// 不能滚」这类不一致迟早会出现。所以这一段只写一次：纯函数，不碰 React，键盘回归可以直接断言。
 import type { Key } from "ink";
 import { parseWheel } from "../mouse.js";
 import { isTerminalReply } from "../text.js";
@@ -55,6 +54,86 @@ export function handleScrollKey(char: string, key: Key, deps: ScrollKeyDeps): bo
     return true;
   }
   return false;
+}
+
+export interface ClearNoticesDeps {
+  /** 清空通知栏（本地队列 + 宿主上这一段会话的通知） */
+  clear: () => void;
+}
+
+/**
+ * 通知栏的「清空本会话」键（`Alt+X`）。
+ *
+ * 只认这一个组合：通知栏没有焦点、也不接管方向键，所以入口只能是一个全局键 —— 而它必须
+ * 不与输入编辑（Ctrl 系）和滚动（PgUp/PgDn、⌘ 系）撞车。提示文字就在通知栏最后一行
+ * （`notice.ts` 的 `noticeLines`），改这里要同步改词条。
+ *
+ * 「清」有三档粒度（`prd/08-client.md` 的通知那一节）：清一条（补看那条路，`pending-notices.ts`）、
+ * 清一段会话的（这一支）、清全部（{@link handleClearAllNoticesKey}）。
+ *
+ * 与其它共用键一样放成纯函数：键位回归不必挂一个 React 渲染。
+ *
+ * @returns 是否已消费该键
+ */
+export function handleClearNoticesKey(char: string, key: Key, deps: ClearNoticesDeps): boolean {
+  if (!(char === "x" && key.meta)) return false;
+  deps.clear();
+  return true;
+}
+
+export interface ClearAllNoticesDeps {
+  /**
+   * 开「清全部」那一问（确认之后才真的清）。
+   *
+   * 键位函数只负责按键分流，「问一次」与「清」都在屏幕那一侧：那里才有选择器与连接。
+   */
+  ask: () => void;
+}
+
+/**
+ * 通知栏的「清全部」键（`Alt+Shift+X`）。
+ *
+ * 为什么是这一组：三档粒度要在栏位这一处排得开，于是与「清本会话」（`Alt+X`）同一族 ——
+ * 小写清这一段、大写连同别处一起清。它必须落在**别的键都没占**的格子上：`Alt+X` 与它只差
+ * 一个 shift（`handleClearNoticesKey` 明文不认 `X`），Ctrl 系全给了输入编辑与退出，
+ * ⌘ / PgUp / PgDn 给了滚动。
+ *
+ * 这里**不做**任何清除动作：清全部会连全局通知、连别的会话的通知一起抹掉，所以它只开那一问
+ * （`chat.tsx` 的 `clearAllNotices`），用户点头之后才发 `notice.clear`。
+ *
+ * @returns 是否已消费该键
+ */
+export function handleClearAllNoticesKey(
+  char: string,
+  key: Key,
+  deps: ClearAllNoticesDeps,
+): boolean {
+  if (!(char === "X" && key.meta)) return false;
+  deps.ask();
+  return true;
+}
+
+export interface OpenImageDeps {
+  /** 开「这一段里哪一张图」那一问（取字节、落临时文件、交给本机程序都在筛选之后） */
+  open: () => void;
+}
+
+/**
+ * 打开消息里图片的键（`Ctrl+O`）。
+ *
+ * 为什么是 Ctrl+O：转录里的图一律折成占位（终端不可能内联渲染），需要一个动作把它交给
+ * 本机看图器。`o` = open，而 Ctrl 系里剩下的空格子已经不多了：`Ctrl+C/D/L/U/K/W/Y/S/V/A/E/J/P/N`
+ * 都有主，`Ctrl+O` 是空的（它不相邻任何一个已有语义，不会被人当成“顺手多按一个”）。
+ * 不用 Alt 系：那几个位子是回看历史（`Alt+V`、`Alt+B/F/D/Y`）与通知栏（`Alt+X` 两档）的。
+ *
+ * 它**只**开那一问：一张图都不在这一段里时也要说一句（不能一声不响，否则用户以为键坏了）。
+ *
+ * @returns 是否已消费该键
+ */
+export function handleOpenImageKey(char: string, key: Key, deps: OpenImageDeps): boolean {
+  if (!(char === "o" && key.ctrl)) return false;
+  deps.open();
+  return true;
 }
 
 /** Ctrl+D 双击退出的时间窗（毫秒） */

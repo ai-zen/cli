@@ -95,7 +95,7 @@ outline: deep
 - **单独 Agent 写交接文档**（`summary`）—— 历史序列化后单次独立生成，更快更省，但不核实文件；
 - **不交接** —— 跳过本次（按 `Esc` 同效）。历史不受影响；只要用量仍超阈值，下次回复后还会再问。
 
-非交互环境（管道、重定向、e2e 脚本）没有选择通道：按默认执行者迁移，不阻塞等待输入、不额外输出。
+**没人回答就不迁移。** 交接线的提问是**库里的一行问题**（`QuestionService`：存的是文案键 + 候选项，答完的副作用由宿主自己做）：它不自动过期，也没有「等 N 分钟替你选」的兜底 —— 管道 / 重定向这类非交互场景没有人答，问题就一直挂着（它挡着这段对话的发送，业务码 `question_pending`），迁移不会自己发生。历史不受影响。真正的安全网是 `guard` 硬线 —— 请求前超过它就中断本轮。
 
 ## 迁移链路
 
@@ -103,11 +103,11 @@ outline: deep
 2. **交接回合** —— 中止在途请求，执行 `self` 回合（或 `summary` 调用），校验文件（存在 + ≥ 400 字节，失败重试一次，再失败降级）；
 3. **`onHandoff`** —— 提示文档路径；若是迁移，此刻保存旧会话（已包含交接回合，归档可审计）；
 4. **`migrate` 的 `prune` 策略** —— 物理剔除历史，只保留 `definition.messages` + 一条只含路径的断点消息；
-5. **`onMigrated`** —— 分配新会话 id、落盘、更新「上一轮会话」指针。**不碰 `lastUsage`**：它已是从 `messages` 派生的只读值，`prune` 换掉 `messages` 后自然就没有旧用量；交接回合本身的护栏让行由 `ContextGuardPlugin.isSuspended`（接线 `() => handoffService.busy`）负责。
+5. **`onMigrated`** —— 分配新会话 id、落库（新对话由宿主开：同项目、同助手，旧对话完整保留，客户端只跟着换 id）。**不碰 `lastUsage`**：它已是从 `messages` 派生的只读值，`prune` 换掉 `messages` 后自然就没有旧用量；交接回合本身的护栏让行由 `ContextGuardPlugin.isSuspended`（接线 `() => handoffService.busy`）负责。
 
 旧会话一定在剔除前保存，因此即使交接失败也不会丢历史：可以重试，也可以继续当前对话。
 
-> **会话 id 只有一个真相源。** `onMigrated` 写入的新 id 必须立刻对会话层的落盘逻辑可见（CLI 中 `ChatSession.currentId` 直接代理 `ConversationContext.currentId`，而不是各存一份）。否则下一轮自动落盘仍按旧 id 写盘，会把 `prune` 后的空壳（系统提示 + 断点）覆盖到**旧会话文件**上，表现为「交接之后历史全没了，只剩交接文档」。
+> **会话 id 只有一个真相源。** `onMigrated` 写入的新 id 必须立刻对会话层的落库逻辑可见（**宿主**侧那段会话的 `currentId` 是唯一一份，客户端与渲染层只读快照里的 `sessionId`）。否则下一轮自动落库仍按旧 id 写，会把 `prune` 后的空壳（系统提示 + 断点）写回**旧的那段会话**上，表现为「交接之后历史全没了，只剩交接文档」。
 
 ## 取消
 
@@ -117,7 +117,7 @@ outline: deep
 - 本次新建的交接文档删掉（写了一半的更不留）；
 - 不降级、不重试、不迁移：不会留下「已迁移」的假象。
 
-取消句柄由 `HandoffService` 自己持有（`handoffService.abort()`），而不是由调用方传 `signal`：**自动迁移**（上下文超限触发的那种）由 SDK 插件直接驱动，CLI 根本没机会把信号递进去 —— 只认外部 `signal` 的后果就是「自动迁移期间按 Ctrl+C 被当成『文档没写出来』，于是重试一轮、再降级 `summary` 一轮，最后照样迁移」。CLI 的 `ChatSession.abort()` 只把两件事一起做：`handoffService.abort()`（停下并回退）+ `agent.abort()`（立刻掐断正在流的这一轮）。
+取消句柄由 `HandoffService` 自己持有（`handoffService.abort()`），而不是由调用方传 `signal`：**自动迁移**（上下文超限触发的那种）由 SDK 插件直接驱动，CLI 根本没机会把信号递进去 —— 只认外部 `signal` 的后果就是「自动迁移期间按 Ctrl+C 被当成『文档没写出来』，于是重试一轮、再降级 `summary` 一轮，最后照样迁移」。客户端的 `RemoteChatSession.abort()` 只做一件事 —— `session.cancel`，由宿主把两件事一起做：`handoff.abort()`（停下并回退）+ `agent.abort()`（立刻掐断正在流的这一轮）。
 
 边界：交接文档**通过校验之后**（存旧会话、剔除历史、落新会话）属于「提交点」，此后的 `Ctrl+C` 不再撤销迁移 —— 那会留下「旧会话已存档、历史却已剔除」的第三种状态。
 

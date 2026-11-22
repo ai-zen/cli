@@ -1,4 +1,4 @@
-// 欢迎块（空对话时的品牌区）—— 纯函数产出 `RLine[]`，不依赖 Ink，可直接断言
+// 欢迎块（空会话时的品牌区）—— 纯函数产出 `RLine[]`，不依赖 Ink，可直接断言
 import { describe, expect, it, beforeEach } from "vitest";
 import { welcomeLines } from "./welcome.js";
 import { setLocale } from "../../i18n/index.js";

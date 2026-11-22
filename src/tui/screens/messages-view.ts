@@ -5,37 +5,62 @@
 // 也不需要把流式 delta 翻译成中间事件 —— 流式中 SDK 会实时更新「当前那条 message」，
 // 直接读它即可。
 import { AgentNS } from "@ai-zen/agents-core";
-import { RLine, contentLines, indentLines, clipSpans, toolSpans, spanLine, innerWidth } from "./lines.js";
+import {
+  RLine,
+  contentLines,
+  indentLines,
+  clipSpans,
+  toolSpans,
+  spanLine,
+  innerWidth,
+} from "./lines.js";
 import { stripCwdNote } from "../text.js";
 import { t } from "../../i18n/index.js";
+import { imagePlaceholderLines, type ImageSection } from "./message-images.js";
 
-/** 从消息内容提取纯文本；非文本块（图片 / 文件）以占位文本表示 */
+/**
+ * 从消息内容提取纯文本；非文本块（图片 / 文件）以占位文本表示。
+ *
+ * 图片那一段是**多行的**：终端不内联渲染图片（内联 base64 动辄几十万字符，铺到转录里会撑爆
+ * 一行），但占位不能只说「有图」—— 占位那块把手里已有的事实逐行说出来（第几张、尺寸、
+ * 文件名），手里只有 `__asset_id` 时就写「不知道多大」。这一套在 `message-images.ts`，这里只
+ * 负责把它拼进这段文字里。
+ */
 export function messageText(content: AgentNS.MessageContent | undefined): string {
   if (content == null) return "";
   if (typeof content === "string") return content;
-  return content
-    .map((part) => {
-      if (part.type === "text") return part.text;
-      // 内联 base64（`Ctrl+V` 粘贴的图片）动辄几十万字符：铺到转录里会撑爆一行，
-      // 还会拖慢整帧渲染。这类只显示占位，有 URL 的（远程图片）才带上地址。
-      if (part.type === "image_url") {
-        const url = part.image_url.url;
-        return url.startsWith("data:") ? t("msg.imageInline") : t("msg.image", { url });
-      }
-      if (part.type === "file") {
-        const file = part as { file_id?: string; filename?: string };
-        return t("msg.file", { name: file.file_id ?? file.filename ?? t("msg.inlineFile") });
-      }
-      return "";
-    })
-    .join("");
+  let out = "";
+  let imageIndex = 0;
+  /** 上一块是不是图片：图片块自成几行，前后都要换行 */
+  let afterImage = false;
+  for (const part of content) {
+    if (part.type === "text") {
+      if (afterImage && part.text.length > 0) out += "\n";
+      out += part.text;
+      afterImage = false;
+      continue;
+    }
+    if (part.type === "image_url") {
+      imageIndex += 1;
+      const block = imagePlaceholderLines(part as ImageSection, imageIndex).join("\n");
+      out += out.length === 0 ? block : `\n${block}`;
+      afterImage = true;
+      continue;
+    }
+    if (part.type === "file") {
+      const file = part as { file_id?: string; filename?: string };
+      out += t("msg.file", { name: file.file_id ?? file.filename ?? t("msg.inlineFile") });
+      afterImage = false;
+    }
+  }
+  return out;
 }
 
 /**
- * 这条消息会不会进入下一轮上下文 —— 与 core `Agent.formatHistory()` 同一判据：
+ * 这条消息会不会进入下一次请求的上下文 —— 与 core `Agent.formatHistory()` 同一判据：
  * `status == undefined || status === Completed`，且未被 `omit`。
  *
- * 策略**不需要**在这里重新推断：`core/Agent.run()` 收尾时已经把策略结算进字段里了
+ * 策略**不需要**在这里重新推断：`core/Agent.run()` 收尾时已经把策略写进字段里了
  * （`reconcileAbortedToolRounds()` + `reconcileAbortedMessages()`）：
  *   - `abortedMessageStrategy: keep` → 有内容的中断消息恢复 `Completed`（进上下文）；
  *     `drop` → 保持 `Aborted`（不进）；
@@ -51,7 +76,7 @@ export function entersContext(message: AgentNS.Message): boolean {
  * 流式中那条还没定局：`Pending`（占位）/ `Writing`（正在输出）。
  *
  * 它们在 `formatHistory()` 里同样不在（此刻确实还没进历史），但那是「尚未」而不是
- * 「被丢弃」——本轮结束会变 `Completed` 或被策略改写成 `Aborted`，届时候选才确定。
+ * 「被丢弃」——这次回答结束会变 `Completed` 或被策略改写成 `Aborted`，届时候选才确定。
  */
 function isInFlight(message: AgentNS.Message): boolean {
   const status = message.status;
@@ -62,7 +87,7 @@ function isInFlight(message: AgentNS.Message): boolean {
  * 单条消息 → 预折行（不可渲染的消息返回空数组）。
  *
  * - `hidden`：渲染层要求彻底不出现（内部注入 / 占位消息）→ 返回空数组；
- * - **不进上下文**（`!entersContext()`，如中断后按 `drop` 结算的消息、`Error`）：
+ * - **不进上下文**（`!entersContext()`，如中断后按 `drop` 处理的消息、`Error`）：
  *   照常渲染、整行划删除线 —— 消息凭空消失会让人以为丢了内容，划掉则明确表示
  *   「还在，但没发给模型」。
  */
@@ -150,7 +175,10 @@ function signature(message: AgentNS.Message): string {
  * 命中缓存后历史消息的折行 / 高亮全部免算。用签名（而非仅对象身份）兜住「流式中那条正在
  * 增长的消息」——签名变了就重算，避免拿到陈旧结果。
  */
-const messageLineCache = new WeakMap<AgentNS.Message, { columns: number; sig: string; lines: RLine[] }>();
+const messageLineCache = new WeakMap<
+  AgentNS.Message,
+  { columns: number; sig: string; lines: RLine[] }
+>();
 
 export function cachedMessageToLines(message: AgentNS.Message, columns: number): RLine[] {
   const sig = signature(message);

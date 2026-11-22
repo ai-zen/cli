@@ -7,9 +7,21 @@ import { Box, Text } from "ink";
 import { useInput } from "ink";
 import { theme } from "./theme.js";
 import { clipWidth, displayWidth } from "./text.js";
-import type { RateSample } from "./token-rate.js";
+import type { AgentNS } from "@ai-zen/agents-core";
 import { packSegments, type StatusSegment } from "./status-segments.js";
 import { t } from "../i18n/index.js";
+import { thinkingView } from "../reasoning-effort.js";
+import type { SelectItem } from "../commands/types.js";
+import type { InboxItem } from "../session/types.js";
+
+/**
+ * 状态栏的一块（`../status-blocks.ts` 的 `StatusBlock`）。
+ *
+ * 块由**客户端**用会话层的活事实拼（`statusBlocksOf`）：宿主只给事实，界面定块名、顺序与
+ * 摆法（PRD F-I6）。详见那份文件的文件头。
+ */
+import type { StatusBlock } from "../status-blocks.js";
+export type { StatusBlock };
 
 // ==================== Spinner ====================
 
@@ -22,8 +34,8 @@ export function Spinner({ label }: { label?: string }) {
     return () => clearInterval(timer);
   }, []);
   return (
-    // `truncate`：busy 时输入区高度被 `computeChatLayout` 固定为 1 行（`inputHeight = 1`），
-    // 标签（如「排队中…（等待首 token）」）一旦折行就会把输入框顶出屏幕。
+    // `truncate`：转圈标签（如「排队中…（等待首 token）」）一旦折行，
+    // 那一行就会变成两行、把输入框顶出屏幕（`phaseLines` 恒为 1）。
     <Text wrap="truncate">
       <Text color={theme.brand[0]}>{SPINNER_FRAMES[frame]}</Text>
       {label ? <Text color={theme.dim}> {label}</Text> : null}
@@ -31,14 +43,32 @@ export function Spinner({ label }: { label?: string }) {
   );
 }
 
+/**
+ * 阶段行 —— 生成中（或阻塞命令执行中）那**一行**状态，住在输入框上方的分割线之上。
+ *
+ * 为什么从输入框里搬到分割线之上：它曾经是「输入框整体被 Spinner 顶替」的产物 ——
+ * 屏幕得腾一个位置给它，于是把输入框整个换掉，运行过程中就打不了字。挪到分割线之上后
+ * 阶段信息只占自己那一行，输入框始终在原位、始终可编辑（PRD 需求 2、3）。
+ *
+ * **恒为一行**：`computeChatLayout` 按 `phaseLines: 1` 算高度，标签超宽由 `Spinner` 的
+ * `truncate` 兜底 —— 折成两行就把输入框顶出屏幕（与状态栏 / 通知栏同一类教训）。
+ */
+export function PhaseLine({ label }: { label: string }) {
+  return (
+    <Box paddingX={1}>
+      <Spinner label={label} />
+    </Box>
+  );
+}
+
 // ==================== 选择列表 ====================
 
-export interface SelectItem<T> {
-  label: string;
-  value: T;
-  hint?: string;
-  icon?: string;
-}
+/**
+ * 选择器条目的形状住在命令层（`commands/types.ts`）—— 命令层**产出**条目、这里**渲染**它，
+ * 所以它是两边共享的词汇而不是本文件的私有类型。这里再转出一遍，是为了让 tui 内的引用
+ * 路径保持不变（`../components.js`）；新增字段去那边加。
+ */
+export type { SelectItem } from "../commands/types.js";
 
 export interface SelectListProps<T> {
   items: SelectItem<T>[];
@@ -64,7 +94,13 @@ function fitItem<T>(item: SelectItem<T>, columns?: number): SelectItem<T> {
   return { ...item, label: clipWidth(item.label, labelMax), hint: clipWidth(item.hint, hintMax) };
 }
 
-export function SelectList<T>({ items, onSelect, isActive = true, initialIndex = 0, columns }: SelectListProps<T>) {
+export function SelectList<T>({
+  items,
+  onSelect,
+  isActive = true,
+  initialIndex = 0,
+  columns,
+}: SelectListProps<T>) {
   const [index, setIndex] = useState(Math.min(initialIndex, Math.max(items.length - 1, 0)));
   // `index` 只在挂载时算一次，而 `items` 可能变短（异步列表回填 / 过滤）—— 越界时
   // `items[index]` 是 `undefined`，回车就会抛 TypeError。只在渲染与确认处钳制，
@@ -91,7 +127,11 @@ export function SelectList<T>({ items, onSelect, isActive = true, initialIndex =
             <Text color={selected ? theme.brand[0] : theme.faint} wrap="truncate">
               {selected ? "❯ " : "  "}
             </Text>
-            <Text bold={selected} color={selected ? theme.highlight : theme.assistant} wrap="truncate">
+            <Text
+              bold={selected}
+              color={selected ? theme.highlight : theme.assistant}
+              wrap="truncate"
+            >
               {item.icon ? `${item.icon} ` : ""}
               {item.label}
             </Text>
@@ -110,26 +150,21 @@ export function SelectList<T>({ items, onSelect, isActive = true, initialIndex =
 
 // ==================== 状态栏 ====================
 
+/**
+ * 状态栏的入参：**块由会话层拼，摆法由这里定**。
+ *
+ * `blocks` 由会话层用活事实拼（`../status-blocks.ts`），顺序就是那里给的顺序。
+ * 客户端不再自己算「现在用哪个模型」「思考强度是哪一档」「生成多快」「用了多少 tok」：
+ * 前两样是宿主给的**事实**，后两样是会话层的采样与合计（`../session-rate.ts` /
+ * `session.ts` 的 `lastTotalTokens` / `totalTokens`），屏幕只决定摆哪几块、怎么说。
+ *
+ * 速率那一段的取数口径（生成中看实时、结束后看平均）跟着事实走：它由块的 `facts` 带着，
+ * 不再由这里另收一份「忙闲 / 速率」—— 同一个数字摆两处就必然会漂。
+ */
 export interface StatusBarProps {
-  model: string;
-  agent: string;
-  /** 思考强度文案（已按当前语言本地化）；不传则不展示该段 */
-  effort?: string | null;
-  /**
-   * 思考强度是否置灰（不可调档 / 关档）。
-   *
-   * **不能靠文案判断**（旧实现是 `effort === "关"`，英文界面下永远不成立），
-   * 由调用方基于档位语义计算（见 `reasoning-effort.ts` 的 `effortDimmed()`）。
-   */
-  effortDimmed?: boolean;
-  /** 最近一轮的 token 用量（lastUsage.total_tokens） */
-  lastTokens?: number;
-  /** 本会话累计 token 用量（含子 Agent） */
-  totalTokens?: number;
-  busy?: boolean;
+  blocks: readonly StatusBlock[];
+  /** 快捷键提示（客户端自己的话，宿主不给）；优先级最低，被挤掉的永远是它 */
   hint?: string;
-  /** 生成速率：生成中看 `live`（实时估算），结束后看 `average`（本轮平均） */
-  rate?: RateSample | null;
   /** 终端列数（用于折行与行数测量）；缺省 80 */
   columns?: number;
 }
@@ -147,55 +182,105 @@ function formatRate(value: number): string {
 const INNER_SEPARATOR = " · ";
 
 /**
- * 状态栏的三个信息块 —— **换行以块为单位**：
+ * 一块 → 一段带样式的文本（旧版那三块的样子，见 `cli-old-archive` 的 `statusBarBlocks`）。
  *
- * 1. 身份块：模型 · Agent · 思考强度（最优先，任何情况下先占首行）；
- * 2. 用量块：本轮 / 累计 token · 生成速率；
- * 3. 快捷键块（优先级最低，放末尾）。
+ * 块内**不再写块名**：旧版就没写（「模型 助手一」变成「◆ 助手一 · agent 助手一」），
+ * 身份块自己带着标签（` · agent `、` · 思考 ` 由词条给），用量块每段都是自带单位的数字。
+ * 值从 `facts` 里挑，这里不做任何算术 —— 用量那两个数也已经算好了（会话层从消息的 `usage`
+ * 上算，见 `../status-blocks.ts` 的文件头）。
  *
- * 每块内部不再拆行（除单块宽度超一整行），窄屏时整块顺延到下一行——而不是用
- * `space-between` 把两侧各切一半。块内空的部分（如本轮没有速率）直接不占位。
+ * 返回空数组 = 这块现在没有内容（没有提示可显示），排版时整块不占位。
  */
-export function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
-  const { model, agent, effort, effortDimmed, lastTokens, totalTokens, busy, hint, rate } = props;
-
-  // ① 身份块
-  const identity: StatusSegment[] = [];
-  const pushIdentity = (text: string, color: string) => identity.push({ text, color });
-  pushIdentity("◆ ", theme.brand[0]);
-  pushIdentity(model, theme.accent);
-  pushIdentity(t("status.agent"), theme.dim);
-  pushIdentity(agent, theme.assistant);
-  if (effort != null && effort !== "") {
-    pushIdentity(t("status.effort"), theme.dim);
-    pushIdentity(effort, effortDimmed ? theme.faint : theme.reasoning);
+function statusBlockSegments(block: StatusBlock, hint: string | undefined): StatusSegment[] {
+  switch (block.id) {
+    case "identity": {
+      const { model, agent, thinking } = block.facts;
+      // 身份块：品牌标记 + 模型 · 助手 · 思考强度，一段紧接一段（分隔符在词条里，旧版如此）。
+      //
+      // 模型那一格**只写 id**：宿主这一版不再把「模型名字」当一条事实发下来（配置里的显示名
+      // 是另一处的事），而状态栏要说的是一个能拿去 `/model` 用的标识 —— 见口径⑥。
+      const view = thinkingView(thinking);
+      return [
+        { text: "◆ ", color: theme.brand[0] },
+        { text: model.modelId ?? t("status.noModel"), color: theme.accent },
+        { text: t("status.agent"), color: theme.dim },
+        // 定义没了（助手被删）时宿主给 `available: false`：说「不知道」显示 id，并标成警告色
+        {
+          text: agent.name ?? agent.agentId,
+          color: agent.available === false ? theme.warn : theme.assistant,
+        },
+        { text: t("status.effort"), color: theme.dim },
+        { text: view.text, color: view.dimmed ? theme.faint : theme.reasoning },
+      ];
+    }
+    case "gates": {
+      // 四件事（PRD 4.4）：闲 / 忙、输入闸、输出闸、死活。
+      //
+      // 忙闲常显（一个字）—— 它是每一秒都在变的那一格，也是用户最关心的；两闸与死活只在
+      // **非默认**时出现：它们正常就是「开 / 开 / 活」，把三个「正常」也画上去是每帧占三个词的
+      // 宽度而零信息。异常时它们各自说自己那一句，绝不压成一个「暂停」。
+      const { status, inputPaused, outputPaused, alive } = block.facts;
+      // 读数还没到：一个字都不说（不借「闲」占位，那是要报给用户的事实）
+      if (status === null) return [];
+      const segments: StatusSegment[] = [
+        status === "working"
+          ? { text: t("status.busy"), color: theme.accent }
+          : { text: t("status.idle"), color: theme.dim },
+      ];
+      const pushGate = (text: string, color: string) => {
+        segments.push({ text: INNER_SEPARATOR, color: theme.dim });
+        segments.push({ text, color });
+      };
+      if (alive === false) pushGate(t("status.dead"), theme.error);
+      if (outputPaused === true) pushGate(t("status.outputPaused"), theme.warn);
+      if (inputPaused === true) pushGate(t("status.inputPaused"), theme.warn);
+      return segments;
+    }
+    case "usage": {
+      // 本次 / 累计 tok：数字由会话层从消息的 `usage` 上算（宿主不报用量，但消息上有这个事实，
+      // 见 `../status-blocks.ts` 的文件头）。两个数各自可能「还不知道」—— 那就整段不占位，
+      // 不写 0 假装。
+      const segments: StatusSegment[] = [];
+      const pushUsage = (text: string) => {
+        if (segments.length > 0) segments.push({ text: INNER_SEPARATOR, color: theme.dim });
+        segments.push({ text, color: theme.dim });
+      };
+      if (block.facts.lastTokens != null) {
+        pushUsage(t("status.lastTokens", { n: block.facts.lastTokens }));
+      }
+      if (block.facts.totalTokens != null) {
+        pushUsage(t("status.totalTokens", { n: block.facts.totalTokens }));
+      }
+      return segments;
+    }
+    case "rate": {
+      // 速率这一段只管速率：用量那两个数在上一块（同一个数字摆两处就必然会漂）。
+      //
+      // 生成中只认实时值（没有就整块留白）；手上没活时展示这一批的平均。
+      // 用块里的 `working`（会话的忙闲那一格）而不是 `rate.running` 做门闸：`/update` 这类阻塞
+      // 命令也会让界面转圈，但那不是生成，没有速率可说。
+      const { rate, working } = block.facts;
+      const rateText = working
+        ? rate?.live != null
+          ? `⚡${NBSP}${formatRate(rate.live)}`
+          : ""
+        : rate?.average != null
+          ? t("status.avgRate", { rate: formatRate(rate.average) })
+          : "";
+      return rateText ? [{ text: rateText, color: theme.tool }] : [];
+    }
+    case "keys":
+      // 快捷键提示是界面自己的话（随语言与滚动状态变），没有宿主事实可挂
+      return hint ? [{ text: hint, color: theme.faint }] : [];
   }
+}
 
-  // ② 用量块
-  const usage: StatusSegment[] = [];
-  const pushUsage = (text: string, color: string) => {
-    if (usage.length > 0) usage.push({ text: INNER_SEPARATOR, color: theme.dim });
-    usage.push({ text, color });
-  };
-  if (lastTokens != null) pushUsage(t("status.lastTokens", { n: lastTokens }), theme.dim);
-  if (totalTokens != null) pushUsage(t("status.totalTokens", { n: totalTokens }), theme.dim);
-  // 生成中只认实时值（没有就留白，避免把上一轮的均速冒充成本轮）；空闲时展示本轮平均。
-  // 用 `busy` 而不是 `rate.running` 做门闸：`/migrate` 这类命令也会 busy，但不算一轮对话。
-  const rateText = busy
-    ? rate?.live != null
-      ? `⚡${NBSP}${formatRate(rate.live)}`
-      : ""
-    : rate?.average != null
-      ? t("status.avgRate", { rate: formatRate(rate.average) })
-      : "";
-  if (rateText) pushUsage(rateText, theme.tool);
-  // 「生成中」这一段不再往状态栏放：本轮到底在干什么（连上没、等首字、想、调工具、出字）
-  // 已由消息栏 spinner 逐阶段说明，状态栏再挂一个笼统的「生成中」只是重复占宽度。
-
-  // ③ 快捷键块：能被挤掉的永远是它，所以排在最末
-  const keys: StatusSegment[] = hint ? [{ text: hint, color: theme.faint }] : [];
-
-  return [identity, usage, keys];
+/**
+ * 状态栏的全部信息块 —— **换行以块为单位**：放得下就并排，放不下整块顺延到下一行，
+ * 而不是把某块劈成两半。块内空的部分直接不占位（`packSegments` 会跳过空块）。
+ */
+function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
+  return props.blocks.map((block) => statusBlockSegments(block, props.hint));
 }
 
 /**
@@ -209,21 +294,17 @@ export function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
 export function statusBarRows(props: StatusBarProps, columns = 80): StatusSegment[][] {
   // 可用宽度 = 列数 − 2（两侧 paddingX(1)）− 1（安全余量）。
   //
-  // 那 1 列余量原本是必需的：当时我们自己算宽度，`◆` / `·` / `⚡` 这类字符与 Ink 的
-  // 测量差 1 列，按满宽算时会被 Ink 的 `truncate` 吃掉行尾半个词。现在 `displayWidth()`
-  // 直接就是 Ink 用的 `string-width`，两边不会再对不上；这 1 列降级为纯安全边际
-  //（终端自己的 Ambiguous 宽度判定仍可能与 Unicode 表不同），所以保留。
+  // 那 1 列是纯安全边际：`displayWidth()` 已经就是 Ink 用的 `string-width`，两边不会再
+  // 对不上，但终端自己的 Ambiguous 宽度判定仍可能与 Unicode 表不同。
   const width = Math.max(8, columns - 3);
   return packSegments(statusBarBlocks(props), width, [{ text: INNER_SEPARATOR, color: theme.dim }]);
 }
 
 /**
- * 底部状态栏 —— 三个信息块，窄屏时按块换行：
+ * 底部状态栏 —— 身份 / 用量 / 速率 / 快捷键四块，窄屏时按块换行。
  *
- * 模型 · Agent · 思考强度 ｜ 本轮 / 累计 token · 生成速率 · 生成状态 ｜ 快捷键提示。
- *
- * 行数不固定：放不下的块（从最末的快捷键提示开始）整块顺延到下一行，而不是与
- * 高位信息一起被截掉一半，也不会把某块劈成两半。
+ * 行数不固定：放不下的块（从最末的快捷键提示开始）整块顺延到下一行，而不是与高位信息
+ * 一起被截掉一半，也不会把某块劈成两半。
  */
 export function StatusBar(props: StatusBarProps) {
   const rows = statusBarRows(props, props.columns ?? 80);
@@ -266,7 +347,7 @@ export interface MenuItem {
  * 高亮一旦越过窗口顶部就整窗上移（`from = selected − size + 1`），保证选中项永远可见；
  * 装不下的从**顶部**丢弃（即索引大的候选先消失，因为它们离输入框最远）。
  */
-export function menuViewport(
+function menuViewport(
   total: number,
   selected: number,
   maxRows: number,
@@ -311,10 +392,7 @@ const MENU_HINT_MIN = 4;
  * 不能用「标签与说明两个并列 flex 子节点」交给 Ink 分配：它会按内容比例分宽度，
  * 说明一长就把命令名挤成 `/confi`（真机反馈）。
  */
-export function menuRow(
-  item: MenuItem,
-  columns: number,
-): { label: string; hint?: string } {
+function menuRow(item: MenuItem, columns: number): { label: string; hint?: string } {
   const available = Math.max(1, columns - MENU_INDENT);
   const labelWidth = displayWidth(item.label);
   if (labelWidth > available) return { label: clipWidth(item.label, available) };
@@ -325,7 +403,7 @@ export function menuRow(
 }
 
 /**
- * 底部锚定菜单 —— 斜杠命令与 `@` 文件补全**共用同一套**（此前是两套各自实现的视窗）。
+ * 底部锚定菜单 —— 斜杠命令与 `@` 文件补全**共用同一套**视窗（各写一份只会漂成两种手感）。
  *
  * 布局契约：整块高度 = `min(候选数 + (topLine ? 1 : 0), maxRows)`，与
  * `computeChatLayout` 回传的 `hintRows` 严格一致。
@@ -356,7 +434,9 @@ export function BottomMenu({ items, selected, maxRows, columns, topLine }: Botto
                   说明一长就把命令名挤成一截；嵌套后宽度由 `menuRow` 预先算好，
                   外层 `truncate` 保证恒为一行（折行会把输入框顶出屏幕） */}
               <Text wrap="truncate">
-                <Text color={isActive ? theme.brand[0] : theme.faint}>{isActive ? "❯ " : "  "}</Text>
+                <Text color={isActive ? theme.brand[0] : theme.faint}>
+                  {isActive ? "❯ " : "  "}
+                </Text>
                 <Text bold color={isActive ? theme.highlight : theme.assistant}>
                   {row.label}
                 </Text>
@@ -389,6 +469,84 @@ export function PastedImagesBar({ count }: { count: number }) {
   );
 }
 
+// ==================== 排队区 ====================
+
+/**
+ * 排队区最多占几行（第 3 行留给「还有 N 条」）。
+ *
+ * 上限不是审美选择：它是 `computeChatLayout` 的固定高度的一部分，块越高，会话区就被压得越扁。
+ */
+export const INBOX_MAX_ROWS = 3;
+
+/** 一行里给来源名留多少字符（超了截断；来源名是内部名，不该把 preview 挤没） */
+const INBOX_SOURCE_MAX = 12;
+
+/**
+ * 排队区这一刻占几行（0 ～ `INBOX_MAX_ROWS`）：0 条时整块不渲染、不占行。
+ *
+ * 三处必须同源：渲染（`InboxArea` 画几行）、布局（`computeChatLayout` 的 `inboxLines`）、
+ * IME 光标（`computeInputCursorPosition` 的 `inboxCount`）。差一行，输入框整体位移、
+ * 输入法候选框跟着偏 —— 这是本仓有前科的一类 bug（通知栏、附件行、阶段行都吃过）。
+ */
+export function inboxAreaLines(count: number): number {
+  if (count <= 0) return 0;
+  return Math.min(count, INBOX_MAX_ROWS);
+}
+
+/**
+ * 一条排队条目的前缀：用户自己排的那句说「排队中」（词条），其他来源（`session` 等）
+ * 原样上屏 —— 内部来源名不对翻译表，超 `INBOX_SOURCE_MAX` 字符截断加 `…`。
+ */
+export function inboxPrefix(source: AgentNS.MessageSource): string {
+  // 用户自己排的那句不给前缀名（它没有「来处」可言，只需说明「待发」）；
+  // 别的来源把 label 显示出来 —— 那一格本来就是给人看的。
+  if (source.kind === "user") return t("inbox.pending");
+  const label = source.label;
+  return label.length > INBOX_SOURCE_MAX ? `${label.slice(0, INBOX_SOURCE_MAX)}…` : label;
+}
+
+/**
+ * 排队区 —— 还压在队里、没被取走的那几句（`session.state.inbox`），住在阶段行**之后**、
+ * 分割线**之上**。
+ *
+ * 为什么不放进输入框那个 `Box`：那里的行数与 IME 光标定位是耦合的（`computeInputCursorPosition`
+ * 按输入行算 y）。放在上面的带子里，它和阶段行走同一套 `phaseLines` 机制 —— 只占自己那几行，
+ * 输入框照旧在原位、照旧可编辑。
+ *
+ * 显示规则（刻意只有这些，不加标题、不加边框）：
+ *   · 最多 `INBOX_MAX_ROWS` 行；0 条时整块不渲染、不占行；
+ *   · 每条一行：`前缀 + preview`，`truncate`（折行会把输入框顶出屏幕）；
+ *   · 条目数 > `INBOX_MAX_ROWS` 时，最后一行说「还有 N 条」（N = 没显示出来的条数）。
+ */
+export function InboxArea({ items }: { items: readonly InboxItem[] }) {
+  if (items.length === 0) return null;
+  const overflow = items.length > INBOX_MAX_ROWS;
+  // 溢出时留一行给「还有 N 条」：前两行照常显示前两条
+  const shown = overflow ? items.slice(0, INBOX_MAX_ROWS - 1) : items;
+  const remaining = items.length - shown.length;
+  return (
+    <Box flexDirection="column">
+      {shown.map((item) => (
+        <Box key={item.messageId} paddingX={1}>
+          {/* 整行是**一个** Text：并列的 Text 会被 flex 按内容比例分宽度，preview 一长
+              就把前缀挤成一截；外层 `truncate` 保证恒为一行 */}
+          <Text wrap="truncate">
+            <Text color={theme.dim}>{inboxPrefix(item.source)}</Text>
+            <Text color={theme.faint}>{` ${item.preview}`}</Text>
+          </Text>
+        </Box>
+      ))}
+      {overflow ? (
+        <Box paddingX={1}>
+          <Text color={theme.dim} wrap="truncate">
+            {t("inbox.more", { n: remaining })}
+          </Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
 // ==================== 键位提示 ====================
 
 export function KeyHints({ hints }: { hints: [string, string][] }) {
@@ -396,7 +554,10 @@ export function KeyHints({ hints }: { hints: [string, string][] }) {
     <Box paddingLeft={2} gap={2}>
       {hints.map(([key, label]) => (
         <Text key={key} color={theme.faint} wrap="truncate">
-          <Text color={theme.dim} wrap="truncate">{key}</Text> {label}
+          <Text color={theme.dim} wrap="truncate">
+            {key}
+          </Text>{" "}
+          {label}
         </Text>
       ))}
     </Box>

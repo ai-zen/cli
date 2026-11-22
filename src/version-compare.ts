@@ -8,8 +8,8 @@
  *     前缀全相同则标识少的更小（`1.0.0-alpha < 1.0.0-alpha.1`）；
  *   - 构建元数据（`+xxx`）不参与比较。
  *
- * 为什么不引 `semver` 包：CLI 只在这一处比版本号（`/update` 从 registry 的多个
- * dist-tag 里挑最新的那个），为它多挂一份依赖不划算；而这段规则稳定、可穷举测试。
+ * 为什么不引 `semver` 包：CLI 只在这一处比版本号（`/upgrade` 从 registry 的多个
+ * dist-tag 里挑最高的那个），为它多挂一份依赖不划算；而这段规则稳定、可穷举测试。
  *
  * 无法解析的版本号一律返回 `null`（调用方跳过），绝不抛错——版本号来自网络，
  * 不该因为 registry 上有个畸形 tag 就让命令崩掉。
@@ -90,8 +90,11 @@ export function compareVersions(a: string, b: string): number | null {
 /**
  * 从一组版本号里挑最新的（忽略无法解析的条目）；全都不合法时返回 `undefined`。
  *
- * `/update` 用它把 registry 上**所有** dist-tag 折叠成一个目标版本：只认 `latest`
- * 会漏掉「alpha 比正式版更新」的实际发布状态，只认 `alpha` 又会在正式版追上后装旧版。
+ * `/upgrade` 用它把 registry 上**所有** dist-tag 折叠成一个目标版本（PRD 2.3「升级挑版本 =
+ * 在所有发布标签里挑版本最高的」）：只认 `latest` 会漏掉「alpha 比正式版更新」的实际发布状态
+ * （曾经 `latest = 0.9.0`、`alpha = 1.0.0-alpha.23`），只认 `alpha` 又会在正式版追上后装旧版。
+ *
+ * 跳过畸形条目而不是抛错：版本号来自网络，registry 上有个乱七八糟的 tag 不该让命令崩掉。
  */
 export function pickNewest(versions: Iterable<string>): string | undefined {
   let newest: string | undefined;

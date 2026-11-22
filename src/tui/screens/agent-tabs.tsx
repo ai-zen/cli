@@ -13,22 +13,29 @@
 import { useEffect, useState } from "react";
 import { Box, Text } from "ink";
 import { theme } from "../theme.js";
+import type { SubAgentStatus } from "../../subagent-status.js";
 
 /** 一个可切换的 Agent 条目 */
 export interface AgentTab {
   /** 稳定 id：`"main"` 或子 Agent 视图 id */
   id: string;
-  /** 展示名（主 Agent 用 `agentTabs.main`，子 Agent 用 `agentTabs.sub` 带序号） */
+  /** 展示名（主 Agent 用 `agentTabs.main`；子 Agent 用宿主给的 `name`，不在客户端编号） */
   label: string;
-  /** 执行状态；undefined = 不画圆点（主 Agent 的忙碌由输入行的 Spinner 表示） */
+  /** 执行状态；undefined = 不画圆点（主 Agent 的忙碌由分隔线之上的阶段行表示） */
   status?: AgentTabStatus;
 }
 
-/** 子 Agent 的执行状态 */
-export type AgentTabStatus = "running" | "done" | "failed";
+/**
+ * subagent 的执行状态 —— 名册那两格（`working` / `idle`）加「已经散场」（`ended`），再加上
+ * **从它自己的消息上推出来**的结局（`error` / `aborted`，见 `../../subagent-status.ts`）。
+ *
+ * 名册不报「出错 / 被叫停」，但那不等于没法知道：那些事实就在它栏里那条消息的 `status` /
+ * `error` 上。界面不去猜，但也不把能算的东西丢掉（PRD 3.9「失败必须显示失败」）。
+ */
+export type AgentTabStatus = SubAgentStatus;
 
 /**
- * 状态符号：三种状态**同形不同色**（蓝 / 绿 / 红）。
+ * 状态符号：五种状态**同形不同色**（在动蓝 / 散场绿 / 还挂着灰 / 被叫停淡 / 出错红）。
  *
  * 用 `◈`（U+25C8）：比 `•` 更像个「状态指示符」，又不像 `●` 那样把一行密集文本撑得松散。
  * 符号位于标签**之前**，使各标签的文字起始位置对齐。
@@ -38,18 +45,22 @@ export const AGENT_STATUS_DOT = "◈";
 /**
  * 状态圆点的颜色 —— 状态的**唯一视觉真相**。
  *
- * 运行中在「亮蓝 ↔ 暗」之间交替（闪烁），其余状态恒定。抽成纯函数是因为颜色没法在
- * 测试里断言（`ink-testing-library` 的 stdout 不是 TTY，Ink 不输出 ANSI）。
+ * `working` 在「亮蓝 ↔ 暗」之间交替（闪烁）；`ended` 恒绿（散场了）；`error` 恒红（失败必须
+ * 看得出失败）；`aborted` 恒淡（被叫停不是坏掉）；`idle` 恒暗（还挂着、没在动）。抽成纯函数是
+ * 因为颜色没法在测试里断言（`ink-testing-library` 的 stdout 不是 TTY，Ink 不输出 ANSI）。
  *
- * @param blinkOn 仅对 `running` 有意义：false 时返回暗色，形成一亮一暗的闪烁
+ * @param blinkOn 仅对 `working` 有意义：false 时返回暗色，形成一亮一暗的闪烁
  */
 export function agentStatusColor(status: AgentTabStatus, blinkOn = true): string {
-  if (status === "running") return blinkOn ? theme.running : theme.faint;
-  return status === "done" ? theme.ok : theme.error;
+  if (status === "working") return blinkOn ? theme.running : theme.faint;
+  if (status === "ended") return theme.ok;
+  if (status === "error") return theme.error;
+  if (status === "aborted") return theme.faint;
+  return theme.dim;
 }
 
 /** 闪烁周期（毫秒）：一亮一暗为一个完整周期 */
-export const AGENT_BLINK_MS = 500;
+const AGENT_BLINK_MS = 500;
 
 /**
  * 运行中时返回随时间翻转的开关（其余时候恒为 true，且不启定时器）。
@@ -57,7 +68,7 @@ export const AGENT_BLINK_MS = 500;
  * 定时器只在本组件内驱动自己的重渲染，不牵动上层：`AgentTabs` 的 state 变化只影响
  * 它自己这一行。
  */
-export function useBlink(active: boolean, intervalMs = AGENT_BLINK_MS): boolean {
+function useBlink(active: boolean, intervalMs = AGENT_BLINK_MS): boolean {
   const [on, setOn] = useState(true);
   useEffect(() => {
     if (!active) {
@@ -96,7 +107,7 @@ export interface AgentTabsProps {
 
 export function AgentTabs({ tabs, activeId }: AgentTabsProps) {
   // 只要有一个子 Agent 在跑就闪——整条栏目共用一个节奏，避免几个圆点各闪各的
-  const blinkOn = useBlink(tabs.some((tab) => tab.status === "running"));
+  const blinkOn = useBlink(tabs.some((tab) => tab.status === "working"));
 
   return (
     <Box>
@@ -112,8 +123,7 @@ export function AgentTabs({ tabs, activeId }: AgentTabsProps) {
               {tab.status ? (
                 <Text color={agentStatusColor(tab.status, blinkOn)}>{AGENT_STATUS_DOT}</Text>
               ) : null}
-              {tab.label}
-              {" "}
+              {tab.label}{" "}
             </Text>
           );
         })}

@@ -1,8 +1,13 @@
-// 由 src/tui/config-wizard.tsx 拆分而来 —— 模型 / 图片模型 列表与详情 / 新建
+// 模型 / 图片模型 列表与详情 / 新建
 import { ReactNode } from "react";
-import { DEFAULT_APP_CONFIG } from "@ai-zen/agents-sdk";
 import { SelectItem } from "../components.js";
-import { addImageModel, addModel, findEndpoint, findModel, removeImageModel, removeModel, restoreFactoryImageModel, restoreFactoryModel } from "../../config-editor.js";
+import {
+  endpointKeyState,
+  findEndpoint,
+  uniqueImageModelId,
+  uniqueModelId,
+} from "../../config-editor.js";
+import type { TokenThresholds } from "../../config.js";
 import { NEW_MODEL, NEW_IMAGE_MODEL } from "./types.js";
 import { WizardContext } from "./engine.js";
 import { ListStep } from "./list.js";
@@ -10,16 +15,48 @@ import { DetailAction, DetailStep } from "./detail.js";
 import { PromptScreen } from "./prompt.js";
 import { t } from "../../i18n/index.js";
 
-/** 模型来源标签：`出厂托管` 在详情屏里要多带一句说明（改动会转自定义） */
-function kindLabel(custom: boolean | undefined, withNote = false): string {
-  if (custom) return t("wiz.kind.custom");
-  return t(withNote ? "wiz.modelKind.factoryNote" : "wiz.kind.factory");
+/**
+ * 新建模型时先填的两条阈值。
+ *
+ * **宿主不补这两格**：`config.model.add` 收的是整条 `Model`，`ModelService` 写前就判「两条阈值
+ * 都是数字」并且「交接线小于防护线」，缺了直接 `invalid_params`。所以「省略、让宿主套出厂默认」
+ * 那句话不成立，客户端得给出一个起点；新建完立刻进详情屏，这两个数就在第一屏能改的地方。
+ *
+ * 取值照 SDK 给新模型定的兜底：`normalize.ts` 的 `DEFAULT_HANDOFF_THRESHOLD = 128_000`（那句
+ * 注释写明「与 CLI 新建模型的默认值一致」），`guard` 按同一处的 1.5 倍口径算成 192_000 ——
+ * 旧产品的 `addModel` 用的也是这两个数。模型真实窗口客户端不知道（那不是配置里的一格），
+ * 所以这是一个**能就地改的起点**，不是对窗口的判断。
+ */
+const NEW_MODEL_THRESHOLDS: TokenThresholds = { handoff: 128_000, guard: 192_000 };
+
+/** 来源标签：出厂托管 / 自定义（宿主在写的时候会把编辑过的转成自定义，PRD F-F3） */
+function kindLabel(custom: boolean | undefined): string {
+  return custom === true ? t("wiz.kind.custom") : t("wiz.kind.factory");
 }
 
 export function renderModelsStep(ctx: WizardContext): ReactNode {
-  const { config, error, notice, activeStep, go, persist, setError, modelFields, imageModelFields, cols, rows } = ctx;
+  const {
+    config,
+    error,
+    notice,
+    activeStep,
+    go,
+    createModel,
+    deleteModel,
+    resetModel,
+    createImageModel,
+    deleteImageModel,
+    setError,
+    modelFields,
+    imageModelFields,
+    cols,
+    rows,
+  } = ctx;
+  const imageModels = config.imageModels ?? [];
+
   // ---------- 模型管理 ----------
   if (activeStep.kind === "models") {
+    const noKey = config.models.filter((model) => !endpointKeyState(config, model).ready).length;
     const items: SelectItem<string>[] = [
       { label: t("wiz.models.newItem"), value: NEW_MODEL, hint: t("wiz.models.newItemHint") },
       ...config.models.map((model) => ({
@@ -29,6 +66,7 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
           endpoint: findEndpoint(config, model.endpointId)?.name ?? model.endpointId,
           kind: kindLabel(model.custom),
           vision: model.vision ? t("wiz.modelKind.visionSuffix") : "",
+          state: endpointKeyState(config, model).ready ? "" : ` · ${t("wiz.defaults.missingKey")}`,
         }),
       })),
     ];
@@ -37,56 +75,85 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         columns={cols}
         rows={rows}
         title={t("wiz.menu.models")}
-        subtitle={t("wiz.models.subtitle", { n: config.models.length })}
+        subtitle={
+          noKey > 0
+            ? t("wiz.menu.modelsSummary", { n: config.models.length, noKey })
+            : t("wiz.models.subtitle", { n: config.models.length })
+        }
         items={items}
-        onPick={(value) => (value === NEW_MODEL ? go({ kind: "new-model" }) : go({ kind: "model", modelId: value }))}
+        onPick={(value) =>
+          value === NEW_MODEL ? go({ kind: "new-model" }) : go({ kind: "model", modelId: value })
+        }
         onCancel={() => go({ kind: "menu" })}
       />
     );
   }
 
-
-  /**
-   * 出厂清单里同 id 的定义。
-   *
-   * 有它才能「恢复出厂设置」；没有就是用户自建的，不给这个动作（恢复成什么？）。
-   */
-  const factoryOf = <T extends { id: string }>(list: T[] | undefined, id: string): T | undefined =>
-    list?.find((item) => item.id === id);
-
   // ---------- 模型详情 ----------
   if (activeStep.kind === "model") {
-    const model = findModel(config, activeStep.modelId)!;
+    const model = config.models.find((item) => item.id === activeStep.modelId)!;
     const name = model.name || model.id;
-    const factory = factoryOf(DEFAULT_APP_CONFIG.models, model.id);
-    const actions: DetailAction[] = [];
-    if (factory) {
-      actions.push({
+    const key = endpointKeyState(config, model);
+    /**
+     * 删之前的「代价」（PRD 3.4：删模型要把指向它的默认项改指或清空）。
+     *
+     * 宿主就是这么改的：同端点的第一条剩余模型，一条不剩就清空（`ModelService.remove`）。
+     * 这里用 `config.get` 那一份配置把同一件事**事前**算一遍 —— 客户端不新造规则，只把宿主
+     * 那一条摆给人看。
+     */
+    const remaining = config.models.filter((item) => item.id !== model.id);
+    const replacement = remaining.find((item) => item.endpointId === model.endpointId);
+    const defaultSlots: { label: string; value: string | undefined }[] = [
+      { label: t("wiz.defaults.fallbackModel"), value: config.defaultModel },
+      { label: t("wiz.defaults.migrationModel"), value: config.defaultMigrationModel },
+      { label: t("wiz.defaults.namingModel"), value: config.namingModel },
+    ];
+    const affected = defaultSlots.filter((slot) => slot.value === model.id);
+    const deleteCost = [
+      ...affected.map((slot) =>
+        replacement
+          ? t("wiz.models.deleteCostRedirect", {
+              slot: slot.label,
+              target: replacement.name || replacement.id,
+            })
+          : t("wiz.models.deleteCostCleared", { slot: slot.label }),
+      ),
+      ...(affected.length === 0 ? [t("wiz.models.deleteCostNone")] : []),
+    ];
+    const actions: DetailAction[] = [
+      {
+        // 出厂清单在宿主，客户端不抄一份：不是出厂模型时宿主会拒（`not_found` 一句能上屏的话）
         label: t("wiz.models.restore"),
-        run: async () =>
-          persist(
-            restoreFactoryModel(config, factory),
-            t("wiz.models.restored", { name }),
-            // 出厂定义自带端点：用户可能把它改绑过，两边都算改动了端点
-            [model.endpointId, factory.endpointId],
-          ),
-      });
-    }
-    actions.push({
-      label: t("wiz.models.delete"),
-      danger: true,
-      run: async () => {
-        const failure = await persist(removeModel(config, model.id), t("wiz.models.deleted", { name }));
-        if (!failure) go({ kind: "models" });
-        return failure;
+        run: async () => resetModel(model.id, t("wiz.models.restored", { name })),
       },
-    });
+      {
+        label: t("wiz.models.delete"),
+        danger: true,
+        cost: deleteCost,
+        // 被助手定义引用时宿主照删（它只改指默认项），这里不做额外拦截
+        run: async () => {
+          const failure = await deleteModel(model.id, t("wiz.models.deleted", { name }));
+          if (!failure) go({ kind: "models" });
+          return failure;
+        },
+      },
+    ];
     return (
       <DetailStep
         columns={cols}
         rows={rows}
         title={t("wiz.models.detailTitle", { name })}
-        details={[t("wiz.models.detailLine", { id: model.id, kind: kindLabel(model.custom, true) }), t("wiz.detail.moveHint")]}
+        details={[
+          t("wiz.models.detailLine", { id: model.id, kind: kindLabel(model.custom) }),
+          ...(key.ready
+            ? []
+            : [
+                t("wiz.model.endpointNoKey", {
+                  endpoint: key.endpointName ?? model.endpointId,
+                }),
+              ]),
+          t("wiz.detail.moveHint"),
+        ]}
         fields={modelFields(model)}
         notice={notice}
         actions={actions}
@@ -95,19 +162,22 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-
   // ---------- 图片模型列表 ----------
   if (activeStep.kind === "image-models") {
-    const list = config.imageModels ?? [];
     const items: SelectItem<string>[] = [
-      { label: t("wiz.imageModels.newItem"), value: NEW_IMAGE_MODEL, hint: t("wiz.models.newItemHint") },
-      ...list.map((model) => ({
+      {
+        label: t("wiz.imageModels.newItem"),
+        value: NEW_IMAGE_MODEL,
+        hint: t("wiz.models.newItemHint"),
+      },
+      ...imageModels.map((model) => ({
         label: model.name || model.id,
         value: model.id,
         hint: t("wiz.modelItem.hint", {
           endpoint: findEndpoint(config, model.endpointId)?.name ?? model.endpointId,
           kind: kindLabel(model.custom),
           vision: "",
+          state: "",
         }),
       })),
     ];
@@ -116,60 +186,70 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         columns={cols}
         rows={rows}
         title={t("wiz.menu.imageModels")}
-        subtitle={t("wiz.imageModels.subtitle", { n: list.length })}
+        subtitle={t("wiz.imageModels.subtitle", { n: imageModels.length })}
         items={items}
-        onPick={(value) => (value === NEW_IMAGE_MODEL ? go({ kind: "new-image-model" }) : go({ kind: "image-model", modelId: value }))}
+        onPick={(value) =>
+          value === NEW_IMAGE_MODEL
+            ? go({ kind: "new-image-model" })
+            : go({ kind: "image-model", modelId: value })
+        }
         onCancel={() => go({ kind: "menu" })}
       />
     );
   }
 
-
   // ---------- 图片模型详情 ----------
   if (activeStep.kind === "image-model") {
-    const model = (config.imageModels ?? []).find((m) => m.id === activeStep.modelId)!;
+    const model = imageModels.find((item) => item.id === activeStep.modelId)!;
     const name = model.name || model.id;
-    const factory = factoryOf(DEFAULT_APP_CONFIG.imageModels, model.id);
-    const actions: DetailAction[] = [];
-    if (factory) {
-      actions.push({
-        label: t("wiz.imageModels.restore"),
-        run: async () =>
-          persist(
-            restoreFactoryImageModel(config, factory),
-            t("wiz.imageModels.restored", { name }),
-            [model.endpointId, factory.endpointId],
-          ),
-      });
-    }
-    actions.push({
-      label: t("wiz.imageModels.delete"),
-      danger: true,
-      run: async () => {
-        const failure = await persist(removeImageModel(config, model.id), t("wiz.imageModels.deleted", { name }));
-        if (!failure) go({ kind: "image-models" });
-        return failure;
-      },
-    });
+    // 代价：默认图片模型指着它时会被改指到同端点的第一条剩余，一条不剩就清空（宿主那一条规则）
+    const remaining = imageModels.filter((item) => item.id !== model.id);
+    const replacement = remaining.find((item) => item.endpointId === model.endpointId);
+    const deleteCost =
+      config.defaultImageModel !== model.id
+        ? [t("wiz.imageModels.deleteCostNone")]
+        : [
+            replacement
+              ? t("wiz.imageModels.deleteCostRedirect", {
+                  target: replacement.name || replacement.id,
+                })
+              : t("wiz.imageModels.deleteCostCleared"),
+          ];
     return (
       <DetailStep
         columns={cols}
         rows={rows}
         title={t("wiz.imageModels.detailTitle", { name })}
-        details={[t("wiz.models.detailLine", { id: model.id, kind: kindLabel(model.custom, true) }), t("wiz.detail.moveHint")]}
+        details={[
+          t("wiz.models.detailLine", { id: model.id, kind: kindLabel(model.custom) }),
+          t("wiz.detail.moveHint"),
+        ]}
         fields={imageModelFields(model)}
         notice={notice}
-        actions={actions}
+        actions={[
+          {
+            label: t("wiz.imageModels.delete"),
+            danger: true,
+            cost: deleteCost,
+            // 正被「默认图片模型」指着时宿主会改去指向别的（改不了就拒），那句话原样上屏
+            run: async () => {
+              const failure = await deleteImageModel(
+                model.id,
+                t("wiz.imageModels.deleted", { name }),
+              );
+              if (!failure) go({ kind: "image-models" });
+              return failure;
+            },
+          },
+        ]}
         onBack={() => go({ kind: "image-models" })}
       />
     );
   }
 
-
   // ---------- 新建模型（名称 → 创建并进入详情）----------
   if (activeStep.kind === "new-model") {
-    // 只用于屏上的提示；真正的拦截在 onSubmit（入口不禁用，避免两处校验）
-    const first = config.endpoints[0];
+    const endpoint = config.endpoints[0];
     return (
       <PromptScreen
         key="new:model"
@@ -178,31 +258,45 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         title={t("wiz.models.createTitle")}
         details={[
           t("wiz.models.createDesc", { example: "My GPT" }),
-          first
-            ? t("wiz.models.defaultEndpoint", { endpoint: first.name || first.id })
+          endpoint
+            ? t("wiz.models.defaultEndpoint", { endpoint: endpoint.name || endpoint.id })
             : t("wiz.models.noEndpoint"),
+          t("wiz.models.defaultThresholds", {
+            handoff: NEW_MODEL_THRESHOLDS.handoff,
+            guard: NEW_MODEL_THRESHOLDS.guard,
+          }),
         ]}
         error={error}
-        hints={[["Enter", t("wiz.createAndEdit")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("wiz.createAndEdit")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const name = value.trim();
           if (!name) {
             setError(t("err.nameRequired"));
             return;
           }
-          const endpointId = config.endpoints[0]?.id;
-          if (!endpointId) {
+          if (!endpoint) {
             setError(t("err.noEndpoint"));
             return;
           }
-          const { config: next, model } = addModel(config, { name, endpointId });
+          const id = uniqueModelId(config, name);
           void (async () => {
-            const failure = await persist(next, t("wiz.models.created", { name: model.name, id: model.id }));
+            const failure = await createModel(
+              {
+                id,
+                name,
+                endpointId: endpoint.id,
+                tokenThresholds: NEW_MODEL_THRESHOLDS,
+              },
+              t("wiz.models.created", { name, id }),
+            );
             if (failure) {
               setError(failure);
               return;
             }
-            go({ kind: "model", modelId: model.id });
+            go({ kind: "model", modelId: id });
           })();
         }}
         onCancel={() => go({ kind: "models" })}
@@ -210,10 +304,9 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-
   // ---------- 新建图片模型（名称 → 创建并进入详情）----------
   if (activeStep.kind === "new-image-model") {
-    const first = config.endpoints[0];
+    const endpoint = config.endpoints[0];
     return (
       <PromptScreen
         key="new:image-model"
@@ -222,31 +315,37 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         title={t("wiz.imageModels.createTitle")}
         details={[
           t("wiz.models.createDesc", { example: "My Image" }),
-          first
-            ? t("wiz.models.defaultEndpoint", { endpoint: first.name || first.id })
+          endpoint
+            ? t("wiz.models.defaultEndpoint", { endpoint: endpoint.name || endpoint.id })
             : t("wiz.models.noEndpoint"),
+          t("wiz.imageModels.modelNameHint"),
         ]}
         error={error}
-        hints={[["Enter", t("wiz.createAndEdit")], ["Esc", t("ui.back")]]}
+        hints={[
+          ["Enter", t("wiz.createAndEdit")],
+          ["Esc", t("ui.back")],
+        ]}
         onSubmit={(value) => {
           const name = value.trim();
           if (!name) {
             setError(t("err.nameRequired"));
             return;
           }
-          const endpointId = config.endpoints[0]?.id;
-          if (!endpointId) {
+          if (!endpoint) {
             setError(t("err.noEndpoint"));
             return;
           }
-          const { config: next, model } = addImageModel(config, { name, endpointId });
+          const id = uniqueImageModelId(config, name);
           void (async () => {
-            const failure = await persist(next, t("wiz.imageModels.created", { name: model.name, id: model.id }));
+            const failure = await createImageModel(
+              { id, name, endpointId: endpoint.id, modelName: name },
+              t("wiz.imageModels.created", { name, id }),
+            );
             if (failure) {
               setError(failure);
               return;
             }
-            go({ kind: "image-model", modelId: model.id });
+            go({ kind: "image-model", modelId: id });
           })();
         }}
         onCancel={() => go({ kind: "image-models" })}

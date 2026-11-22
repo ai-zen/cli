@@ -1,138 +1,186 @@
 // 配置向导宿主 —— 「打开向导 / 读齐快照 / 关闭后让改动生效」的唯一实现
 //
-// 从 `chat.tsx` 抽出来的理由：向导本身（`config-wizard/`）是独立状态机，但**宿主**
-// 的活儿散落在对话屏里 —— 6 个 `useState`、3 个入口函数，还要顺手记「当前模型用的是
-// 哪个端点」以便关闭时判断要不要重建会话。这些既不属于「对话」，也没法单测（要一路
-// 从键盘打到向导关闭才能碰到）。
+// 向导本身（`config-wizard/`）是独立状态机，而**宿主**的活儿（读齐快照、按当前状态决定关掉之后
+// 要不要重启 / 重载会话）既不属于「会话」，也没法单测 —— 单独收在这里，从键盘一路打到向导关闭
+// 才能碰到的路径才会有用例。
 //
 // 依赖方向是**注入**而非 import 会话：宿主要做的事（通知、重启、重载会话）都通过
 // `WizardHostDeps` 传进来，于是 hook 可以在测试里用假依赖跑完整生命周期。
-import { useRef, useState } from "react";
-import type { AppConfig, ReasoningPresets } from "@ai-zen/agents-sdk";
-import { mcpConfigOrEmpty, readConfig, readMcpConfig, readReasoningPresets, type McpReadResult, type McpScope } from "../../config.js";
-import { readAgentStore, type AgentStore } from "../../agents-store.js";
+//
+// 读快照只有三处 procedure（`api.config.get` / `api.agentDefinition.list` / `api.mcp.list`），
+// 写全在向导屏里 —— 它拿的是**同一条** `api`，所以这里不必再有一份「保存」的接口。
+import { useState } from "react";
+import type { AppConfig, McpEntry, ReasoningPresets } from "../../config.js";
+import { agentListOf, type AgentList } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
-import type { McpSnapshot, WizardCloseResult, WizardStep } from "../config-wizard/index.js";
+import type { HostConnection } from "../../session/types.js";
+import type { WizardCloseResult, WizardStep } from "../config-wizard/index.js";
 import { t } from "../../i18n/index.js";
 import type { Notice } from "./notice.js";
 
 export interface WizardHostDeps {
-  /** 当前模型 id：`/key` 直达它所用端点的密钥；也是「当前端点是否被改动」的比较基准 */
+  /** 调 procedure 的那一面（与向导屏拿的是同一个对象：读与写落在同一条连接上） */
+  api: HostConnection["api"];
+  /** 当前模型 id：`/key` 直达它所用端点的密钥 */
   modelId: string;
-  /** 通知出口（读写失败、变更摘要都从这里出去，不进食转录） */
+  /**
+   * 这段会话属于哪个项目：`mcp.list` 要它才列得出服务器。
+   *
+   * 空串 = 还没有项目上下文（首启那一路在极端情况下会走到）。那时**不问** `mcp.list`
+   * （宿主会回 `not_found`，而把它当成「配置读不出来」会把整个向导挡在门外），MCP 屏显示空
+   * 清单；其它屏一样能用。
+   */
+  workspaceId: string;
+  /** 通知出口（读写失败、变更摘要都从这里出去，不进转录） */
   notify: (text: string, tone?: Notice["tone"]) => void;
   /** 会话是否已建好（未建好时改配置只能重启） */
   hasSession: () => boolean;
-  /** 会话还没建好就改了配置 → 只能重启进程让新配置生效 */
+  /** 会话还没建好 → 重启进程 */
   restart: () => void;
-  /** 改了当前端点 / MCP / Agent 定义 / 中断策略 → 重载会话（消息保留） */
+  /** 已经生效的改动 → 让会话重新读一遍它自己的事实（模型、档位、状态栏块） */
   reloadSession: () => void;
-  /**
-   * 快照读取器。缺省用真实实现；测试注入假实现即可，**不必** `vi.mock` 整个 config 模块
-   * ——模块级替换在进程内共享模块时会泄漏到其他测试文件。
-   */
-  readers?: {
-    readConfig: () => Promise<AppConfig>;
-    readMcpConfig: (scope: McpScope) => Promise<McpReadResult>;
-    readReasoningPresets: () => Promise<ReasoningPresets>;
-    readAgentStore: () => Promise<AgentStore>;
-  };
 }
 
-export interface WizardHost {
+/** 向导在那块屏上要的全部事实；一次 `openWizard` 读齐，关闭时清空 */
+export interface WizardHostState {
   wizardStep: WizardStep | null;
+  /** `config.get` 的那份配置 */
   wizardConfig: AppConfig | null;
-  wizardPresets: ReasoningPresets;
-  wizardAgents: { id: string; name: string }[];
-  wizardMcp: McpSnapshot | null;
-  wizardAgentStore: AgentStore | null;
+  /** 同一份出参里的档位表（模型上的 `reasoningPreset` 指它的键） */
+  wizardPresets: ReasoningPresets | null;
+  /** `agentDefinition.list` 的定义清单（+ 默认助手 id，来自 `config.defaultAgent`） */
+  wizardAgents: AgentList | null;
+  /** `mcp.list` 的服务器清单（每条带 `scope`） */
+  wizardServers: McpEntry[] | null;
+  /**
+   * 每个助手上挂着几段会话（「删助手」那句代价里的数字）。
+   *
+   * `null` = 数不出来（读失败 / 还没读）：那时代价只说影响面，不给数字 —— 编一个数比不说更糟。
+   */
+  wizardSessionsByAgent: Record<string, number> | null;
   /** 打开向导：先读齐快照再接管整屏（读失败则只报错、不进向导） */
   openWizard: (step: WizardStep) => Promise<void>;
   /** `/key`：直达当前模型所用端点的 API Key 编辑步骤 */
   openKeyEditor: () => Promise<void>;
-  /** 向导关闭：渲染变更摘要，并让改动生效 */
+  /** 向导关闭：渲染变更摘要，并按本地事实决定重启还是重载 */
   closeWizard: (result: WizardCloseResult) => void;
 }
 
 export function useWizardHost({
+  api,
   modelId,
+  workspaceId,
   notify,
   hasSession,
   restart,
   reloadSession,
-  readers: injected,
-}: WizardHostDeps): WizardHost {
-  const readers = {
-    readConfig,
-    readMcpConfig,
-    readReasoningPresets,
-    readAgentStore,
-    ...injected,
-  };
+}: WizardHostDeps): WizardHostState {
   const [wizardStep, setWizardStep] = useState<WizardStep | null>(null);
   const [wizardConfig, setWizardConfig] = useState<AppConfig | null>(null);
-  const [wizardPresets, setWizardPresets] = useState<ReasoningPresets>({});
-  const [wizardAgents, setWizardAgents] = useState<{ id: string; name: string }[]>([]);
-  const [wizardMcp, setWizardMcp] = useState<McpSnapshot | null>(null);
-  const [wizardAgentStore, setWizardAgentStore] = useState<AgentStore | null>(null);
+  const [wizardPresets, setWizardPresets] = useState<ReasoningPresets | null>(null);
+  const [wizardAgents, setWizardAgents] = useState<AgentList | null>(null);
+  const [wizardServers, setWizardServers] = useState<McpEntry[] | null>(null);
+  const [wizardSessionsByAgent, setWizardSessionsByAgent] = useState<Record<string, number> | null>(
+    null,
+  );
+
   /**
-   * 打开向导时当前模型所用的端点 id —— 关闭时据此判断「当前端点有没有被改」。
+   * 读齐那三份快照（配置 + 档位表 / 助手定义 / MCP 清单）。
    *
-   * 用 ref 而不是 state：它只在 `openWizard` / `closeWizard` 之间传递，不上屏，
-   * 放 state 会多一次无意义渲染。
+   * **串行**不并行：三条请求并发时任何一条炸，报出来的都是同一个 catch，「哪一份读不出来」就
+   * 没影了。三份都必须有 —— 向导屏是一个整体（菜单上同时印端点、模型、MCP 两层、助手与默认项），
+   * 少一份就只能渲染半块屏。
+   *
+   * `config.get` 一次给配置**和**档位表：它们是两个文件，但界面要同时看见（模型上那一格
+   * `reasoningPreset` 指的是表里的键），分两次取的话中间可能夹进另一处改动。
    */
-  const currentEndpointRef = useRef<string | null>(null);
+  const readSnapshots = async () => {
+    const { config, presets } = await api.config.get.query();
+    // 清单原样交给 `agentListOf`：wire 上的定义只剩字段，转换只有那一处（`toDefinition`）
+    const definitions = await api.agentDefinition.list.query();
+    const servers = workspaceId === "" ? [] : (await api.mcp.list.query({ workspaceId })).servers;
+    return { config, presets, agents: agentListOf(definitions, config), servers };
+  };
+
+  /**
+   * 每个助手上挂着几段会话（`workspace.list` → 逐个 `session.list`）。
+   *
+   * 只有「删助手」那一处要这个数（PRD 3.4 要删之前说清影响面）。两条都是已有的读 procedure，
+   * 客户端编排：宿主这一版的 `session.list` 只按工作区列（与 `/load --all` 同一条路）。
+   *
+   * 数不出来就往 `null` 走：代价那一句改成一句人话，**不编数字**。也不把这个失败报上去 ——
+   * 它只是没有额外的事实可说，不是一次用户要处理的事。
+   */
+  const countSessionsByAgent = async (): Promise<Record<string, number> | null> => {
+    try {
+      const workspaces = await api.workspace.list.query();
+      const perWorkspace = await Promise.all(
+        workspaces.map((workspace) => api.session.list.query({ workspaceId: workspace.id })),
+      );
+      const counts: Record<string, number> = {};
+      for (const session of perWorkspace.flat()) {
+        counts[session.agentId] = (counts[session.agentId] ?? 0) + 1;
+      }
+      return counts;
+    } catch {
+      return null;
+    }
+  };
 
   const openWizard = async (step: WizardStep) => {
     try {
-      const config = await readers.readConfig();
-      currentEndpointRef.current = resolveCredential(config, modelId)?.endpointId ?? null;
-      const agentStore = await readers.readAgentStore();
+      // 会话计数与三份快照并行：它只是给「删助手」多一格事实，不该把整屏拖慢一拍
+      const [{ config, presets, agents, servers }, sessionsByAgent] = await Promise.all([
+        readSnapshots(),
+        countSessionsByAgent(),
+      ]);
       setWizardConfig(config);
-      setWizardPresets(await readers.readReasoningPresets());
-      setWizardAgents(agentStore.agents.map((agent) => ({ id: agent.id, name: agent.name || agent.id })));
-      setWizardAgentStore(agentStore);
-      // 坏文件照样进屏（屏上写明），只把失败原因随之带过去
-      const globalMcp = await readers.readMcpConfig("global");
-      const projectMcp = await readers.readMcpConfig("project");
-      const errors: Partial<Record<McpScope, string>> = {};
-      if (!globalMcp.ok) errors.global = globalMcp.error;
-      if (!projectMcp.ok) errors.project = projectMcp.error;
-      setWizardMcp({
-        global: mcpConfigOrEmpty(globalMcp),
-        project: mcpConfigOrEmpty(projectMcp),
-        ...(Object.keys(errors).length ? { errors } : {}),
-      });
+      setWizardPresets(presets);
+      setWizardAgents(agents);
+      setWizardServers(servers);
+      setWizardSessionsByAgent(sessionsByAgent);
       setWizardStep(step);
-    } catch (error: any) {
-      notify(t("chat.configReadFailed", { error: error?.message ?? error }), "error");
+    } catch (error) {
+      notify(t("chat.configReadFailed", { error: messageOf(error) }), "error");
     }
   };
 
   const openKeyEditor = async () => {
     try {
-      const config = await readers.readConfig();
+      const { config, presets, agents, servers } = await readSnapshots();
       const credential = resolveCredential(config, modelId);
       if (!credential) {
         notify(t("chat.modelNoEndpoint", { id: modelId }), "error");
         return;
       }
-      currentEndpointRef.current = credential.endpointId;
       setWizardConfig(config);
+      setWizardPresets(presets);
+      setWizardAgents(agents);
+      setWizardServers(servers);
       setWizardStep({ kind: "edit", field: "apiKey", endpointId: credential.endpointId });
-    } catch (error: any) {
-      notify(t("chat.configReadFailed", { error: error?.message ?? error }), "error");
+    } catch (error) {
+      notify(t("chat.configReadFailed", { error: messageOf(error) }), "error");
     }
   };
 
-  /** 向导关闭：渲染变更摘要；若改到当前端点 / MCP / Agent 定义则重建会话（消息保留） */
+  /**
+   * 向导关闭：说清改了什么，再按本地事实让改动落到这一段会话上。
+   *
+   * 判据只有一个，来自 `WizardCloseResult.dirty`（写成功就算生效：宿主改完即用，回的就是新的
+   * 那一份 `AppConfig`，没有「要不要重启才生效」那一格了）。于是「怎么让它生效」只剩本地那一问：
+   *   · 会话还没建好 → 重启进程（草稿会话之前改的模型 / 端点，只有新的这一次挂载才用得上）；
+   *   · 已经建好 → 让它重读自己的事实（模型 / 档位 / 状态栏块）。
+   * 没有 `dirty` 就什么都不做：屏幕上那条摘要已经说完话了。
+   */
   const closeWizard = (result: WizardCloseResult) => {
     setWizardStep(null);
     setWizardConfig(null);
-    setWizardMcp(null);
-    setWizardAgentStore(null);
+    setWizardPresets(null);
+    setWizardAgents(null);
+    setWizardServers(null);
+    setWizardSessionsByAgent(null);
     // 同一批摘要合成**一条**（多行）：既能全部显示，又只占通知队列的一个槽位。
-    // 逐条 push 在单槽时代只剩最后一条，在队列时代则会挤掉更早的进度提示。
+    // 逐条 push 会挤掉更早的进度提示（队列只留最近 MAX_NOTICE_HISTORY 条）。
     const { summary } = result;
     if (summary.length === 1) {
       notify(t("chat.configUpdated", { line: summary[0]! }));
@@ -145,18 +193,11 @@ export function useWizardHost({
     }
     if (!result.dirty) return;
 
-    // 会话都没建好 → 只能重启让新配置生效。
     if (!hasSession()) {
       restart();
       return;
     }
-    // 只有「当前端点 / MCP / Agent 定义 / 建 Agent 时才读的配置（中断策略）」变了
-    // 才需要重建会话；改的是别的模型、别的端点的参数，当前会话不受影响，不该白重连一次。
-    const endpointChanged =
-      !!currentEndpointRef.current && result.changedEndpointIds.includes(currentEndpointRef.current);
-    if (endpointChanged || result.mcpChanged || result.agentsChanged || result.sessionOptionsChanged) {
-      reloadSession();
-    }
+    reloadSession();
   };
 
   return {
@@ -164,10 +205,15 @@ export function useWizardHost({
     wizardConfig,
     wizardPresets,
     wizardAgents,
-    wizardMcp,
-    wizardAgentStore,
+    wizardServers,
+    wizardSessionsByAgent,
     openWizard,
     openKeyEditor,
     closeWizard,
   };
+}
+
+/** 抛出值 → 一句人话（宿主给的 `message` 本来就能上屏，非 `Error` 的兜一下） */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

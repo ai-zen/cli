@@ -3,41 +3,70 @@
  *
  * `/mcp` 不自己做一套 MCP 编辑界面（那样「删除」和「新增」迟早长歪成两套实现），
  * 只负责把用户送进配置中心里已有的 MCP 界面（`{ kind: "mcp", scope }`）：
- * 增、删、改、启用/禁用、作用域切换都在那一个屏里，改完由宿主统一
- * `session.reload()` 让新工具生效。
+ * 增、删、改、启用/禁用、作用域切换都在那一个屏里，每次改一条走一条 procedure
+ * （`api.mcp.save` / `api.mcp.remove`），回来的是**整份**服务器清单（每条带它写在哪一层）。
  *
- * 于是这里只剩一个真问题：**默认进哪个作用域**。
+ * 于是这里只剩两个真问题：**参数怎么认**、**无参数时默认进哪个作用域**。
  */
 
-import type { McpConfig, McpScope } from "./config.js";
-
-/** MCP 两个作用域的配置快照 */
-export interface McpSnapshotLike {
-  global: McpConfig;
-  project: McpConfig;
-}
+import {
+  MCP_SCOPE_OF,
+  type McpEditableScope,
+  type McpEntry,
+  type McpServerConfig,
+} from "./config.js";
 
 /**
- * 解析 `/mcp` 的作用域参数（`/mcp global`、`/mcp project`，大小写不敏感，可缩写为 `g` / `p`）。
+ * 解析 `/mcp` 的作用域参数（`/mcp user`、`/mcp workspace`，大小写不敏感，可缩写为 `u` / `w`）。
+ *
+ * ## 旧词为什么还认
+ *
+ * 旧版把这两层叫 `global` / `project`（`/mcp global`、`/mcp project`）；新版按界面的叫法改成了
+ * `user` / `workspace`。**词换了，指的是同一层**：`global` = 用户级（数据根那份 `mcp.json`，
+ * 全机共享）、`project` = 项目级（项目里 `.ai-zen/mcp.json`，只对这个目录生效），两者的落点
+ * 与旧版一一对应。于是旧肌肉记忆不该换来一句「未知作用域」—— 用户要的是那一层，不是那个词。
+ *
+ * **映射只发生在这里**：下游（`mcpEntriesOf` / `openWizard` / `api.mcp.save`）看到的永远是
+ * 规范化的 `user` / `workspace`，再由 `config.ts` 的 `MCP_SCOPE_OF` 换成契约里的层名
+ * （`user` / `workspaceAiZen`）。别把 `global` / `project` 放出去。
  *
  * 返回 `null` 表示「没有可用值」——**没给参数**和**给错了**都返回 null，
  * 调用方靠 `args[0]` 是否存在区分这两种情况（前者走默认判断，后者报错）。
  */
-export function parseMcpScope(raw?: string): McpScope | null {
+export function parseMcpScope(raw?: string): McpEditableScope | null {
   const value = raw?.trim().toLowerCase();
   if (!value) return null;
-  if (value === "global" || value === "g") return "global";
-  if (value === "project" || value === "p") return "project";
+  if (value === "user" || value === "u") return "user";
+  if (value === "workspace" || value === "w") return "workspace";
+  // 旧词（见上）：global 指用户级、project 指项目级
+  if (value === "global") return "user";
+  if (value === "project") return "workspace";
   return null;
 }
 
 /**
- * 无参数时挑一个入口作用域：
- *   - 项目级有服务器 → 进项目级（会话内临时加的 MCP 通常只对本项目生效，改它最常见）；
- *   - 否则进全局（共享位置，多数人把 MCP 配在这里；项目级为空时进去只会看到空列表）。
+ * 某一层里有哪些服务器。
  *
- * 两边都空时进全局：新建的东西默认落在共享位置，比落在当前目录更容易被下一次启动用到。
+ * `mcp.list` 每条都带着「它写在哪一层」（`scope`，宿主点名的事实），这里只按那一格筛：
+ * 哪一层是 `user`、哪一层是项目可写的那个 `.ai-zen/mcp.json` 由 `MCP_SCOPE_OF` 说了算，
+ * 客户端不按目录反推。写进别的层（项目 `.mcp.json`、两个 `.agents/mcp.json`）的实现不在这里
+ * 露面 —— 它们不可写，宿主对它们的写口一律 `unsupported`。
  */
-export function pickStartScope(mcp: McpSnapshotLike): McpScope {
-  return Object.keys(mcp.project.mcpServers).length > 0 ? "project" : "global";
+export function mcpEntriesOf(
+  servers: readonly McpEntry[],
+  scope: McpEditableScope,
+): McpServerConfig[] {
+  const wireScope = MCP_SCOPE_OF[scope];
+  return servers.filter((entry) => entry.scope === wireScope).map((entry) => entry.server);
+}
+
+/**
+ * 无参数时挑一个入口作用域：
+ *   - 项目层有服务器 → 进项目层（会话内临时加的 MCP 通常只对本项目生效，改它最常见）；
+ *   - 否则进用户层（共享位置，多数人把 MCP 配在这里；项目层为空时进去只会看到空列表）。
+ *
+ * 两边都空时进用户层：新建的东西默认落在共享位置，比落在当前目录更容易被下一次启动用到。
+ */
+export function pickStartScope(servers: readonly McpEntry[]): McpEditableScope {
+  return mcpEntriesOf(servers, "workspace").length > 0 ? "workspace" : "user";
 }

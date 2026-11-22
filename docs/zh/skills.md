@@ -6,7 +6,7 @@ outline: deep
 
 # Skill 技能
 
-Skill（技能）是可复用的、带 Fronmatter 说明的 Markdown 文档，用于把某一类工作流沉淀成可加载的知识片段。CLI 通过 `@ai-zen/agents-sdk` 发现与加载 Skill，并提供两个动态工具：`load_skill` 与 `call_skill_sub_agent`。
+Skill（技能）是可复用的、带 Frontmatter 说明的 Markdown 文档，用于把某一类工作流沉淀成可加载的知识片段。发现与加载发生在**宿主**一侧（`DiscoveryService` 给出四层目录，装配交给 `@ai-zen/agents-sdk`），对外表现为两个动态工具：`load_skill` 与 `call_skill_sub_agent`。
 
 ## Skill 目录结构
 
@@ -25,11 +25,11 @@ Skill（技能）是可复用的、带 Fronmatter 说明的 Markdown 文档，�
 
 ## 目录优先级
 
-Skill 目录从多个来源**由高到低**合并（来自 `src/agent-creator.ts` 的 `getScope()` 与 `src/config.ts` 注释）：
+Skill 目录从多个来源**由高到低**合并（顺序由宿主的 `DiscoveryService.skillLayers()` 给出：`agents/packages/host/src/services/DiscoveryService.ts`）：
 
 1. 项目 `./.ai-zen/skills/`
 2. 项目 `./.agents/skills/`
-3. 用户级 `~/.ai-zen/skills/`
+3. 用户级 `<数据根>/skills/`（缺省 `~/.ai-zen/skills/`）
 4. 用户规范 `~/.agents/skills/`
 
 ## 动态工具
@@ -48,4 +48,4 @@ Skill 目录从多个来源**由高到低**合并（来自 `src/agent-creator.ts
 
 ## 相关配置
 
-Skill 也可通过 `.ai-zen` / `.agents` 下的 `skills/` 目录按项目共享。CLI 在 `ensureConfigDir()` 中通过 SDK 的 `ConfigManager.bootstrap()` 初始化共享目录。
+Skill 也可通过项目里的 `.ai-zen/skills/` 与 `.agents/skills/` 共享。共享目录（数据根下的 `agents/`、`sub-agents/`、`skills/`、`tools/`、`mcp-oauth/`）由**宿主**启动时经 SDK 的 `ConfigManager.bootstrap()` 建好；CLI 本进程不碰这套目录布局（`src/config.ts` 只留一份布局注释，不推导路径）。

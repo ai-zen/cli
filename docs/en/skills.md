@@ -6,7 +6,7 @@ outline: deep
 
 # Skill
 
-A Skill is a reusable Markdown document with frontmatter that distills a class of workflow into a loadable knowledge fragment. The CLI discovers and loads Skills through `@ai-zen/agents-sdk` and provides two dynamic tools: `load_skill` and `call_skill_sub_agent`.
+A Skill is a reusable Markdown document with frontmatter that distills a class of workflow into a loadable knowledge fragment. Discovery and loading happen on the **host** side (`DiscoveryService` supplies the four directory layers, assembly is delegated to `@ai-zen/agents-sdk`), surfacing as two dynamic tools: `load_skill` and `call_skill_sub_agent`.
 
 ## Skill directory structure
 
@@ -25,11 +25,11 @@ Project-level Skills live under the project directory:
 
 ## Directory priority
 
-Skill directories are merged from multiple sources **high to low** (from `getScope()` in `src/agent-creator.ts` and the comments in `src/config.ts`):
+Skill directories are merged from multiple sources **high to low** (the order comes from the host's `DiscoveryService.skillLayers()`: `agents/packages/host/src/services/DiscoveryService.ts`):
 
 1. Project `./.ai-zen/skills/`
 2. Project `./.agents/skills/`
-3. User-level `~/.ai-zen/skills/`
+3. User-level `<dataRoot>/skills/` (default `~/.ai-zen/skills/`)
 4. User-convention `~/.agents/skills/`
 
 ## Dynamic tools
@@ -48,4 +48,4 @@ This path also crosses the sub-agent delegation boundary (`onSubAgentStart` / `o
 
 ## Related configuration
 
-Skills can also be shared per project via the `skills/` directories under `.ai-zen` / `.agents`. The CLI initializes the shared directories via the SDK's `ConfigManager.bootstrap()` in `ensureConfigDir()`.
+Skills can also be shared per project via `.ai-zen/skills/` and `.agents/skills/`. The shared directories (`agents/`, `sub-agents/`, `skills/`, `tools/`, `mcp-oauth/` under the data root) are created by the **host** on boot, via the SDK's `ConfigManager.bootstrap()`; the CLI process never touches that layout (`src/config.ts` keeps only a comment describing it, and derives no paths).

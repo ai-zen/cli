@@ -94,7 +94,7 @@ When `usage.prompt_tokens` exceeds the model's `tokenThresholds.handoff`, the SD
 - **Write via a separate agent** (`summary`) — a single independent generation over the serialized history; faster and cheaper, but does not verify files;
 - **Don't hand off** — skip this round (same as `Esc`). History is untouched; the prompt appears again after the next response while usage stays over the threshold.
 
-Non-interactive environments (pipes, redirects, e2e scripts) have no picker: they migrate with the default executor, without blocking and without extra output.
+**If nobody answers, nothing is migrated.** The handoff-line question is **a row in the database** (`QuestionService`: it stores message keys plus option values, and the host itself applies the side effects of an answer): it never expires on its own and there is no "pick one for the user after N minutes" fallback — in a non-interactive setting (pipes, redirects) nobody answers, so the question simply stays pending (it blocks sends on that conversation with the business code `question_pending`) and the migration never happens by itself. History is untouched. The real safety net is the `guard` hard line: exceed it before a request and the turn is interrupted.
 
 ## Migration chain
 
@@ -102,11 +102,11 @@ Non-interactive environments (pipes, redirects, e2e scripts) have no picker: the
 2. **Handoff turn** — abort in-flight work, run the `self` turn (or the `summary` call), verify the file (`exists` + ≥ 400 bytes, one retry, then degrade).
 3. **`onHandoff`** — log the document path; for migration, save the old conversation **now** (it already contains the handoff turn, so the archive is auditable).
 4. **`migrate` strategy `prune`** — physically drop history, keeping `definition.messages` + one breakpoint message holding the path.
-5. **`onMigrated`** — assign a new conversation id, persist it, update the last-session pointer. It does **not** touch `lastUsage`: that is a read-only value derived from `messages`, so `prune` replacing them already drops the old usage. Letting the guard step aside during the handoff turn is `ContextGuardPlugin.isSuspended`'s job (`() => handoffService.busy`).
+5. **`onMigrated`** — assign a new conversation id and persist it (the new conversation is opened by the host: same project, same agent, the old one kept intact; the client just follows the new id). It does **not** touch `lastUsage`: that is a read-only value derived from `messages`, so `prune` replacing them already drops the old usage. Letting the guard step aside during the handoff turn is `ContextGuardPlugin.isSuspended`'s job (`() => handoffService.busy`).
 
 The old conversation is always saved before pruning, so a failed handoff never costs you history: you can retry or keep chatting.
 
-> **The conversation id has exactly one source of truth.** The new id written by `onMigrated` must be visible to the persistence layer immediately (in the CLI, `ChatSession.currentId` proxies `ConversationContext.currentId` instead of holding its own copy). Otherwise the next auto-persist still uses the **old** id and writes the post-`prune` shell (system prompt + breakpoint) **over the old conversation file** — from the user's side, "after the handoff my history was gone and only the handoff doc was left".
+> **The conversation id has exactly one source of truth.** The new id written by `onMigrated` must be visible to the persistence layer immediately (the **host-side** `currentId` is the only copy; the client and the render layer only read `sessionId` from the snapshot). Otherwise the next auto-persist still uses the **old** id and writes the post-`prune` shell (system prompt + breakpoint) **into the old conversation** — from the user's side, "after the handoff my history was gone and only the handoff doc was left".
 
 ## Cancellation
 
@@ -116,7 +116,7 @@ Handoff / migration can be interrupted at any point: `Ctrl+C` in the TUI (`Esc` 
 - a handoff document created by this run is deleted (a half-written one even more so);
 - no degradation, no retry, no migration: no "already migrated" illusion.
 
-The cancel handle lives in `HandoffService` (`handoffService.abort()`) rather than in a caller-supplied `signal`: **auto-migration** (the context-overflow path) is driven directly by an SDK plugin, so the CLI never gets a chance to pass a signal in — honouring only an external `signal` means "Ctrl+C during auto-migration is read as 'the model never wrote the document', so it retries once, degrades to `summary` for another round, and migrates anyway". The CLI's `ChatSession.abort()` does exactly two things: `handoffService.abort()` (stop and roll back) plus `agent.abort()` (cut off the round that is currently streaming).
+The cancel handle lives in `HandoffService` (`handoffService.abort()`) rather than in a caller-supplied `signal`: **auto-migration** (the context-overflow path) is driven directly by an SDK plugin, so the CLI never gets a chance to pass a signal in — honouring only an external `signal` means "Ctrl+C during auto-migration is read as 'the model never wrote the document', so it retries once, degrades to `summary` for another round, and migrates anyway". The client's `RemoteChatSession.abort()` does exactly one thing — `session.cancel`; the host then does both: `handoff.abort()` (stop and roll back) plus `agent.abort()` (cut off the round that is currently streaming).
 
 Boundary: once the handoff document **passes validation** (saving the old conversation, pruning history, persisting the new session) it is the **commit point**; a later `Ctrl+C` no longer undoes the migration — that would leave the third state: "old conversation already archived, history already pruned".
 

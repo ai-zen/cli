@@ -1,19 +1,28 @@
+/**
+ * shell 钩子：往用户的 rc 文件（`~/.bashrc` / `~/.zshrc`）里增删一段 `command_not_found_*`。
+ *
+ * ## rc 是**用户内容**，不是我们的缓存
+ *
+ * 那个文件是用户手工编辑过的，我们没有资格猜它里面是什么。所以读它只有一种正常结局：
+ * 「文件不存在」（= 还没装过）；其余失败（`EACCES`、`EISDIR`…）一律**原样抛**，命令失败并
+ * 说清原因 —— 判据与 `host-version.ts` 同一套。
+ *
+ * 这一条不是洁癖：`installHook` 的写回是「读到的内容 → 去掉钩子块 → 写回去」，一旦把
+ * 「读不出来」当成「文件是空的」，写回去的就只剩一段钩子 —— 用户的整个 rc 被抹掉。
+ * 宁可命令失败，也不许替用户删配置。
+ */
+
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promises as fs } from "node:fs";
 import { t } from "./i18n/index.js";
 
-/** 当前标记（ai hook 时代）
+/** 当前标记
  *
  * **不得翻译**：这两行是写进 rc 文件的代码块标记，靠它识别「哪段是本工具的」；
  * 翻了字面串就再也找不到旧块，用户会冒出一堆重复 hook。 */
 const MARKER_START = "# === ai hook (开始) ===";
 const MARKER_END = "# === ai hook (结束) ===";
-
-/** 历史标记（aiz hook 时代，用于平滑迁移） */
-const LEGACY_BLOCKS = [
-  { start: "# === aiz hook (开始) ===", end: "# === aiz hook (结束) ===" },
-];
 
 function detectShell(): { rcFile: string; hookFn: string } | null {
   const shell = process.env.SHELL || "";
@@ -35,8 +44,8 @@ function detectShell(): { rcFile: string; hookFn: string } | null {
  * 不是脚本调用——所以要把原命令带进 TUI 当首条消息（`ai --tui --new "$@"`），
  * 而不是落到管道模式吐一段字就退出（那样没有历史、不能追问）。
  *
- * 另带 `--new`：钩子会话**总是开新的一条对话**，不续接该目录的上一轮会话。
- * 敲错一次命令就把内容追加进原有的长对话里，上下文和会话名都会被打乱。
+ * 另带 `--new`：钩子**总是开一条新会话**，不续接该目录上一次的会话。
+ * 敲错一次命令就把内容追加进原有的长会话里，上下文和会话名都会被打乱。
  * `"$@"` 保留分词，避免原本带空格的参数被拼坏。
  */
 function hookCode(hookFn: string): string {
@@ -80,11 +89,10 @@ function readHookBlocks(content: string): string[] {
 }
 
 /**
- * 移除文件中所有 hook 代码块（含历史 aiz 标记），返回清理后的内容；
+ * 移除文件中所有钩子块（含首尾标记），返回清理后的内容；
  * `removed` 表示是否确有块被移除。
  */
 function stripHookBlocks(content: string): { content: string; removed: boolean } {
-  const blocks = [{ start: MARKER_START, end: MARKER_END }, ...LEGACY_BLOCKS];
   const lines = content.split("\n");
   const kept: string[] = [];
   let skipping = false;
@@ -92,12 +100,12 @@ function stripHookBlocks(content: string): { content: string; removed: boolean }
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!skipping && blocks.some((b) => b.start === trimmed)) {
+    if (!skipping && trimmed === MARKER_START) {
       skipping = true;
       matchedAny = true;
       continue;
     }
-    if (skipping && blocks.some((b) => b.end === trimmed)) {
+    if (skipping && trimmed === MARKER_END) {
       skipping = false;
       continue;
     }
@@ -114,11 +122,13 @@ export async function installHook(): Promise<void> {
     process.exit(1);
   }
 
+  // 只有「rc 不存在」能当空内容；其它读失败原样抛（下面那句 `writeFile` 是整份覆盖，
+  // 拿一份没读到的东西当底子写回去 = 替用户删掉他的 rc）
   let current = "";
   try {
     current = await fs.readFile(shell.rcFile, "utf-8");
-  } catch {
-    // 文件不存在：视为空内容
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 
   const desired = hookCode(shell.hookFn);
@@ -127,19 +137,25 @@ export async function installHook(): Promise<void> {
   // 内容不一致（如升级后给钩子加了 `--new`）或残留多块（老版本 + 新版本各写过一次）
   // 都要走重写路径，否则用户升不上去、或者旧块永远留在 rc 里。
   const installedBlocks = readHookBlocks(current);
-  if (installedBlocks.length === 1 && normalizeBlock(installedBlocks[0]!) === normalizeBlock(desired)) {
+  if (
+    installedBlocks.length === 1 &&
+    normalizeBlock(installedBlocks[0]!) === normalizeBlock(desired)
+  ) {
     console.log(t("hook.alreadyInstalled"));
     return;
   }
   const refreshed = installedBlocks.length > 0;
 
-  // 统一走「先清掉所有已装块（含历史 aiz 块），再写入当前版本」
-  const { content: cleaned, removed } = stripHookBlocks(current);
+  // 统一走「先清掉所有已装块，再写入当前版本」
+  const { content: cleaned } = stripHookBlocks(current);
   const base = cleaned.replace(/\n+$/, "");
   await fs.writeFile(shell.rcFile, base + "\n" + desired, "utf-8");
 
-  console.log(refreshed ? t("hook.updated", { file: shell.rcFile }) : t("hook.installed", { file: shell.rcFile }));
-  if (removed) console.log(t("hook.upgraded"));
+  console.log(
+    refreshed
+      ? t("hook.updated", { file: shell.rcFile })
+      : t("hook.installed", { file: shell.rcFile }),
+  );
   console.log(t("hook.restartHint", { file: shell.rcFile }));
   console.log(t("hook.forwardHint"));
 }
@@ -154,7 +170,9 @@ export async function uninstallHook(): Promise<void> {
   let content: string;
   try {
     content = await fs.readFile(shell.rcFile, "utf-8");
-  } catch {
+  } catch (error) {
+    // 「没有这个文件」才等于「没装过」；`EACCES` 拿去说「文件不存在」是一句假话，如实抛
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     console.log(t("hook.notInstalledNoFile"));
     return;
   }

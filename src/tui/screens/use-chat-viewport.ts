@@ -1,8 +1,7 @@
-// 对话视口 —— 「翻页 / 按行 / 滚轮 / 回底」的唯一入口
+// 会话视口 —— 「翻页 / 按行 / 滚轮 / 回底」的唯一入口
 //
-// 从 `chat.tsx` 抽出来的理由：视口是**不依赖会话**的独立状态机（一个 `viewTop` 状态
-// 加一份最近布局的引用），却被塞在 God Component 里，与消息、输入、向导混在一起。
-// 抽出来后，「滚动」这件事只有这一个地方能改。
+// 视口是**不依赖会话**的独立状态机（一个 `viewTop` 状态加一份最近布局的引用），单独成模块
+// 是为了让「滚动」只有这一个地方能改 —— 混在会话屏里时，任何一个新键位都可能又写一遍。
 //
 // 关键点：所有动作都走 `scrollTo()` → `clampViewTop()`，因此
 //   · 越界方向被自然吃掉，不会出现「滚过头回不来」；
@@ -13,7 +12,7 @@ import { WHEEL_STEP } from "../mouse.js";
 import { clampViewTop, type ChatLayout } from "./layout.js";
 
 export interface ChatViewport {
-  /** 视口顶部行索引（相对整个对话行）；`null` = 贴底（自动跟随最新内容） */
+  /** 视口顶部行索引（相对整个会话行）；`null` = 贴底（自动跟随最新内容） */
   viewTop: number | null;
   /**
    * 最近一帧的布局。**由渲染体在算完布局后写入**（`viewport.layoutRef.current = layout`）：

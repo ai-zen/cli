@@ -1,38 +1,30 @@
 /**
- * 思考档位（reasoning level）—— CLI 侧读写
+ * 思考档位 —— CLI 侧的**文案**，外加一处「读表」：助手定义上现在算哪一档。
  *
- * ## 三层，边界很硬
+ * ## 划分
  *
- *   - **协议差异在策略表**（`~/.ai-zen/reasoning-presets.json`）：档位名 → 请求参数补丁，
- *     由这张 CLI 自有的表声明，模型用 `reasoningPreset` 引用它。
- *   - **档位值存在 Agent 定义**（`AgentDefinition.modelParams`）：**存的是展开后的参数**，
- *     不是档位名。于是「配置即事实」——运行期 SDK 只做一次浅合并，不查表、不推导。
- *   - **本模块只管 UI 语义**：列可选档位、把参数反查成档位名、写回 Agent 定义。
+ *   - **会话级**的档位现状由会话行给（`session.open` 的 `thinkingLevel`）：
+ *     `session.setThinking` 写它、宿主展开成参数，`session.ts` 的派生视图拼成 `ThinkingState`；
+ *   - **助手级**的档位存的是**展开后的参数**（`AgentDefinition.modelParams`，这才是「配置即
+ *     事实」），所以「它现在算哪一档」只能由客户端拿档位表反查 —— {@link agentThinkingOf}
+ *     就是那一处，与旧版 `reasoning-effort.ts` 的 `matchLevel` 是同一套算法；
+ *   - **文案**（`低` / `跟随模型默认` / `—`）与状态栏那一格在 {@link thinkingView}。
  *
- * 代价（刻意接受）：改了策略表**不会追溯**已配置的 Agent —— 它们存的是当时的参数。
- * 这正是「配置即事实」的含义：表只是写配置那一刻的模板。
+ * 档位表的**定义、出厂内容、读写**都在宿主（`config.get` 的 `presets`）。这里只「利用」它：
+ * 列出可选档位、把现有参数反查成档位名、把选中的档位展开成参数交给
+ * `agentDefinition.update`。不碰文件，也不认识哪家厂商。
  */
 
-import { AgentRepository } from "@ai-zen/agents-sdk";
-import type { AgentDefinition, AppConfig, Model } from "@ai-zen/agents-sdk";
-import { AGENTS_DIR } from "./config.js";
+import type { AgentDefinition, AppConfig, ReasoningPreset, ReasoningPresets } from "./config.js";
+import { findModel } from "./config-editor.js";
+import type { ThinkingState } from "./session/types.js";
 import { t } from "./i18n/index.js";
-import {
-  levelsOf,
-  matchLevel,
-  ownedKeys,
-  patchOf,
-  presetFor,
-  type ReasoningPreset,
-  type ReasoningPresets,
-} from "./reasoning-presets.js";
 
 /**
  * 已知档位名清单。
  *
- * 不设成穷举映射：档位名由策略表定义（用户可自建策略、自定档位名），
- * 未收录的名字直接显示原文，比显示「?」有用得多。
- * 文案本身在 i18n 词典的 `effort.<档位名>` 里（中 / 英各一份）。
+ * 不设成穷举映射：档位名由宿主那侧的策略表定义（用户可以自建策略、自定档位名），
+ * 未收录的名字直接显示原文，比显示「?」有用得多。文案本身在 i18n 词典的 `effort.<档位名>` 里。
  */
 export const KNOWN_EFFORT_LEVELS: readonly string[] = [
   "off",
@@ -50,181 +42,184 @@ export function effortLabel(level: string): string {
   return KNOWN_EFFORT_LEVELS.includes(level) ? t(`effort.${level}`) : level;
 }
 
-/** 模型关联的策略 */
-export function presetOf(
-  model: Model | null | undefined,
-  presets: ReasoningPresets,
-): ReasoningPreset | undefined {
-  return presetFor(model?.id, model?.reasoningPreset, presets);
-}
-
-/** 模型可选档位（空数组 = 不可调档） */
-export function effortChoices(
-  model?: Model | null,
-  presets?: ReasoningPresets | null,
-): string[] {
-  if (!presets) return [];
-  return levelsOf(presetOf(model, presets));
-}
-
-/** 一档都用不了的模型 */
-export function isAdjustable(model?: Model | null, presets?: ReasoningPresets | null): boolean {
-  return effortChoices(model, presets).length > 0;
-}
-
 /**
- * 生效中的模型参数 = 模型默认参数 + Agent 级覆盖（与 SDK 的合并语义一致，浅合并）。
+ * 档位的显示名（如「高」/「跟随模型默认」）。
  *
- * 注意这里复刻的是**同一份事实**，不是另一套推导：状态栏显示的就是真正会发给 API 的
- * 那几个参数里匹配到的那一档。
+ * 汇总文案与选择器都得说同一个词，所以收在这里：命令层的 summary 各拼一句不同的句子，
+ * 但里面那个档位名必须是同一个函数算出来的。
  */
-export function effectiveParams(
-  model?: Model | null,
-  definition?: Pick<AgentDefinition, "modelParams"> | null,
-): Record<string, unknown> {
-  return { ...(model?.defaultParams ?? {}), ...(definition?.modelParams ?? {}) };
+export function effortLabelText(effort: string | null): string {
+  return effort === null
+    ? t("effort.followDefault")
+    : t("effort.quoted", { label: effortLabel(effort) });
 }
 
-/**
- * 状态栏文案。
- *
- * - 模型不可调档 → `—`
- * - 生效参数命中某档 → 「低」「中」「高」…（按 `EFFORT_LABELS`）
- * - 有 Agent 级覆盖但不匹配任何档位 → 「自定义」（用户手改过参数）
- * - 没有任何声明 → 「默认」（跟随模型 `defaultParams`，如 DeepSeek 出厂只开思考不指定档位）
- */
-export function describeEffort(
-  model?: Model | null,
-  presets?: ReasoningPresets | null,
-  definition?: Pick<AgentDefinition, "modelParams"> | null,
-): string {
-  if (!presets || !isAdjustable(model, presets)) return t("effort.unsupported");
-  const params = effectiveParams(model, definition);
-  const matched = matchLevel(presetOf(model, presets), params);
-  if (matched) return effortLabel(matched);
-  return definition?.modelParams && Object.keys(definition.modelParams).length > 0
-    ? t("effort.custom")
-    : t("effort.default");
+/** 这个模型能不能调档（不可调档时 `/think` 与状态栏都不该给出档位） */
+export function isAdjustable(thinking: ThinkingState): boolean {
+  return thinking.source !== "not_adjustable" && thinking.levels.length > 0;
+}
+
+/** 关掉的档位：状态栏里该置灰（判断依据是档位值，不是文案） */
+function isOffLevel(level: string): boolean {
+  return level === "off" || level === "none";
 }
 
 /**
  * 状态栏用的思考强度视图：文案 + 是否置灰。
  *
- * 合成一个对象返回，是为了让调用方**一次取全**——分成两个函数调用容易出现
- * 「文案更新了、置灰没跟上」这种漂移。
+ * 三句话，全部来自宿主给的 `source` / `selected`：
+ *   - `not_adjustable`：这个模型没有档位 → `—`，置灰；
+ *   - `manual`：现在就是某一档 → 档位名；`off` / `none` 置灰；
+ *   - `following_default`：没设过档位，跟着模型默认走 → 「默认」，不置灰。
+ *
+ * 合成一个对象返回，是为了让调用方**一次取全** —— 分成两个函数容易出现「文案更新了、
+ * 置灰没跟上」这种漂移。
  */
-export function describeEffortView(
-  model?: Model | null,
-  presets?: ReasoningPresets | null,
-  definition?: Pick<AgentDefinition, "modelParams"> | null,
-): { text: string; dimmed: boolean } {
-  return {
-    text: describeEffort(model, presets, definition),
-    dimmed: effortDimmed(model, presets, definition),
-  };
+export function thinkingView(thinking: ThinkingState): { text: string; dimmed: boolean } {
+  if (!isAdjustable(thinking)) return { text: t("effort.unsupported"), dimmed: true };
+  if (thinking.source === "manual" && thinking.selected !== null) {
+    return { text: effortLabel(thinking.selected), dimmed: isOffLevel(thinking.selected) };
+  }
+  // 定义上带着属于这个策略的键、却凑不成任何一档 = 有人手写过参数。
+  // 它**不是**「默认」：说成默认会让用户以为那份没生效，或者再设一次把手写值覆盖掉。
+  if (thinking.source === "custom") return { text: t("effort.custom"), dimmed: false };
+  return { text: t("effort.default"), dimmed: false };
+}
+
+// ==================== 档位表（只「利用」，不定义） ====================
+
+/** 安全取自有属性（策略名来自用户配置，可能是 `constructor` / `__proto__`） */
+function own<T>(bag: Record<string, T> | undefined, key: string): T | undefined {
+  if (!bag || !Object.prototype.hasOwnProperty.call(bag, key)) return undefined;
+  return bag[key];
+}
+
+/** 模型引用的策略（没写 `reasoningPreset`、或表里没有那个名字 → `undefined`） */
+export function presetOf(
+  presets: ReasoningPresets,
+  name: string | null | undefined,
+): ReasoningPreset | undefined {
+  if (!name) return undefined;
+  return own(presets, name);
+}
+
+/** 某策略的全部档位（= `levels` 的键，顺序即声明顺序；空数组 = 不可调档） */
+export function levelsOf(preset: ReasoningPreset | undefined): string[] {
+  return preset ? Object.keys(preset.levels ?? {}) : [];
+}
+
+/** 某策略某档的参数补丁 */
+export function patchOf(
+  preset: ReasoningPreset | undefined,
+  level: string,
+): Record<string, unknown> | undefined {
+  return own(preset?.levels, level);
 }
 
 /**
- * 状态栏里思考强度是否该置灰 —— **不靠文案判断**。
+ * 整张表出现过的参数键 —— 「哪些键属于思考」由表自己声明，代码零硬编码。
  *
- * 旧实现是 `effort === "关" || effort === "—"`，而那两个字本身就是显示文案：
- * 一切语言，判断就失效（英文界面下 `"off"` 永远不等于 `"关"`）。
- * 这里改成基于档位值的语义判断：不可调档，或档位是 off / none。
+ * 换档时按此剔除旧值：`max` → `off` 不会残留上一档的 `reasoning_effort`，而「表里没有的键」
+ * （`temperature` 之类）一律当普通参数原样留着。
  */
-export function effortDimmed(
-  model?: Model | null,
-  presets?: ReasoningPresets | null,
-  definition?: Pick<AgentDefinition, "modelParams"> | null,
-): boolean {
-  if (!presets || !isAdjustable(model, presets)) return true;
-  const level = matchLevel(presetOf(model, presets), effectiveParams(model, definition));
-  return level === "off" || level === "none";
+export function ownedKeys(presets: ReasoningPresets): Set<string> {
+  const keys = new Set<string>();
+  for (const preset of Object.values(presets ?? {})) {
+    for (const patch of Object.values(preset?.levels ?? {})) {
+      for (const key of Object.keys(patch ?? {})) keys.add(key);
+    }
+  }
+  return keys;
 }
 
-export interface SetAgentEffortOptions {
-  config: AppConfig;
-  /** 思考策略表（`readReasoningPresets()` 的结果） */
-  presets: ReasoningPresets;
-  /** 目标 Agent（缺省 default） */
-  agentId?: string;
-  /** 目标档位；`null` 表示清除思考参数、恢复跟随模型默认 */
-  effort: string | null;
-  /** 注入用（测试） */
-  readAgent?: (agentId: string) => Promise<AgentDefinition | null>;
-  writeAgent?: (definition: AgentDefinition) => Promise<void>;
-  now?: Date;
-}
-
-export interface SetAgentEffortResult {
-  definition: AgentDefinition;
-  /** 生效模型 */
-  model: Model;
-  summary: string;
+/** 结构化相等 —— 补丁是纯 JSON，逐层比对即可 */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const leftKeys = Object.keys(left);
+  if (leftKeys.length !== Object.keys(right).length) return false;
+  return leftKeys.every(
+    (k) => Object.prototype.hasOwnProperty.call(right, k) && sameValue(left[k], right[k]),
+  );
 }
 
 /**
- * 设置某 Agent 的思考档位：查表拿补丁 → 写进 `definition.modelParams`。
+ * 反查：现有参数命中哪个档位（多张补丁同时命中取最具体的）。
  *
- * 写入前先剔除「整张表出现过的键」，所以 `max` → `off` 不会残留上一档的
- * `reasoning_effort`；`effort: null` 就是剔除后若为空则删掉整个 `modelParams`。
- *
- * 抛错场景：Agent 不存在、未绑定可用模型、模型未关联策略、策略里没有该档位。
- * 这些都属于「用户明确要求了一件做不到的事」，宁可报错也不要静默降级。
+ * 纯展示用途 —— 界面要显示「定义上现在是第几档」。命中不了返回 `undefined`。
  */
-export async function setAgentEffort(
-  options: SetAgentEffortOptions,
-): Promise<SetAgentEffortResult> {
-  const { config, presets, effort } = options;
-  const agentId = options.agentId || "default";
-  const now = options.now ?? new Date();
-
-  const readAgent =
-    options.readAgent ?? ((id: string) => new AgentRepository(AGENTS_DIR).read(id));
-  const writeAgent =
-    options.writeAgent ??
-    ((definition: AgentDefinition) => new AgentRepository(AGENTS_DIR).write(definition));
-
-  const definition = await readAgent(agentId);
-  if (!definition) throw new Error(t("effort.err.agentMissing", { id: agentId }));
-
-  const modelId = definition.modelId;
-  if (!modelId) {
-    throw new Error(t("effort.err.noModel", { id: agentId }));
+export function matchLevel(
+  preset: ReasoningPreset | undefined,
+  params: Record<string, unknown> | undefined | null,
+): string | undefined {
+  if (!preset || !params) return undefined;
+  let best: string | undefined;
+  let bestSize = 0;
+  for (const [level, patch] of Object.entries(preset.levels ?? {})) {
+    const keys = Object.keys(patch ?? {});
+    if (keys.length === 0 || keys.length <= bestSize) continue;
+    if (!keys.every((k) => sameValue(params[k], (patch as Record<string, unknown>)[k]))) continue;
+    best = level;
+    bestSize = keys.length;
   }
-  const model = (config.models ?? []).find((item) => item.id === modelId);
-  if (!model) throw new Error(t("effort.err.modelMissing", { id: modelId }));
+  return best;
+}
 
-  const preset = presetOf(model, presets);
-  const allowed = levelsOf(preset);
-  if (allowed.length === 0) {
-    throw new Error(t("effort.err.noPreset", { id: model.id }));
+/**
+ * 一条助手定义**现在**的思考档位现状（派生视图，与 `session/types.ts` 的 `ThinkingState` 同形）。
+ *
+ * 生效模型按三级解析的第二、三级算（`definition.modelId` → `config.defaultModel`）—— 定义上
+ * 那一层写的是什么，决定的就是「用这个助手新开的会话」会拿到哪一档，而会话级覆盖另有一格。
+ *
+ * 四个 `source` 的含义：
+ *   · `not_adjustable`：模型没有策略，或策略里一档都没有；
+ *   · `following_default`：定义上没有任何思考参数（跟随模型 `defaultParams`）；
+ *   · `manual`：定义上的参数正好凑成某一档；
+ *   · `custom`：定义了思考参数，但凑不成任何一档（有人手写过）。
+ */
+export function agentThinkingOf(
+  definition: AgentDefinition,
+  config: Pick<AppConfig, "models" | "defaultModel">,
+  presets: ReasoningPresets,
+): ThinkingState {
+  const model = findModel(config, definition.modelId ?? config.defaultModel);
+  const presetName = model?.reasoningPreset ?? null;
+  const preset = presetOf(presets, presetName);
+  const levels = levelsOf(preset);
+  const params = definition.modelParams ?? {};
+  if (levels.length === 0) {
+    return { preset: presetName, levels, selected: null, source: "not_adjustable", params: {} };
   }
+  const thinking = ownedKeys(presets);
+  const hasOwn = Object.keys(params).some((key) => thinking.has(key));
+  const selected = hasOwn ? (matchLevel(preset, params) ?? null) : null;
+  const source = !hasOwn ? "following_default" : selected === null ? "custom" : "manual";
+  return { preset: presetName, levels, selected, source, params: {} };
+}
 
-  const patch = effort === null ? undefined : patchOf(preset, effort);
-  if (effort !== null && !patch) {
-    throw new Error(
-      t("effort.err.unknownLevel", { preset: model.reasoningPreset ?? "", level: effort, options: allowed.join(" / ") }),
-    );
+/**
+ * 「定义上的 `modelParams` 应该长成什么」—— 换一档（或清掉）之后的那一份。
+ *
+ * 先剔除整张表出现过的键（新旧档位不混），再合并新档的补丁；`level === null` 就是只剔除。
+ * 不思考的那些参数（`temperature` 之类）原样留着 —— 那一格不归这一层管。
+ *
+ * 空的返回值保持 `{}` 而不是删掉这一格：`agentDefinition.update` 是合并语义（`undefined` =
+ * 不改这一项），所以「清掉思考参数」在 wire 上就是一份剔干净的参数表。
+ */
+export function modelParamsWithLevel(
+  current: Record<string, unknown> | undefined,
+  presets: ReasoningPresets,
+  preset: ReasoningPreset | undefined,
+  level: string | null,
+): Record<string, unknown> {
+  const thinking = ownedKeys(presets);
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(current ?? {})) {
+    if (!thinking.has(key)) next[key] = value;
   }
-
-  // 先剔除思考相关键，再合并新补丁（`null` 即只剔除）
-  const owned = ownedKeys(presets);
-  const params: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(definition.modelParams ?? {})) {
-    if (!owned.has(key)) params[key] = value;
-  }
-  if (patch) Object.assign(params, patch);
-
-  const next: AgentDefinition = { ...definition, updatedAt: now.toISOString() };
-  if (Object.keys(params).length > 0) next.modelParams = params;
-  else delete next.modelParams;
-
-  await writeAgent(next);
-
-  const label = effort === null ? t("effort.followDefault") : t("effort.quoted", { label: effortLabel(effort) });
-  return {
-    definition: next,
-    model,
-    summary: t("effort.summary", { label, id: agentId, model: model.id }),
-  };
+  if (level !== null) Object.assign(next, patchOf(preset, level) ?? {});
+  return next;
 }
