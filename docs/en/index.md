@@ -1,45 +1,43 @@
 ---
 title: AI-Zen CLI
-description: A dual-mode AI Agent terminal for @ai-zen/cli (pure stdio pipelines + interactive TUI) — ships with 20 built-in file-system tools, and supports MCP, Skill, sub-agent orchestration, and task migration.
+description: The terminal client for an AI-Zen host — one WebSocket carrying one tRPC connection; the terminal draws what the host reports and sends the human's actions back.
 outline: deep
 ---
 
 # AI-Zen CLI
 
-`@ai-zen/cli` is a **dual-mode** AI Agent terminal, built on [`@ai-zen/agents-sdk`](https://www.npmjs.com/package/@ai-zen/agents-sdk) and [`@ai-zen/agents-core`](https://www.npmjs.com/package/@ai-zen/agents-core). With no arguments on an interactive terminal it enters the TUI (multi-turn chat); with arguments, or when piped/redirected, it runs in **pure stdio** mode (writing the answer to stdout). It ships with a complete set of file-system tools and supports **MCP**, **Skill**, **sub-agent orchestration**, and **task migration**.
+`@ai-zen/cli` is the terminal client for an AI-Zen host (`@ai-zen/agents-host`). One WebSocket carries one tRPC connection: sessions, messages, inbox, gates, handoff and assets live on the host, and the terminal draws what the host reports and sends the human's actions back.
 
-## What problem does it solve
+## The division of labour
 
-When collaborating with AI in a bare terminal, you often have to manually switch back and forth between several external commands (reading/writing files, executing commands, searching, downloading, viewing/generating images…). AI-Zen CLI packages these capabilities into a set of **tools that the Agent can call directly**, letting the model autonomously perform file read/write, command execution, directory browsing, text search, image analysis and generation, and more—all within the conversation. Together with **MCP** for connecting external services, **Skill** for reusing reusable workflows, and **task migration** for seamlessly continuing a conversation when the context limit is exceeded.
+| | Host | This client |
+|---|---|---|
+| Model calls, tool calls, sub-agents | yes | no |
+| Sessions, messages, inbox, gates, handoff, assets | in `<data root>/ai-zen.db` | read over the connection |
+| `<data root>/config.json` | read and written by the host | edited only through procedures |
+| The terminal | nothing | everything |
+| Launching a host | never launches itself | launches one when the connection is local and nothing answers |
 
-## Key features
+The dividing line in one sentence: the host decides what is true at this moment, the client decides what an invocation does and how a frame looks.
 
-- **Dual-mode execution**: no arguments on an interactive terminal enters the TUI; arguments or a pipe/redirect runs pure stdio (result on stdout, logs on stderr, clear exit codes). Both modes share **the same host-side assembly and conversation database**: stdio only pays one cold start (the first call fetches and starts a local host through `npx`).
-- **Modern TUI**: a full-screen Ink/React interface — no splash, straight into chat, a brand block on an empty conversation, a bottom-pinned input area and status bar, and an inline `/` command menu.
-- **Status-bar tokens and rate**: the status bar is **three priority-ordered blocks** — model · agent · reasoning effort | this-round / cumulative tokens · generation rate | key hints (last, and the first thing moved to the next line on narrow terminals). Wrapping happens block by block: a block that does not fit moves to the next line whole instead of being split; the cumulative figure is `sumUsage(agent.messages)`, including every sub-agent level; the rate is live while streaming (2-second window) and becomes this round's average once it finishes.
-- **Six-phase generation progress**: while busy, a phase line appears **above the input box** (above the divider) saying what the round is actually doing — connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming; the two tool phases name the tool(s), and a parallel round's waiting label keeps only the tools still running. It is always exactly one line, never replaces the input box, and occupies nothing when idle.
-- **Typing while generating**: the input box stays put — typing, the `/` menu and Enter all keep working. Such a message is queued into the round that is already running (you get a "queued" notice), lands when the current tool round finishes, and interrupts nothing; `/new` `/load` `/sessions` switch conversations without interrupting anything either (sessions belong to the process — the old one keeps running in the background).
-- **Main / sub-agent bar**: when sub-agents show up in a conversation, a bar appears below the transcript (`主AGENT　◈子AGENT1　◈子AGENT2`) with the current one highlighted; `←` / `→` switches which agent's conversation the transcript shows, so you can read each sub-agent's own reasoning, tool calls and multi-turn work. A diamond shows its state (blue blinking while running / green when done / red when failed), and the bar disappears once this round's inner loop finishes.
-- **Syntax highlighting**: tool-call arguments are **JSON**-highlighted, the answer/reasoning is **Markdown-source-colored**, and fenced code blocks are highlighted by language with the fence markers kept (highlight data from `highlight.js` / `lowlight`; the CLI only renders it).
-- **Command hints**: typing `/` in a conversation lists the available commands with descriptions below the input line, narrowing the candidates by prefix as you type. `/sessions` (alias `/ps`) lists the sessions held by this process plus those running on the host; pick one to switch.
-- **20 built-in tools**: the file-system and image-processing toolset provided by `@ai-zen/agents-sdk` — see [Built-in Tools](./tools.md).
-- **5 dynamically loaded tools**: `load_skill`, `call_skill_sub_agent`, `load_mcp`, `call_mcp_tool`, `read_mcp_resource`.
-- **Sub-agent orchestration**: Agents with a `function` field can be called as tools by other Agents, with an independent permission system.
-- **Skill**: reusable skills defined via `SKILL.md`, loaded contextually and delegatable to a Skill sub-agent.
-- **MCP support**: connect MCP servers over stdio / HTTP / SSE transports, with multi-level config merging.
-- **Task handoff & migration**: the original agent stops and writes a handoff document to `.ai-zen/handoffs/` (verified with its own tools), then optionally clears history and starts a new session from it. An interactive executor picker (self / summary / skip) appears when the context limit is hit; `/handoff` writes the document without switching sessions, `/migrate` does both.
-- **Session recovery**: the host writes every finished turn into the database (`<dataRoot>/ai-zen.db`), so the next launch resumes the workspace's last conversation. A turn still running when you quit finishes on the host, which then reclaims it once no connection is watching and the grace period elapses — coming back re-hydrates it from the database with nothing missing.
-- **Shell fallback hook**: `ai hook install` forwards unrecognized terminal commands **into the interactive UI** (the original command is auto-sent as the first message, always in a fresh conversation).
+So this repository holds no tool implementations, no skill discovery, no MCP connections and no model requests. The tool surface, capability scopes and the two kinds of handoff belong to the host and the SDK; what the client keeps is the command entry points (see [Commands](./commands.md)), and the capabilities themselves are documented on the `@ai-zen/agents-host` and SDK side.
 
-## Documentation navigation
+## What the client owns
 
-- [Quick Start](./getting-started.md) — installation, the chat screen, and conversation commands.
-- [Built-in Tools](./tools.md) — the 20 built-in tools, the dynamic loading tools, and the permission model.
-- [MCP Support](./mcp.md) — MCP configuration, merge priority, connection, and current OAuth status.
-- [Skill](./skills.md) — Skill directories, loading, and Skill sub-agent delegation.
-- [Task Handoff & Migration](./migration.md) — `/handoff` vs `/migrate`, the two executors, and where the documents live.
-- [Configuration](./configuration.md) — config files, directory layout, preset endpoints, and models.
+Two things belong to the client, because they are about this invocation: what a slash command does ([Commands](./commands.md)) and how a frame looks ([Interface](./interface.md)).
+
+On this machine it keeps four small files and its own log directory — the host picked on the connect screen, the project entered last, the session opened last, the interface language. Sessions and configuration are not among them. The paths are listed at the end of [Configuration](./configuration.md).
+
+## Where to read next
+
+| Page | What it covers |
+|---|---|
+| [Quick Start](./getting-started.md) | install, build, the first launch (a host fetched with `npx`), connecting to a remote host, the first message, quitting |
+| [Commands](./commands.md) | the command tables grouped by session / configuration / handoff / host, aliases and arguments, the `/` menu and `/help` |
+| [Configuration](./configuration.md) | the configuration centre tree, each field written as it is edited, configuration living on the host |
+| [Interface](./interface.md) | the status bar, the phase line, sub-agent tabs, the notice bar, the input line |
+| [Host](./host.md) | local and remote hosts, local launch, `/upgrade`, `/shutdown`, credentials |
 
 ## License
 
-The package `@ai-zen/cli` is released under the **MIT** license (see the `LICENSE` file at the repository root; the full text ships with the package).
+The package `@ai-zen/cli` is released under the MIT license (see `LICENSE` at the repository root).

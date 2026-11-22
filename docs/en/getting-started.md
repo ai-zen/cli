@@ -1,216 +1,122 @@
 ---
 title: Quick Start
-description: Install @ai-zen/cli, enter the chat screen, and use conversation commands and the shell fallback hook.
+description: Install @ai-zen/cli, connect to a host for the first time (fetched locally with npx, or remote), enter a project and a session, send the first message, quit.
 outline: deep
 ---
 
 # Quick Start
 
-## Overview
+## Install and build
 
-`@ai-zen/cli`'s executable entry is `ai` (with transition aliases `aiz` / `zen`, all pointing to `dist/index.js`). Running it without arguments on an interactive terminal opens the **chat screen** directly (TUI); passing arguments, or piping/redirecting, runs **pure stdio mode** (result on stdout, logs on stderr).
+The repository uses pnpm, and the build output is a bundled `dist/`:
 
-## Requirements
+| Command | What it does |
+|---|---|
+| `pnpm install` | installs dependencies |
+| `pnpm build` | bundles the sources and the connection layer into `dist/` with rolldown |
+| `pnpm start` | `pnpm build`, then `node dist/index.js` |
 
-- **Node.js**: the package is published as ESM (`"type": "module"`). `package.json` does not declare an `engines` field, so the actual required version follows the Node ecosystem (a recent LTS is recommended).
-- **Runtime dependencies** (declared under `dependencies` in `package.json`): `ink`, `react`, `highlight.js`, `lowlight`, `string-width`. `@ai-zen/agents-client` (a private, unpublished package) and `@ai-zen/agents-sdk` / `@ai-zen/agents-core` (published, but not meant to be installed by consumers at runtime) are all **inlined into the bundle** at build time — `check:imports` pins that `@ai-zen/agents-client` never reappears in `dist/*.js`.
-- **The host does not need to be installed beforehand**: the host package is `@ai-zen/agents-host` (the wire contract is its `@ai-zen/agents-host/protocol` subpath), but it only lives in `devDependencies` as a **version-range declaration** — local mode pulls it on demand with `npx -y @ai-zen/agents-host@<range> serve --ai-zen-dir <data root>`, where `<range>` is the semver range injected at build time.
-- **Platform**: the underlying tools and the Shell hook depend on a Unix shell (`bash`/`zsh`) and `process.env.SHELL`; the Shell hook is unavailable on Windows (`hook` will report "unsupported shell").
+`package.json` declares three bin names — `ai`, `aiz`, `zen` — and all three point at `dist/index.js`. Installing the package globally on this machine (`npm install -g .`) puts those three names on the PATH.
 
-## Installation
+The host is not a runtime dependency: `@ai-zen/agents-host` lives in `devDependencies` only, as the declaration of a version range, and at runtime it is fetched with `npx` (see below); `@ai-zen/agents-client` is a private package inlined into `dist/` at build time.
 
-### Global install
+## Launch parameters
 
-```bash
-npm install -g @ai-zen/cli
-```
+| Parameter | What it does |
+|---|---|
+| `--server <url>` | talk to this host instead of the local one |
+| `--new` | open a new session instead of resuming the last one (the interactive path only) |
+| `--tui [prompt…]` | force the interactive interface; trailing words are sent as the first message; rejected when stdin or stdout is not a TTY |
+| `--save` | keep a stdio call as a real session (ignored by the interactive path) |
+| `--server-status` | print the status of the host at that address as JSON and exit 0 when it answers, 1 when it does not; never launches anything |
+| `hook install` / `hook uninstall` | install or remove the shell fallback hook |
+| `-h`, `--help`, `-v`, `--version` | usage and version; the single words `ai help` / `ai version` are the same |
 
-### Build from source
+`--` ends option parsing, so a prompt may start with `-`.
 
-```bash
-git clone git@github.com:ai-zen/cli.git
-cd cli
-pnpm install
-pnpm build
-npm install -g .
-```
+## The first launch
 
-> The project uses `pnpm` for dependency management; the build command is `pnpm build` (i.e. `tsc`).
+Nothing is configured yet, so the client asks. With no `<data root>/cli/connection.json` (the file it writes only after a human picks a host on screen) and no explicit address, `ai` opens the connect screen — local, remote, exit — and performs no I/O until one of them is chosen.
 
-## Run modes
-
-The CLI has two **non-mixing** run modes, chosen automatically from the launch arguments and the terminal environment:
-
-| Mode | Trigger | Audience | Behavior |
-|------|---------|----------|----------|
-| **Pure stdio** | Arguments present, **or** stdin/stdout is not a TTY (pipe, redirect, CI) | Scripts, pipes | No extra interaction; writes the final answer as plain text to stdout |
-| **TUI** | No arguments and both stdin/stdout are TTYs; or `--tui` | Human users, shell fallback hook | Interactive chat UI |
-
-In pure stdio mode, logs / progress / errors all go to **stderr**; stdout carries the result only (no ANSI / emoji / spinner). Exit code is `0` on success and non-zero on failure; nothing is persisted by default (use `--save` to keep a conversation archive).
-
-**Pure stdio runs on the host too.** Both modes are the same pipeline: `ai "…"` first makes sure a local host is up (spawning one with `npx` if needed), then opens a **one-off session** and runs a single turn — so the agent assembly, tools, MCP connections and context guard are exactly the same as in the TUI (there is no "pipe mode with a few plugins missing"), and conversations land in the same place (the host's `<data root>/ai-zen.db`, owned per workspace).
-
-The trade-off is that the **first call has to get the host up**: `npx` resolves the version → downloads and installs → starts the host → connects, which the TUI shows as a **staged download screen** (indeterminate progress, no fake percentage); later calls reuse the host that is already running and pay none of it. In addition `<data root>/run/` must be writable and `node` must be able to spawn a child process. Three behaviours stay as they were: nothing is persisted by default; `--save` only archives and **does not** move the "last session" pointer (so the next `ai` will not resume a pipe result); stdout still carries the answer only.
-
-**The workspace follows your directory.** When the host and the CLI are on the same machine (the default — the CLI pulls a local host with `npx` on demand), the directory you type `ai` in **is** the session's workspace: created on first use (via `workspace.create` with the current directory), then resumed from that workspace's last conversation. Connect to a host on **another machine** and it flips: the client sends **no** directory of its own, only remembers the last workspace you entered, and falls back to the picker (`/ws` to list / choose / create) when there is none.
-
-Two modifiers refine this: `--tui` forces the interactive UI (the arguments are auto-sent as the first message; in a non-TTY environment it fails instead of degrading to pipe mode), and `--new` starts a **fresh conversation** instead of resuming the last one in this directory (TUI only; ignored on the stdio path, where a run is always a one-off session).
-
-## Quick example
+Choosing local hands over to the launch screen. The host is started through `npx`, so the first local launch downloads it:
 
 ```bash
-# TUI: no arguments, interactive terminal
-ai
-
-# Pure stdio: argument is the prompt, result goes to stdout
-ai Hello, please introduce yourself.
-
-# Pipe: stdin is the content, the argument is the instruction
-cat README.md | ai "summarize in three sentences"
+npx -y @ai-zen/agents-host@<range> serve --ai-zen-dir <data root>
 ```
 
-Startup goes **directly into the chat screen** (rendered with Ink/React) — there is no splash animation — resuming the last session if there is one, otherwise starting a new conversation. An empty conversation shows the brand block (logo, tagline, CLI / SDK / core versions) at the top of the transcript, and it scrolls away with the conversation. The chat screen is **bottom-pinned**, and from the bottom up the order is: status bar → input line → divider → phase line → command menu. The **phase line** only exists while busy (while generating it says what the round is doing — connecting → queued → thinking → calling a tool → waiting for the tool to return → streaming; while a blocking command runs it falls back to the command name); it sits **above the divider, above the input row, and is always exactly one line** — it never replaces the input box.
+`<range>` is the semver range of `@ai-zen/agents-host` this build was made against, baked into `dist/` at build time; `<data root>` is `AI_ZEN_DIR`, `~/.ai-zen` by default.
 
-**You can keep typing while generating.** The input box stays put: you can type, bring up the `/` menu, and press Enter. That message is handed to the host, which queues it into **the round that is already running** (the host answers "queued" and a notice says so right away); it lands as a user message when the current tool round finishes, so nothing the model is already saying gets interrupted, and once the round ends it shows up in the transcript together with its answer. While a round is running, the only keys whose meaning changes are `Ctrl+C` / `Esc` (they still abort this round); everything else stays put (paging, scrolling, double `Ctrl+D` to exit).
+The launch screen reports where the launch stands, one line at a time, and never a percentage (npm output is not parsed):
 
-If the round spawns sub-agents, a **main / sub-agent bar** appears below the transcript (`主AGENT　◈子AGENT1　◈子AGENT2`): `←` / `→` switches which agent's conversation the transcript shows, the diamond shows each one's state (blue blinking while running / green when done / red when failed), and the bar disappears once this round's inner loop finishes.
+| Stage | What is being waited for |
+|---|---|
+| Resolving the version | npx resolving which version in that range to use |
+| Installing | npx downloading and installing it |
+| Starting the host | the child process is up; waiting for the discovery file and the handshake |
+| connected | not drawn: the screen switches to the session |
 
-The chat screen provides a streaming output area, a multiline input (`Enter` sends, `Ctrl+N` inserts a newline, `← →` move the cursor, `Ctrl+← →` by word, `Ctrl+W` / `Alt+Backspace` delete the previous word, `Alt+D` / `Ctrl+Delete` the next word, `Ctrl+K` kills to end of line, `Ctrl+U` kills to line start, `Esc` clears the input, `Ctrl+V` pastes (an image if the clipboard holds one, otherwise text — text is capped at 256KB and refused, not truncated) / `↑` `↓` move the cursor inside a multi-line draft (history only at the first / last row) / the input area is capped at 8 rows and the window follows the cursor / `PgUp` / `PgDn` (or `Alt+V`) scroll the transcript), and an inline `/` command menu (still available while generating). Tool calls render as `⚙ name(args)` with **JSON highlighting**; the answer/reasoning is **Markdown-source-colored** (headings / bold / italic / inline code / lists / quotes / links), and fenced code blocks are highlighted by language with the **fence markers kept**.
+A failed launch adds the child process's own last line and accepts `R` to try again; `Esc` and `Ctrl+C` kill the child and go back to the connect screen without quitting. When a host is already listening, no stage ever arrives and the launch screen draws nothing at all.
 
-### First-run setup (API Key)
+## Connecting to a remote host
 
-On first launch, if the endpoint bound to the selected model has no API Key yet, a **credential screen** appears before the chat screen:
+Nothing starts a host on the remote machine for you, so it is only ever connected to:
 
-```
- ? First-run setup · Set the API Key for DeepSeek
- Endpoint: DeepSeek · https://api.deepseek.com/v1
- Current: not set
- Get a key at: https://platform.deepseek.com/api_keys
- Saving enters the chat immediately (Esc aborts and exits).
- ❯ ▏
-```
+| Form | Result |
+|---|---|
+| `ai --server <url>` | talk to this host instead of the local one |
+| `AI_ZEN_SERVER_URL` | same as `--server <url>`; the flag wins when both are given |
+| the remote entry on the connect screen | address plus access token; an empty token means the local host's token |
 
-Press `Enter` to save (written to `~/.ai-zen/config.json`) and **land directly in the chat**; `Tab` toggles plaintext for verification, `Esc` aborts and exits. Inside the chat you can still use `/key` to change the current endpoint's key and `/config` to open the configuration center.
+An address accepts `ws:`, `wss:`, `http:` and `https:`, and a path for a reverse-proxy mount; a bare `host:port` without a scheme is taken as `ws://`. A malformed address fails before anything connects or launches, with one sentence on stderr and exit code 2.
 
-## Conversation commands
+| Environment variable | Meaning |
+|---|---|
+| `AI_ZEN_DIR` | data root (default `~/.ai-zen`) |
+| `AI_ZEN_SERVER_URL` | same as `--server <url>` |
+| `AI_ZEN_SERVER_TOKEN` | credential for an explicit address |
 
-All in-conversation commands start with `/`; use `/help` to list them. Typing `/` lists the available commands, with descriptions, right below the input line; typing more characters narrows the candidates by prefix:
+There is no `--token`: argv ends up in `ps` output and in shell history. Where credentials come from, in full, is on the [Host](./host.md) page.
 
-```
-💬 You: /b
-  /back         Undo messages (roll back to a specific point and resend)
-```
+`ai --server-status` is the diagnostic: it prints the status of the host at that address as JSON, exiting 0 when it answers and 1 when it does not. It never launches anything.
 
-| Command | Description |
-|---------|-------------|
-| `/new` | Start another conversation (nothing that is running gets interrupted) |
-| `/load` | Load an existing conversation of this workspace (nothing that is running gets interrupted) |
-| `/sessions` `/ps` | Active sessions: held by this process + running on the host; pick one to switch |
-| `/ws` | Workspaces: list / switch / register a directory (`/ws new [path]`) |
-| `/pin [on\|off]` | Pin / unpin this conversation (no argument toggles it) |
-| `/back` `/revert` | Retract the last message (edit and resend) |
-| `/editor` | Compose a long message in your editor |
-| `/clear` | Clear the screen only (the context is kept) |
-| `/free` | Clear the queue: messages typed during a run that were not sent yet (`/clear` is the screen) |
-| `/config` | Open the configuration center (endpoints / models / image models / MCP / agent definitions / defaults / tool-output cap) |
-| `/model` | Switch model: `/model <id>` changes this session only, `-a`/`--agent <id>` the agent definition, `-g`/`--global <id>` the global fallback; no argument opens a picker |
-| `/think` `/effort` | Switch reasoning effort (written into the layer the effective model came from; the global fallback layer has nowhere to keep params, so it is refused) |
-| `/agent` | Pick which Agent later conversations use (writes `defaultAgent`; unusable Agents show the host's reason) |
-| `/mcp [user\|workspace]` | Manage MCP servers (add / remove / edit / toggle); without a scope it opens the layer that already has entries |
-| `/key` | Set the endpoint API key |
-| `/reload` | Make the host re-read config / agent definitions / tools / skills / MCP from disk (messages and context are kept) |
-| `/upgrade` | Move the host to the highest version across all release tags (query the registry → pull that version with npx → confirm → record it and shut the host down cleanly; the reconnect screen starts it from that version. This process never restarts itself) |
-| `/lang` | Switch the interface language (`/lang zh` / `/lang en` set it explicitly, no argument toggles) |
-| `/handoff` | Write a handoff document (keeps the conversation) |
-| `/migrate` | Hand off and start a new conversation |
-| `/help` | Show help |
-| `/shutdown` | Shut the host down (back to the connect screen; quitting the CLI itself does **not** stop the host) |
-| `/exit` `/quit` | Exit the conversation |
+## Entering a project, opening a session
 
-> Note: typing `/` lists candidate commands below the input line (↑↓ to choose, `Tab` to complete, `Enter` to submit/run; the menu is anchored right above the input). Commands are matched by their full names; an unrecognized `/xxx` reports "Unknown command". The full list is `src/commands/registry.ts` — both `/help` and the slash menu render from it.
+Once connected, the client enters a project and opens a session:
 
-## Shell fallback hook
+| Step | Local host | Remote host |
+|---|---|---|
+| Project | the directory `ai` was run in, reused when `workspace.list` already has it | the one entered last time on that host, otherwise a picker |
+| Session | the one opened last time in that project, unless `--new` is given | same |
+| Credential | a screen asks for the API key when the endpoint behind the effective model has none | same |
 
-Unrecognized terminal commands can be automatically forwarded to the AI for processing:
+## Sending the first message
+
+The cursor sits in the input line: type, and `Enter` sends. The answer streams into the transcript, and the status bar and phase line say what is happening right now (see [Interface](./interface.md)).
+
+Four things worth knowing straight away:
+
+- A leading `/` lists the commands and narrows them by prefix; `/help` lists them all (see [Commands](./commands.md)).
+- `@` completes file paths of this project; what goes into the draft is the path itself, so the message stays ordinary text and the model reads the file with a tool.
+- `Ctrl+V` asks the clipboard for an image first and attaches it to this message; with no image on the clipboard it pastes text.
+- Typing keeps working while a request is in flight: that message is handed to the host, which puts it in the inbox, and the queue band above the divider shows what is waiting.
+
+## Quitting
+
+| How | Result |
+|---|---|
+| `/exit` or `/quit` | quits the client |
+| `Ctrl+C` with an empty input line | quits the client |
+| `Ctrl+D` twice in a row | quits the client |
+
+Quitting only takes down this process: the host keeps running, and the session that was working keeps working on the host side. Shutting the host down is `/shutdown` (see [Host](./host.md)).
+
+## With arguments, or through a pipe
+
+`ai` only enters the interactive interface when there are no positional arguments and both stdin and stdout are TTYs. With an argument, or when stdin or stdout is not a TTY, it runs in pure stdio: one invocation is one message and one answer, stdout carries the answer text and nothing else, log and progress go to stderr, and this mode writes no log file.
 
 ```bash
-# Install the hook (writes to ~/.zshrc or ~/.bashrc)
-ai hook install
-
-# Afterwards, just type something:
-> what's the weather today?
-# This is forwarded to the AI instead of showing "command not found"
-
-# Uninstall
-ai hook uninstall
+ai 你好，请介绍一下你自己。
+cat README.md | ai "用三句话总结"
 ```
 
-> The hook is only available on `bash` / `zsh` (it depends on `process.env.SHELL`); other shells are not supported. The hook body calls `ai --tui --new "$@"`: it opens the **interactive UI**, auto-sends the mistyped command as the first message, and always starts a **fresh conversation** (nothing is appended to the long conversation you had in that directory). If an older hook is installed, re-running `ai hook install` upgrades the function body in place (it compares the installed block with the current version and overwrites when they differ).
-
-## Configuring the API Key
-
-`~/.ai-zen/config.json` (or `$AI_ZEN_DIR/config.json`) is the **single source of truth**; the TUI can edit the common fields for you, so you rarely need to touch the JSON by hand:
-
-| Scenario | How |
-|----------|-----|
-| First launch, endpoint has no key | The **credential screen** appears automatically; entering a key saves it and enters the chat |
-| Change the key of the **endpoint used by the current model** | `/key` in the chat (the session is rebuilt on save, so it takes effect immediately) |
-| Endpoint key / base URL, default model, add endpoint | `/config` → "Endpoint management" |
-| Model used by the current session | `/model` in the chat (this session only by default; `/model -a` writes the agent definition's `modelId`) |
-| Reasoning effort | `/think` in the chat (the params land in `modelParams` of **the layer the effective model came from**; available levels come from the preset referenced by the model in `~/.ai-zen/reasoning-presets.json`, which you can extend) |
-| Models / image models / MCP servers / agent definitions / defaults / tool-output cap | `/config` → configuration center |
-
-> Note: the CLI entry only implements the `hook` subcommand (`ai hook install|uninstall`); there is **no `config` subcommand** — configuration editing happens inside the TUI (endpoints, models, image models, MCP servers, agent definitions, defaults and the tool-output cap can all be added/edited/deleted under `/config`). See [Configuration](./configuration.md).
-
-> Pure stdio mode (arguments / pipes) has no interactive channel: a missing API Key fails fast on stderr with a non-zero exit code. Configure it in the TUI or edit `config.json` first.
-
-## Reasoning presets (`reasoning-presets.json`)
-
-`~/.ai-zen/reasoning-presets.json` sits next to `config.json` and maps **level name → request-parameter patch**. Endpoints disagree on `thinking` / `reasoning_effort`, and all of that lives in this table.
-
-The table ships with the SDK (**CLI and desktop share the same level knowledge**, it should not be written twice), but the SDK **never uses it to build request parameters** — the CLI consults it only at the moment you pick a level, to:
-1. decide which levels `/think` offers;
-2. write the chosen level's **parameter patch into the Agent definition** (`modelParams`).
-
-Factory presets:
-
-| Preset | Levels | Can thinking be disabled? |
-|------|------|-----------|
-| `openai` | `minimal` / `low` / `medium` / `high` / `off` | Yes (`reasoning_effort: "none"`) |
-| `zhipu-5.3` | `low` / `high` / `max` | **No** (no `off` key; the vendor rejects it too) |
-| `deepseek` | `low` / `high` / `max` / `off` | Yes (`thinking.type: "disabled"`) |
-
-To onboard a new endpoint, copy a table and rename it, then set `/config` → Model → “Reasoning preset” to that name; `/think` immediately offers its levels:
-
-```json
-{
-  "my-endpoint": {
-    "levels": {
-      "fast": { "reasoning_effort": "low" },
-      "deep": { "reasoning_effort": "high" }
-    }
-  }
-}
-```
-
-- The keys of the table **are** the menu entries; there is no separate “can it be disabled” switch;
-- Adding `"custom": true` to a preset means “I own this table” — upgrades stop overwriting it (other presets still sync);
-- Custom level names are shown verbatim in the status bar (`fast` / `deep`), never as a blank.
-
-> **Configuration is the fact**: `/think high` writes `{"thinking":{"type":"enabled"},"reasoning_effort":"high"}` straight into `~/.ai-zen/agents/<id>.json` under `modelParams`, instead of storing a level name and looking it up at runtime. So **editing the preset table does not retroactively change Agents already configured** — they hold the parameters from that moment. Run `/think` again to update them.
-
-## Development and testing
-
-```bash
-pnpm install
-pnpm build
-pnpm start
-
-# Unit tests
-pnpm test
-
-# E2E (requires API Key in .env.local)
-pnpm test:e2e
-```
-
-> See the `scripts` field in `package.json`. `test:all` runs typecheck, unit tests, build, and E2E in sequence.
+By default the call goes through `session.transient` with the directory it was run in: no session row is created, nothing appears in any session list. With `--save` it becomes a real session, and the session id is printed on stderr. Exit codes: 0 on success, 1 when the call fails, 2 when the invocation itself is wrong.
