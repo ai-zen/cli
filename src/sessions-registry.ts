@@ -303,20 +303,17 @@ export class SessionRegistry implements SessionHub {
       announce(current.channel, text, tone),
     );
     /**
-     * 建一段新会话 —— 宿主这一版只有 `agent.send` 这一条建行路（不带 `sessionId` 就是
-     * 「建行 + 唤醒 + 投递」）。旧路递 `agentId` 是因为客户端要选助手；新路也一样，只是没有
-     * 「只建行」那一支。代价写在提交信息里（这一段历史里会多一条空正文的用户消息）。
+     * 建一段新会话 —— `session.create` 只写库：不唤醒执行体，也不投递任何东西。于是这一段开出来
+     * 是死的，第一次发话时会话层会先叫起来再投。
      */
-    const { sessionId } = await this.connection.api.agent.send.mutate({
+    const { session } = await this.connection.api.session.create.mutate({
       // 「下一个新会话落在哪」认 `currentWorkspaceId`（`/ws` 选过就是新的那个，PRD D30）
       workspaceId: current.session.currentWorkspaceId,
       agentId,
-      content: "",
-      messageId: `cli-new-${Date.now().toString(36)}`,
     });
     // 现在就开出来（而不是等下一屏挂载时再开）：于是这一段立刻在注册表里，`/sessions` 看得见它
-    await this.openEntry({ sessionId });
-    return sessionId;
+    await this.openEntry({ sessionId: session.id });
+    return session.id;
   }
 
   /**

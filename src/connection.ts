@@ -130,7 +130,7 @@ export async function saveConnectPlan(env: CliEnv, settings: ConnectionSettings)
  *
  *   · `language`：本地文案用哪种语言（连接层只管「宿主按哪种语言渲染」）；
  *   · `call`：旧路（`server-client/methods.ts`：只有 `session.create` / `session.send` 能真的
- *     转成 `api.agent.send`，其余抛 `unsupported`）；
+ *     转成 procedure 调用，其余抛 `unsupported`）；
  *   · `open` / `resync` / `closeMirror`：**一段会话的镜像**。新契约没有增量事件（流式期间推的是
  *     整条消息），所以「攒」这件事不需要规则，只需要把宿主那一条流分发给打开着的镜像。
  *

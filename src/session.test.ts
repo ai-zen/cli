@@ -5,7 +5,7 @@
  * 归 `server-client/mirror.ts`，这一层只负责「催一帧 / 采样速率 / 收个尾 / 把命令打成 procedure
  * 调用」。于是这里的每条用例钉的都是**这一层自己的纪律**：
  *
- *   · 打开会话打哪几条 procedure（`session.open` 一次取全 / `agent.send` 建行）；
+ *   · 打开会话打哪几条 procedure（`session.open` 一次取全 / `session.create` 建行）；
  *   · `agent.send` 带的是什么（`workspaceId` + `agentId` + `content` + `messageId` + `sessionId`）；
  *   · 等结局的判据只有契约事实（新消息出现了 + 忙闲回到 `idle` + 没有还在写的助手消息）；
  *   · 忙闲落回 `idle` 就补拉一次（`resync`），速率用消息上的 `usage` 合计定格；
@@ -184,6 +184,9 @@ function hostLike(
         }
         case "workspace.list":
           return host.workspaces;
+        case "session.create":
+          // 只建行：回来的那一行就是这一段（不唤醒、不投递，历史与排队区都空）
+          return { session: sessionRow() };
         case "agent.send":
           return { sessionId: SESSION, messageId: "u-new" };
         default:
@@ -273,7 +276,7 @@ describe("RemoteChatSession：怎么打开那一段", () => {
     expect(session.thinking.selected).toBeNull();
   });
 
-  it("没给 id 时走 `agent.send`（不带 `sessionId` = 建行 + 唤醒 + 投递），并在本机记住这一段", async () => {
+  it("没给 id 时走 `session.create`（只建行，不唤醒也不投递），并在本机记住这一段", async () => {
     const host = hostLike();
     const session = await RemoteChatSession.open(
       host.connection,
@@ -282,15 +285,11 @@ describe("RemoteChatSession：怎么打开那一段", () => {
       logger,
     );
 
-    const create = host.connection.calls.find((call) => call.method === "agent.send");
-    expect(create?.params).toMatchObject({
-      workspaceId: WORKSPACE,
-      agentId: "default",
-      // 宿主这一版没有「只建行」的 procedure，所以这一支投一条空正文（见提交信息）
-      content: "",
-    });
-    // 不带 `sessionId` 才是建行那一支
-    expect((create?.params as { sessionId?: string }).sessionId).toBeUndefined();
+    const create = host.connection.calls.find((call) => call.method === "session.create");
+    expect(create?.params).toEqual({ workspaceId: WORKSPACE, agentId: "default" });
+    // 建行之外一个字都没发生：没有投一句话，也没有去叫执行体
+    expect(host.connection.methods()).not.toContain("agent.send");
+    expect(host.connection.methods()).not.toContain("agent.wake");
     expect(session.sessionId).toBe(SESSION);
     // 记住了：下次 `ai` 在这个项目里续接的就是它
     const memory = JSON.parse(readFileSync(join(zen.dir, "cli", "last-session.json"), "utf-8"));
@@ -315,7 +314,7 @@ describe("RemoteChatSession：怎么打开那一段", () => {
     );
 
     expect(session.sessionId).toBe(SESSION);
-    expect(second.connection.methods()).not.toContain("agent.send");
+    expect(second.connection.methods()).not.toContain("session.create");
   });
 
   it("记着的那一段在宿主上没了：照样开一段新的，但要报一句「没能续接」", async () => {
@@ -339,7 +338,7 @@ describe("RemoteChatSession：怎么打开那一段", () => {
 
     // 续接失败不拦启动：这一次照样开一段新的
     expect(session.sessionId).toBe(SESSION);
-    expect(host.connection.methods()).toContain("agent.send");
+    expect(host.connection.methods()).toContain("session.create");
     // 但「旧消息不见了」不能没有解释：报一句，且带上宿主原话
     const said = warnings.join("\n");
     expect(said).toContain("没能续接上一次那一段");
@@ -541,6 +540,37 @@ describe("RemoteChatSession：发一句", () => {
     // 投递那一次还是原样
     const send = host.connection.calls.filter((call) => call.method === "agent.send").at(-1);
     expect(send?.params).toMatchObject({ sessionId: SESSION, content: "醒了没" });
+  });
+
+  /**
+   * 刚建出来的那一段就是这一种「死」：`session.create` 不造执行体，所以第一次发话必须先叫。
+   * 这条从建行那一步走起（而不是拿一个 `live: null` 的假回执），钉的是「建出来 → 叫起来 →
+   * 投进去」这三步在会话层真的连得上。
+   */
+  it("刚用 `session.create` 建出来的空会话：第一次发话先 `agent.wake` 再投", async () => {
+    const host = hostLike({ open: openView({ live: null }) });
+    const session = await RemoteChatSession.open(
+      host.connection,
+      { workspaceId: WORKSPACE, agentId: "default" },
+      notifierOf(),
+      logger,
+    );
+
+    // 建行那一步只建行
+    expect(host.connection.methods()).toEqual(expect.arrayContaining(["session.create"]));
+    expect(host.connection.methods()).not.toContain("agent.send");
+    expect(session.alive).toBe(false);
+
+    await session.send("建完之后的第一句");
+
+    const methods = host.connection.methods();
+    const woke = methods.indexOf("agent.wake");
+    const sent = methods.indexOf("agent.send");
+    expect(woke).toBeGreaterThanOrEqual(0);
+    expect(sent).toBeGreaterThan(woke);
+    // 投的那一句落在刚建出来的那一段上
+    const send = host.connection.calls.filter((call) => call.method === "agent.send").at(-1);
+    expect(send?.params).toMatchObject({ sessionId: SESSION, content: "建完之后的第一句" });
   });
 
   it("唤醒失败：宿主原话上屏，`agent.send` 一次不打（不重试、不兜底）", async () => {

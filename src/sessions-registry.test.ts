@@ -141,8 +141,11 @@ function hostLike(
         case "workspace.list":
           return [{ id: WORKSPACE, name: "项目一", cwd: "/work/proj", createdAt: 0 }];
         case "agent.send":
-          // 建行那一支：回来的 `sessionId` 决定这一段是哪一段
+          // 投递那一支：回来的 `sessionId` 就是投到的那一段
           return { sessionId: "sess-new", messageId: "u-new" };
+        case "session.create":
+          // 建行那一支：回来的那一行决定这一段是哪一段（只建行，不唤醒也不投递）
+          return { session: sessionRow("sess-new") };
         default:
           void input;
           return undefined;
@@ -325,9 +328,14 @@ describe("SessionRegistry：切走的那一段继续跑", () => {
     const newId = await registry.newSegment();
 
     expect(newId).toBe("sess-new");
-    // 建行只有 `agent.send` 这一条路（不带 `sessionId`），项目认 `currentWorkspaceId`
-    const created = connection.calls.filter((call) => call.method === "agent.send").at(-1);
-    expect(created?.params).toMatchObject({ workspaceId: "ws-other", agentId: "default" });
+    // 建行只有 `session.create` 这一条路（只写库），项目认 `currentWorkspaceId`
+    const created = connection.calls.filter((call) => call.method === "session.create").at(-1);
+    expect(created?.params).toEqual({ workspaceId: "ws-other", agentId: "default" });
+    // `/new` 之后一个字都没投出去：建行不顺带唤醒，也不顺带发消息
+    expect(connection.methods()).not.toContain("agent.send");
+    expect(connection.methods()).not.toContain("agent.wake");
+    // 建出来的那一段当场就开出来了（镜像挂上，`/sessions` 与切回去都有它）
+    expect(connection.opens).toContain("sess-new");
     // 新的那一段立刻在注册表里（切过去只是接成它的听众），旧那一段：会话没换、订阅还在、也没被关
     expect(
       registry
@@ -439,7 +447,7 @@ describe("SessionRegistry：启动期先开会话（`open`），屏幕随后只�
 
     expect(entered).toBe(primed);
     // 建行一次、`connection.open` 一次：两次开会话就是两条镜像订阅
-    expect(connection.calls.filter((call) => call.method === "agent.send")).toHaveLength(1);
+    expect(connection.calls.filter((call) => call.method === "session.create")).toHaveLength(1);
     expect(connection.opens).toEqual([primed.sessionId]);
     // 听众真的接上了：事件到它那儿
     connection.emit({ type: "agent.status", sessionId: primed.sessionId, status: "working" });
@@ -617,7 +625,7 @@ describe("/new：下一段用宿主配置里的默认助手", () => {
 
     await registry.newSegment();
 
-    const created = host.connection.calls.filter((call) => call.method === "agent.send").at(-1);
+    const created = host.connection.calls.filter((call) => call.method === "session.create").at(-1);
     expect((created?.params as { agentId?: string }).agentId).toBe("picked");
     registry.disposeAll();
   });
@@ -630,7 +638,7 @@ describe("/new：下一段用宿主配置里的默认助手", () => {
 
     await registry.newSegment();
 
-    const created = host.connection.calls.filter((call) => call.method === "agent.send").at(-1);
+    const created = host.connection.calls.filter((call) => call.method === "session.create").at(-1);
     // `sess-1` 的会话行上那一格是 `default`
     expect((created?.params as { agentId?: string }).agentId).toBe("default");
     registry.disposeAll();
@@ -646,7 +654,7 @@ describe("/new：下一段用宿主配置里的默认助手", () => {
 
     await registry.newSegment();
 
-    const created = host.connection.calls.filter((call) => call.method === "agent.send").at(-1);
+    const created = host.connection.calls.filter((call) => call.method === "session.create").at(-1);
     // `/new` 照旧开得出来（一条附加查询失败不能拦住开新会话）
     expect((created?.params as { agentId?: string }).agentId).toBe("default");
     // 但「换了个助手」不能就这样过去：用户只会发现自己开的不是预期的那一段

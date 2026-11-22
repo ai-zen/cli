@@ -20,7 +20,7 @@
  * | `ServerConnection`（懒连接 + 断了自建 + 重新订阅） | `HostClient`（`subscribe` / `reconnect` / `close`） |
  * | `ensureServer({ aiZenDir, … })` | `ensureHost({ dataRoot, launchLog, settings, versionRange })` |
  * | `Client.open(sessionId)` / `Client.resync()` / `SessionMirror` | CLI 自己的 `HostConnection.open` / `resync` + `mirror.ts`（新契约没有增量事件，攒的规则没了） |
- * | `call(method, params)` | 只剩两条已接的（`session.create` / `session.send` → `api.agent.send`），其余抛 `unsupported`（`methods.ts`） |
+ * | `call(method, params)` | 只剩两条已接的（`session.create` → `api.session.create` / `session.send` → `api.agent.send`），其余抛 `unsupported`（`methods.ts`） |
  *
  * 拉起宿主是一条**有两条路**的事（判据在连接层，不在这里）：调用方给了宿主入口就起那个入口
  * （桌面端把宿主捆进自己的产物随包分发）；没给就让 `npx` 现下现起 ——

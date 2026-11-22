@@ -25,8 +25,8 @@
  *
  *   · **「已接」只有一个判据**：`call(名字, 参数)` 能真的转成 `api.*` 的一次调用。转不了的
  *     一律「未搬」，实现抛 `ClientError("unsupported", …)`，文案里带方法名；
- *   · `agent.send` **不是**旧方法名。旧的 `session.create` / `session.send` 是「已接」，实现
- *     就是转成 `api.agent.send`（不带 `sessionId` 那一支建行，带的那一支投递）。
+ *   · `agent.send` **不是**旧方法名。旧的 `session.create` / `session.send` 是「已接」：前者转成
+ *     `api.session.create`（只建一行），后者转成 `api.agent.send`（只投递）。
  *
  * ## 「已接」这一列今天指什么
  *
@@ -134,7 +134,7 @@ export const LEGACY_METHODS: readonly LegacyMethodRow[] = [
   { legacy: "session.list", today: "session.list", status: "未搬" },
   {
     legacy: "session.create",
-    today: "agent.send（不带 sessionId：建行 + 唤醒 + 投递）",
+    today: "session.create（只建行：不唤醒执行体，也不投递）",
     status: "已接",
   },
   { legacy: "session.get", today: "session.open（`session` 那一格）", status: "未搬" },
@@ -279,13 +279,10 @@ export interface LegacyCall {
 /**
  * 造一条旧路。
  *
- * **已接**的两条在这里转成 `api.agent.send`；其余一律抛 `ClientError("unsupported", …)`，
- * 文案里带方法名 —— 用户看到的是「`agent.get` 这条路这一版还没接」，而不是一句没有主语的
- * 「不支持」。
- *
- * 为什么 `session.create` 也要带一句正文：今天的建行只有 `agent.send` 这一条路（它不带
- * `sessionId` 就是「建行 + 唤醒 + 投递」）。旧路没有正文这一格，所以投一条空正文 —— 这是
- * **这一刀已知的代价**，写在提交信息里；`/new` 真正走的是会话层直连，不经过这里。
+ * **已接**的两条在这里转成 procedure 调用：`session.create` → `api.session.create`（只建行，
+ * 不唤醒也不投递），`session.send` → `api.agent.send`（只投给活着的执行体）；其余一律抛
+ * `ClientError("unsupported", …)`，文案里带方法名 —— 用户看到的是「`agent.get` 这条路这一版
+ * 还没接」，而不是一句没有主语的「不支持」。
  */
 export function createLegacyCall(api: HostClient["api"], language?: string): LegacyCall {
   return (async (method: MethodName, params: MethodParams<MethodName>) => {
@@ -305,15 +302,12 @@ export function createLegacyCall(api: HostClient["api"], language?: string): Leg
       }
       case "session.create": {
         const created = params as MethodParams<"session.create">;
-        const messageId = newMessageId();
-        const { sessionId } = await api.agent.send.mutate({
+        // 建行只写库：这一条旧路要的是一行，不该顺手唤醒执行体，也不该投一条空正文过去
+        const { session } = await api.session.create.mutate({
           workspaceId: created.workspaceId,
           agentId: created.agentId,
-          content: "",
-          messageId,
         });
-        const opened = await api.session.open.query({ sessionId });
-        return { session: opened.session } as unknown as MethodResult<"session.create">;
+        return { session } as unknown as MethodResult<"session.create">;
       }
       default:
         throw unsupported(method, language);

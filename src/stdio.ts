@@ -13,7 +13,7 @@
  * |---|---|---|
  * | 默认（不带 `--save`），本机 | `session.transient({ cwd: process.cwd(), agentId, content })` | 一次性管道调用不属于任何会话：无 id、不落库、不进列表（PRD F-A2 / D3）。本机这条**连项目行都不建** |
  * | 默认，远端 | `session.transient` + **那个项目的 `cwd`** | 一次性会话要的是一个目录去装配能力容器；远端那台机器上的目录只有项目行知道。没有项目就先让用户去 `ai` 里挑一个 |
- * | `--save` | `agent.send`（不带 `sessionId`）+ `session.open` 跟读 | 用户明说要留下这一段，那就得是一段真会话 |
+ * | `--save` | `session.create` + `agent.wake` + `agent.send`，再 `session.open` 跟读 | 用户明说要留下这一段，那就得是一段真会话 |
  *
  * ## 三条被**刻意保持**的旧行为（都是文档与用例锁着的）
  *
@@ -264,8 +264,8 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
     }
 
     /**
-     * `--save`：用户明说要留下这一段，所以走真会话 —— `agent.send` 不带 `sessionId` 就是
-     * 「建行 + 唤醒 + 投递」，回来的 `sessionId` 再交给会话层跟读。
+     * `--save`：用户明说要留下这一段，所以走真会话 —— `session.create` 写一行、`agent.wake` 把
+     * 执行体造出来、`agent.send` 把这一句投进去；回来的 id 再交给会话层跟读。
      */
     const entered = await enterWorkspace({
       connection: { api: client.api },
@@ -281,9 +281,18 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
       return 2;
     }
 
-    const { sessionId } = await client.api.agent.send.mutate({
+    const { session: created } = await client.api.session.create.mutate({
       workspaceId: entered.id,
       agentId,
+    });
+    const sessionId = created.id;
+
+    // 建行不造执行体：先叫起来，投递才有对象可投（宿主对没有执行体的会话只回 not_found）
+    await client.api.agent.wake.mutate({ sessionId });
+    await client.api.agent.send.mutate({
+      workspaceId: entered.id,
+      agentId,
+      sessionId,
       content: prompt,
       messageId: `cli-${Date.now().toString(36)}`,
     });

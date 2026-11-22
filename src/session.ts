@@ -1052,7 +1052,7 @@ interface OpenedSession {
  * 三种入口，优先级写在参数上：
  *   1. 给了 `sessionId` → 按 id 打开（`/load` 选中的那段）；
  *   2. 给了 `resume` 且本机记着这个工作区上次打开的那段 → 打开它（PRD F-A6：续接是客户端的记忆）；
- *   3. 都没命中 → 新建（`agent.send` 不带 `sessionId`：建行 + 唤醒 + 投递）。
+ *   3. 都没命中 → 新建（`session.create` 只建行；唤醒与投递留给第一次发话）。
  *
  * 「落在哪个工作区」只认 `workspaceId`：会话层**不看 cwd**（PRD D30）。
  */
@@ -1082,17 +1082,11 @@ async function openSession(
 
   const agentId = input.agentId ?? (await defaultAgentId(connection));
   /**
-   * 建一段新会话 —— **只有 `agent.send` 这一条路**：不带 `sessionId` 时它「建行 + 唤醒 + 投递」，
-   * 宿主这一版没有「只建行、不投递」的 procedure。所以这里投一条**空正文**，代价是这一段的历史
-   * 里会多一条空的用户消息（写在提交信息里）。
+   * 建一段新会话 —— `session.create` 只写库：不唤醒执行体，也不投递任何东西。于是刚建出来的
+   * 这一段是一段没有执行体的会话，第一次发话时 {@link RemoteChatSession.send} 会先叫起来再投。
    */
-  const { sessionId } = await connection.api.agent.send.mutate({
-    workspaceId,
-    agentId,
-    content: "",
-    messageId: newMessageId(),
-  });
-  return await loadSession(connection, sessionId);
+  const { session } = await connection.api.session.create.mutate({ workspaceId, agentId });
+  return await loadSession(connection, session.id);
 }
 
 /** 取一段会话的镜像 + 那两格派生事实要的配置 */

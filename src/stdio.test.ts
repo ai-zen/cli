@@ -89,8 +89,9 @@ describe("extractText", () => {
 /**
  * 一条假连接：procedure 按 `reply` 回，`session.open` / `resync` 按 `open` 回。
  *
- * 一次性调用只用到 `session.transient`（默认）或 `agent.send` + `session.open` 跟读
- * （`--save`），所以这里不需要真的折叠消息 —— 但镜像与订阅是连接契约的一部分，假件也得有
+ * 一次性调用只用到 `session.transient`（默认）或 `session.create` + `agent.wake` +
+ * `agent.send` + `session.open` 跟读（`--save`），所以这里不需要真的折叠消息 —— 但镜像与订阅
+ * 是连接契约的一部分，假件也得有
  * （共享那份 `test-support/fake-connection.ts` 里就是一个真的 `SessionMirror`）。
  */
 const fakeConnection = (options: {
@@ -263,8 +264,8 @@ describe("runStdio：一次性调用（默认走临时会话）", () => {
 
 describe("runStdio：--save 走真会话", () => {
   /**
-   * 一段真会话要的几条回执：列项目 → 建行（`agent.send` 不带 `sessionId`）→ 跟读
-   * （`session.open` 一次取全）。
+   * 一段真会话要的几条回执：列项目 → 建行（`session.create`）→ 叫起来（`agent.wake`）→
+   * 投一句（`agent.send`）→ 跟读（`session.open` 一次取全）。
    *
    * 宿主的行为：`agent.send` **受理即回**，这一句的落地与答复随后从事件上来（这里下一拍就走完）。
    */
@@ -281,6 +282,9 @@ describe("runStdio：--save 走真会话", () => {
             return { config: { models: [], defaultAgent: "default" }, presets: {} };
           case "agentDefinition.get":
             return { definition: { name: "默认助手" } };
+          case "session.create":
+            // 只建行：回来的那一行就是这一段
+            return { session: sessionRow };
           case "agent.send":
             setTimeout(() => {
               const landed: AgentNS.Message[] = [
@@ -317,12 +321,17 @@ describe("runStdio：--save 走真会话", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("答复\n");
     expect(result.stderr).toContain("Saved session: sess-1");
-    // 建行那一支不带 `sessionId`
-    const create = connection.calls.find((call) => call.method === "agent.send");
-    expect(create?.params).toMatchObject({ workspaceId: "ws-1", agentId: "default" });
-    expect((create?.params as { sessionId?: string }).sessionId).toBeUndefined();
+    // 建行打的是 `session.create`（只写一行），建出来的那一段交给会话层跟读
+    const create = connection.calls.find((call) => call.method === "session.create");
+    expect(create?.params).toEqual({ workspaceId: "ws-1", agentId: "default" });
+    // 投的那一句是真的那一句（不是空正文），落在那一段上
+    const send = connection.calls.filter((call) => call.method === "agent.send").at(-1);
+    expect(send?.params).toMatchObject({ sessionId: "sess-1", content: "留一份" });
+    // 建行不造执行体：先叫起来再投，两件事的次序就是这个
+    const methods = connection.methods();
+    expect(methods.indexOf("agent.wake")).toBeLessThan(methods.indexOf("agent.send"));
     // 没用一次性那条路
-    expect(connection.calls.map((call) => call.method)).not.toContain("session.transient");
+    expect(methods).not.toContain("session.transient");
   });
 
   it("不挪「本机上次打开的那段会话」（下次 `ai` 不会续接到一条管道结果上）", async () => {
@@ -377,6 +386,9 @@ describe("runStdio：远端宿主（D30：不许拿本机 cwd 去猜）", () => 
             return { definition: { name: "默认助手" } };
           case "session.transient":
             return { messages: options.transient ?? [] };
+          case "session.create":
+            // 建出来的那一段落在那台机器的项目里（只建行，不造执行体）
+            return { session: { ...sessionRow, workspaceId: "ws-remote" } };
           case "agent.send":
             setTimeout(() => {
               const landed: AgentNS.Message[] = [
@@ -444,6 +456,11 @@ describe("runStdio：远端宿主（D30：不许拿本机 cwd 去猜）", () => 
 
     expect(result.code).toBe(0);
     expect(result.stderr).toContain("Saved session: sess-1");
+    // 建行用的是那个工作区的 id（不是本机目录）
+    expect(connection.calls.find((call) => call.method === "session.create")?.params).toEqual({
+      workspaceId: "ws-remote",
+      agentId: "default",
+    });
     expect(connection.calls.find((call) => call.method === "agent.send")?.params).toMatchObject({
       workspaceId: "ws-remote",
       agentId: "default",
