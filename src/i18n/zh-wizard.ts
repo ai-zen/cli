@@ -25,7 +25,7 @@ export const zh: Record<string, string> = {
   "field.vision": "视觉",
   "field.size": "尺寸",
   "field.quality": "质量",
-  // 助手的三段多行文本（都进 $EDITOR 屏，详情屏只印一行摘要）
+  // AgentDefinition 的三段多行文本（都进 $EDITOR 屏，详情屏只印一行摘要）
   "field.prompt": "系统提示词",
   "field.functionDescription": "函数说明",
   "field.paramsSchema": "参数 schema",
@@ -53,7 +53,7 @@ export const zh: Record<string, string> = {
   "err.paramsSchemaNotObject": "参数 schema 必须是一个 JSON 对象（形如 {}）",
   "err.jsonParseFailed": "JSON 解析失败：{error}",
 
-  // ---------- 更多字段名（MCP / 助手详情） ----------
+  // ---------- 更多字段名（MCP / AgentDefinition 详情） ----------
   "field.transport": "传输",
   "field.command": "命令",
   "field.args": "参数",
@@ -108,9 +108,9 @@ export const zh: Record<string, string> = {
   "wiz.menu.count": "{n} 个",
   "wiz.menu.imageModelsSummary": "{n} 个 · 默认 {name}",
   "wiz.menu.mcpSummary": "用户 {user} · 工作区 {workspace}",
-  "wiz.menu.defaultsSummary": "助手 {agent} · 迁移模型 {model}",
+  "wiz.menu.defaultsSummary": "助手定义 {agent} · 迁移模型 {model}",
   "wiz.menu.maxToolOutputSummary": "{n} 字符",
-  "wiz.menu.agentsSummary": "助手 {agent} · 子助手 {sub} · 默认 {default}",
+  "wiz.menu.agentsSummary": "助手定义 {agent} · 子助手 {sub} · 默认 {default}",
   "wiz.menu.doneReturn": "完成并返回",
   "common.unsetPlain": "未设置",
   "wiz.pickTitle": "{label} · 选择",
@@ -167,9 +167,9 @@ export const zh: Record<string, string> = {
   "wiz.imageModels.createTitle": "新建图片模型 · 名称",
   "wiz.imageModels.created": "已新建图片模型 {name}（{id}，标记为自定义）",
 
-  // ---------- 助手定义（列表 · 详情 · 权限 · 文本编辑 · 新建） ----------
-  "wiz.agents.new": "＋ 新建助手",
-  "wiz.agents.newHint": "顶层助手（可以设为默认）",
+  // ---------- AgentDefinition（列表 · 详情 · 权限 · 文本编辑 · 新建） ----------
+  "wiz.agents.new": "＋ 新建助手定义",
+  "wiz.agents.newHint": "顶层助手定义（可以设为默认）",
   "wiz.agents.title": "◆ 助手定义",
   "wiz.agents.itemHint": "{kind} · {id}{factory}{default}{state}",
   "wiz.agent.factorySuffix": " · 出厂内置",
@@ -182,7 +182,7 @@ export const zh: Record<string, string> = {
   "wiz.agent.permMoveHint": "↑ ↓ 移动 · Enter 编辑 · Esc 返回",
   "wiz.agent.newTitle": "新建{kind} · 名称",
   "wiz.agent.newDesc": "用于在列表与状态栏里认出它，例如 {example}",
-  "wiz.agent.newDescAgent": "建好后可在「默认项 → 默认助手」里选为默认",
+  "wiz.agent.newDescAgent": "建好后可在「默认项 → 默认助手定义」里选为默认",
   "wiz.agent.created": "已新建{kind} {name}（{id}）",
 
   // ---------- 工具输出上限 / 端点字段直达编辑 ----------
@@ -223,7 +223,7 @@ export const zh: Record<string, string> = {
   "wiz.defaults.subtitle": "新会话与任务迁移用的默认值",
   "wiz.defaults.pickSubtitle": "选中就写盘",
   "wiz.defaults.imageModel": "默认图片模型",
-  "wiz.defaults.agent": "默认助手",
+  "wiz.defaults.agent": "默认助手定义",
   "wiz.defaults.migrationModel": "默认迁移模型",
   "wiz.defaults.keyReady": "密钥就绪",
   "wiz.defaults.missingKey": "缺 API Key",
@@ -245,7 +245,7 @@ export const zh: Record<string, string> = {
   "wiz.strategy.keepHint": "中断后半截思考和回答留在上下文里，模型能接着往下说",
   "wiz.strategy.dropHint": "中断后那半截不进上下文（库的默认行为）",
   "wiz.strategy.fillHint": "恢复整轮，并给没完成的结果补上原因；工具调用与结果必须成对",
-  "wiz.strategy.toolDropHint": "整轮丢掉：助手的回复和它的工具结果都不发给模型",
+  "wiz.strategy.toolDropHint": "整轮丢掉：助手定义的回复和它的工具结果都不发给模型",
   // ---------- 端点列表 / 新建端点 ----------
   "ui.next": "下一步",
   "common.listSep": "、",
@@ -288,8 +288,8 @@ export const zh: Record<string, string> = {
   "vendor.dashscope": "阿里云百炼（DashScope）",
   "vendor.openaiCompatible": "OpenAI 兼容端点",
 
-  // ---------- 配置中心的助手仓储 ----------
-  // 只在「向导被挂载但没注入助手仓储」时出现。它不是给用户看的日常提示，而是把
+  // ---------- 配置中心的 AgentDefinition 仓储 ----------
+  // 只在「向导被挂载但没注入 AgentDefinition 仓储」时出现。它不是给用户看的日常提示，而是把
   // 「你少注入了」说清楚 —— 少注入就会静静写到客户端本机的 ~/.ai-zen/agents/，而真值在宿主。
   // ---------- 契约词汇 / 生效报告 / 缺口说明 ----------
   "scope.user": "用户",
@@ -299,14 +299,15 @@ export const zh: Record<string, string> = {
   "wiz.menu.modelsSummary": "{n} 个 · {noKey} 个端点缺 API Key",
   "wiz.agents.defaultSuffix": " · 默认",
   "wiz.agents.noModelSuffix": " · 模型没了",
-  "wiz.agents.modelMissing": "这个助手绑的模型不在配置里：先去「模型管理」看那一格，或给它换一个",
+  "wiz.agents.modelMissing":
+    "这个助手定义绑的模型不在配置里：先去「模型管理」看那一格，或给它换一个",
   "wiz.model.endpointNoKey": "绑定的端点「{endpoint}」还没有 API Key（现在用它一定失败）",
   "wiz.agent.thinkingLine": "思考策略 {preset} · 可选档位 {levels}",
   "wiz.agent.thinkingFixed": "思考强度：{state}（这个模型只有一档）",
   "wiz.agent.newPromptNote": "提示词先留空，建好后在「系统提示词」里写",
   "wiz.agent.editorSubtitle": "Enter 打开系统编辑器（$EDITOR / notepad）；改完保存即写盘",
   "wiz.agent.fnParamsSubtitle": "JSON 对象；Enter 打开系统编辑器，保存后立即校验并写盘",
-  "wiz.agentThinkingUpdated": "助手 {id} 的思考强度 → {level}",
+  "wiz.agentThinkingUpdated": "助手定义 {id} 的思考强度 → {level}",
   "wiz.models.defaultThresholds":
     "两条阈值先按出厂推荐值填（交接 {handoff} / 阻断 {guard}），建完能就地改",
   "wiz.imageModels.modelNameHint": "模型名先跟名字一样，建好后能就地改",
@@ -334,13 +335,13 @@ export const zh: Record<string, string> = {
   "wiz.imageModels.deleteCostCleared": "默认图片模型会被清空 —— 这个端点没有别的图片模型可改指",
   "wiz.imageModels.deleteCostNone": "默认图片模型没指着它，删掉不动默认值",
   "wiz.agent.deleteCost":
-    "所有用这个助手的会话都会受影响：删掉之后它们没有可用的助手定义，你正在看的那段回答会断",
+    "所有用这个助手定义的会话都会受影响：删掉之后它们没有可用的助手定义，你正在看的那段回答会断",
   "wiz.agent.deleteCostCount":
-    "还有 {n} 段会话在用这个助手：删掉之后它们没有可用的助手定义，你正在看的那段回答会断",
+    "还有 {n} 段会话在用这个助手定义：删掉之后它们没有可用的助手定义，你正在看的那段回答会断",
   "wiz.agent.deleteCostZero": "现在没有会话在用它，删掉只影响以后新建的会话",
-  "wiz.agent.deleteCostDefault": "它还是默认助手：默认助手这一项会一起清空",
+  "wiz.agent.deleteCostDefault": "它还是默认助手：默认助手定义这一项会一起清空",
   "wiz.mcp.deleteCost": "只断掉「{id}」这一台服务器（{scope}），同一层里别的服务器不动",
   "wiz.agentWrite.confirmTitle": "确认改这份助手定义？",
   "wiz.agentWrite.cost":
-    "所有用这个助手的会话都跟着变：你正在看的那段回答会断，之后由新的定义接着答",
+    "所有用这个助手定义的会话都跟着变：你正在看的那段回答会断，之后由新的定义接着答",
 };

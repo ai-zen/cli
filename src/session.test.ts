@@ -7,7 +7,7 @@
  *
  *   · 打开会话打哪几条 procedure（`session.open` 一次取全 / `session.create` 建行）；
  *   · `agent.send` 带的是什么（`workspaceId` + `agentId` + `content` + `messageId` + `sessionId`）；
- *   · 等结局的判据只有契约事实（新消息出现了 + 忙闲回到 `idle` + 没有还在写的助手消息）；
+ *   · 等结局的判据只有契约事实（新消息出现了 + 忙闲回到 `idle` + 没有还在写的 AgentDefinition 消息）；
  *   · 忙闲落回 `idle` 就补拉一次（`resync`），速率用消息上的 `usage` 合计定格；
  *   · 通知、问题、名册、subagent 那一栏各自从哪来、按什么过滤。
  *
@@ -66,7 +66,7 @@ function sessionRow(overrides: Partial<MirrorSessionRow> = {}): MirrorSessionRow
   };
 }
 
-/** `session.open` 的一份出参（`live: null` = 这一段没有执行体，也就是死的） */
+/** `session.open` 的一份出参（`live: null` = 这一段没有 Agent，也就是死的） */
 function openView(overrides: Partial<FakeOpen> = {}): FakeOpen {
   return {
     session: sessionRow(),
@@ -124,7 +124,7 @@ interface HostLike {
   questions: QuestionView[];
   /** 宿主配置（`api.config.get` 的回执） */
   config: { models: unknown[]; defaultAgent?: string; presets: unknown };
-  /** 助手定义（`api.agentDefinition.get` 的回执；`null` = 定义没了） */
+  /** AgentDefinition（`api.config.agents.get` 的回执；`null` = 定义没了） */
   definition: { modelId?: string; name: string } | null;
   workspaces: { id: string; name: string; cwd: string; createdAt: number }[];
 }
@@ -174,11 +174,11 @@ function hostLike(
           return question();
         case "notice.list":
           return [];
-        case "notice.clear":
+        case "notice.deleteAll":
           return undefined;
         case "config.get":
           return { config: host.config, presets: host.config.presets };
-        case "agentDefinition.get": {
+        case "config.agents.get": {
           if (host.definition === null) throw new Error("定义没了");
           return { definition: host.definition };
         }
@@ -187,7 +187,7 @@ function hostLike(
         case "session.create":
           // 只建行：回来的那一行就是这一段（不唤醒、不投递，历史与排队区都空）
           return { session: sessionRow() };
-        case "agent.send":
+        case "runtime.agent.send":
           return { sessionId: SESSION, messageId: "u-new" };
         default:
           return undefined;
@@ -287,9 +287,9 @@ describe("RemoteChatSession：怎么打开那一段", () => {
 
     const create = host.connection.calls.find((call) => call.method === "session.create");
     expect(create?.params).toEqual({ workspaceId: WORKSPACE, agentId: "default" });
-    // 建行之外一个字都没发生：没有投一句话，也没有去叫执行体
-    expect(host.connection.methods()).not.toContain("agent.send");
-    expect(host.connection.methods()).not.toContain("agent.wake");
+    // 建行之外一个字都没发生：没有投一句话，也没有去叫 Agent
+    expect(host.connection.methods()).not.toContain("runtime.agent.send");
+    expect(host.connection.methods()).not.toContain("runtime.agent.wake");
     expect(session.sessionId).toBe(SESSION);
     // 记住了：下次 `ai` 在这个项目里续接的就是它
     const memory = JSON.parse(readFileSync(join(zen.dir, "cli", "last-session.json"), "utf-8"));
@@ -452,14 +452,16 @@ describe("RemoteChatSession：发一句", () => {
 
     await session.send("你好");
 
-    const send = host.connection.calls.filter((call) => call.method === "agent.send").at(-1);
+    const send = host.connection.calls
+      .filter((call) => call.method === "runtime.agent.send")
+      .at(-1);
     expect(send?.params).toMatchObject({
       workspaceId: WORKSPACE,
       agentId: "default",
       content: "你好",
       sessionId: SESSION,
     });
-    // 客户端给 id：宿主据它认「落地的是哪一条」
+    // 客户端给 id：宿主据它认「写进 messages 的是哪一条」
     expect(typeof (send?.params as { messageId?: string }).messageId).toBe("string");
   });
 
@@ -481,7 +483,9 @@ describe("RemoteChatSession：发一句", () => {
       },
     });
     await session.send("你好");
-    const send = host.connection.calls.filter((call) => call.method === "agent.send").at(-1);
+    const send = host.connection.calls
+      .filter((call) => call.method === "runtime.agent.send")
+      .at(-1);
     expect((send?.params as { content: unknown }).content).toBe("你好");
   });
 
@@ -491,7 +495,9 @@ describe("RemoteChatSession：发一句", () => {
 
     await session.send("看这两张", [], ["a-1", "a-2"]);
 
-    const send = host.connection.calls.filter((call) => call.method === "agent.send").at(-1);
+    const send = host.connection.calls
+      .filter((call) => call.method === "runtime.agent.send")
+      .at(-1);
     expect((send?.params as { content: unknown }).content).toEqual([
       { type: "text", text: "看这两张" },
       { type: "image_url", image_url: { url: "" }, __asset_id: "a-1" },
@@ -504,7 +510,9 @@ describe("RemoteChatSession：发一句", () => {
   it("宿主拒绝（例如有问题挡着）进通知栏，不抛（抛出去会变成未处理的 rejection）", async () => {
     const host = hostLike({
       reply: (method) =>
-        method === "agent.send" ? new Error("还有一道题没答（question_pending）") : undefined,
+        method === "runtime.agent.send"
+          ? new Error("还有一道题没答（question_pending）")
+          : undefined,
     });
     const { session, notifier } = await open(host);
 
@@ -519,8 +527,8 @@ describe("RemoteChatSession：发一句", () => {
 
     await session.send("你好");
 
-    expect(host.connection.methods()).not.toContain("agent.wake");
-    expect(host.connection.methods()).toContain("agent.send");
+    expect(host.connection.methods()).not.toContain("runtime.agent.wake");
+    expect(host.connection.methods()).toContain("runtime.agent.send");
   });
 
   it("死的（`session.open` 报 `live: null`）：先 `agent.wake` 再投递，顺序就是这个", async () => {
@@ -532,18 +540,24 @@ describe("RemoteChatSession：发一句", () => {
 
     const methods = host.connection.methods();
     // 反过来的话就是「投给一个死会话」，宿主只会回 not_found
-    expect(methods.indexOf("agent.wake")).toBeGreaterThanOrEqual(0);
-    expect(methods.indexOf("agent.wake")).toBeLessThan(methods.indexOf("agent.send"));
+    expect(methods.indexOf("runtime.agent.wake")).toBeGreaterThanOrEqual(0);
+    expect(methods.indexOf("runtime.agent.wake")).toBeLessThan(
+      methods.indexOf("runtime.agent.send"),
+    );
     // 唤醒那一次只带 sessionId
-    const wake = host.connection.calls.filter((call) => call.method === "agent.wake").at(-1);
+    const wake = host.connection.calls
+      .filter((call) => call.method === "runtime.agent.wake")
+      .at(-1);
     expect(wake?.params).toEqual({ sessionId: SESSION });
     // 投递那一次还是原样
-    const send = host.connection.calls.filter((call) => call.method === "agent.send").at(-1);
+    const send = host.connection.calls
+      .filter((call) => call.method === "runtime.agent.send")
+      .at(-1);
     expect(send?.params).toMatchObject({ sessionId: SESSION, content: "醒了没" });
   });
 
   /**
-   * 刚建出来的那一段就是这一种「死」：`session.create` 不造执行体，所以第一次发话必须先叫。
+   * 刚建出来的那一段就是这一种「死」：`session.create` 不造 Agent，所以第一次发话必须先叫。
    * 这条从建行那一步走起（而不是拿一个 `live: null` 的假回执），钉的是「建出来 → 叫起来 →
    * 投进去」这三步在会话层真的连得上。
    */
@@ -558,34 +572,39 @@ describe("RemoteChatSession：发一句", () => {
 
     // 建行那一步只建行
     expect(host.connection.methods()).toEqual(expect.arrayContaining(["session.create"]));
-    expect(host.connection.methods()).not.toContain("agent.send");
+    expect(host.connection.methods()).not.toContain("runtime.agent.send");
     expect(session.alive).toBe(false);
 
     await session.send("建完之后的第一句");
 
     const methods = host.connection.methods();
-    const woke = methods.indexOf("agent.wake");
-    const sent = methods.indexOf("agent.send");
+    const woke = methods.indexOf("runtime.agent.wake");
+    const sent = methods.indexOf("runtime.agent.send");
     expect(woke).toBeGreaterThanOrEqual(0);
     expect(sent).toBeGreaterThan(woke);
     // 投的那一句落在刚建出来的那一段上
-    const send = host.connection.calls.filter((call) => call.method === "agent.send").at(-1);
+    const send = host.connection.calls
+      .filter((call) => call.method === "runtime.agent.send")
+      .at(-1);
     expect(send?.params).toMatchObject({ sessionId: SESSION, content: "建完之后的第一句" });
   });
 
   it("唤醒失败：宿主原话上屏，`agent.send` 一次不打（不重试、不兜底）", async () => {
     const host = hostLike({
       open: openView({ live: null }),
-      reply: (method) => (method === "agent.wake" ? new Error("装配失败（缺凭证）") : undefined),
+      reply: (method) =>
+        method === "runtime.agent.wake" ? new Error("装配失败（缺凭证）") : undefined,
     });
     const { session, notifier } = await open(host);
 
     await expect(session.send("发不出去的话")).resolves.toBeUndefined();
 
     // 没叫起来就不能投：发出去半句比没发更糟
-    expect(host.connection.methods()).not.toContain("agent.send");
+    expect(host.connection.methods()).not.toContain("runtime.agent.send");
     // 只叫一次，不重试
-    expect(host.connection.methods().filter((method) => method === "agent.wake")).toHaveLength(1);
+    expect(
+      host.connection.methods().filter((method) => method === "runtime.agent.wake"),
+    ).toHaveLength(1);
     expect(notifier.notices.at(-1)).toMatchObject({ tone: "error" });
     expect(notifier.notices.at(-1)?.text).toContain("装配失败（缺凭证）");
   });
@@ -594,15 +613,19 @@ describe("RemoteChatSession：发一句", () => {
     const host = hostLike({
       open: openView({ live: null }),
       reply: (method) =>
-        method === "agent.send" ? new Error("会话 sess-1 没有运行中的执行体") : undefined,
+        method === "runtime.agent.send" ? new Error("会话 sess-1 没有运行中的执行体") : undefined,
     });
     const { session, notifier } = await open(host);
 
     await session.send("你好");
 
     // 两边各一次：叫过也不代表投得上，但都不重试
-    expect(host.connection.methods().filter((method) => method === "agent.wake")).toHaveLength(1);
-    expect(host.connection.methods().filter((method) => method === "agent.send")).toHaveLength(1);
+    expect(
+      host.connection.methods().filter((method) => method === "runtime.agent.wake"),
+    ).toHaveLength(1);
+    expect(
+      host.connection.methods().filter((method) => method === "runtime.agent.send"),
+    ).toHaveLength(1);
     expect(notifier.notices.at(-1)?.text).toContain("没有运行中的执行体");
   });
 
@@ -638,11 +661,15 @@ describe("RemoteChatSession：复活 / 暂停 / 继续", () => {
     const host = hostLike();
     const { session } = await open(host);
 
-    await session.start();
-    await session.pause();
-    await session.resume();
+    await session.wake();
+    await session.pauseOutput();
+    await session.resumeOutput();
 
-    for (const method of ["agent.wake", "agent.pause", "agent.resume"]) {
+    for (const method of [
+      "runtime.agent.wake",
+      "runtime.agent.pauseOutput",
+      "runtime.agent.resumeOutput",
+    ]) {
       const call = host.connection.calls.filter((item) => item.method === method).at(-1);
       expect(call?.params, method).toEqual({ sessionId: SESSION });
     }
@@ -651,19 +678,19 @@ describe("RemoteChatSession：复活 / 暂停 / 继续", () => {
   it("`start` / `resume` 失败照抛（「按发送」那条路得知道这一步没成，不能假装发过了）", async () => {
     const host = hostLike({
       reply: (method) =>
-        method === "agent.wake" || method === "agent.resume"
+        method === "runtime.agent.wake" || method === "runtime.agent.resumeOutput"
           ? new Error(`${method} 没成`)
           : undefined,
     });
     const { session } = await open(host);
 
-    await expect(session.start()).rejects.toThrow("agent.wake 没成");
-    await expect(session.resume()).rejects.toThrow("agent.resume 没成");
+    await expect(session.wake()).rejects.toThrow("runtime.agent.wake 没成");
+    await expect(session.resumeOutput()).rejects.toThrow("runtime.agent.resumeOutput 没成");
   });
 
   it("中止走 `agent.abort`（不抛：它是后台一手，失败只进通知栏）", async () => {
     const host = hostLike({
-      reply: (method) => (method === "agent.abort" ? new Error("abort 没成") : undefined),
+      reply: (method) => (method === "runtime.agent.abort" ? new Error("abort 没成") : undefined),
     });
     const { session, notifier } = await open(host);
 
@@ -671,7 +698,7 @@ describe("RemoteChatSession：复活 / 暂停 / 继续", () => {
     await flush();
 
     expect(notifier.notices.at(-1)).toMatchObject({ tone: "error" });
-    expect(host.connection.methods()).toContain("agent.abort");
+    expect(host.connection.methods()).toContain("runtime.agent.abort");
   });
 });
 
@@ -690,7 +717,7 @@ describe("RemoteChatSession：等这一句有了下文", () => {
       done = true;
     });
 
-    // 这一句落地、助手那条开始写：还没完
+    // 这一句写进 messages、AgentDefinition 那条开始写：还没完
     emit(host, {
       type: "message.added",
       sessionId: SESSION,
@@ -928,11 +955,11 @@ describe("RemoteChatSession：通知", () => {
       "这一段的事",
     ]);
     // 清的只有会话那一条：全局那条不属于这一段，清掉就把别人那份也抹了
-    expect(host.connection.calls.filter((call) => call.method === "notice.clearOne")).toEqual([
-      { method: "notice.clearOne", params: { id: "n-this" } },
+    expect(host.connection.calls.filter((call) => call.method === "notice.delete")).toEqual([
+      { method: "notice.delete", params: { id: "n-this" } },
     ]);
     // 按会话清一片那条路不再走：那会把同一段里还没上屏的几条一起清掉
-    expect(host.connection.methods()).not.toContain("notice.clear");
+    expect(host.connection.methods()).not.toContain("notice.deleteAll");
   });
 
   it("补看失败：说一句（那几条通知已经住在宿主里，而本条连接错过了推送）", async () => {
@@ -1098,9 +1125,9 @@ describe("RemoteChatSession：命令层要的那几个动作", () => {
     });
     const { session } = await open(host);
 
-    const restored = await session.revert("u-2");
+    const restored = await session.rewind("u-2");
 
-    // 纯文本消息：素材那一格是空的（不是缺一格）
+    // 纯文本消息：Asset 那一格是空的（不是缺一格）
     expect(restored).toEqual({ content: "被撤回的那句", assetIds: [] });
     const rewind = host.connection.calls.filter((call) => call.method === "session.rewind").at(-1);
     expect(rewind?.params).toEqual({ sessionId: SESSION, messageId: "u-2" });
@@ -1123,7 +1150,7 @@ describe("RemoteChatSession：命令层要的那几个动作", () => {
     });
     const { session } = await open(host);
 
-    const restored = await session.revert("u-2");
+    const restored = await session.rewind("u-2");
 
     expect(restored.assetIds).toEqual(["a-1", "a-2", "a-1"]);
   });
@@ -1158,14 +1185,16 @@ describe("RemoteChatSession：命令层要的那几个动作", () => {
     expect(session.handoffSince).toBeNull();
   });
 
-  it("换模型：`session.setModel` 写会话行，回读之后 `modelId` 当场生效", async () => {
+  it("换模型：`session.updateModel` 写会话行，回读之后 `modelId` 当场生效", async () => {
     const host = hostLike();
     const { session } = await open(host);
 
     host.open.current = openView({ session: sessionRow({ modelId: "m2" }) });
-    await session.setModel("m2");
+    await session.updateModel("m2");
 
-    const call = host.connection.calls.filter((item) => item.method === "session.setModel").at(-1);
+    const call = host.connection.calls
+      .filter((item) => item.method === "session.updateModel")
+      .at(-1);
     expect(call?.params).toEqual({ sessionId: SESSION, modelId: "m2" });
     expect(session.modelId).toBe("m2");
   });
@@ -1173,10 +1202,10 @@ describe("RemoteChatSession：命令层要的那几个动作", () => {
   it("`setModel(null)`：宿主这一版没有「回到助手定义」的入口，如实拒绝", async () => {
     const host = hostLike();
     const { session } = await open(host);
-    await expect(session.setModel(null)).rejects.toThrow(/回到助手定义/);
+    await expect(session.updateModel(null)).rejects.toThrow(/回到助手定义/);
   });
 
-  it("换思考档位：`session.setThinkingLevel` 写会话行，回读之后 `thinking.selected` 当场生效", async () => {
+  it("换思考档位：`session.updateThinkingLevel` 写会话行，回读之后 `thinking.selected` 当场生效", async () => {
     const host = hostLike({
       config: {
         models: [{ id: "test-model", name: "Test", vision: false, reasoningPreset: "effort" }],
@@ -1188,10 +1217,10 @@ describe("RemoteChatSession：命令层要的那几个动作", () => {
     expect(session.thinking.levels).toEqual(["low", "high"]);
 
     host.open.current = openView({ session: sessionRow({ thinkingLevel: "high" }) });
-    await session.setThinking("high");
+    await session.updateThinkingLevel("high");
 
     const call = host.connection.calls
-      .filter((item) => item.method === "session.setThinkingLevel")
+      .filter((item) => item.method === "session.updateThinkingLevel")
       .at(-1);
     expect(call?.params).toEqual({ sessionId: SESSION, level: "high" });
     expect(session.thinking.selected).toBe("high");
@@ -1220,7 +1249,7 @@ describe("RemoteChatSession：命令层要的那几个动作", () => {
     });
     const { session } = await open(host);
 
-    // 相对路径原样折成条目（屏幕按 `kind` 补尾斜杠，宿主这一版只给文件）
+    // 相对路径原样折成 InboxEntry（屏幕按 `kind` 补尾斜杠，宿主这一版只给文件）
     await expect(session.listWorkspaceFiles()).resolves.toEqual({
       state: "ready",
       entries: [
@@ -1281,20 +1310,22 @@ describe("RemoteChatSession：命令层要的那几个动作", () => {
 
   it("清空排队区：走 `agent.clearInbox`，回宿主给的那个条数", async () => {
     const host = hostLike({
-      reply: (method) => (method === "agent.clearInbox" ? { cleared: 3 } : undefined),
+      reply: (method) => (method === "runtime.agent.clearInbox" ? { cleared: 3 } : undefined),
     });
     const { session } = await open(host);
 
     await expect(session.clearInbox()).resolves.toBe(3);
     // 入参与契约逐字一致：只有这一段的 id（排队区就这两处，怎么清是宿主的判据）
-    const call = host.connection.calls.filter((item) => item.method === "agent.clearInbox").at(-1);
+    const call = host.connection.calls
+      .filter((item) => item.method === "runtime.agent.clearInbox")
+      .at(-1);
     expect(call?.params).toEqual({ sessionId: SESSION });
   });
 
   it("清空排队区失败（宿主拒了）：错误照实际抛出去，不吞成 0 条", async () => {
     const host = hostLike({
       reply: (method) =>
-        method === "agent.clearInbox" ? new Error("会话不存在（not_found）") : undefined,
+        method === "runtime.agent.clearInbox" ? new Error("会话不存在（not_found）") : undefined,
     });
     const { session } = await open(host);
 

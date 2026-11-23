@@ -5,13 +5,13 @@
  *
  *   · `mention.ts`（本文件）：无 IO、无 React，全是可单测的纯函数；
  *   · 文件清单：会话层给（问宿主 `workspace.files`，扫的是**跑会话的那台机器**）——
- *     本模块只做「拿到条目之后怎么过滤与插入」；
+ *     本模块只做「拿到 InboxEntry 之后怎么过滤与插入」；
  *   · `screens/chat.tsx`：只做「按键 → 调上面两者 → 落字」的接线。
  *
  * ## 候选的形状就是契约那一份
  *
- * 条目是宿主 `workspace.files` 给的相对路径折成的 `FileEntry`（`path` / `name` / `kind`，见
- * `session/types.ts` 与 `session.ts` 的 `toFileEntry`）。这里不另立一个「补全用的条目」：那种平行
+ * InboxEntry 是宿主 `workspace.files` 给的相对路径折成的 `FileEntry`（`path` / `name` / `kind`，见
+ * `session/types.ts` 与 `session.ts` 的 `toFileEntry`）。这里不另立一个「补全用的 InboxEntry」：那种平行
  * 形状迟早与宿主那侧分叉。
  *
  * ## 为什么只插路径文本，不附带文件内容
@@ -62,7 +62,7 @@ const BOUNDARY = new Set([
   "：",
   ";",
   "；",
-  // 中文行文的标点：`@src/x。这里有问题` 里的 `。` 必须收住 token，否则补全会把
+  // 中文行文的标点：`@src/x。这里有问题 ` 里的 `。` 必须收住 token，否则补全会把
   // 后面整句一起替换掉，用户写句子时菜单也会一直弹着不走
   "。",
   "、",
@@ -138,9 +138,9 @@ export function extractMention(text: string, cursor: number): Mention | null {
 }
 
 /**
- * 补全要插入的文本：`@路径`，目录补一个 `/` 以便继续往下钻。
+ * 补全要插入的文本：`@路径 `，目录补一个 `/` 以便继续往下钻。
  *
- * 判据取条目上的 `kind`（`directory` 才补斜杠）：屏幕这边不自己猜「以 `/` 结尾就是目录」。
+ * 判据取 InboxEntry 上的 `kind`（`directory` 才补斜杠）：屏幕这边不自己猜「以 `/` 结尾就是目录」。
  * 宿主这一版给的清单只有文件（`kind` 恒 `"file"`），所以现实里就是插一段完整路径；这一支留着
  * 是因为类型与 `mention.test.ts` 都还认它。
  */

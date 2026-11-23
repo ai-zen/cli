@@ -108,7 +108,7 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
       ]}
       onSubmit={(value) => {
         const apiKey = value.trim();
-        // id 由名称派生（`config.endpoint.add` 的 id 客户端定，宿主只负责落盘）
+        // id 由名称派生（`config.endpoints.create` 的 id 客户端定，宿主只负责落盘）
         const id = uniqueEndpointId(config, draft.name);
         void runWrite(
           () =>
@@ -117,7 +117,7 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
                 id,
                 name: draft.name,
                 baseUrl: draft.baseUrl,
-                // `add` 收的是整条 `Endpoint`：密钥这一格必须给，留空就是空串（= 还没配）
+                // `add` 收的是整条 `EndpointDefinition`：密钥这一格必须给，留空就是空串（= 还没配）
                 apiKey,
               },
               t("wiz.newEndpoint.created", {

@@ -129,18 +129,18 @@ function hostLike(
           return [];
         case "notice.list":
           return [];
-        case "notice.clear":
+        case "notice.deleteAll":
           return undefined;
         case "config.get":
           return {
             config: { models: [], defaultAgent: defaultAgentId ?? undefined },
             presets: {},
           };
-        case "agentDefinition.get":
+        case "config.agents.get":
           return { definition: { name: "Test Assistant" } };
         case "workspace.list":
           return [{ id: WORKSPACE, name: "项目一", cwd: "/work/proj", createdAt: 0 }];
-        case "agent.send":
+        case "runtime.agent.send":
           // 投递那一支：回来的 `sessionId` 就是投到的那一段
           return { sessionId: "sess-new", messageId: "u-new" };
         case "session.create":
@@ -156,7 +156,7 @@ function hostLike(
     connection,
     messages,
     states,
-    // `/agent` 之后宿主配置里那个默认助手换了一个人：`/new` 得跟着它
+    // `/agent` 之后宿主配置里那个默认 AgentDefinition 换了一个人：`/new` 得跟着它
     setDefaultAgentId: (value: string | null) => {
       defaultAgentId = value;
     },
@@ -221,7 +221,7 @@ function registryWithDisposeLog(connection: FakeConnection): {
   return { registry, disposed };
 }
 
-/** 「这一批在动」的事件：一条用户消息落地 + 一条助手消息在写 + 忙闲翻成 working */
+/** 「这一批在动」的事件：一条用户消息写进 messages + 一条 AgentDefinition 消息在写 + 忙闲翻成 working */
 function working(sessionId: string): HostEvent[] {
   return [
     {
@@ -279,7 +279,7 @@ describe("SessionRegistry：一段会话只开一次", () => {
     await registry.enter({ sessionId: "sess-1" }, oldSink);
     await registry.enter({ sessionId: "sess-1" }, newSink);
 
-    // 重挂载的时序：新屏的 `enter` 先落地，旧屏的 cleanup 后跑
+    // 重挂载的时序：新屏的 `enter` 先写进 messages，旧屏的 cleanup 后跑
     registry.detach(oldSink);
     connection.emit({ type: "agent.status", sessionId: "sess-1", status: "working" });
 
@@ -332,8 +332,8 @@ describe("SessionRegistry：切走的那一段继续跑", () => {
     const created = connection.calls.filter((call) => call.method === "session.create").at(-1);
     expect(created?.params).toEqual({ workspaceId: "ws-other", agentId: "default" });
     // `/new` 之后一个字都没投出去：建行不顺带唤醒，也不顺带发消息
-    expect(connection.methods()).not.toContain("agent.send");
-    expect(connection.methods()).not.toContain("agent.wake");
+    expect(connection.methods()).not.toContain("runtime.agent.send");
+    expect(connection.methods()).not.toContain("runtime.agent.wake");
     // 建出来的那一段当场就开出来了（镜像挂上，`/sessions` 与切回去都有它）
     expect(connection.opens).toContain("sess-new");
     // 新的那一段立刻在注册表里（切过去只是接成它的听众），旧那一段：会话没换、订阅还在、也没被关
@@ -611,7 +611,7 @@ describe("SessionRegistry：进程收摊", () => {
 });
 
 // ==================================================================
-// `/new` 用哪个助手
+// `/new` 用哪个 AgentDefinition
 // ==================================================================
 
 describe("/new：下一段用宿主配置里的默认助手", () => {
@@ -657,7 +657,7 @@ describe("/new：下一段用宿主配置里的默认助手", () => {
     const created = host.connection.calls.filter((call) => call.method === "session.create").at(-1);
     // `/new` 照旧开得出来（一条附加查询失败不能拦住开新会话）
     expect((created?.params as { agentId?: string }).agentId).toBe("default");
-    // 但「换了个助手」不能就这样过去：用户只会发现自己开的不是预期的那一段
+    // 但「换了个 AgentDefinition」不能就这样过去：用户只会发现自己开的不是预期的那一段
     expect(screen.notices).toEqual([
       { text: "默认助手问不到，这一段按当前用的助手开：连接断了", tone: "warn" },
     ]);

@@ -2,12 +2,12 @@
 //
 // ## 这一屏能做到哪
 //
-// 读是 `api.mcp.list.query({ workspaceId })`：**每条服务器 + 它写在哪一层**（`scope`）。写是
-// `api.mcp.save` / `api.mcp.remove`，两条都回**整份**清单（不必再问一次）。于是：
+// 读是 `api.config.mcp.list.query({ workspaceId })`：**每条服务器 + 它写在哪一层**（`scope`）。写是
+// `api.config.mcp.update` / `api.config.mcp.delete`，两条都回**整份**清单（不必再问一次）。于是：
 //
 //   · 看见：两个可写层各自有哪些服务器、每条启用没启用、传输方式与它的目标 —— 有；
-//     「这一层的文件不存在 / 读不出来」这类**层的状态**没有：新契约只报条目，不报文件；
-//   · 改已有条目：**有** —— 条目就是 `McpServerConfig`，改哪一项就发哪一项；
+//     「这一层的文件不存在 / 读不出来」这类**层的状态**没有：新契约只报 InboxEntry，不报文件；
+//   · 改已有 InboxEntry：**有** —— InboxEntry 就是 `McpServerDefinition`，改哪一项就发哪一项；
 //   · 增 / 改 / 删 / 启停 / 改作用域：都在这几屏里，每次改一条。
 //
 // 作用域只有两个（`user` / `workspace`）：契约里另有三个只读层（项目 `.mcp.json` 与两个

@@ -14,7 +14,7 @@
  * ## 钉住的三件事
  *
  * 1. **死活不等事件**：`live !== null` 就是 `alive: true`，`live === null` 就是 `alive: false`
- *    （口径⑥：没有执行体就是死的，这是打开那一刻的事实，不必等 `agent.alive`）；
+ *    （口径⑥：没有 Agent 就是死的，这是打开那一刻的事实，不必等 `agent.alive`）；
  * 2. **subagent 的话单独一栏**：`subagent.message` 带 `toolCallId`，它不进主转录；
  * 3. **inbox 只是读数的副本**：宿主只在 `agent.inbox` 里报它，所以打开时取一次、之后按事件换。
  */
@@ -66,7 +66,7 @@ export function toCoreMessages(messages: readonly unknown[]): AgentNS.Message[] 
   return messages as AgentNS.Message[];
 }
 
-/** 同上：排队条目 → core 的 `InboxEntry` */
+/** 同上：排队 InboxEntry → core 的 `InboxEntry` */
 function toInboxEntries(entries: readonly unknown[]): AgentNS.InboxEntry[] {
   return entries as AgentNS.InboxEntry[];
 }
@@ -159,7 +159,7 @@ export class SessionMirror {
     this.statusValue = view.live?.state ?? null;
     this.inputPausedValue = view.live?.inputPaused ?? null;
     this.outputPausedValue = view.live?.outputPaused ?? null;
-    // 口径⑥：有执行体才是活的，没有就是死的 —— 这是打开那一刻的事实
+    // 口径⑥：有 Agent 才是活的，没有就是死的 —— 这是打开那一刻的事实
     this.aliveValue = view.live !== null;
     this.handingOffValue = view.live?.handingOff ?? false;
     this.opened = true;
@@ -295,11 +295,11 @@ function rosterOf(
 }
 
 /**
- * 宿主的一条排队条目 → 界面那一行。
+ * 宿主的一条排队 InboxEntry → 界面那一行。
  *
  * 旧版这一行是宿主拼好的（`InboxItem.preview`）；新契约给的是 core 的 `InboxEntry` 原样，所以
  * 摘要由这里现拼：文本段按顺序拼接、空白折叠、超 120 字截断加 `…`，非文本段记 `[图片]` /
- * `[文件]`。**没有正文的条目（「钥匙」）直接丢掉**：它不是一句话，排队区说的是「还有几句没
+ * `[文件]`。**没有正文的 InboxEntry（「钥匙」）直接丢掉**：它不是一句话，排队区说的是「还有几句没
  * 送出去」。
  */
 function inboxItemOf(entry: AgentNS.InboxEntry): InboxItem[] {

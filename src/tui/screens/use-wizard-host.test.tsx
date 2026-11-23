@@ -64,7 +64,7 @@ let configImpl: () => Promise<unknown> = async () => ({
   presets: fakePresets(),
 });
 
-/** 可替换的 `session.list` / `workspace.list` 实现（「删助手」的代价里那个数从这里数） */
+/** 可替换的 `session.list` / `workspace.list` 实现（「删 AgentDefinition」的代价里那个数从这里数） */
 let workspacesImpl: () => Promise<unknown> = async () => [{ id: "ws-1", cwd: "/work/demo" }];
 let sessionsImpl: () => Promise<unknown> = async () => [];
 
@@ -90,11 +90,11 @@ function make(path: string[]): unknown {
           switch (method) {
             case "config.get":
               return await configImpl();
-            case "agentDefinition.list":
+            case "config.agents.list":
               return fakeDefinitions();
-            case "mcp.list":
+            case "config.mcp.list":
               return { servers: fakeServers() };
-            // 「删助手」的代价里那个数：`workspace.list` → 逐个 `session.list`
+            // 「删 AgentDefinition」的代价里那个数：`workspace.list` → 逐个 `session.list`
             case "workspace.list":
               return await workspacesImpl();
             case "session.list":
@@ -173,7 +173,7 @@ function Probe({ hasSession }: { hasSession: boolean }) {
         `presets=${w.wizardPresets ? "loaded" : "null"}`,
         `agents=${w.wizardAgents ? w.wizardAgents.agents.length : "null"}`,
         `servers=${w.wizardServers ? w.wizardServers.length : "null"}`,
-        // 每个助手挂着几段会话（数不出来就是 null —— 那时代价只说人话）
+        // 每个 AgentDefinition 挂着几段会话（数不出来就是 null —— 那时代价只说人话）
         `counts=${w.wizardSessionsByAgent ? JSON.stringify(w.wizardSessionsByAgent) : "null"}`,
       ].join(" ")}
     </Text>
@@ -185,7 +185,7 @@ async function probe(hasSession = true) {
   const frame = () => (lastFrame() ?? "").trim();
   const idle = "step=null config=null presets=null agents=null servers=null counts=null";
   await until(() => frame() === idle, "探针画出来");
-  // 画出来 ≠ 有人接键：`useInput` 的订阅在这之后一拍才落地
+  // 画出来 ≠ 有人接键：`useInput` 的订阅在这之后一拍才写进 messages
   await settle();
   const press = async (char: string) => {
     await settle();
@@ -218,9 +218,9 @@ describe("useWizardHost", () => {
     await until(() => p.frame() === MENU, "向导接管（三份快照读齐）");
     // 读的正是那几条 procedure，一条不多（顺序不定：会话计数与三份快照并行读）
     expect(calls.methods.map((item) => item.method).sort()).toEqual([
-      "agentDefinition.list",
+      "config.agents.list",
       "config.get",
-      "mcp.list",
+      "config.mcp.list",
       "session.list",
       "workspace.list",
     ]);
@@ -231,7 +231,7 @@ describe("useWizardHost", () => {
     const p = await probe();
     await p.press("o");
     await until(() => p.frame() === MENU, "向导接管（三份快照读齐）");
-    const list = calls.methods.find((item) => item.method === "mcp.list");
+    const list = calls.methods.find((item) => item.method === "config.mcp.list");
     expect(list?.params).toEqual({ workspaceId: "ws-1" });
     p.unmount();
   });
@@ -310,9 +310,9 @@ describe("useWizardHost", () => {
     expect(p.frame()).toContain("config=loaded");
     // 快照读法只有一份：直达与整屏接管读的是同样那几份（少一份就渲染不出整块屏）
     expect(calls.methods.map((item) => item.method).sort()).toEqual([
-      "agentDefinition.list",
+      "config.agents.list",
       "config.get",
-      "mcp.list",
+      "config.mcp.list",
     ]);
     p.unmount();
   });

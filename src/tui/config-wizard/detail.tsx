@@ -159,7 +159,7 @@ export function DetailStep({
     if (failure) setError(failure);
   };
 
-  /** 真的把那一次写发出去（字段确认之后的落地） */
+  /** 真的把那一次写发出去（字段确认之后的写进 messages） */
   const writeField = async (raw: string) => {
     setPendingWrite(null);
     if (!field?.commit) return;

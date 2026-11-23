@@ -105,10 +105,10 @@ export function subAgentEndingOf(
  *
  * 名册与它栏里的话活在**会话层**（`server-client/mirror.ts` 的镜像，切屏、重开都不丢），而屏幕
  * 会被重建（`/model`、`/lang` 这些重挂载）。只按屏幕记「说过没」的话，重建之后同一条失败会被
- * 再说一遍 —— 用户看到的是「同一个子助手又失败了一次」。
+ * 再说一遍 —— 用户看到的是「同一个子 AgentDefinition 又失败了一次」。
  *
  * 键取**那一条结局消息的 id**：同一条结局只说一次；下一次委派是另一条消息、另一个 id，照说。
- * 只活在本进程（与 `user-content.ts` 的素材事实同一档：重启即清空，不落盘）。
+ * 只活在本进程（与 `user-content.ts` 的 Asset 事实同一档：重启即清空，不落盘）。
  */
 const spokenEndings = new Set<string>();
 

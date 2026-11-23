@@ -13,8 +13,8 @@
  *
  *   1. 忙闲那一格（`SessionState.status`）：`idle` 就没在动，没什么可说的；
  *   2. 队里还压着几条（`SessionState.inbox` 的条数）：话还没被取走 —— 那就是**排队**；
- *   3. 最后一条消息的 `role` 与 `status`：助手那条还在 `pending` / `writing` 就是「还没开口」；
- *   4. 那条助手消息的 `reasoning_content` / `content` / `tool_calls` / `finish_reason`：
+ *   3. 最后一条消息的 `role` 与 `status`：AgentDefinition 那条还在 `pending` / `writing` 就是「还没开口」；
+ *   4. 那条 AgentDefinition 消息的 `reasoning_content` / `content` / `tool_calls` / `finish_reason`：
  *      思考在前、正文在后、工具调用在中间（core 的一条消息内部顺序恒定）。
  *
  * 外加一个只有工具那一段才需要的事实：工具结果消息（`role: tool`）回来了几条 —— 还有几条没回来
@@ -23,7 +23,7 @@
  * ## 「排队」是 inbox 里有货，不是某个阶段字段
  *
  * 宿主从来不报「在排队」：那是**别人的话还在 inbox 里、这一任还没取走**（`PRD 4.1`）。
- * 所以排队只能从 `inbox` 现读，与「已经开口了没有」合起来判：那条助手消息一旦吐出任何东西
+ * 所以排队只能从 `inbox` 现读，与「已经开口了没有」合起来判：那条 AgentDefinition 消息一旦吐出任何东西
  *（思考 / 正文 / 工具调用），屏上就不再是排队了。
  *
  * 文案仍然是客户端的事（`i18n`）：事实来自宿主，句子来自这里，与命令表同一条规矩。
@@ -44,7 +44,7 @@ export interface PhaseFacts {
   /**
    * 正在交接（`session.handoffSince`）—— `true` 时这句话盖过下面所有阶段。
    *
-   * 交接期间这一段**照旧有自己的忙闲与两道闸**（`handoff` 不在四件事里），所以不能把它塞进
+   * 交接期间这一段**照旧有自己的忙闲与两道开关**（`handoff` 不在四件事里），所以不能把它塞进
    * `status` 那一格：那个字段只有一个值。它是另一件事，单独占一行话（PRD 4.5）。
    */
   handingOff: boolean;
@@ -65,7 +65,7 @@ export function phaseLine(facts: PhaseFacts): string | null {
   const messages = facts.messages;
   const last = messages[messages.length - 1];
 
-  // ① 排队：话还在队里，而这一批还没吐出任何东西（助手那条还没冒头，或冒头了还空着）
+  // ① 排队：话还在队里，而这一批还没吐出任何东西（AgentDefinition 那条还没冒头，或冒头了还空着）
   if (facts.inboxPending > 0 && !started(last)) return t("phase.inboxWaiting");
 
   // 手上已经有活（忙），但这一批的消息还没落下来：还在装配 / 还没取到件
@@ -79,7 +79,7 @@ export function phaseLine(facts: PhaseFacts): string | null {
       : t("phase.toolWaitingWith", { name: names.join(t("common.listSeparator")) });
   }
 
-  // 用户那句刚落、助手那条还没冒出来
+  // 用户那句刚落、AgentDefinition 那条还没冒出来
   if (last.role !== AgentNS.Role.Assistant) return t("phase.connecting");
 
   const calls = last.tool_calls ?? [];
@@ -105,7 +105,7 @@ export function phaseLine(facts: PhaseFacts): string | null {
 }
 
 /**
- * 这一批「开口了没有」：最后那条助手消息已经吐出了思考 / 正文 / 工具调用中的任何一样。
+ * 这一批「开口了没有」：最后那条 AgentDefinition 消息已经吐出了思考 / 正文 / 工具调用中的任何一样。
  *
  * 判据只看**消息本身**（不看时间、不看次序）：队里的话与「屏幕上有没有字」是两件事，分开问
  * 才知道该说「排队」还是「在想」。
@@ -137,7 +137,7 @@ function toolNamesOf(calls: readonly AgentNS.ToolCall[]): string[] {
 /**
  * 最后那批工具调用里**还没有结果**的那几个的名字。
  *
- * 判据只有一处：最后一条带 `tool_calls` 的助手消息之后，哪些 `role: tool` 消息已经把结果带回来了
+ * 判据只有一处：最后一条带 `tool_calls` 的 AgentDefinition 消息之后，哪些 `role: tool` 消息已经把结果带回来了
  * （按 `tool_call_id` 对）。这是在读消息本身，不是另记一份「在跑的工具」—— 那份清单没有第二个
  * 事实来源，记下来就必然与消息分叉。
  */

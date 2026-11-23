@@ -8,7 +8,7 @@ import { computeInputCursorPosition } from "./input.js";
  * `CursorInputRow` 的职责只有一件事：**让渲染器说出光标在哪一列、哪一行**。
  *
  * 这些断言的价值在于它们**不依赖我们的宽度模型**：期望值取自 Ink 自身的排版结果
- * （`⚡` 算 2 列、`中文` 算 4 列），而不是 `displayWidth`。最后一条用例专门把两者
+ * （`⚡` 算 2 列、` 中文 ` 算 4 列），而不是 `displayWidth`。最后一条用例专门把两者
  * 摆在一起对比 —— 手算会错 1 列，实测不会。
  */
 

@@ -159,7 +159,7 @@ describe("noticeBarContent（正文 + 入口提示 + 高度）", () => {
   it("有通知时末尾多一行提示，高度把那一行算进去", () => {
     const content = noticeBarContent([notice("就绪")], 80);
     expect(texts(content.lines)).toEqual(["就绪"]);
-    expect(content.hint).toBe(t("notice.clearHint"));
+    expect(content.hint).toBe(t("notice.deleteAllHint"));
     // 布局与硬件光标都按 `height` 预留：少算一行，输入框就会整体偏上
     expect(content.height).toBe(content.lines.length + 1);
   });

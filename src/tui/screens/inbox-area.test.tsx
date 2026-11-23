@@ -16,7 +16,7 @@ import type { InboxItem } from "../../session/types.js";
 /** 渲染出来的非空行（空行不参与「占了几行」的判断） */
 const lines = (frame: string) => frame.split("\n").filter((line) => line.trim().length > 0);
 
-/** 一条排队条目（形状照契约：`RunState.inbox` 的元素） */
+/** 一条排队 InboxEntry（形状照契约：`RunState.inbox` 的元素） */
 function item(preview: string, overrides: Partial<InboxItem> = {}): InboxItem {
   return {
     messageId: `m-${preview}`,
@@ -67,7 +67,7 @@ describe("InboxArea：显示规则", () => {
     expect(rendered).toHaveLength(INBOX_MAX_ROWS);
     expect(rendered[0]).toContain("第一句");
     expect(rendered[1]).toContain("第二句");
-    // 第 3 行不是第三条条目，而是「还有 N 条」（N = 没显示出来的条数 = 4 − 2）
+    // 第 3 行不是第三条 InboxEntry，而是「还有 N 条」（N = 没显示出来的条数 = 4 − 2）
     expect(rendered[2]).toContain(t("inbox.more", { n: 2 }));
     expect(rendered[2]).not.toContain("第三句");
     expect(lastFrame() ?? "").not.toContain("第四句");
@@ -138,7 +138,7 @@ describe("排队区参与布局与硬件光标", () => {
     expect(withInbox.budget).toBe(without.budget - 2);
     // 整帧高度不变（额度是从会话区扣的，不是把帧撑高）
     expect(withInbox.lines.length).toBe(withInbox.budget);
-    // 3 行（条目多于上限时）同样按实数计入
+    // 3 行（InboxEntry 多于上限时）同样按实数计入
     expect(computeChatLayout({ ...base, inboxLines: 3 }).bottomLines).toBe(without.bottomLines + 3);
   });
 

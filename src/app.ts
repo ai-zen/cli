@@ -16,7 +16,7 @@
  * `config.ts` 的 `export let AI_ZEN_DIR`（模块求值时算一次）、`config.ts` 的
  * `serverUrlFlag`（一个 `setServerUrlFlag()` 往模块里塞值的注入点）、
  * `i18n/preferences.ts` 里**又抄了一遍**的 `HOME` 拼法（每次调用重算）。于是「根在哪」有两个
- * 答案、两种时机，「`--server` 什么时候落地」要靠读 `main()` 那 90 行才知道。
+ * 答案、两种时机，「`--server` 什么时候写进 messages」要靠读 `main()` 那 90 行才知道。
  *
  * 这就是「松散全局变量 + 松散模块」那一类：每个值单独看都有理由，合起来没人能回答
  * 「谁是主人」。现在主人是这个类。
@@ -358,7 +358,7 @@ function needsHost(invocation: Invocation): boolean {
 }
 
 /**
- * `--server <url>` 的落地：**只**从这三条会连宿主的路由上取。
+ * `--server <url>` 的写进 messages：**只**从这三条会连宿主的路由上取。
  *
  * 其它路由没有这个字段，`undefined` 于是正确地表示「这次没给 `--server`」—— 地址退回
  * `AI_ZEN_SERVER_URL`，与改动前 `setServerUrlFlag()` 的调用条件逐字一致。

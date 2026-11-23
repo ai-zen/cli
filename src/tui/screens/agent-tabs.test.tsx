@@ -73,7 +73,7 @@ describe("AgentTabs（主 / 子 Agent 切换条）", () => {
 
   it("每个选项自带左右各 1 空格 padding（分隔空白属于前一项，不贴上一项文案）", () => {
     const frame = draw(tabs, "main");
-    // 每一项周围都恰好一个空格：「 主AGENT   ◈子AGENT1 」形状
+    // 每一项周围都恰好一个空格：「 主 AGENT   ◈子 AGENT1 」形状
     // （末项的尾空格会被 Ink trim，所以只断言非末项）
     expect(frame).toContain(" 主AGENT ");
     expect(frame).toContain(` ${AGENT_STATUS_DOT}子AGENT1 `);

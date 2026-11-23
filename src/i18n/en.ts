@@ -93,17 +93,19 @@ export const en: Record<string, string> = {
   "notice.resumeFailed": "Could not resume this session: {error}",
   "notice.pressCtrlDAgain": "Press Ctrl+D again to exit",
   "notice.languageChanged": "Interface language switched to English",
-  "notice.clearHint": "Alt+X clears this session's notices; Alt+Shift+X clears all",
+  "notice.deleteAllHint": "Alt+X clears this session's notices; Alt+Shift+X clears all",
   "notice.cleared": "Notices for this session cleared",
-  "notice.clearFailed": "Could not clear the notices: {error}",
-  "notice.clearAllTitle":
+  "notice.deleteAllFailed": "Could not clear the notices: {error}",
+  "notice.deleteAllAllTitle":
     "Clear all {n} notices? Global notices belong to no session, so they go too; notices for other sessions that nobody has seen yet go too. This cannot be undone.",
-  "notice.clearAllConfirm": "Clear all",
-  "notice.clearAllCancel": "Leave them",
-  "notice.clearAllDone": "Cleared all {n} notices (including global notices and other sessions')",
-  "notice.clearAllCancelled": "No notices were cleared",
-  "notice.clearAllFailed": "Could not clear all notices: {error}",
-  "notice.clearAllListFailed": "Could not read the notice list, so nothing was cleared: {error}",
+  "notice.deleteAllAllConfirm": "Clear all",
+  "notice.deleteAllAllCancel": "Leave them",
+  "notice.deleteAllAllDone":
+    "Cleared all {n} notices (including global notices and other sessions')",
+  "notice.deleteAllAllCancelled": "No notices were cleared",
+  "notice.deleteAllAllFailed": "Could not clear all notices: {error}",
+  "notice.deleteAllAllListFailed":
+    "Could not read the notice list, so nothing was cleared: {error}",
   "notice.imagePickTitle": "Which image should open? The pick goes to your default program",
   "notice.imagePickItem": "Message {message} · image {image}",
   "notice.imagePickEmpty": "No openable image here (only assets can be fetched back)",
@@ -198,7 +200,7 @@ export const en: Record<string, string> = {
   "cmd.think.followDefault": "Follow the model default",
   // 参数跟着「模型来自哪一级」走：模型是本段会话换的时，参数也写在这一段
   "cmd.think.clearHintSession": "Remove this session's reasoning params",
-  // 助手级那一项清的是**定义文件**里的思考参数（影响所有用这个助手的会话）
+  // AgentDefinition 级那一项清的是**定义文件**里的思考参数（影响所有用这个 AgentDefinition 的会话）
   "cmd.think.clearHintAgent": "Remove the agent's reasoning params",
   "cmd.think.cancelled": "Reasoning effort change cancelled",
   "cmd.think.unchanged": "Reasoning effort unchanged",
@@ -386,7 +388,7 @@ export const en: Record<string, string> = {
   "effort.followDefault": "follow the model default",
   "effort.quoted": '"{label}"',
   "effort.summary": 'Reasoning effort set to {label} · written to agent "{id}" (model {model})',
-  // 会话级那条路写的是会话存档（不碰助手定义），所以文案不提助手
+  // 会话级那条路写的是会话存档（不碰 AgentDefinition），所以文案不提 AgentDefinition
   "effort.summarySession":
     "Reasoning effort set to {label} · written to this session (model {model})",
   "modelSwitch.resetHint": " · reasoning effort reset to the model default",

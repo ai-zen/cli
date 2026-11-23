@@ -1,14 +1,14 @@
 /**
- * `mcp-helpers.ts` 的两件事：条目那一行摘要、oauth 客户端密钥只印掩码。
+ * `mcp-helpers.ts` 的两件事：InboxEntry 那一行摘要、oauth 客户端密钥只印掩码。
  *
  * 这一版的密钥口径与端点同一条：`mcp.list` 给回来的是**明文**（宿主不再掩码），屏上只印
  * `maskSecret` 算出来的那一串。写回时带的是同一条里的原值 —— 「没改就不动」靠的是**原样往返**，
- * 不是省略（`McpServerConfig` 没有 `extra` 那一格，写回时与磁盘上那一条的合并由宿主做）。
+ * 不是省略（`McpServerDefinition` 没有 `extra` 那一格，写回时与磁盘上那一条的合并由宿主做）。
  */
 
 import { describe, expect, it } from "vitest";
 
-import type { McpServerConfig } from "../../config.js";
+import type { McpServerDefinition } from "../../config.js";
 import { setLocale } from "../../i18n/index.js";
 import { mcpEntryHint, mcpOauthSecretHint, scopeLabel, otherScope } from "./mcp-helpers.js";
 
@@ -17,8 +17,8 @@ setLocale("zh");
 /** 用例里的那串明文：只作为「不该整串出现在屏上」的那一串 */
 const PLAINTEXT = "placeholder-oauth-secret-for-tests-only-9f3a";
 
-/** 一条 http 条目（带 oauth 密钥） */
-function remoteServer(): McpServerConfig {
+/** 一条 http InboxEntry（带 oauth 密钥） */
+function remoteServer(): McpServerDefinition {
   return {
     id: "remote",
     transport: "http",
@@ -55,7 +55,7 @@ describe("mcpEntryHint", () => {
   });
 
   it("stdio 的条目带参数、停用的说停用", () => {
-    const server: McpServerConfig = {
+    const server: McpServerDefinition = {
       id: "pty",
       transport: "stdio",
       command: "npx",

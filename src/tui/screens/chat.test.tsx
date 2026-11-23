@@ -38,7 +38,7 @@ const { created, createFakeSession } = vi.hoisted(() => {
   };
 
   /**
-   * 本工作区的文件条目 —— 假会话的「宿主磁盘」。
+   * 本工作区的文件 InboxEntry —— 假会话的「宿主磁盘」。
    *
    * 它刻意不代表本机目录：`@` 补全只能从这里出候选（会话跑在宿主里，屏幕这边扫本机磁盘
    * 只会列出客户端的文件）。形状就是 `completion.files` 的出参元素（`path` / `name` / `kind`）。
@@ -141,8 +141,8 @@ const { created, createFakeSession } = vi.hoisted(() => {
       abort: vi.fn(),
       // 复活 / 暂停 / 继续：三个动作各管一件事（PLAN §5.1），「按发送」那三步由屏幕编排
       start: vi.fn(async () => undefined),
-      pause: vi.fn(async () => undefined),
-      resume: vi.fn(async () => undefined),
+      pauseOutput: vi.fn(async () => undefined),
+      resumeOutput: vi.fn(async () => undefined),
       // `send()`（受理即回）+ `waitForReply()`（等这一句有了下文）：假件里这一句同步就答完了，
       // 所以后者立即 resolve —— 断言看的是 `send` 有没有被叫、参数对不对。
       waitForReply: vi.fn(async () => {}),
@@ -291,7 +291,7 @@ const fakeConfigView = () => ({
   defaultAgent: "default",
 });
 
-/** 一份助手定义（`agentDefinition.list` 的一项） */
+/** 一份 AgentDefinition（`agentDefinition.list` 的一项） */
 const fakeDefinition = () => ({
   id: "default",
   name: "Default",
@@ -332,9 +332,9 @@ const fakeConnection = (
             switch (method) {
               case "config.get":
                 return { config: config(), presets: {} };
-              case "agentDefinition.list":
+              case "config.agents.list":
                 return [fakeDefinition()];
-              case "mcp.list":
+              case "config.mcp.list":
                 return { servers: [] };
               case "notice.list":
                 // 「清全部」先数一遍整个库（不带 `sessionId`）：条数由用例摆
@@ -342,8 +342,8 @@ const fakeConnection = (
               case "session.list":
                 // 这一段被删之后要问「同项目里还有哪几段」（`moveAfterGone`）：缺省一段不剩
                 return options.sessionList ?? [];
-              case "notice.clear":
-                // 宿主这一档没有回执（`notice.clear` 的 out 是空）
+              case "notice.deleteAll":
+                // 宿主这一档没有回执（`notice.deleteAll` 的 out 是空）
                 return undefined;
               case "asset.get":
                 // 图片那条路：取回来的就是字节（尺寸不在这条口的出参里）
@@ -371,7 +371,7 @@ type FakeConnection = ReturnType<typeof fakeConnection>;
 const mount = (
   options: {
     initialInput?: string;
-    /** 撤回回填的那几张素材（与 `initialInput` 同一次回填的两半） */
+    /** 撤回回填的那几张 Asset（与 `initialInput` 同一次回填的两半） */
     initialAssetIds?: readonly string[];
     /** 重挂载附属的那一句系统提示（`/back` 的「删掉几条」就走这一格） */
     initialNotice?: string;
@@ -468,12 +468,12 @@ describe("Chat 集成（拆分前的护栏）", () => {
   it("启动期已经知道开不出来（配置残缺）：首帧就上失败屏，且不再去开一次会话", async () => {
     const { lastFrame, unmount } = mount({
       // 宿主渲染好的那一句（`error.modelUnresolved`），客户端不翻译也不改写
-      bootError: "这个助手没有可用的模型 —— 给它挑一个模型，或者在设置里指定一个默认模型。",
+      bootError: "这个助手定义没有可用的模型 —— 给它挑一个模型，或者在设置里指定一个默认模型。",
     });
     await flush();
     const frame = lastFrame() ?? "";
     expect(frame).toContain("无法启动会话");
-    expect(frame).toContain("这个助手没有可用的模型");
+    expect(frame).toContain("这个助手定义没有可用的模型");
     // 改配置的入口就在屏上（不是启动期报一句然后退出）
     expect(frame).toContain("按 k 打开配置中心");
     // 会话层已经试过而且没开成：不再问一遍宿主（同一个错问两遍没有好处）
@@ -516,7 +516,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 按发送的两步（屏幕这一侧）：开闸 → 投递。复活归会话层的 `send()`（PRD 4.1「生死」：
+  // 按发送的两步（屏幕这一侧）：开开关 → 投递。复活归会话层的 `send()`（PRD 4.1「生死」：
   // 客户端点发送时先判这段是死是活，死的就调接口复活、再投递）。
   // -------------------------------------------------------------------------
 
@@ -542,15 +542,15 @@ describe("Chat 集成（拆分前的护栏）", () => {
     // 复活与投递只由会话层编排一次：屏幕这边只投
     expect(created.session.start).not.toHaveBeenCalled();
     expect(created.session.send).toHaveBeenCalledWith("醒醒", [], []);
-    // 输出闸本来就开着：没人去动它（每一步只看自己那一格）
-    expect(created.session.resume).not.toHaveBeenCalled();
+    // 输出开关本来就开着：没人去动它（每一步只看自己那一格）
+    expect(created.session.resumeOutput).not.toHaveBeenCalled();
     unmount();
   });
 
   it("输出闸关着：先 `resume` 开闸，再 `send`（「用户点发送就是继续」）", async () => {
     const { stdin, unmount } = mount();
     await flush();
-    // 宿主报「输出闸关着」（中断之后就是这个样子）
+    // 宿主报「输出开关关着」（中断之后就是这个样子）
     created.session.outputPaused = true;
     created.notifier.onChange(true);
     await flush();
@@ -558,8 +558,8 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await submit(stdin, "接着说");
     await waitFor(() => created.session.send.mock.calls.length === 1);
 
-    expect(created.session.resume).toHaveBeenCalledTimes(1);
-    expect(created.session.resume.mock.invocationCallOrder[0]!).toBeLessThan(
+    expect(created.session.resumeOutput).toHaveBeenCalledTimes(1);
+    expect(created.session.resumeOutput.mock.invocationCallOrder[0]!).toBeLessThan(
       created.session.send.mock.invocationCallOrder[0]!,
     );
     // 活着：不必复活
@@ -576,7 +576,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
 
     expect(created.session.send).toHaveBeenCalledWith("你好", [], []);
     expect(created.session.start).not.toHaveBeenCalled();
-    expect(created.session.resume).not.toHaveBeenCalled();
+    expect(created.session.resumeOutput).not.toHaveBeenCalled();
     unmount();
   });
 
@@ -584,7 +584,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
     created.session.outputPaused = true;
-    created.session.resume = vi.fn(async () => {
+    created.session.resumeOutput = vi.fn(async () => {
       throw new Error("正在交接");
     });
     created.notifier.onChange(true);
@@ -758,7 +758,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
    * 而**预算合计 > 时限**这个结构问题，只能从时限这一侧修（逻辑写错时仍然会在第一个
    * 等不到的 `waitFor` 上以清晰的断言失败报出来，不会因为时限放宽而变成挂死）。
    */
-  it("向导落盘走那条连接：`/key` 保存时调 config.endpoint.update", async () => {
+  it("向导落盘走那条连接：`/key` 保存时调 config.endpoints.update", async () => {
     // 有模型 + 端点的配置，`/key` 才能定位到「当前模型用的那个端点」；密钥空 = 要人填
     const connection = fakeConnection({
       config: {
@@ -802,12 +802,12 @@ describe("Chat 集成（拆分前的护栏）", () => {
     stdin.write("\r");
     await flush(20);
     await waitFor(
-      () => connection.apiCalls.some((one) => one.method === "config.endpoint.update"),
+      () => connection.apiCalls.some((one) => one.method === "config.endpoints.update"),
       2000,
     );
 
     // 写的是**procedure**，不是某个本地文件：这一跳就是「写到宿主那份配置」
-    const write = connection.apiCalls.find((one) => one.method === "config.endpoint.update");
+    const write = connection.apiCalls.find((one) => one.method === "config.endpoints.update");
     expect(write).toBeTruthy();
     // 只发改的那一格（`update` 是合并语义：省略 = 保留原值）
     expect(write!.params).toEqual({ id: "ep1", change: { apiKey: "sk-test-123" } });
@@ -853,14 +853,14 @@ describe("Chat 集成（拆分前的护栏）", () => {
     // 只等它会出现会把「菜单还没收起」当成「向导已打开」
     await waitFor(
       () =>
-        connection.apiCalls.some((one) => one.method === "mcp.list") &&
+        connection.apiCalls.some((one) => one.method === "config.mcp.list") &&
         (lastFrame() ?? "").includes("EP ✓"),
       10_000,
     );
     const methods = connection.apiCalls.map((one) => one.method);
     expect(methods).toContain("config.get");
-    expect(methods).toContain("agentDefinition.list");
-    expect(methods).toContain("mcp.list");
+    expect(methods).toContain("config.agents.list");
+    expect(methods).toContain("config.mcp.list");
     unmount();
   }, 20_000);
 
@@ -1059,7 +1059,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await flush(); // 等文件清单回填（`session.listWorkspaceFiles()` 是 Promise）
     const frame = lastFrame() ?? "";
     const readme = rowOf(frame, "README.md");
-    // 「src/tui/」是「src/tui/screens/chat.tsx」的子串，必须锁行尾才能定位到那条目录
+    // 「src/tui/」是「src/tui/screens/chat.tsx」的子串，必须锁行尾才能定位到那 InboxEntry 录
     const dir = frame.split("\n").findIndex((row) => row.trim().endsWith("src/tui/"));
     const separator = rowOf(frame, "───");
     expect(readme).toBeGreaterThanOrEqual(0);
@@ -1099,7 +1099,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
   it("有子助手时出现栏目（主助手 + 各个子助手的名字）", async () => {
     const { lastFrame, unmount } = mount();
     await flush();
-    // 没有子助手时整条栏目不存在
+    // 没有子 AgentDefinition 时整条栏目不存在
     expect(lastFrame() ?? "").not.toContain("主助手");
 
     addSubAgent("子结论", "reviewer");
@@ -1341,10 +1341,10 @@ describe("Chat 集成（拆分前的护栏）", () => {
 // ==================== Esc：继续 ⇄ 中断 互切（PRD 4.4）====================
 
 /**
- * 一个键两个含义，靠**状态**分流：忙时它是中断，忙完而输出闸还关着时它是继续（PRD 4.4
+ * 一个键两个含义，靠**状态**分流：忙时它是中断，忙完而输出开关还关着时它是继续（PRD 4.4
  * 「实践中输入框里只放两个：一个『继续 ⇄ 中断』互切，一个『发送』」）。
  *
- * 优先级不许反：闸关着而手上还有活是正常组合（暂停只关闸、不收回已取在手上的那批），
+ * 优先级不许反：开关关着而手上还有活是正常组合（暂停只关开关、不收回已取在手上的那批），
  * 那时按 Esc 要的是「立刻停」。
  */
 describe("Esc 的优先级：忙 > 闸关 > 清草稿", () => {
@@ -1359,7 +1359,7 @@ describe("Esc 的优先级：忙 > 闸关 > 清草稿", () => {
   it("闸关着、手上没活：Esc 是「继续」（resume），草稿一句不丢", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
-    // 宿主报「输出闸关着」（中断之后就是这一格）
+    // 宿主报「输出开关关着」（中断之后就是这一格）
     created.session.outputPaused = true;
     created.notifier.onChange(true);
     await flush();
@@ -1369,10 +1369,10 @@ describe("Esc 的优先级：忙 > 闸关 > 清草稿", () => {
     stdin.write("\u001b"); // lone ESC 需 ~20ms（ink 的序列判定）
     await flush(40);
 
-    expect(created.session.resume).toHaveBeenCalledTimes(1);
+    expect(created.session.resumeOutput).toHaveBeenCalledTimes(1);
     // 这是「继续」，不是「停」—— 不能顺手掐一下
     expect(created.session.abort).not.toHaveBeenCalled();
-    // 草稿留着：Esc 在这一档是开闸，不是清空键
+    // 草稿留着：Esc 在这一档是开开关，不是清空键
     expect(inputLineOf(lastFrame() ?? "")).toContain("还没发出去的话");
     unmount();
   });
@@ -1380,7 +1380,7 @@ describe("Esc 的优先级：忙 > 闸关 > 清草稿", () => {
   it("闸关着但手上还有活：Esc 仍是中断（忙 > 闸关，优先级不许反）", async () => {
     const { stdin, unmount } = mount();
     await flush();
-    // 闸关 + 忙：暂停（或上次中断）之后已经取在手上的那批还在跑，就是这个组合
+    // 开关关 + 忙：暂停（或上次中断）之后已经取在手上的那批还在跑，就是这个组合
     created.session.outputPaused = true;
     created.session.status = "working";
     created.notifier.onChange(true);
@@ -1390,8 +1390,8 @@ describe("Esc 的优先级：忙 > 闸关 > 清草稿", () => {
     await flush(40);
 
     expect(created.session.abort).toHaveBeenCalledTimes(1);
-    // 想的是「立刻停」，不能给它开闸
-    expect(created.session.resume).not.toHaveBeenCalled();
+    // 想的是「立刻停」，不能给它开开关
+    expect(created.session.resumeOutput).not.toHaveBeenCalled();
     unmount();
   });
 
@@ -1404,7 +1404,7 @@ describe("Esc 的优先级：忙 > 闸关 > 清草稿", () => {
     await flush(40);
 
     expect(inputLineOf(lastFrame() ?? "")).not.toContain("要清掉的草稿");
-    expect(created.session.resume).not.toHaveBeenCalled();
+    expect(created.session.resumeOutput).not.toHaveBeenCalled();
     expect(created.session.abort).not.toHaveBeenCalled();
     unmount();
   });
@@ -1412,13 +1412,13 @@ describe("Esc 的优先级：忙 > 闸关 > 清草稿", () => {
   it("闸关时快捷键提示换成「Esc 继续」那一档", async () => {
     const { lastFrame, unmount } = mount();
     await flush();
-    // 闸开着：平时那一条
+    // 开关开着：平时那一条
     expect(lastFrame() ?? "").toContain(t("input.hint.ready"));
 
     created.session.outputPaused = true;
     created.notifier.onChange(true);
     await flush();
-    // 闸关着、手上没活：Esc 现在是继续，提示得说清（照旧是那条「键 + 动作」句式）
+    // 开关关着、手上没活：Esc 现在是继续，提示得说清（照旧是那条「键 + 动作」句式）
     expect(lastFrame() ?? "").toContain(t("input.hint.paused"));
 
     // 一忙起来 Esc 回到中断 → 提示回到平时那一条（不能一直挂着「继续」骗人）
@@ -1433,7 +1433,7 @@ describe("Esc 的优先级：忙 > 闸关 > 清草稿", () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
     created.session.outputPaused = true;
-    created.session.resume = vi.fn(async () => {
+    created.session.resumeOutput = vi.fn(async () => {
       throw new Error("正在交接");
     });
     created.notifier.onChange(true);
@@ -1444,7 +1444,7 @@ describe("Esc 的优先级：忙 > 闸关 > 清草稿", () => {
 
     expect(lastFrame() ?? "").toContain("正在交接");
     // 只按了一次就只试一次：重试是用户再按一下
-    expect(created.session.resume).toHaveBeenCalledTimes(1);
+    expect(created.session.resumeOutput).toHaveBeenCalledTimes(1);
     unmount();
   });
 });
@@ -1556,7 +1556,7 @@ describe("`@` 文件路径补全", () => {
     const frame = lastFrame() ?? "";
     expect(created.session.listWorkspaceFiles).toHaveBeenCalled();
     expect(frame).toContain("只有那里才有的文件.md");
-    // 旧实现会去扫本机磁盘：换成会话给的清单后，这份假索引里的条目一条也不该出现
+    // 旧实现会去扫本机磁盘：换成会话给的清单后，这份假索引里的 InboxEntry 一条也不该出现
     expect(frame).not.toContain("README.md");
     unmount();
   });
@@ -1920,7 +1920,7 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
 });
 
 // ==================================================================
-// 撤回回填：文字进草稿、素材挂回输入（PRD 3.9「带图的那条连图一起恢复」）
+// 撤回回填：文字进草稿、Asset 挂回输入（PRD 3.9「带图的那条连图一起恢复」）
 // ==================================================================
 
 describe("撤回回填带图的那条", () => {
@@ -1946,7 +1946,7 @@ describe("撤回回填带图的那条", () => {
 
     stdin.write("\r");
     await waitFor(() => created.session.send.mock.calls.length === 1);
-    // 素材走第三格（已传上去的 id），第二格是这次新粘贴的字节 —— 一张都没有
+    // Asset 走第三格（已传上去的 id），第二格是这次新粘贴的字节 —— 一张都没有
     expect(created.session.send).toHaveBeenCalledWith("看这两张", [], ["a-1", "a-2"]);
     unmount();
   });
@@ -1983,7 +1983,7 @@ describe("撤回回填带图的那条", () => {
   it("`↑` 回到走素材上传的那条：素材 id 也挂回输入，重发时只交 id", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
-    // 已经传上去的图：段上只剩素材 id（本地没有字节可还原）
+    // 已经传上去的图：段上只剩 Asset id（本地没有字节可还原）
     created.session!.messages.push({
       id: "u-0",
       role: "user",
@@ -2124,7 +2124,7 @@ describe("交接期间：不发、说清楚、只留中断", () => {
     stdin.write("\r");
     await flush();
 
-    // 宿主照收（PRD 4.5 只关输出闸）—— 所以拦在客户端：一条都不能进队列
+    // 宿主照收（PRD 4.5 只关输出开关）—— 所以拦在客户端：一条都不能进队列
     expect(created.session.send).not.toHaveBeenCalled();
     expect(lastFrame() ?? "").toContain("正在交接");
     unmount();
@@ -2211,13 +2211,13 @@ describe("通知栏的清全部：先问一次，问完才动整个库", () => {
     },
   ];
 
-  /** 等那一问上屏（确认项的文字就是它的判据），再让覆盖层的按键订阅落地（它在 passive effect 里） */
+  /** 等那一问上屏（确认项的文字就是它的判据），再让覆盖层的按键订阅写进 messages（它在 passive effect 里） */
   const askAndWait = async (
     stdin: { write: (data: string) => void },
     frame: () => string | undefined,
   ) => {
     stdin.write("\u001bX"); // Alt+Shift+X
-    await waitFor(() => (frame() ?? "").includes(t("notice.clearAllConfirm")));
+    await waitFor(() => (frame() ?? "").includes(t("notice.deleteAllAllConfirm")));
     await flush(40);
   };
 
@@ -2248,7 +2248,7 @@ describe("通知栏的清全部：先问一次，问完才动整个库", () => {
 
     await askAndWait(stdin, lastFrame);
     stdin.write("\u001b"); // Esc：取消
-    await waitFor(() => !(lastFrame() ?? "").includes(t("notice.clearAllConfirm")));
+    await waitFor(() => !(lastFrame() ?? "").includes(t("notice.deleteAllAllConfirm")));
 
     // 数过一遍（那一问要用数），但清一次都没发
     expect(connection.apiCalls.map((call) => call.method)).toEqual(["notice.list"]);
@@ -2263,12 +2263,12 @@ describe("通知栏的清全部：先问一次，问完才动整个库", () => {
 
     await askAndWait(stdin, lastFrame);
     stdin.write("\r"); // 默认高亮的是「清空全部」那一项
-    await waitFor(() => connection.apiCalls.some((call) => call.method === "notice.clear"));
+    await waitFor(() => connection.apiCalls.some((call) => call.method === "notice.deleteAll"));
 
-    const cleared = connection.apiCalls.find((call) => call.method === "notice.clear");
+    const cleared = connection.apiCalls.find((call) => call.method === "notice.deleteAll");
     // 不给 `sessionId` = 整个库（含全局与别的会话的）
     expect(cleared?.params).toEqual({});
-    await waitFor(() => (lastFrame() ?? "").includes(t("notice.clearAllDone", { n: 3 })));
+    await waitFor(() => (lastFrame() ?? "").includes(t("notice.deleteAllAllDone", { n: 3 })));
     unmount();
   });
 });
@@ -2282,11 +2282,11 @@ describe("通知栏的清全部：先问一次，问完才动整个库", () => {
 describe("图片：占位说事实，Ctrl+O 用本机默认程序打开", () => {
   beforeEach(() => {
     setLocale("zh");
-    // 本机那份素材事实是进程级状态：这一组从「刚启动」开始，也不把状态留给下一份用例
+    // 本机那份 Asset 事实是进程级状态：这一组从「刚启动」开始，也不把状态留给下一份用例
     forgetAssetFacts();
   });
 
-  /** 一条带素材的图片消息（今天的客户端写出来的就是这一种：段上只有本地标记） */
+  /** 一条带 Asset 的图片消息（今天的客户端写出来的就是这一种：段上只有本地标记） */
   const imageMessage = (extra: Record<string, unknown> = {}) => ({
     id: "u-img",
     createdAt: 1,
@@ -2306,7 +2306,7 @@ describe("图片：占位说事实，Ctrl+O 用本机默认程序打开", () => 
   it("占位行带上了尺寸与文件名（有就给，没有就写不知道多大）", async () => {
     const { lastFrame, unmount } = mount();
     await flush();
-    // 一张手里有尺寸与文件名的（段上带着这两样）与一张只有素材 id 的
+    // 一张手里有尺寸与文件名的（段上带着这两样）与一张只有 Asset id 的
     await showMessage(imageMessage({ width: 800, height: 600, name: "shot.png" }));
     await showMessage({
       id: "u-img-2",
@@ -2366,7 +2366,7 @@ describe("图片：占位说事实，Ctrl+O 用本机默认程序打开", () => 
     stdin.write("\r"); // 选中第一张
     await waitFor(() => openPath.mock.calls.length === 1);
 
-    // 取的就是那一张的素材 id，取回来的字节落成临时文件，再交给打开函数
+    // 取的就是那一张的 Asset id，取回来的字节落成临时文件，再交给打开函数
     expect(connection.apiCalls.filter((call) => call.method === "asset.get")).toEqual([
       { method: "asset.get", params: { assetId: "a-1" } },
     ]);

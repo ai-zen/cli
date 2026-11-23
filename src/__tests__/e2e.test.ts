@@ -4,7 +4,7 @@
  * ## 这一组跑的是什么
  *
  * `ai "<消息>"` 那一条路（stdio 模式）：它读连接设置 → 连上宿主（本机模式没有活的宿主就
- * 拉起一个）→ `session.transient` 跑一轮 → 把答复写进 stdout。断言的是用户看得见的那几样：
+ * 拉起一个）→ `runtime.agent.runOnce` 跑一轮 → 把答复写进 stdout。断言的是用户看得见的那几样：
  * stdout 的内容与纯净度、stderr 的错误、退出码。
  *
  * ## 「拉起一个」现在走 npx，而这一组不联网
@@ -269,7 +269,7 @@ interface SetupOptions {
 }
 
 /**
- * 在测试目录里备好「这台机器已经配过」（连接设置 + 一份配置 + 一个默认助手）。
+ * 在测试目录里备好「这台机器已经配过」（连接设置 + 一份配置 + 一个默认 AgentDefinition）。
  *
  * 不写 `cli/connection.json` 的话，`ai "…"` 会按「没配过」**直接失败**（那是「没配过」那条
  * 用例要验的事）；本组其余用例要验的是「跑一轮」本身。
@@ -310,7 +310,7 @@ function setupConfigDir(aizDir: string, options: SetupOptions = {}): void {
           },
         ],
         defaultModel: "deepseek-flash",
-        // 缺省助手由宿主从配置里答（`session.transient` 不带 agentId 时就用它）：
+        // 缺省 AgentDefinition 由宿主从配置里答（`runtime.agent.runOnce` 不带 agentId 时就用它）：
         // 只写 `agents/default.json` 是不够的 —— 那是「候选清单」，选谁在这条默认项里
         defaultAgent: "default",
         version: 4,
@@ -563,7 +563,7 @@ describe("E2E: 真跑一轮（假 LLM 端点，不需要 key）", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe(`${CLI_REPLY}\n`);
-    // 「stdin 当内容、参数当指令」只能从模型侧看到的请求里验：`指令\n\n内容`
+    // 「stdin 当内容、参数当指令」只能从模型侧看到的请求里验：` 指令\n\n 内容 `
     const sent = JSON.stringify(llm.requests.at(-1)!.body.messages);
     expect(sent).toContain("用一句话总结");
     expect(sent).toContain("苹果是一种水果。");

@@ -25,8 +25,8 @@
  *
  * ## 五块，顺序即摆放顺序
  *
- *   1. **身份**：模型 · 助手 · 思考强度；
- *   2. **四件事**：闲 / 忙、输入闸、输出闸、死活（`PRD 4.4`「这四件事用户都要看得见」）；
+ *   1. **身份**：模型 · AgentDefinition · 思考强度；
+ *   2. **四件事**：闲 / 忙、输入开关、输出开关、死活（`PRD 4.4`「这四件事用户都要看得见」）；
  *   3. **用量**：本次 tok / 累计 tok（算不出来就整段不占位，见 `tui/components.tsx`）；
  *   4. **速率**：生成中显示实时估算、结束后显示这一批的平均（`session-rate.ts`，CLI 自己的
  *      观测口径，不是宿主的事实）；
@@ -45,7 +45,7 @@ import type { RateSample } from "./session-rate.js";
  * 块名不在这里：块里写什么字是界面的词汇（`tui/components.tsx`）。这里只有事实。
  */
 export type StatusBlock =
-  /** 身份块：模型 · 助手 · 思考强度（块内用 ` · ` 并排，见 `tui/components.tsx`） */
+  /** 身份块：模型 · AgentDefinition · 思考强度（块内用 ` · ` 并排，见 `tui/components.tsx`） */
   | {
       id: "identity";
       facts: { model: ModelState; agent: AgentState; thinking: ThinkingState };
@@ -58,7 +58,7 @@ export type StatusBlock =
    */
   | { id: "usage"; facts: { lastTokens: number | null; totalTokens: number | null } }
   /**
-   * 四件事：闲 / 忙、输入闸、输出闸、死活（`PRD 4.4`）。
+   * 四件事：闲 / 忙、输入开关、输出开关、死活（`PRD 4.4`）。
    *
    * 它们是**四件事**，不是四格合成值：压成一格必然有一项报不出来（`PRD 4.4` 原话）。
    * 这里也不合成 —— 每一格各自一格，界面上怎么写由 `tui/components.tsx` 决定。
@@ -97,7 +97,7 @@ export interface StatusBlockFacts {
   rate: RateSample | null;
   /** 手上有没有活（`session.status === "working"`）：速率那一段据此决定说实时还是说平均 */
   working: boolean;
-  /** 四件事（`PRD 4.4`）：闲忙 / 输入闸 / 输出闸 / 死活，各一格，不推算、不合成 */
+  /** 四件事（`PRD 4.4`）：闲忙 / 输入开关 / 输出开关 / 死活，各一格，不推算、不合成 */
   status: SessionActivity | null;
   inputPaused: boolean | null;
   outputPaused: boolean | null;

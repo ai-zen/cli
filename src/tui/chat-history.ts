@@ -12,7 +12,7 @@
  *
  *   · **剪贴板内联的那种**：段里是 `data:` 的 base64，本地有字节，还原成 `ClipboardImage`
  *     （重发时再传一次，与第一次粘贴同一条路）；
- *   · **已经传上去的那种**：段上留着素材 id（`__asset_id`），还原成 id —— 重新发不必再传
+ *   · **已经传上去的那种**：段上留着 Asset id（`__asset_id`），还原成 id —— 重新发不必再传
  *     一遍，本地也不需要一份副本（PRD 1.8：同一张图全机只存一份，按内容认）。
  *
  * 两种都放回输入区，`↑` 回到带图消息时图就不会丢。
@@ -22,7 +22,7 @@ import type { ClipboardImage } from "../clipboard.js";
 import { stripCwdNote } from "./text.js";
 
 /**
- * 段上的本地标记：指回数据根下的一份素材。
+ * 段上的本地标记：指回数据根下的一份 Asset。
  *
  * 写它的是 `user-content.ts`（`contentOfInput`），宿主 `ASSET_ID_KEY` 是同一个词；这里只读，
  * 不造第二个名字。
@@ -34,7 +34,7 @@ export interface HistoryEntry {
   text: string;
   /** 粘进消息里的图（内联 base64 那种） */
   images: readonly ClipboardImage[];
-  /** 已经传上去的素材 id（段上的本地标记，按原顺序） */
+  /** 已经传上去的 Asset id（段上的本地标记，按原顺序） */
   assetIds: readonly string[];
 }
 

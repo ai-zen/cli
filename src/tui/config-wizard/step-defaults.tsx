@@ -1,4 +1,4 @@
-// 默认项子菜单 / 选择默认值（一次改动一次调用：`config.setDefaults` | `config.setGlobal`）
+// 默认项子菜单 / 选择默认值（一次改动一次调用：`config.defaults.update` | `config.update`）
 import { ReactNode } from "react";
 import { SelectItem } from "../components.js";
 import { endpointKeyState, findEndpoint, findModel } from "../../config-editor.js";
@@ -201,7 +201,7 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
         hint: findEndpoint(config, model.endpointId)?.name ?? model.endpointId,
       }));
     } else if (target === "defaultAgent") {
-      // 默认助手是入口：子 Agent 不是入口（宿主用 `function` 在不在明说了这件事）
+      // 默认 AgentDefinition 是入口：子 Agent 不是入口（宿主用 `function` 在不在明说了这件事）
       items = topLevelAgents(agents).map((agent) => ({
         label: agent.name || agent.id,
         value: agent.id,

@@ -1,11 +1,11 @@
 /**
- * 助手清单的三个投影 —— CLI 层唯一的「数据整形」。
+ * AgentDefinition 清单的三个投影 —— CLI 层唯一的「数据整形」。
  *
  * ## 这里没有读写，也没有目录
  *
- * 助手定义的真相在**宿主**：一份清单就是 `api.agentDefinition.list.query()` 的返回
+ * AgentDefinition 的真相在**宿主**：一份清单就是 `api.config.agents.list.query()` 的返回
  * （`AgentDefinition[]`），增删改各走 `agentDefinition.create` / `update` / `remove` /
- * `reset`。所以本文件只做「从清单里挑」：主助手、子 Agent、按 id 找一条。没有仓储形状，
+ * `reset`。所以本文件只做「从清单里挑」：主 AgentDefinition、子 Agent、按 id 找一条。没有仓储形状，
  * 也没有第二个 `AgentDefinition` 类型。
  *
  * ## 两个「宿主不再给」的格子，在这里各有一行推导
@@ -15,7 +15,7 @@
  * 子 Agent；`AppConfig.defaultAgent` 指着它就是默认），所以在这里现算：
  *
  *   · {@link isSubAgent} —— `function` 在不在；
- *   · {@link agentListOf} —— 顺手把「默认助手是谁」也放进清单（它来自配置，不来自定义）。
+ *   · {@link agentListOf} —— 顺手把「默认 AgentDefinition 是谁」也放进清单（它来自配置，不来自定义）。
  *
  * 第三格 `available` **没有**对应：能不能跑起来要解析模型、查端点密钥，那是宿主的判断，客户端
  * 算一遍就是第二份会漂的规则。所以这一格随契约一起退场，界面也不再印「不可用」。
@@ -23,7 +23,7 @@
 
 import type { AgentDefinition, AppConfig } from "./config.js";
 
-/** 助手清单：全部定义 + 默认助手的 id（`AppConfig.defaultAgent`，没有就是 `null`） */
+/** AgentDefinition 清单：全部定义 + 默认 AgentDefinition 的 id（`AppConfig.defaultAgent`，没有就是 `null`） */
 export interface AgentList {
   agents: AgentDefinition[];
   defaultAgentId: string | null;
@@ -67,17 +67,17 @@ export function agentKindLabel(agent: AgentDefinition): string {
   return isSubAgent(agent) ? "Sub-agent" : "Agent";
 }
 
-/** 能开一段会话的主助手（子 Agent 不是入口，SDK 用 `function` 明说了这件事） */
+/** 能开一段会话的主 AgentDefinition（子 Agent 不是入口，SDK 用 `function` 明说了这件事） */
 export function topLevelAgents(list: AgentList): AgentDefinition[] {
   return list.agents.filter((agent) => !isSubAgent(agent));
 }
 
-/** 子 Agent（能被主助手当函数调用的那些） */
+/** 子 Agent（能被主 AgentDefinition 当函数调用的那些） */
 export function subAgentList(list: AgentList): AgentDefinition[] {
   return list.agents.filter(isSubAgent);
 }
 
-/** 按 id 查一条（主助手与子 Agent 一起找；`id` 为空时返回 undefined） */
+/** 按 id 查一条（主 AgentDefinition 与子 Agent 一起找；`id` 为空时返回 undefined） */
 export function findAgent(list: AgentList, id: string | undefined): AgentDefinition | undefined {
   if (!id) return undefined;
   return list.agents.find((agent) => agent.id === id);

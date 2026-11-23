@@ -9,11 +9,11 @@
  *
  * ## 一次查询，**逐条**清账
  *
- * 清的是**上屏了的那几条**，一条一条按 id 清（`notice.clearOne({ id })`）：宿主这一版把「清」
+ * 清的是**上屏了的那几条**，一条一条按 id 清（`notice.delete({ id })`）：宿主这一版把「清」
  * 分成三档粒度（清一条 / 清一段会话的 / 清全部，`prd/08-client.md` 的通知那一节），补看只该动
  * 第一种 —— 它念过哪几条，就只让那几条消失。
  *
- * 按会话清（`notice.clear({ sessionId })`）曾经是这里的做法，代价写在提交信息里：那一片里
+ * 按会话清（`notice.deleteAll({ sessionId })`）曾经是这里的做法，代价写在提交信息里：那一片里
  * **还没上屏**的几条会跟着一起没，它们连「下次再补看」的机会都没有了。宿主补上按 id 清之后，
  * 这个代价没有了 —— 念一条、清一条。
  *
@@ -29,7 +29,7 @@
  * ## 「手动全部清空」是另一条路
  *
  * 通知栏上那个「全部清空」（Alt+X）清的是**这一段会话**，走 {@link clearSessionNotices}
- * （`notice.clear({ sessionId })`）—— 那是三档里的第二种，与补看的逐条清不是一件事。
+ * （`notice.deleteAll({ sessionId })`）—— 那是三档里的第二种，与补看的逐条清不是一件事。
  */
 
 import type { NoticeView } from "./session/types.js";
@@ -67,19 +67,19 @@ export async function flushPendingNotices(input: FlushPendingNoticesInput): Prom
     // 全局通知不在这里清（见文件头）：它不属于这一段，清掉就是把别人的那条也抹了
     if (notice.sessionId !== null) shown.push(notice.id);
   }
-  await clearOneByOne(input.connection, shown);
+  await deleteOneByOne(input.connection, shown);
 }
 
 /**
- * 一条一条按 id 清（`notice.clearOne`）。
+ * 一条一条按 id 清（`notice.delete`）。
  *
  * 清一条失败不影响后面几条：它们各自是独立的一条通知，卡在第一条上会让剩下的永远清不掉。
  * 回执 `changed: false`（那条已经不在了）走的是同一条路 —— 不重试、不报错。
  */
-async function clearOneByOne(connection: HostConnection, ids: readonly string[]): Promise<void> {
+async function deleteOneByOne(connection: HostConnection, ids: readonly string[]): Promise<void> {
   for (const id of ids) {
     try {
-      await connection.api.notice.clearOne.mutate({ id });
+      await connection.api.notice.delete.mutate({ id });
     } catch {
       // 上屏已经发生，清不掉只影响「宿主那份什么时候消失」（下次补看再上屏一次）
     }
@@ -87,7 +87,7 @@ async function clearOneByOne(connection: HostConnection, ids: readonly string[])
 }
 
 /**
- * 清掉**这一段会话**在宿主那边的通知（`notice.clear` 的「按会话」口径）。
+ * 清掉**这一段会话**在宿主那边的通知（`notice.deleteAll` 的「按会话」口径）。
  *
  * 这是通知栏「全部清空」（Alt+X）那一条：它清的是**这一段**，不是整个库。
  *
@@ -104,5 +104,5 @@ export async function clearSessionNotices(
   connection: HostConnection,
   sessionId: string | undefined,
 ): Promise<void> {
-  await connection.api.notice.clear.mutate(sessionId === undefined ? {} : { sessionId });
+  await connection.api.notice.deleteAll.mutate(sessionId === undefined ? {} : { sessionId });
 }

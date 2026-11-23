@@ -177,9 +177,9 @@ export interface ChatScreenProps {
   /** 重挂载时的初始输入（/back 撤回后用于预填） */
   initialInput?: string;
   /**
-   * 重挂载时一起挂回输入的素材 id（`/back` 撤回的那条消息里带的图，按原顺序）。
+   * 重挂载时一起挂回输入的 Asset id（`/back` 撤回的那条消息里带的图，按原顺序）。
    *
-   * 与 `initialInput` 是同一次回填的两半：文字进草稿、素材挂回输入（PRD 3.9）。
+   * 与 `initialInput` 是同一次回填的两半：文字进草稿、Asset 挂回输入（PRD 3.9）。
    */
   initialAssetIds?: readonly string[];
   /**
@@ -267,7 +267,7 @@ export function Chat(props: ChatScreenProps) {
    * 什么时候收口」只有宿主知道。
    *
    * 交接期间界面要**拦住人**：不给发、只留中断（= 放弃交接、回滚到交接前）。宿主那边照收不误
-   * （PRD 4.5 只关输出闸、不关输入闸），所以**拦在客户端这一侧**，否则用户会以为话已经受理了。
+   * （PRD 4.5 只关输出开关、不关输入开关），所以**拦在客户端这一侧**，否则用户会以为话已经受理了。
    */
   const handoffSince = session?.handoffSince ?? null;
   const handingOff = handoffSince !== null;
@@ -323,7 +323,7 @@ export function Chat(props: ChatScreenProps) {
   const [pendingUser, setPendingUser] = useState<{
     text: string;
     base: number;
-    /** 本条附带的粘贴图片（只用于转录里显示 `[图片]` 占位，不在UI里展开 base64） */
+    /** 本条附带的粘贴图片（只用于转录里显示 `[图片]` 占位，不在 UI 里展开 base64） */
     images?: readonly ClipboardImage[];
   } | null>(null);
   /**
@@ -334,13 +334,13 @@ export function Chat(props: ChatScreenProps) {
    */
   const [pastedImages, setPastedImages] = useState<readonly ClipboardImage[]>([]);
   /**
-   * 撤回带回来的素材 id（`/back` 回填的那几张图）。
+   * 撤回带回来的 Asset id（`/back` 回填的那几张图）。
    *
    * 与 `pastedImages` 分开存：那个装的是**还没上传**的剪贴板字节（发送那一刻才传），这个装的是
-   * **已经传上去过的**素材 —— 撤回给回来的就是 id，再传一遍既浪费也不是同一份（PRD 1.8：
+   * **已经传上去过的**Asset —— 撤回给回来的就是 id，再传一遍既浪费也不是同一份（PRD 1.8：
    * 同一张图全机只存一份，按内容认）。
    *
-   * 初值取重挂载带过来的那一格：撤回之后这一屏是**新**挂载的实例，素材只能从 props 接。
+   * 初值取重挂载带过来的那一格：撤回之后这一屏是**新**挂载的实例，Asset 只能从 props 接。
    */
   const [restoredAssetIds, setRestoredAssetIds] = useState<readonly string[]>(
     () => props.initialAssetIds ?? [],
@@ -614,7 +614,7 @@ export function Chat(props: ChatScreenProps) {
     initialText: props.initialInput,
     notify: (text, tone) => noticeChannel.push(text, tone),
     // 历史来自 messages（唯一真相源）：自带图片，`↑` 回到带图消息时附件也一并回来
-    // （两种图都回来：内联字节与已经传上去的素材 id）
+    // （两种图都回来：内联字节与已经传上去的 Asset id）
     historySource: () => userDrafts(sessionRef.current?.messages ?? []),
     restoreAttachments: (images, assetIds) => {
       setPastedImages(images);
@@ -634,7 +634,7 @@ export function Chat(props: ChatScreenProps) {
     setMenuIndex(0);
   }, [input]);
   /**
-   * 本工作区的文件条目（`@` 补全的候选源，宿主 `workspace.files` 的相对路径原样）。
+   * 本工作区的文件 InboxEntry（`@` 补全的候选源，宿主 `workspace.files` 的相对路径原样）。
    *
    * `null` = 还没问到；`[]` = 问到了但没有（或问失败）。两者分开，菜单才能在不该弹的时候
    * 真的不弹。
@@ -668,7 +668,7 @@ export function Chat(props: ChatScreenProps) {
    * `layout.hintRows`，三处同源。
    */
   const menuWant = slash ? hints.length : fileMatches.length + (scanningFiles ? 1 : 0);
-  /** 菜单条目：斜杠命令带说明，`@` 路径目录带尾斜杠（提示「选中后继续下钻」） */
+  /** 菜单 InboxEntry：斜杠命令带说明，`@` 路径目录带尾斜杠（提示「选中后继续下钻」） */
   const menuItems: MenuItem[] = slash
     ? hints.map((hint) => ({ key: hint.names[0]!, label: hint.label, hint: hint.description }))
     : fileMatches.map((entry) => ({
@@ -842,7 +842,7 @@ export function Chat(props: ChatScreenProps) {
       try {
         await runCommand(name, trimmed, {
           session: sessionRef.current!,
-          // 命令层的配置 / 助手 / 模型 / 宿主域读写（`/model`、`/agent`、`/think` …）一律说契约方法：
+          // 命令层的配置 / AgentDefinition / 模型 / 宿主域读写（`/model`、`/agent`、`/think` …）一律说契约方法：
           // 屏幕只负责把这一条连接递下去，不替它判断本地还是远程
           call: boundCall(deps.connection),
           // 会话域 / 工作区域直连的那一面（口径③）：`/ws`、`/model` 要的就是它
@@ -877,7 +877,7 @@ export function Chat(props: ChatScreenProps) {
           setInputText,
           // 状态栏的思考档现在**从会话现取**（`session.thinking` → `statusBlocksOf` 的身份块）：
           // `/think` 写完那一刻 `session.setThinking` 回来的那份就是新的现状，会话随即通知重绘。
-          // 命令层这个回调因此不再落地任何状态（它保留是因为 `ChatCommandHost` 是一份跨前端的接口）。
+          // 命令层这个回调因此不再写进 messages 任何状态（它保留是因为 `ChatCommandHost` 是一份跨前端的接口）。
           setEffortView: () => {},
           refreshLocale: () => bumpLocale((n) => n + 1),
         });
@@ -898,28 +898,28 @@ export function Chat(props: ChatScreenProps) {
     const session = sessionRef.current!;
     try {
       /**
-       * **「按发送」是一个复合动作：复活 → 开闸 → 投递**（PLAN §5.1）。三步里只有两步在屏幕这边：
+       * **「按发送」是一个复合动作：复活 → 开开关 → 投递**（PLAN §5.1）。三步里只有两步在屏幕这边：
        *
        *   1. 复活（`!alive` → `agent.wake`）：**归会话层的 `send()`**（PRD 4.1「客户端点发送时
        *      先判这段是死是活，死的就调接口复活、再投递」）。放在会话层而不是这一屏：所有发话
        *      入口（这一屏、将来任何前端）共用它，屏幕这边再叫一次 `start()` 就是在醒了之后再
        *      白叫一次（两次往返做同一件事）；用户杀掉一段或宿主重启之后还能不能发进去，也不该
        *      看哪一个前端在发；
-       *   2. `outputPaused` → `resume()`：「用户点发送就是继续」（PRD 4.4）—— 闸关着时投进去
+       *   2. `outputPaused` → `resume()`：「用户点发送就是继续」（PRD 4.4）—— 开关关着时投进去
        *      只会排队、用户等的是一个回答；
        *   3. `send()`：投递。
        *
-       * 这三件是两个正交接口的三种用法（复活 / 动闸 / 入队），所以**没有一步替另一步做事**。
+       * 这三件是两个正交接口的三种用法（复活 / 动开关 / 入队），所以**没有一步替另一步做事**。
        * 判据是**当时读到的**那一格，读什么做什么 —— 不做「反正调一下也无害」的预调：`resume` 在
        * 交接期间会被宿主拒（`handoff_in_progress`），白调一次就是让一次正常发送多失败一次。
        *
        * 哪一步没成就说清哪一步、后面那步**不做**（发出去半句比没发更糟），也不重试、不回退 ——
-       * 用户按一下再说一次就是重试。开闸失败这一句在屏幕这边说（它能做、没做成），复活与投递
+       * 用户按一下再说一次就是重试。开开关失败这一句在屏幕这边说（它能做、没做成），复活与投递
        * 失败那句由会话层自己报（它报的才是宿主原话）。
        */
       if (session.outputPaused === true) {
         try {
-          await session.resume();
+          await session.resumeOutput();
         } catch (error) {
           noticeChannel.push(
             t("notice.resumeFailed", {
@@ -1083,12 +1083,12 @@ export function Chat(props: ChatScreenProps) {
     noticeChannel.clear();
     const sessionId = sessionRef.current?.sessionId;
     if (!sessionId) return;
-    // `notice.clear` 的回执没有条数（宿主这一版不回那一格），所以说「已清空」而不报数
+    // `notice.deleteAll` 的回执没有条数（宿主这一版不回那一格），所以说「已清空」而不报数
     void clearSessionNotices(deps.connection, sessionId).then(
       () => noticeChannel.push(t("notice.cleared")),
       (error: unknown) =>
         noticeChannel.push(
-          t("notice.clearFailed", {
+          t("notice.deleteAllFailed", {
             error: error instanceof Error ? error.message : String(error),
           }),
           "error",
@@ -1102,7 +1102,7 @@ export function Chat(props: ChatScreenProps) {
    *
    * ## 为什么这一档要先问一次，且把「连累谁」写在问题里
    *
-   * 契约里 `notice.clear` 不给 `sessionId` 就是清**整个宿主库**：全局通知（不属于任何一段会话，
+   * 契约里 `notice.deleteAll` 不给 `sessionId` 就是清**整个宿主库**：全局通知（不属于任何一段会话，
    * 哪儿都看得见）与别的会话还没上屏的通知都会一起没。`prd/08-client.md` 的通知那一节写着
    * 「清全部要明说，不能顺手全清」—— 所以问题里点名那两件事，别给人事后才发现别处也没了的
    * 机会；选了「否」一个方法都不调。
@@ -1121,7 +1121,7 @@ export function Chat(props: ChatScreenProps) {
       all = await deps.connection.api.notice.list.query({});
     } catch (error) {
       noticeChannel.push(
-        t("notice.clearAllListFailed", {
+        t("notice.deleteAllAllListFailed", {
           error: error instanceof Error ? error.message : String(error),
         }),
         "error",
@@ -1130,25 +1130,25 @@ export function Chat(props: ChatScreenProps) {
     }
     const answer = await new Promise<string | null>((resolve) =>
       setPickerState({
-        title: t("notice.clearAllTitle", { n: all.length }),
+        title: t("notice.deleteAllAllTitle", { n: all.length }),
         items: [
-          { label: t("notice.clearAllConfirm"), value: "yes" },
-          { label: t("notice.clearAllCancel"), value: "no" },
+          { label: t("notice.deleteAllAllConfirm"), value: "yes" },
+          { label: t("notice.deleteAllAllCancel"), value: "no" },
         ],
         resolve,
       }),
     );
     // 选了「否」（Esc / 覆盖层被关掉也是这一支）：一个方法都不调
     if (answer !== "yes") {
-      noticeChannel.push(t("notice.clearAllCancelled"));
+      noticeChannel.push(t("notice.deleteAllAllCancelled"));
       return;
     }
     try {
       // **不带** `sessionId` 的那一次：清的是整个库（含全局与别的会话的）
-      await deps.connection.api.notice.clear.mutate({});
+      await deps.connection.api.notice.deleteAll.mutate({});
     } catch (error) {
       noticeChannel.push(
-        t("notice.clearAllFailed", {
+        t("notice.deleteAllAllFailed", {
           error: error instanceof Error ? error.message : String(error),
         }),
         "error",
@@ -1156,7 +1156,7 @@ export function Chat(props: ChatScreenProps) {
       return;
     }
     noticeChannel.clear();
-    noticeChannel.push(t("notice.clearAllDone", { n: all.length }));
+    noticeChannel.push(t("notice.deleteAllAllDone", { n: all.length }));
   };
   const clearAllNoticesKeys = { ask: () => void clearAllNotices() };
 
@@ -1284,7 +1284,7 @@ export function Chat(props: ChatScreenProps) {
       }
       if (handleCtrlDExit(char, key, ctrlDExit)) return;
       if (handleClearNoticesKey(char, key, clearNoticesKeys)) return;
-      // 三档里的第三档：清全部（它只开那一问，确认之后才发 `notice.clear`）
+      // 三档里的第三档：清全部（它只开那一问，确认之后才发 `notice.deleteAll`）
       if (handleClearAllNoticesKey(char, key, clearAllNoticesKeys)) return;
       // 图片在终端里只能是个占位：这个键把选中的那一张交给本机默认程序
       if (handleOpenImageKey(char, key, openImageKeys)) return;
@@ -1457,22 +1457,22 @@ export function Chat(props: ChatScreenProps) {
         }
         // 在动时 Esc = 中断在途（Claude Code 语义）。
         //
-        // **这一档必须压在「闸关 → 继续」之上**：闸关着而手上还有活是一个**正常组合** ——
-        // 暂停（`pause`）与中断都只是把输出闸关上，已经取在手上的那批照常跑完（PRD 4.4
-        // 「暂停只是关输出闸」）。那时用户按 Esc 想的是「立刻停」，不是「继续」：中断才是
-        // 把手上的活掐断的那个动作，把它让给 resume 等于「想停一下反而给它开闸」。
+        // **这一档必须压在「开关关 → 继续」之上**：开关关着而手上还有活是一个**正常组合** ——
+        // 暂停（`pause`）与中断都只是把输出开关关上，已经取在手上的那批照常跑完（PRD 4.4
+        // 「暂停只是关输出开关」）。那时用户按 Esc 想的是「立刻停」，不是「继续」：中断才是
+        // 把手上的活掐断的那个动作，把它让给 resume 等于「想停一下反而给它开开关」。
         if (working) {
           sessionRef.current?.abort();
           return;
         }
-        // 闸关着、手上没活 → Esc 就是「继续」（PRD 4.4 的「继续 ⇄ 中断」互切：忙时这一个键
-        // 是中断，闲而闸关时它是继续）。
+        // 开关关着、手上没活 → Esc 就是「继续」（PRD 4.4 的「继续 ⇄ 中断」互切：忙时这一个键
+        // 是中断，闲而开关关时它是继续）。
         //
         // 失败如实报：交接期间宿主会拒它（`handoff_in_progress`），而这一次按键是用户按下
-        // 去的，静默失败等于让他以为闸开了。不吞、也不重试 —— 用户再按一下就是重试。
+        // 去的，静默失败等于让他以为开关开了。不吞、也不重试 —— 用户再按一下就是重试。
         const current = sessionRef.current;
         if (current?.outputPaused === true) {
-          void current.resume().catch((error: unknown) => {
+          void current.resumeOutput().catch((error: unknown) => {
             noticeChannel.push(
               t("notice.resumeFailed", {
                 error: error instanceof Error ? error.message : String(error),
@@ -1490,7 +1490,7 @@ export function Chat(props: ChatScreenProps) {
           noticeChannel.push(t("notice.imagesCleared"));
           return;
         }
-        // 闲着、闸也开着：清空草稿并回到底部（老行为）
+        // 闲着、开关也开着：清空草稿并回到底部（老行为）
         setInputText("");
         scrollToBottom();
         return;
@@ -1604,13 +1604,13 @@ export function Chat(props: ChatScreenProps) {
    * 空会话：会话区顶部展示品牌区（logo + 标语 + 版本）。
    *
    * 判据里必须带 `showPending` —— 用户刚敲下第一条消息、乐观回显已经上屏，
-   * 这时欢迎块要立刻让位，不能等消息真正落地。
+   * 这时欢迎块要立刻让位，不能等消息真正写进 messages。
    */
   const showWelcome = !activeSub && !showPending && messages.length === 0;
   if (showWelcome) transcript.unshift(...welcomeLines({ columns: cols }));
   if (showPending) {
     // 带粘贴图片的消息：乐观回显要与实际发送的结构一致（文本段 + 图片占位块），
-    // 否则图片那几条会在真实消息落地前「消失」一下。
+    // 否则图片那几条会在真实消息写进 messages 前「消失」一下。
     const images = pendingUser!.images ?? [];
     transcript.push(
       ...messageToLines(
@@ -1640,10 +1640,10 @@ export function Chat(props: ChatScreenProps) {
   const noticeBar = noticeBarContent(notices, cols);
 
   /**
-   * Agent 栏目条目：无子 Agent 时整条栏目不存在（不占高度、也不接管左右键）。
+   * Agent 栏目 InboxEntry：无子 Agent 时整条栏目不存在（不占高度、也不接管左右键）。
    *
    * 标签用宿主给的 `name`（这次委派叫什么），不再自己在客户端编号 —— 编号是客户端现算的
-   * 一份真相，与宿主那份快照对不上时用户会看到「子AGENT2」跑着另一个助手。
+   * 一份真相，与宿主那份快照对不上时用户会看到「子 AGENT2」跑着另一个 AgentDefinition。
    *
    * 状态是**名册那一格 + 它自己消息上的结局**（`subAgentStatusOf`）：名册不报「出错 / 被叫停」，
    * 但那两件事就写在它栏里最后一条消息的 `status` / `error` 上 —— 能算的就把它算回来
@@ -1683,9 +1683,9 @@ export function Chat(props: ChatScreenProps) {
   const statusProps: StatusBarProps = {
     // 块由会话层用活事实现拼（`status-blocks.ts`），客户端只决定摆几块、怎么说
     blocks: session?.blocks ?? [],
-    // 「输出闸关且手上没活」时 Esc 是**继续**而不是中断（PRD 4.4 的「继续 ⇄ 中断」互切），
+    // 「输出开关关且手上没活」时 Esc 是**继续**而不是中断（PRD 4.4 的「继续 ⇄ 中断」互切），
     // 提示得跟着状态说 —— 否则用户停在那里看提示，以为 Esc 只能中断。
-    // 放在「翻历史」之前：闸关是会话的持续状态（Esc 的语义真的变了），翻历史只是视口的临时模样。
+    // 放在「翻历史」之前：开关关是会话的持续状态（Esc 的语义真的变了），翻历史只是视口的临时模样。
     // 交接期间不算：那时 Esc 只有一个含义（放弃交接），提示不能与按键打架。
     hint: !ready
       ? t("input.hint.initializing")

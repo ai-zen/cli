@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { AgentNS, Message } from "@ai-zen/agents-core";
-import type { AgentDefinition, AppConfig, Endpoint, Model } from "./config.js";
+import type { AgentDefinition, AppConfig, EndpointDefinition, ModelDefinition } from "./config.js";
 import {
   agentPromptText,
   apiKeyGuide,
@@ -36,7 +36,7 @@ beforeEach(() => setLocale("zh"));
 
 // ==================== 夹具（宿主 / 契约里的形状）====================
 
-const endpointOf = (over: Partial<Endpoint> = {}): Endpoint => ({
+const endpointOf = (over: Partial<EndpointDefinition> = {}): EndpointDefinition => ({
   id: "deepseek",
   name: "DeepSeek",
   baseUrl: "https://api.deepseek.com",
@@ -46,7 +46,7 @@ const endpointOf = (over: Partial<Endpoint> = {}): Endpoint => ({
   ...over,
 });
 
-const modelOf = (over: Partial<Model> = {}): Model => ({
+const modelOf = (over: Partial<ModelDefinition> = {}): ModelDefinition => ({
   id: "deepseek-flash",
   name: "DeepSeek Flash",
   endpointId: "deepseek",
@@ -262,7 +262,7 @@ describe("权限策略的文本往返", () => {
   });
 });
 
-// ==================== 助手提示词 / 函数定义 ====================
+// ==================== AgentDefinition 提示词 / 函数定义 ====================
 
 describe("助手提示词与函数定义", () => {
   it("agentPromptText 只认首条 system 的纯文本，读不到就当空", () => {

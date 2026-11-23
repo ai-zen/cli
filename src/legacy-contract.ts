@@ -85,7 +85,7 @@ export interface ProblemFact extends LocalizedText {
 }
 
 // ---------------------------------------------------------------------------
-// 行的形状（旧 `wire/states.ts`）—— 服务配置 / 助手 / 模型 / MCP 几域
+// 行的形状（旧 `wire/states.ts`）—— 服务配置 / AgentDefinition / 模型 / MCP 几域
 // ---------------------------------------------------------------------------
 
 /** 忙闲（只读的观测值） */
@@ -99,7 +99,7 @@ export interface SessionPresence {
   alive: boolean;
 }
 
-/** 一条还没落成消息的排队条目 */
+/** 一条还没落成消息的排队 InboxEntry */
 export interface InboxItem {
   messageId: string;
   source: AgentNS.MessageSource;
@@ -206,7 +206,7 @@ export interface FolderFact {
   exists: boolean;
 }
 
-/** 一次用户输入（core 的内容形状 + 已上传的素材 id） */
+/** 一次用户输入（core 的内容形状 + 已上传的 Asset id） */
 export interface MessageInput {
   content: AgentNS.MessageContent;
   assetIds?: string[];
@@ -348,13 +348,13 @@ export interface WorkspaceRenameResult {
   workspace: WorkspaceView;
 }
 
-/** `workspace.remove` 入参 */
+/** `workspace.delete` 入参 */
 export interface WorkspaceRemoveParams {
   workspaceId: string;
   dryRun?: boolean;
 }
 
-/** `workspace.remove` 出参 */
+/** `workspace.delete` 出参 */
 export interface WorkspaceRemoveResult {
   removed: boolean;
   consequences: RemovalConsequences;
@@ -388,7 +388,7 @@ export interface SessionSummary extends SessionPresence {
   compactionMode?: CompactionMode;
 }
 
-/** 这段会话的助手事实（PRD F-I6） */
+/** 这段会话的 AgentDefinition 事实（PRD F-I6） */
 export interface SessionAgentState {
   agentId: string;
   name: string | null;
@@ -568,13 +568,13 @@ export interface SessionRevertResult {
   restoredInput: MessageInput;
 }
 
-/** `session.setModel` 入参 */
+/** `session.updateModel` 入参 */
 export interface SessionSetModelParams {
   sessionId: string;
   modelId: string | null;
 }
 
-/** `session.setModel` 出参 */
+/** `session.updateModel` 出参 */
 export interface SessionSetModelResult {
   session: SessionView;
   model: ModelState;
@@ -591,19 +591,19 @@ export interface SessionSetThinkingResult {
   thinking: ThinkingState;
 }
 
-/** `session.setThresholds` 入参 */
+/** `session.updateThresholds` 入参 */
 export interface SessionSetThresholdsParams {
   sessionId: string;
   handoffThreshold?: number | null;
   guardThreshold?: number | null;
 }
 
-/** `session.setThresholds` 出参 */
+/** `session.updateThresholds` 出参 */
 export interface SessionSetThresholdsResult {
   session: SessionView;
 }
 
-/** `session.transient` 入参 */
+/** `runtime.agent.runOnce` 入参 */
 export interface SessionTransientParams {
   cwd: string;
   input: MessageInput;
@@ -611,7 +611,7 @@ export interface SessionTransientParams {
   modelId?: string;
 }
 
-/** `session.transient` 出参 */
+/** `runtime.agent.runOnce` 出参 */
 export interface SessionTransientResult {
   message: AgentNS.Message;
   problem: ProblemFact | null;
@@ -694,12 +694,12 @@ export interface NoticeDismissResult {
   dismissed: boolean;
 }
 
-/** `notice.clear` 入参 */
+/** `notice.deleteAll` 入参 */
 export interface NoticeClearParams {
   sessionId?: string;
 }
 
-/** `notice.clear` 出参 */
+/** `notice.deleteAll` 出参 */
 export interface NoticeClearResult {
   cleared: number;
 }
@@ -708,8 +708,8 @@ export interface NoticeClearResult {
 // 旧 `schema/config.ts` / `schema/agent.ts` / `schema/model.ts` —— **三组已整组删掉**
 //
 // 配置域这一刀搬完了：`config.get` 回的是 SDK 的 `AppConfig` + 档位表，写各归各的门
-// （`config.setDefaults` / `setGlobal` / `endpoint.*` / `model.*` / `imageModel.*` /
-// `presets.set`），助手定义走 `agentDefinition.*`，MCP 走 `mcp.*`。于是旧那三组形状
+// （`config.defaults.update` / `setGlobal` / `endpoint.*` / `model.*` / `imageModel.*` /
+// `presets.set`），AgentDefinition 走 `agentDefinition.*`，MCP 走 `mcp.*`。于是旧那三组形状
 // （`ConfigView` / `EndpointView` / `ModelView` / `ImageModelView` / `DiscoveryView` /
 // `DiscoveryLayerView` / `DiscoveryEntryView` / `McpServerEntryInput` / `AgentView` /
 // `AgentInput` / 那一串 `*Params` / `*Result` / `ConfigApplyReport` …）一个消费者都不剩。
@@ -759,7 +759,7 @@ export interface AssetEndResult {
   asset: AssetRef;
 }
 
-/** 素材引用 */
+/** Asset 引用 */
 export interface AssetRef {
   assetId: string;
   mime: string;
@@ -909,7 +909,7 @@ export interface MethodMap {
   "workspace.create": { params: WorkspaceCreateParams; result: WorkspaceCreateResult };
   "workspace.get": { params: WorkspaceGetParams; result: WorkspaceGetResult };
   "workspace.rename": { params: WorkspaceRenameParams; result: WorkspaceRenameResult };
-  "workspace.remove": { params: WorkspaceRemoveParams; result: WorkspaceRemoveResult };
+  "workspace.delete": { params: WorkspaceRemoveParams; result: WorkspaceRemoveResult };
 
   // ---- session.* ----
   "session.list": { params: SessionListParams; result: SessionListResult };
@@ -927,13 +927,13 @@ export interface MethodMap {
   "session.kill": { params: SessionKillParams; result: SessionKillResult };
   "session.clearInbox": { params: SessionClearInboxParams; result: SessionClearInboxResult };
   "session.revert": { params: SessionRevertParams; result: SessionRevertResult };
-  "session.setModel": { params: SessionSetModelParams; result: SessionSetModelResult };
+  "session.updateModel": { params: SessionSetModelParams; result: SessionSetModelResult };
   "session.setThinking": { params: SessionSetThinkingParams; result: SessionSetThinkingResult };
-  "session.setThresholds": {
+  "session.updateThresholds": {
     params: SessionSetThresholdsParams;
     result: SessionSetThresholdsResult;
   };
-  "session.transient": { params: SessionTransientParams; result: SessionTransientResult };
+  "runtime.agent.runOnce": { params: SessionTransientParams; result: SessionTransientResult };
 
   // ---- message.* ----
   "message.list": { params: MessageListParams; result: MessageListResult };
@@ -945,7 +945,7 @@ export interface MethodMap {
   // ---- notice.* ----
   "notice.list": { params: NoticeListParams; result: NoticeListResult };
   "notice.dismiss": { params: NoticeDismissParams; result: NoticeDismissResult };
-  "notice.clear": { params: NoticeClearParams; result: NoticeClearResult };
+  "notice.deleteAll": { params: NoticeClearParams; result: NoticeClearResult };
 
   // ---- asset.* ----
   "asset.begin": { params: AssetBeginParams; result: AssetBeginResult };
@@ -993,7 +993,7 @@ export const METHOD_NAMES = [
   "workspace.create",
   "workspace.get",
   "workspace.rename",
-  "workspace.remove",
+  "workspace.delete",
   "session.list",
   "session.create",
   "session.get",
@@ -1009,16 +1009,16 @@ export const METHOD_NAMES = [
   "session.kill",
   "session.clearInbox",
   "session.revert",
-  "session.setModel",
+  "session.updateModel",
   "session.setThinking",
-  "session.setThresholds",
-  "session.transient",
+  "session.updateThresholds",
+  "runtime.agent.runOnce",
   "message.list",
   "question.list",
   "question.answer",
   "notice.list",
   "notice.dismiss",
-  "notice.clear",
+  "notice.deleteAll",
   "asset.begin",
   "asset.end",
   "asset.get",

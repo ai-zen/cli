@@ -2,17 +2,17 @@
 //
 // ## 这个文件不再「改配置」，它只发起改动
 //
-// 每条改动对应宿主的一条 procedure，而**每个写口都回整份 `AppConfig`**（`config.endpoint.*` /
-// `config.model.*` / `config.imageModel.*` / `config.setDefaults` / `config.setGlobal` 都是
+// 每条改动对应宿主的一条 procedure，而**每个写口都回整份 `AppConfig`**（`config.endpoints.*` /
+// `config.models.*` / `config.imageModels.*` / `config.defaults.update` / `config.update` 都是
 // `{ config }`）。于是：
 //
 //   - 本地快照只从返回值换一份整的，不自己拼「改一处、写回全量」；
 //   - 删端点 / 删模型之后**不必再读一次**：宿主顺带改指的默认项就在它回的那一份里
 //     （旧版要 `refreshConfig()` 补一刀，是因为旧写口只回被改的那一条）；
-//   - 一次改动一次调用（PRD F-F9）：默认项走 `config.setDefaults`，上限与中断策略走
-//     `config.setGlobal`，两件事两个口。
+//   - 一次改动一次调用（PRD F-F9）：默认项走 `config.defaults.update`，上限与中断策略走
+//     `config.update`，两件事两个口。
 //
-// 两个例外仍然要补读：`agentDefinition.remove` 只回 `{ agentId }`（默认助手被清掉这件事在
+// 两个例外仍然要补读：`agentDefinition.remove` 只回 `{ agentId }`（默认 AgentDefinition 被清掉这件事在
 // 配置那一侧），`agentDefinition.*` 写的是另一份文件（定义），配置本身不动。
 import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { agentListOf, findAgent, toDefinition, type AgentList } from "../../agents-store.js";
@@ -20,12 +20,12 @@ import { MCP_SCOPE_OF } from "../../config.js";
 import type {
   AgentDefinition,
   AppConfig,
-  Endpoint,
-  ImageModel,
+  EndpointDefinition,
+  ImageModelDefinition,
   McpEditableScope,
   McpEntry,
-  McpServerConfig,
-  Model,
+  McpServerDefinition,
+  ModelDefinition,
   ReasoningPresets,
 } from "../../config.js";
 import type {
@@ -47,25 +47,25 @@ import { createFieldBuilders, type FieldBuilders, type FieldWriters } from "./fi
  * 名字与 procedure 一一对应，读一遍就知道每一屏调了契约里的哪一条。
  */
 export interface WizardWriters extends FieldWriters {
-  /** 新建端点（`config.endpoint.add`；`apiKey` 必须给，空串 = 先不配） */
-  addEndpoint: (endpoint: Endpoint, message: string) => Promise<string | null>;
+  /** 新建端点（`config.endpoints.create`；`apiKey` 必须给，空串 = 先不配） */
+  addEndpoint: (endpoint: EndpointDefinition, message: string) => Promise<string | null>;
   deleteEndpoint: (endpointId: string, message: string) => Promise<string | null>;
-  /** 默认项五格（`config.setDefaults`；`null` = 清空那一项） */
+  /** 默认项五格（`config.defaults.update`；`null` = 清空那一项） */
   setDefaults: (change: DefaultsChange, message: string) => Promise<string | null>;
-  /** 上限 + 中断策略两项（`config.setGlobal`） */
+  /** 上限 + 中断策略两项（`config.update`） */
   setGlobal: (change: GlobalChange, message: string) => Promise<string | null>;
-  createModel: (model: Model, message: string) => Promise<string | null>;
+  createModel: (model: ModelDefinition, message: string) => Promise<string | null>;
   deleteModel: (modelId: string, message: string) => Promise<string | null>;
-  /** 恢复出厂（`config.model.reset`） */
+  /** 恢复出厂（`config.models.reset`） */
   resetModel: (modelId: string, message: string) => Promise<string | null>;
-  createImageModel: (model: ImageModel, message: string) => Promise<string | null>;
+  createImageModel: (model: ImageModelDefinition, message: string) => Promise<string | null>;
   deleteImageModel: (modelId: string, message: string) => Promise<string | null>;
   createAgent: (definition: AgentDefinitionInput, message: string) => Promise<string | null>;
   deleteAgent: (agentId: string, message: string) => Promise<string | null>;
   /** 存一条 MCP（`mcp.save`）；`previousName` 与 `server.id` 不同时表示改名 */
   saveMcp: (
     scope: McpEditableScope,
-    server: McpServerConfig,
+    server: McpServerDefinition,
     message: string,
     previousName?: string,
   ) => Promise<string | null>;
@@ -76,11 +76,11 @@ export interface WizardWriters extends FieldWriters {
 export interface WizardEngine extends WizardWriters, FieldBuilders {
   config: AppConfig;
   presets: ReasoningPresets;
-  /** 助手清单（定义 + 默认助手 id；后者来自 `config.defaultAgent`，每次现拼） */
+  /** AgentDefinition 清单（定义 + 默认 AgentDefinition id；后者来自 `config.defaultAgent`，每次现拼） */
   agents: AgentList;
   /** MCP 服务器清单（`mcp.list` 原样：每条带 `scope`） */
   servers: McpEntry[];
-  /** 每个助手上挂着几段会话（删除代价那一句里的数字）；`null` = 数不出来 */
+  /** 每个 AgentDefinition 上挂着几段会话（删除代价那一句里的数字）；`null` = 数不出来 */
   sessionsByAgent: Record<string, number> | null;
   workspaceId: string;
   error: string | null;
@@ -178,7 +178,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     }
   };
 
-  /** 再读一次配置 + 档位表（助手定义删除会连带清掉默认助手，那件事在配置里） */
+  /** 再读一次配置 + 档位表（AgentDefinition 删除会连带清掉默认 AgentDefinition，那件事在配置里） */
   const refreshConfig = async () => {
     const outcome = await attempt(() => api.config.get.query());
     if (!outcome.ok) return;
@@ -188,7 +188,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
 
   // ---------- 端点 ----------
   const addEndpoint: WizardWriters["addEndpoint"] = async (endpoint, message) => {
-    const outcome = await attempt(() => api.config.endpoint.add.mutate({ endpoint }));
+    const outcome = await attempt(() => api.config.endpoints.create.mutate({ endpoint }));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
@@ -197,7 +197,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
 
   const updateEndpoint: FieldWriters["updateEndpoint"] = async (id, change, message) => {
     // 改密钥之外的字段时 `apiKey` 不出现在 `change` 里：`update` 是合并语义，省略即不动它
-    const outcome = await attempt(() => api.config.endpoint.update.mutate({ id, change }));
+    const outcome = await attempt(() => api.config.endpoints.update.mutate({ id, change }));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
@@ -205,7 +205,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const deleteEndpoint: WizardWriters["deleteEndpoint"] = async (endpointId, message) => {
-    const outcome = await attempt(() => api.config.endpoint.remove.mutate({ id: endpointId }));
+    const outcome = await attempt(() => api.config.endpoints.delete.mutate({ id: endpointId }));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
@@ -214,7 +214,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
 
   // ---------- 默认项 / 上限 / 中断策略（一次改动一次调用）----------
   const setDefaults: WizardWriters["setDefaults"] = async (change, message) => {
-    const outcome = await attempt(() => api.config.setDefaults.mutate(change));
+    const outcome = await attempt(() => api.config.defaults.update.mutate(change));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
@@ -222,7 +222,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const setGlobal: WizardWriters["setGlobal"] = async (change, message) => {
-    const outcome = await attempt(() => api.config.setGlobal.mutate(change));
+    const outcome = await attempt(() => api.config.update.mutate(change));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
@@ -231,7 +231,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
 
   // ---------- 模型 ----------
   const createModel: WizardWriters["createModel"] = async (model, message) => {
-    const outcome = await attempt(() => api.config.model.add.mutate({ model }));
+    const outcome = await attempt(() => api.config.models.create.mutate({ model }));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
@@ -239,7 +239,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const updateModel: FieldWriters["updateModel"] = async (id, change, message) => {
-    const outcome = await attempt(() => api.config.model.update.mutate({ id, change }));
+    const outcome = await attempt(() => api.config.models.update.mutate({ id, change }));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
@@ -247,7 +247,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const deleteModel: WizardWriters["deleteModel"] = async (modelId, message) => {
-    const outcome = await attempt(() => api.config.model.remove.mutate({ id: modelId }));
+    const outcome = await attempt(() => api.config.models.delete.mutate({ id: modelId }));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
@@ -255,7 +255,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const resetModel: WizardWriters["resetModel"] = async (modelId, message) => {
-    const outcome = await attempt(() => api.config.model.reset.mutate({ id: modelId }));
+    const outcome = await attempt(() => api.config.models.reset.mutate({ id: modelId }));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
@@ -263,7 +263,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const createImageModel: WizardWriters["createImageModel"] = async (model, message) => {
-    const outcome = await attempt(() => api.config.imageModel.add.mutate({ model }));
+    const outcome = await attempt(() => api.config.imageModels.create.mutate({ model }));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
@@ -271,7 +271,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const updateImageModel: FieldWriters["updateImageModel"] = async (id, change, message) => {
-    const outcome = await attempt(() => api.config.imageModel.update.mutate({ id, change }));
+    const outcome = await attempt(() => api.config.imageModels.update.mutate({ id, change }));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
@@ -279,14 +279,14 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const deleteImageModel: WizardWriters["deleteImageModel"] = async (modelId, message) => {
-    const outcome = await attempt(() => api.config.imageModel.remove.mutate({ id: modelId }));
+    const outcome = await attempt(() => api.config.imageModels.delete.mutate({ id: modelId }));
     if (!outcome.ok) return outcome.message;
     setConfig(outcome.result.config);
     record(message);
     return null;
   };
 
-  // ---------- 助手 ----------
+  // ---------- AgentDefinition ----------
   /** 换掉清单里的一条（定义清单只由 `agentDefinition.*` 改） */
   const putDefinition = (definition: unknown) => {
     const converted = toDefinition(definition);
@@ -294,7 +294,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const createAgent: WizardWriters["createAgent"] = async (definition, message) => {
-    const outcome = await attempt(() => api.agentDefinition.create.mutate({ definition }));
+    const outcome = await attempt(() => api.config.agents.create.mutate({ definition }));
     if (!outcome.ok) return outcome.message;
     putDefinition(outcome.result.definition);
     record(message);
@@ -302,7 +302,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const updateAgent: FieldWriters["updateAgent"] = async (agentId, change, message) => {
-    const outcome = await attempt(() => api.agentDefinition.update.mutate({ agentId, change }));
+    const outcome = await attempt(() => api.config.agents.update.mutate({ agentId, change }));
     if (!outcome.ok) return outcome.message;
     putDefinition(outcome.result.definition);
     record(message);
@@ -310,19 +310,19 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const deleteAgent: WizardWriters["deleteAgent"] = async (agentId, message) => {
-    const outcome = await attempt(() => api.agentDefinition.remove.mutate({ agentId }));
+    const outcome = await attempt(() => api.config.agents.delete.mutate({ agentId }));
     if (!outcome.ok) return outcome.message;
     setDefinitions((prev) => prev.filter((definition) => definition.id !== agentId));
     record(message);
-    // 删的正好是默认助手时宿主会把 `defaultAgent` 一起清掉（同一次写盘，但那条出参只说
-    // `{ agentId }`）：配置那一侧要再读一次，否则菜单上还指着一个已经没有的助手
+    // 删的正好是默认 AgentDefinition 时宿主会把 `defaultAgent` 一起清掉（同一次写盘，但那条出参只说
+    // `{ agentId }`）：配置那一侧要再读一次，否则菜单上还指着一个已经没有的 AgentDefinition
     await refreshConfig();
     return null;
   };
 
   const setAgentModel: FieldWriters["setAgentModel"] = async (agentId, modelId, message) => {
     const outcome = await attempt(() =>
-      api.agentDefinition.update.mutate({ agentId, change: { modelId } }),
+      api.config.agents.update.mutate({ agentId, change: { modelId } }),
     );
     if (!outcome.ok) return outcome.message;
     putDefinition(outcome.result.definition);
@@ -331,7 +331,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   };
 
   const setAgentThinking: FieldWriters["setAgentThinking"] = async (agentId, change, message) => {
-    const outcome = await attempt(() => api.agentDefinition.update.mutate({ agentId, change }));
+    const outcome = await attempt(() => api.config.agents.update.mutate({ agentId, change }));
     if (!outcome.ok) return outcome.message;
     putDefinition(outcome.result.definition);
     record(message);
@@ -344,14 +344,14 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
 
   const saveMcp: WizardWriters["saveMcp"] = async (scope, server, message, previousName) => {
     const outcome = await attempt(() =>
-      api.mcp.save.mutate({ workspaceId, scope: MCP_SCOPE_OF[scope], server }),
+      api.config.mcp.update.mutate({ workspaceId, scope: MCP_SCOPE_OF[scope], server }),
     );
     if (!outcome.ok) return outcome.message;
     putServers(outcome.result.servers);
     // 改名：新名字那条建好之后把旧名字删掉（`server.id` 就是文件里 mcpServers 的键）
     if (previousName !== undefined && previousName !== server.id) {
       const removal = await attempt(() =>
-        api.mcp.remove.mutate({
+        api.config.mcp.delete.mutate({
           workspaceId,
           scope: MCP_SCOPE_OF[scope],
           name: previousName,
@@ -366,7 +366,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
 
   const deleteMcp: WizardWriters["deleteMcp"] = async (scope, name, message) => {
     const outcome = await attempt(() =>
-      api.mcp.remove.mutate({ workspaceId, scope: MCP_SCOPE_OF[scope], name }),
+      api.config.mcp.delete.mutate({ workspaceId, scope: MCP_SCOPE_OF[scope], name }),
     );
     if (!outcome.ok) return outcome.message;
     putServers(outcome.result.servers);
@@ -397,7 +397,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
 
   const agents = agentListOf(definitions, config);
 
-  // 条目可能在向导打开期间被外部删掉：渲染前收敛回它所在的列表，避免空引用
+  // InboxEntry 可能在向导打开期间被外部删掉：渲染前收敛回它所在的列表，避免空引用
   const normalize = (current: WizardStep): WizardStep => {
     if (
       (current.kind === "edit" || current.kind === "endpoint") &&

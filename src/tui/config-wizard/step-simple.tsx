@@ -21,7 +21,7 @@ export function renderSimpleStep(ctx: WizardContext): ReactNode {
     props,
   } = ctx;
 
-  // ---------- 工具输出上限（`config.setGlobal` 的一格）----------
+  // ---------- 工具输出上限（`config.update` 的一格）----------
   if (activeStep.kind === "max-tool-output") {
     // 缺省（没写过这一格）由宿主按 32768 算，见 SDK 的 `AppConfig.maxToolOutput`
     const current = config.maxToolOutput ?? DEFAULT_MAX_TOOL_OUTPUT;

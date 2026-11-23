@@ -4,7 +4,7 @@
  * ## 为什么图片要折成内容段
  *
  * 宿主这一版收的是一条**已经拼好的** `content`（`string`，或 `AgentNS.MessageContentSection[]`）：
- * 素材怎么变成厂商要的形状（Files API 的 `file_id` 还是内联 base64）由它在**发出那一刻**按实发
+ * Asset 怎么变成厂商要的形状（Files API 的 `file_id` 还是内联 base64）由它在**发出那一刻**按实发
  * 模型决定，而它认的是段上的本地标记 `__asset_id`。所以客户端能做的只有一件：把「用了哪几张」
  * 写成带那个标记的段，其余一概不碰。
  *
@@ -14,7 +14,7 @@
  *   · 部分成功 → 发成功的那几张，失败原因进 `warnings`；
  *   · 全成功 → 文字 + 各段，顺序即用户摆放的顺序。
  *
- * ## 素材的宽高与文件名不写进段里
+ * ## Asset 的宽高与文件名不写进段里
  *
  * 它们只在 `asset.upload` 回来的那一行上，而消息段要按原样入库（`dev-docs/prd/09-attachments.md`：
  * 落库那份就是发给厂商那份，一个字都不清理）。所以上传成功那一刻把那一行里的事实留在客户端
@@ -31,16 +31,16 @@ import type {
 import type { ClipboardImage } from "./clipboard.js";
 import type { MessageInput } from "./session/types.js";
 
-/** 段上的本地标记：指回数据根下的一份素材（宿主 `ASSET_ID_KEY` 是同一个词） */
+/** 段上的本地标记：指回数据根下的一份 Asset（宿主 `ASSET_ID_KEY` 是同一个词） */
 const ASSET_ID_KEY = "__asset_id";
 
-/** 一行文字 + N 段素材引用 */
+/** 一行文字 + N 段 Asset 引用 */
 export type ContentSection = AgentNS.MessageContentSection & { [ASSET_ID_KEY]?: string };
 
 /**
  * {@link MessageInput} → 真正投出去的那份 `content`。
  *
- * 只有文字时给纯字符串（最常见的那一种，不必包成一段 `text`）；有素材时给段数组：文字在最前
+ * 只有文字时给纯字符串（最常见的那一种，不必包成一段 `text`）；有 Asset 时给段数组：文字在最前
  * （用户先打字、再贴图，读起来也是这个顺序），之后每张一段。
  */
 export function contentOfInput(input: MessageInput): AgentNS.MessageContent {
@@ -95,7 +95,7 @@ export async function buildMessageInput(
   }));
 
   const { assets, failures } = await options.upload(sources);
-  // 素材行里的事实（宽高、文件名）只有这里有：先记在本机，占位与 Ctrl+O 的列表从那里读
+  // Asset 行里的事实（宽高、文件名）只有这里有：先记在本机，占位与 Ctrl+O 的列表从那里读
   rememberAssetFacts(assets);
   const warnings = failures.map(describeFailure);
   if (assets.length === 0) {
@@ -114,7 +114,7 @@ function describeFailure(failure: AssetFailure): string {
   return `${name}: ${failure.error.message}`;
 }
 
-/** 本机记住的一份素材事实：宿主在上传时量过的宽高与用户给的文件名 */
+/** 本机记住的一份 Asset 事实：宿主在上传时量过的宽高与用户给的文件名 */
 export interface LocalAssetFacts {
   width?: number;
   height?: number;
@@ -122,7 +122,7 @@ export interface LocalAssetFacts {
 }
 
 /**
- * 本机手里那份素材事实，按素材 id 认。
+ * 本机手里那份 Asset 事实，按 Asset id 认。
  *
  * 三件事说清它是什么：
  *   · 只挑不推 —— `id` 是宿主给的，宽高与文件名是那一行上的原值（可能为空：解不出文件头就是空，
@@ -144,7 +144,7 @@ export function rememberAssetFacts(assets: readonly Asset[]): void {
   }
 }
 
-/** 按素材 id 查本机记住的那份事实；没有就是没有（不返回一份空的去凑数） */
+/** 按 Asset id 查本机记住的那份事实；没有就是没有（不返回一份空的去凑数） */
 export function localAssetFactsOf(assetId: string): LocalAssetFacts | undefined {
   return localAssetFacts.get(assetId);
 }
@@ -153,7 +153,7 @@ export function localAssetFactsOf(assetId: string): LocalAssetFacts | undefined 
  * 清空这份记忆。
  *
  * 只有用例用：本仓所有用例共享一个进程与一张模块图（`vitest.config.ts` 的 `isolate: false`），
- * 上一份用例记下的素材会串到下一份。进程里的生产代码没有需要清空的时候 —— 重启就是清空。
+ * 上一份用例记下的 Asset 会串到下一份。进程里的生产代码没有需要清空的时候 —— 重启就是清空。
  */
 export function forgetAssetFacts(): void {
   localAssetFacts.clear();

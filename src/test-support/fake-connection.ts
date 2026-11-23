@@ -109,8 +109,8 @@ export function fakeConnection(options: FakeConnectionOptions = {}): FakeConnect
   /**
    * 假 `api`：叶子是 `{ query, mutate }` 两个函数，路径按 `Proxy` 拼成 procedure 名。
    *
-   * 名字用点拼而不是驼峰（`session.setThinkingLevel` 而不是 `session.setThinkingLevel`）——
-   * tRPC 的 procedure 名本来就是 `session.setThinkingLevel` 这种点号全名，照抄最不容易错。
+   * 名字用点拼而不是驼峰（`session.updateThinkingLevel` 而不是 `session.updateThinkingLevel`）——
+   * tRPC 的 procedure 名本来就是 `session.updateThinkingLevel` 这种点号全名，照抄最不容易错。
    */
   const makeApi = (path: string[]): unknown =>
     new Proxy(Object.create(null) as object, {

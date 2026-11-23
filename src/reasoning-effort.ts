@@ -1,14 +1,14 @@
 /**
- * 思考档位 —— CLI 侧的**文案**，外加一处「读表」：助手定义上现在算哪一档。
+ * 思考档位 —— CLI 侧的**文案**，外加一处「读表」：AgentDefinition 上现在算哪一档。
  *
  * ## 划分
  *
  *   - **会话级**的档位现状由会话行给（`session.open` 的 `thinkingLevel`）：
  *     `session.setThinking` 写它、宿主展开成参数，`session.ts` 的派生视图拼成 `ThinkingState`；
- *   - **助手级**的档位存的是**展开后的参数**（`AgentDefinition.modelParams`，这才是「配置即
+ *   - **AgentDefinition 级**的档位存的是**展开后的参数**（`AgentDefinition.modelParams`，这才是「配置即
  *     事实」），所以「它现在算哪一档」只能由客户端拿档位表反查 —— {@link agentThinkingOf}
  *     就是那一处，与旧版 `reasoning-effort.ts` 的 `matchLevel` 是同一套算法；
- *   - **文案**（`低` / `跟随模型默认` / `—`）与状态栏那一格在 {@link thinkingView}。
+ *   - **文案**（` 低 ` / ` 跟随模型默认 ` / `—`）与状态栏那一格在 {@link thinkingView}。
  *
  * 档位表的**定义、出厂内容、读写**都在宿主（`config.get` 的 `presets`）。这里只「利用」它：
  * 列出可选档位、把现有参数反查成档位名、把选中的档位展开成参数交给
@@ -169,10 +169,10 @@ export function matchLevel(
 }
 
 /**
- * 一条助手定义**现在**的思考档位现状（派生视图，与 `session/types.ts` 的 `ThinkingState` 同形）。
+ * 一条 AgentDefinition**现在**的思考档位现状（派生视图，与 `session/types.ts` 的 `ThinkingState` 同形）。
  *
  * 生效模型按三级解析的第二、三级算（`definition.modelId` → `config.defaultModel`）—— 定义上
- * 那一层写的是什么，决定的就是「用这个助手新开的会话」会拿到哪一档，而会话级覆盖另有一格。
+ * 那一层写的是什么，决定的就是「用这个 AgentDefinition 新开的会话」会拿到哪一档，而会话级覆盖另有一格。
  *
  * 四个 `source` 的含义：
  *   · `not_adjustable`：模型没有策略，或策略里一档都没有；

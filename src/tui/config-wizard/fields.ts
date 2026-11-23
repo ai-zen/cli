@@ -3,7 +3,7 @@
 // ## 字段只做两件事
 //
 //   1. 把「用户敲进去的文本」变成 procedure 的入参（数字、argv、`KEY=VALUE`、权限策略）；
-//   2. 发出那一次写（`config.endpoint.update` / `config.model.update` /
+//   2. 发出那一次写（`config.endpoints.update` / `config.models.update` /
 //      `agentDefinition.update` / `mcp.save`），失败原因原样上交详情屏。
 //
 // **不判断业务规则**：阈值是否越线、策略名是否存在、端点还在不在、模型能不能用，全是宿主的
@@ -12,23 +12,23 @@
 //
 // ## 整体写入的三个例外，都是契约形状决定的
 //
-//   - 端点：`config.endpoint.update` 收的是 `{ id, change }`，`change` 是**合并**语义
+//   - 端点：`config.endpoints.update` 收的是 `{ id, change }`，`change` 是**合并**语义
 //     （`{...当前, ...change}`），所以改一个字段只发那一个字段；`apiKey` 只在用户真的改了
 //     输入框时出现在 `change` 里 —— 省略 = 保留原值（读回来的是明文，界面只显示掩码）。
 //   - MCP：`mcp.save` 一次只管一条，所以改哪一项就发哪一项（其余字段从当前这一条带上），
-//     层里别的条目不受影响。
-//   - 助手的提示词与函数定义：`agentDefinition.update` 对 `messages` 与 `function` 是**整份
+//     层里别的 InboxEntry 不受影响。
+//   - AgentDefinition 的提示词与函数定义：`agentDefinition.update` 对 `messages` 与 `function` 是**整份
 //     替换**（不是深合并），所以那两处的补丁要把整串 / 整个对象带上（`withAgentPrompt` /
 //     `withAgentFunction`），只发改的那一句会把兄弟字段冲掉；思考档位同理，整份
 //     `modelParams` 一起发（`modelParamsWithLevel`）。
 import type {
   AgentDefinition,
   AppConfig,
-  Endpoint,
-  ImageModel,
+  EndpointDefinition,
+  ImageModelDefinition,
   McpEditableScope,
-  McpServerConfig,
-  Model,
+  McpServerDefinition,
+  ModelDefinition,
   ReasoningPresets,
 } from "../../config.js";
 import {
@@ -112,14 +112,14 @@ export interface FieldWriters {
     message: string,
   ) => Promise<string | null>;
   /**
-   * 存一条 MCP 条目（`mcp.save`）：同名即改、没有即建。
+   * 存一条 MCP InboxEntry（`mcp.save`）：同名即改、没有即建。
    *
    * `previousName` 与 `server.id` 不同时表示这是改名：旧名字那一条随后删掉（`mcp.remove`），
    * 两次调用合成一条通知。
    */
   saveMcp: (
     scope: McpEditableScope,
-    server: McpServerConfig,
+    server: McpServerDefinition,
     message: string,
     previousName?: string,
   ) => Promise<string | null>;
@@ -134,13 +134,13 @@ export interface FieldBuilderDeps {
 
 /** 详情屏要的那六个构造器 */
 export interface FieldBuilders {
-  endpointFields: (endpoint: Endpoint) => DetailField[];
-  modelFields: (model: Model) => DetailField[];
-  imageModelFields: (model: ImageModel) => DetailField[];
-  /** `siblingIds` 是同一层里其余条目的名字（改名时用来拦下「撞上已有那一条」） */
+  endpointFields: (endpoint: EndpointDefinition) => DetailField[];
+  modelFields: (model: ModelDefinition) => DetailField[];
+  imageModelFields: (model: ImageModelDefinition) => DetailField[];
+  /** `siblingIds` 是同一层里其余 InboxEntry 的名字（改名时用来拦下「撞上已有那一条」） */
   mcpServerFields: (
     scope: McpEditableScope,
-    server: McpServerConfig,
+    server: McpServerDefinition,
     siblingIds: readonly string[],
   ) => DetailField[];
   agentFields: (agent: AgentDefinition) => DetailField[];
@@ -153,7 +153,7 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
   // ---------- 共享字段 ----------
 
   /**
-   * 「名称」字段：端点 / 模型 / 图片模型 / 助手四处的形状逐字相同，只有写回目标不同。
+   * 「名称」字段：端点 / 模型 / 图片模型 / AgentDefinition 四处的形状逐字相同，只有写回目标不同。
    * 空名称一律拦下 —— 名称会进提示语与列表，写空等于把这一条「弄丢」。
    */
   const nameField = (
@@ -186,7 +186,7 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
     commit: (raw) => (raw === currentEndpointId ? null : save(raw, t("field.endpoint"))),
   });
 
-  /** 出厂托管条目的提示后缀：宿主会在写的时候把它转成自定义（PRD F-F3），这里只是告知 */
+  /** 出厂托管 InboxEntry 的提示后缀：宿主会在写的时候把它转成自定义（PRD F-F3），这里只是告知 */
   const factoryNote = (custom: boolean | undefined) =>
     custom === true ? "" : t("wiz.factoryEditNote");
 
@@ -195,10 +195,10 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
   /**
    * 端点详情字段（名称 / Base URL / API Key / 描述）。
    *
-   * `config.endpoint.update` 是合并语义，所以每次提交只发改的那一项；`apiKey` 不提就不出现
+   * `config.endpoints.update` 是合并语义，所以每次提交只发改的那一项；`apiKey` 不提就不出现
    * （= 保留原密钥）。
    */
-  const endpointFields = (endpoint: Endpoint): DetailField[] => {
+  const endpointFields = (endpoint: EndpointDefinition): DetailField[] => {
     const name = endpoint.name || endpoint.id;
     const save = (change: EndpointChange, label: string) =>
       writers.updateEndpoint(endpoint.id, change, t("wiz.endpointUpdated", { name, label }));
@@ -236,8 +236,8 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
 
   // ---------- 模型 ----------
 
-  /** 模型详情字段；每个字段一次 `config.model.update`（宿主负责打上 `custom: true`） */
-  const modelFields = (model: Model): DetailField[] => {
+  /** 模型详情字段；每个字段一次 `config.models.update`（宿主负责打上 `custom: true`） */
+  const modelFields = (model: ModelDefinition): DetailField[] => {
     const name = model.name || model.id;
     const save = (change: ModelChange, label: string) =>
       writers.updateModel(
@@ -322,8 +322,8 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
 
   // ---------- 图片模型 ----------
 
-  /** 图片模型详情字段；每次提交都是那一项改动（`config.imageModel.update` 是合并语义） */
-  const imageModelFields = (model: ImageModel): DetailField[] => {
+  /** 图片模型详情字段；每次提交都是那一项改动（`config.imageModels.update` 是合并语义） */
+  const imageModelFields = (model: ImageModelDefinition): DetailField[] => {
     const name = model.name || model.id;
     const save = (change: ImageModelChange, label: string) =>
       writers.updateImageModel(
@@ -377,18 +377,18 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
   /**
    * MCP 服务器详情字段。
    *
-   * `server` 就是 `mcp.list` 给回来的那一条（`McpServerConfig`），也是 `mcp.save` 收的那一格 ——
-   * 所以这里改哪一项就把那一项盖上去发一次写入，一次一条，层里别的条目不受影响
+   * `server` 就是 `mcp.list` 给回来的那一条（`McpServerDefinition`），也是 `mcp.save` 收的那一格 ——
+   * 所以这里改哪一项就把那一项盖上去发一次写入，一次一条，层里别的 InboxEntry 不受影响
    * （PRD F-F6：按名字增删改）。未知键不在这里：契约里没有 `extra` 这一格，写回时的保全由
    * 宿主那侧与磁盘上那一条合并（`McpConfig.save`）。
    */
   const mcpServerFields = (
     scope: McpEditableScope,
-    server: McpServerConfig,
+    server: McpServerDefinition,
     siblingIds: readonly string[],
   ): DetailField[] => {
     const scopeName = scopeLabel(scope);
-    const save = (change: Partial<McpServerConfig>, label: string) =>
+    const save = (change: Partial<McpServerDefinition>, label: string) =>
       writers.saveMcp(
         scope,
         { ...server, ...change },
@@ -433,7 +433,10 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
         commit: (raw) =>
           raw === server.transport
             ? null
-            : save({ transport: raw as McpServerConfig["transport"] }, t("common.transportMode")),
+            : save(
+                { transport: raw as McpServerDefinition["transport"] },
+                t("common.transportMode"),
+              ),
       },
       {
         key: "enabled",
@@ -503,7 +506,7 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
     return fields;
   };
 
-  // ---------- 助手 ----------
+  // ---------- AgentDefinition ----------
 
   /**
    * Agent / Sub-agent 详情字段。
@@ -621,7 +624,7 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
   /** 四维权限子屏字段（`allow: a, b` / `deny: x`；留空清除该维） */
   const agentPermFields = (agent: AgentDefinition): DetailField[] => {
     const kindName = agentKindLabel(agent);
-    // 权限是**定义**的一部分：改一次，所有用这个助手的会话都跟着变（PRD 1.6 / 4.2），
+    // 权限是**定义**的一部分：改一次，所有用这个 AgentDefinition 的会话都跟着变（PRD 1.6 / 4.2），
     // 所以四维共用一个写前确认 —— 摆的是影响面，不是字段名
     const confirm = { title: t("wiz.agentWrite.confirmTitle"), cost: [t("wiz.agentWrite.cost")] };
     return PERMISSION_DIMENSIONS.map((dim) => ({

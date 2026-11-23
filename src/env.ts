@@ -127,7 +127,7 @@ export function cliEnv(): CliEnv {
 export function serverUrlError(env: CliEnv): string | null {
   const raw = env.serverUrl;
   if (raw === undefined) return null;
-  // `--server` 给了却没给值：先给一句对症的话（要用户去猜 `"" 不是合法的宿主地址` 太刻薄）
+  // `--server` 给了却没给值：先给一句对症的话（要用户去猜 `"" 不是合法的宿主地址 ` 太刻薄）
   if (raw.trim() === "") {
     return "--server 需要一个地址（例：--server wss://example.com/ai-zen）";
   }

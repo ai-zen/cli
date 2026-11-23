@@ -2,20 +2,20 @@
 import type {
   AgentDefinition,
   AppConfig,
-  Endpoint,
-  ImageModel,
-  Model,
+  EndpointDefinition,
+  ImageModelDefinition,
+  ModelDefinition,
   ReasoningPresets,
 } from "../../config.js";
-import type { McpEditableScope, McpEntry, McpServerConfig } from "../../config.js";
+import type { McpEditableScope, McpEntry, McpServerDefinition } from "../../config.js";
 import type { HostClient } from "../../server-client/index.js";
 import type { OpenEditor } from "./prompt-editor.js";
 
 /**
  * 向导眼里那条连接 —— 就是 tRPC 客户端本身（`api`）。
  *
- * 每一条读写都是一次 procedure 调用（`api.config.get.query()` / `api.config.model.add.mutate(…)`
- * / `api.agentDefinition.update.mutate(…)` / `api.mcp.save.mutate(…)`），所以这里收窄成
+ * 每一条读写都是一次 procedure 调用（`api.config.get.query()` / `api.config.models.create.mutate(…)`
+ * / `api.config.agents.update.mutate(…)` / `api.config.mcp.update.mutate(…)`），所以这里收窄成
  * 「一个有 `api` 的对象」：屏幕与用例都只认这一面，不必认识 `HostConnection` 上别的格子。
  */
 export interface WizardHost {
@@ -30,14 +30,14 @@ export interface WizardHost {
 export type AgentDefinitionInput = Omit<AgentDefinition, "createdAt" | "updatedAt">;
 /** `agentDefinition.update` 的局部改动（合并语义：`undefined` = 这一项不动） */
 export type AgentChange = Partial<Omit<AgentDefinition, "id" | "createdAt">>;
-/** `config.model.update` 的局部改动 */
-export type ModelChange = Partial<Omit<Model, "id">>;
-/** `config.endpoint.update` 的局部改动（`apiKey` 省略 = 保留原密钥） */
-export type EndpointChange = Partial<Omit<Endpoint, "id">>;
-/** `config.imageModel.update` 的局部改动 */
-export type ImageModelChange = Partial<Omit<ImageModel, "id">>;
+/** `config.models.update` 的局部改动 */
+export type ModelChange = Partial<Omit<ModelDefinition, "id">>;
+/** `config.endpoints.update` 的局部改动（`apiKey` 省略 = 保留原密钥） */
+export type EndpointChange = Partial<Omit<EndpointDefinition, "id">>;
+/** `config.imageModels.update` 的局部改动 */
+export type ImageModelChange = Partial<Omit<ImageModelDefinition, "id">>;
 
-/** `config.setDefaults` 的五个格子（`null` = 清空这一项） */
+/** `config.defaults.update` 的五个格子（`null` = 清空这一项） */
 export interface DefaultsChange {
   defaultAgent?: string | null;
   defaultModel?: string | null;
@@ -47,7 +47,7 @@ export interface DefaultsChange {
 }
 
 /**
- * `config.setGlobal` 的四格：工具输出上限 + 中断策略两项 + 自动命名开关。
+ * `config.update` 的四格：工具输出上限 + 中断策略两项 + 自动命名开关。
  *
  * `autoTitle` 只认布尔：这一格关掉只省下每段新会话那一次起名请求，手工改名（`/rename`）照旧。
  * 契约里没有「清回缺省」那一档，所以屏上只给两档，没有「不设置」。
@@ -65,7 +65,7 @@ export interface GlobalChange {
 export type EndpointField = "apiKey" | "baseUrl";
 
 /**
- * 助手详情里那三段**多行文本**（都进同一个 `$EDITOR` 屏）。
+ * AgentDefinition 详情里那三段**多行文本**（都进同一个 `$EDITOR` 屏）。
  *
  * 它们是三种不同的写入形状：提示词落在 `messages` 上、另外两段落在一个 `function` 对象
  * 的两个字段上。判别值取「字段名」而不是数组下标，是因为 `step-agents` 要按它决定读哪段
@@ -78,7 +78,7 @@ export type AgentTextField = "prompt" | "function-description" | "function-param
  *
  * 前五个是 id 型默认值（从列表里挑一个，或选「不设置」），之后是中断策略的固定几档，
  * 最后是自动命名开关（两档布尔，`dev-docs/prd/01-decisions.md` 1.5 那条注：它是配置项，
- * 不占会话行的 11 格）。一次改动一次调用：id 型走 `config.setDefaults`，其余走 `config.setGlobal`。
+ * 不占会话行的 11 格）。一次改动一次调用：id 型走 `config.defaults.update`，其余走 `config.update`。
  */
 export type DefaultTarget =
   | "defaultAgent"
@@ -112,7 +112,7 @@ export type WizardStep =
   | { kind: "agents" }
   | { kind: "agent"; agentId: string }
   | { kind: "agent-perms"; agentId: string }
-  /** 助手的多行文本子屏（提示词 / 函数说明 / 参数 schema），内容交给 `$EDITOR` */
+  /** AgentDefinition 的多行文本子屏（提示词 / 函数说明 / 参数 schema），内容交给 `$EDITOR` */
   | { kind: "agent-text"; agentId: string; field: AgentTextField }
   | { kind: "agent-new" }
   | { kind: "edit"; field: EndpointField; endpointId: string };
@@ -165,14 +165,14 @@ export interface ConfigWizardProps {
   config: AppConfig;
   /** 同一份出参里的档位表（模型上的 `reasoningPreset` 指它的键） */
   presets: ReasoningPresets;
-  /** 打开向导时 `api.agentDefinition.list.query()` 的定义清单 */
+  /** 打开向导时 `api.config.agents.list.query()` 的定义清单 */
   agents: AgentDefinition[];
-  /** 打开向导时 `api.mcp.list.query({ workspaceId })` 的服务器清单（每条带 `scope`） */
+  /** 打开向导时 `api.config.mcp.list.query({ workspaceId })` 的服务器清单（每条带 `scope`） */
   servers: McpEntry[];
   /**
-   * 每个助手上挂着几段会话（`workspace.list` + 逐个 `session.list` 数出来的，向导宿主数）。
+   * 每个 AgentDefinition 上挂着几段会话（`workspace.list` + 逐个 `session.list` 数出来的，向导宿主数）。
    *
-   * 只给「删助手」那一处摆代价用：数得出来就说几段，数不出来（`null` / 缺省）就只说一句人话
+   * 只给「删 AgentDefinition」那一处摆代价用：数得出来就说几段，数不出来（`null` / 缺省）就只说一句人话
    * —— **不编数字**。它是读出来的事实，不是第二份状态：数字在向导打开那一刻定下，随后不变。
    */
   sessionsByAgent?: Record<string, number> | null;
@@ -199,4 +199,4 @@ export interface ConfigWizardProps {
 }
 
 /** 一条 MCP 服务器在某个作用域下的写入入参（`mcp.save` 的 `server` 就是它） */
-export type McpServerInput = McpServerConfig;
+export type McpServerInput = McpServerDefinition;

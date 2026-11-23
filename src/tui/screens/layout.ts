@@ -6,7 +6,7 @@ import { usableFrameRows } from "../text.js";
 /** 底部状态栏行数下限：身份块一行 + 用量块一行（宽度不够时会折成更多行，
  *  实际值由 `statusBarRows()` 量出后传入 `computeChatLayout({ statusBarLines })`） */
 export const STATUS_BAR_LINES = 2;
-/** 选择覆盖层高度（相对条目数） */
+/** 选择覆盖层高度（相对 InboxEntry 数） */
 export function pickerLines(itemCount: number): number {
   return 7 + itemCount;
 }

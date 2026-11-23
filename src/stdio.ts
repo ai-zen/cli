@@ -11,13 +11,13 @@
  *
  * | 情形 | 走哪条 | 为什么 |
  * |---|---|---|
- * | 默认（不带 `--save`），本机 | `session.transient({ cwd: process.cwd(), agentId, content })` | 一次性管道调用不属于任何会话：无 id、不落库、不进列表（PRD F-A2 / D3）。本机这条**连项目行都不建** |
- * | 默认，远端 | `session.transient` + **那个项目的 `cwd`** | 一次性会话要的是一个目录去装配能力容器；远端那台机器上的目录只有项目行知道。没有项目就先让用户去 `ai` 里挑一个 |
+ * | 默认（不带 `--save`），本机 | `runtime.agent.runOnce({ cwd: process.cwd(), agentId, content })` | 一次性管道调用不属于任何会话：无 id、不落库、不进列表（PRD F-A2 / D3）。本机这条**连项目行都不建** |
+ * | 默认，远端 | `runtime.agent.runOnce` + **那个项目的 `cwd`** | 一次性会话要的是一个目录去装配 Scope；远端那台机器上的目录只有项目行知道。没有项目就先让用户去 `ai` 里挑一个 |
  * | `--save` | `session.create` + `agent.wake` + `agent.send`，再 `session.open` 跟读 | 用户明说要留下这一段，那就得是一段真会话 |
  *
  * ## 三条被**刻意保持**的旧行为（都是文档与用例锁着的）
  *
- *   1. **默认不落盘**：`session.transient` 跑完即弃，用户的会话列表一条都不会多；
+ *   1. **默认不落盘**：`runtime.agent.runOnce` 跑完即弃，用户的会话列表一条都不会多；
  *   2. **`--save` 不挪「上次打开」**：写完 stderr 那一行 id，但会话层的「上次打开的那段」记忆
  *      不动（`remember: false`）；
  *   3. **stdout 只有答案**：其余一切（含宿主推来的通知）走 stderr。
@@ -101,7 +101,7 @@ async function readStdin(): Promise<string> {
 
 /**
  * 合并「指令 + stdin 内容」（参数是指令、stdin 是内容 —— 两者都有的场景必须合并）。
- * - 两者都有：`指令\n\n内容`
+ * - 两者都有：` 指令\n\n 内容 `
  * - 仅其一：取该者
  */
 export function mergePrompt(instruction: string, stdin: string): string {
@@ -132,7 +132,7 @@ function isUsableAnswer(message: AgentNS.Message | undefined): message is AgentN
   return message !== undefined && message.status !== AgentNS.MessageStatus.Error;
 }
 
-/** 最后一次跑出来的助手消息 */
+/** 最后一次跑出来的 AgentDefinition 消息 */
 function lastAnswer(messages: readonly AgentNS.Message[]): AgentNS.Message | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i]!;
@@ -142,7 +142,7 @@ function lastAnswer(messages: readonly AgentNS.Message[]): AgentNS.Message | und
 }
 
 /**
- * 等到这一段闲下来、且最后一条助手消息不再「还在写」。
+ * 等到这一段闲下来、且最后一条 AgentDefinition 消息不再「还在写」。
  *
  * 事件是主要来路（每一条都重新看一眼），定时重查是「万一漏了一脚」的兜底 —— 与
  * `session.ts` 的 `waitForReply` 同一个口径：**没有「一轮」这个概念**，判据只有忙闲与消息状态。
@@ -229,12 +229,12 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
       return 2;
     }
 
-    /** 用哪个助手：宿主配置里的默认助手（缺省项归宿主，客户端不猜） */
+    /** 用哪个 AgentDefinition：宿主配置里的默认 AgentDefinition（缺省项归宿主，客户端不猜） */
     const agentId = await defaultAgentId(client);
 
     if (!save) {
       /**
-       * 默认这条路**连会话都不建**：`session.transient` 就是「投一句、跑到头、跑完即散」。
+       * 默认这条路**连会话都不建**：`runtime.agent.runOnce` 就是「投一句、跑到头、跑完即散」。
        *
        * 本机可以直接给当前目录（**不登记项目**：一次管道调用不该往宿主的项目列表里塞东西）；
        * 远端只能用「上次进入的那个项目」的目录 —— 那台机器上的目录只有用户知道。
@@ -248,7 +248,7 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
         return 2;
       }
 
-      const { messages } = await client.api.session.transient.mutate({
+      const { messages } = await client.api.runtime.agent.runOnce.mutate({
         cwd,
         agentId,
         content: prompt,
@@ -265,7 +265,7 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
 
     /**
      * `--save`：用户明说要留下这一段，所以走真会话 —— `session.create` 写一行、`agent.wake` 把
-     * 执行体造出来、`agent.send` 把这一句投进去；回来的 id 再交给会话层跟读。
+     * Agent 造出来、`agent.send` 把这一句投进去；回来的 id 再交给会话层跟读。
      */
     const entered = await enterWorkspace({
       connection: { api: client.api },
@@ -287,9 +287,9 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
     });
     const sessionId = created.id;
 
-    // 建行不造执行体：先叫起来，投递才有对象可投（宿主对没有执行体的会话只回 not_found）
-    await client.api.agent.wake.mutate({ sessionId });
-    await client.api.agent.send.mutate({
+    // 建行不造 Agent：先叫起来，投递才有对象可投（宿主对没有 Agent 的会话只回 not_found）
+    await client.api.runtime.agent.wake.mutate({ sessionId });
+    await client.api.runtime.agent.send.mutate({
       workspaceId: entered.id,
       agentId,
       sessionId,
@@ -338,7 +338,7 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
   }
 }
 
-/** 宿主配置里的默认助手 */
+/** 宿主配置里的默认 AgentDefinition */
 async function defaultAgentId(connection: HostConnection): Promise<string> {
   const { config } = await connection.api.config.get.query();
   const agentId = config.defaultAgent;

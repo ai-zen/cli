@@ -18,7 +18,7 @@ const inlineImage = (mime: string, base64: string) => ({
   image_url: { url: `data:${mime};base64,${base64}` },
 });
 
-/** 已经传上去的图（段上只剩素材 id，本地没有字节） */
+/** 已经传上去的图（段上只剩 Asset id，本地没有字节） */
 const uploadedImage = (assetId: string) => ({
   type: "image_url" as const,
   image_url: { url: "" },

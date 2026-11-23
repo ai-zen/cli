@@ -88,13 +88,13 @@ export function compareVersions(a: string, b: string): number | null {
 }
 
 /**
- * 从一组版本号里挑最新的（忽略无法解析的条目）；全都不合法时返回 `undefined`。
+ * 从一组版本号里挑最新的（忽略无法解析的 InboxEntry）；全都不合法时返回 `undefined`。
  *
  * `/upgrade` 用它把 registry 上**所有** dist-tag 折叠成一个目标版本（PRD 2.3「升级挑版本 =
  * 在所有发布标签里挑版本最高的」）：只认 `latest` 会漏掉「alpha 比正式版更新」的实际发布状态
  * （曾经 `latest = 0.9.0`、`alpha = 1.0.0-alpha.23`），只认 `alpha` 又会在正式版追上后装旧版。
  *
- * 跳过畸形条目而不是抛错：版本号来自网络，registry 上有个乱七八糟的 tag 不该让命令崩掉。
+ * 跳过畸形 InboxEntry 而不是抛错：版本号来自网络，registry 上有个乱七八糟的 tag 不该让命令崩掉。
  */
 export function pickNewest(versions: Iterable<string>): string | undefined {
   let newest: string | undefined;

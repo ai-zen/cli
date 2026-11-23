@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkAgentSwitch, listAgentChoices } from "./agent-switch.js";
 import type { AgentList } from "./agents-store.js";
-import type { AgentDefinition, AppConfig, Endpoint, Model } from "./config.js";
+import type { AgentDefinition, AppConfig, EndpointDefinition, ModelDefinition } from "./config.js";
 import { setLocale, t } from "./i18n/index.js";
 
 // 结果与原因已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
@@ -15,12 +15,12 @@ beforeEach(() => setLocale("zh"));
  * 新契约只回定义，要判「跑不跑得起来」得解析模型、查端点密钥，那是宿主的判断。
  *
  * 所以这里钉两件事：
- *   · 选择器把主助手摊平、把「它会用哪个模型」写出来（不再本地重算三级链）；
- *   · 预检给出一句能上屏的话，或者在「清单里没这个助手」时把原因交回去，一处入参都不改。
+ *   · 选择器把主 AgentDefinition 摊平、把「它会用哪个模型」写出来（不再本地重算三级链）；
+ *   · 预检给出一句能上屏的话，或者在「清单里没这个 AgentDefinition」时把原因交回去，一处入参都不改。
  */
 
 /** 一个模型（`tokenThresholds` 是契约必填，用例不关心具体数值） */
-function modelOf(id: string, name: string, endpointId: string): Model {
+function modelOf(id: string, name: string, endpointId: string): ModelDefinition {
   return {
     id,
     name,
@@ -30,7 +30,7 @@ function modelOf(id: string, name: string, endpointId: string): Model {
   };
 }
 
-const ENDPOINT: Endpoint = {
+const ENDPOINT: EndpointDefinition = {
   id: "ep-main",
   name: "主端点",
   baseUrl: "https://example.test/v1",
@@ -47,7 +47,7 @@ function configOf(overrides: Partial<AppConfig> = {}): AppConfig {
   };
 }
 
-/** 一条助手定义（只给用例关心的字段赋真实值，其余按契约形状补空） */
+/** 一条 AgentDefinition（只给用例关心的字段赋真实值，其余按契约形状补空） */
 function definitionOf(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
   return {
     id: "default",
@@ -133,7 +133,7 @@ describe("checkAgentSwitch：只校验、不写配置", () => {
         modelId: "m2",
       }),
     });
-    // 不返回、也不改动配置：写 `defaultAgent` 是 `config.setDefaults` 的事
+    // 不返回、也不改动配置：写 `defaultAgent` 是 `config.defaults.update` 的事
     expect(config).toEqual(before);
   });
 

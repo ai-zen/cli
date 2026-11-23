@@ -60,7 +60,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
   } = ctx;
 
   /**
-   * 改助手**定义**（提示词 / 函数说明 / 参数 schema）之前那一次确认（PRD 1.6 / 4.2）。
+   * 改 AgentDefinition**定义**（提示词 / 函数说明 / 参数 schema）之前那一次确认（PRD 1.6 / 4.2）。
    *
    * 文案说人话、说影响面（正在看的那段回答会断），不是字段名 —— 人关心的是「我正在看的那个
    * 会不会没」，不是「哪个字段被改了」。
@@ -118,7 +118,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     const model = findModel(config, agent.modelId ?? config.defaultModel);
     const key = model ? endpointKeyState(config, model) : null;
     /**
-     * 删之前摆的代价（PRD 3.4 / 4.2）：改助手定义影响的是**所有用它的会话**。
+     * 删之前摆的代价（PRD 3.4 / 4.2）：改 AgentDefinition 影响的是**所有用它的会话**。
      *
      * 数字只来自手里已数过的那一份（向导宿主用 `workspace.list` + `session.list` 数的）；
      * 数不出来就只说影响面，不编一个数。
@@ -130,7 +130,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
         : sessionCount === 0
           ? t("wiz.agent.deleteCostZero")
           : t("wiz.agent.deleteCostCount", { n: sessionCount }),
-      // 默认助手被删时宿主会把默认项一起清掉（同一次写盘）：这件事也得事前说
+      // 默认 AgentDefinition 被删时宿主会把默认项一起清掉（同一次写盘）：这件事也得事前说
       ...(agents.defaultAgentId === agent.id ? [t("wiz.agent.deleteCostDefault")] : []),
     ];
     return (
@@ -166,7 +166,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
             label: t("wiz.agent.deleteAction", { kind: kindName }),
             danger: true,
             cost: deleteCost,
-            // 删的是默认助手时宿主会顺带清掉默认（同一次写盘）：引擎会再读一次配置
+            // 删的是默认 AgentDefinition 时宿主会顺带清掉默认（同一次写盘）：引擎会再读一次配置
             run: async () => {
               const failure = await deleteAgent(
                 agent.id,
@@ -202,7 +202,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- 助手的多行文本子屏（提示词 / 函数说明 / 参数 schema）----------
+  // ---------- AgentDefinition 的多行文本子屏（提示词 / 函数说明 / 参数 schema）----------
   //
   // 三个字段三种写入形状，都在这里摊开：
   //   · 提示词：`messages` 是**整串**替换，所以补丁给整串（首条 system 换 content）；
@@ -215,7 +215,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     const agent = agents.agents.find((item) => item.id === agentId)!;
     const kindName = agentKindLabel(agent);
     const back = () => go({ kind: "agent", agentId: agent.id });
-    /** 写成功那一句：与其它字段同一条口吻（`{kind} {id} 的{label}已更新`） */
+    /** 写成功那一句：与其它字段同一条口吻（`{kind} {id} 的{label}已更新 `） */
     const message = (label: string) =>
       t("wiz.agentFieldUpdated", { kind: kindName, id: agent.id, label, suffix: "" });
     const fn = agent.function;
@@ -345,7 +345,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
                 id,
                 name,
                 // 提示词是 `agentDefinition.create` 的必填项（至少一条 system）；新建的这一条先是
-                // 空的，建完就在「助手 → 系统提示词」里写（宿主只校验非空 + 有 system，空串合法）
+                // 空的，建完就在「AgentDefinition → 系统提示词」里写（宿主只校验非空 + 有 system，空串合法）
                 messages: [Message.System("")],
               },
               t("wiz.agent.created", { kind: "Agent", name, id }),

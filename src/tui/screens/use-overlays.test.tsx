@@ -62,7 +62,7 @@ async function probe() {
   const { stdin, lastFrame, unmount } = render(<Probe log={log} />);
   const frame = () => (lastFrame() ?? "").trim();
   await until(() => frame() === "picker=null", "探针画出来");
-  // 画出来 ≠ 有人接键：`useInput` 的订阅在这之后一拍才落地
+  // 画出来 ≠ 有人接键：`useInput` 的订阅在这之后一拍才写进 messages
   await settle();
   const press = async (char: string) => {
     await settle();

@@ -20,7 +20,7 @@ import {
 // 这些断言都是中文文案：显式锁语言（本仓用例共享一个进程，别的文件会把语言改走），跑完还原
 beforeEach(() => {
   setLocale("zh");
-  // 本机那份素材事实也是进程级状态：每一份用例从「刚启动」开始（其余用例也不被这一份带着走）
+  // 本机那份 Asset 事实也是进程级状态：每一份用例从「刚启动」开始（其余用例也不被这一份带着走）
   forgetAssetFacts();
 });
 afterEach(() => {
@@ -28,7 +28,7 @@ afterEach(() => {
   forgetAssetFacts();
 });
 
-/** 宿主上传时回来的素材行（`asset.upload` 的出参，带量过的宽高与文件名） */
+/** 宿主上传时回来的 Asset 行（`asset.upload` 的出参，带量过的宽高与文件名） */
 const uploaded = (id: string, name: string, width: number, height: number): Asset => ({
   id,
   sha256: `sha-${id}`,
@@ -39,7 +39,7 @@ const uploaded = (id: string, name: string, width: number, height: number): Asse
   height,
 });
 
-/** 一条带素材的图片段（今天的客户端写出来的就是这一种：只有本地标记） */
+/** 一条带 Asset 的图片段（今天的客户端写出来的就是这一种：只有本地标记） */
 const assetPart = (assetId: string, extra: Record<string, unknown> = {}) => ({
   type: "image_url" as const,
   image_url: { url: "" },
@@ -132,7 +132,7 @@ describe("openableImages（哪几张打得开）", () => {
 
     const images = openableImages(messages);
 
-    // 同一张素材出现两次就是两个位置（用户选的是「哪一张」，不是「哪个 id」）
+    // 同一张 Asset 出现两次就是两个位置（用户选的是「哪一张」，不是「哪个 id」）
     expect(images.map((image) => image.assetId)).toEqual(["a-1", "a-2", "a-1"]);
     expect(images.map((image) => [image.messageIndex, image.imageIndex])).toEqual([
       [0, 0],
@@ -157,7 +157,7 @@ describe("openableImages（哪几张打得开）", () => {
     rememberAssetFacts([uploaded("a-1", "shot.png", 1280, 720)]);
     const [image] = openableImages([userMessage("u-1", [assetPart("a-1")])]);
     expect(openableImageHint(image!)).toBe("1280 × 720 · shot.png");
-    // 打得开与否只看段上有没有素材 id，与手里那份事实无关
+    // 打得开与否只看段上有没有 Asset id，与手里那份事实无关
     expect(image!.assetId).toBe("a-1");
   });
 

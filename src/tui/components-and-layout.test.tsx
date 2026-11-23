@@ -97,11 +97,11 @@ describe("StatusBar", () => {
   beforeEach(() => setLocale("zh"));
 
   /**
-   * 四块的事实：身份（模型 / 助手 / 思考档）、用量（本次 / 累计 tok，会话层从消息的 `usage` 上算）、
+   * 四块的事实：身份（模型 / AgentDefinition / 思考档）、用量（本次 / 累计 tok，会话层从消息的 `usage` 上算）、
    * 速率（客户端采样）、快捷键（无事实）。
    *
    * 这里**不直接写块数组**：块由 `statusBlocksOf` 现拼 —— 谁把已撤的块（上下文 / 目录 / 在跑的工具 /
-   * 子助手）加回去，下面的用例会直接红，而不是“夹具里没写所以看不见”。
+   * 子 AgentDefinition）加回去，下面的用例会直接红，而不是“夹具里没写所以看不见”。
    */
   const factsOf = (
     overrides: {
@@ -155,21 +155,21 @@ describe("StatusBar", () => {
   });
 
   it("四件事上屏：忙 / 闲各一个字，闸关与死只在非默认时出现（PRD 4.4）", () => {
-    // 正常：只说「闲」—— 两个闸开着、人活着，写出来是每帧三个词宽、零信息
+    // 正常：只说「闲」—— 两个开关开着、人活着，写出来是每帧三个词宽、零信息
     const idle = plainRows({ blocks: blocksOf() }, 400).join("\n");
     expect(idle).toContain("闲");
     expect(idle).not.toContain("不取件");
     expect(idle).not.toContain("不收话");
     expect(idle).not.toContain("已停止");
 
-    // 中断之后（输出闸关）且正忙：两个事实各说各的，绝不压成一个「暂停」
+    // 中断之后（输出开关关）且正忙：两个事实各说各的，绝不压成一个「暂停」
     const paused = plainRows(
       { blocks: blocksOf({ status: "working", outputPaused: true }) },
       400,
     ).join("\n");
     expect(paused).toContain("忙");
     expect(paused).toContain("不取件");
-    // 「闲」与「输出闸关」分得开：忙的那一帧不该出现「闲」
+    // 「闲」与「输出开关关」分得开：忙的那一帧不该出现「闲」
     expect(paused).not.toContain("闲");
 
     // 死了：说「已停止」并标红（别让它看着像「闲」）

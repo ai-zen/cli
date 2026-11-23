@@ -17,7 +17,7 @@ export interface MenuStepProps {
   rows: number;
   /** `config.get` 的那份配置 */
   config: AppConfig;
-  /** 助手定义清单（+ 默认助手 id） */
+  /** AgentDefinition 清单（+ 默认 AgentDefinition id） */
   agents: AgentList;
   /** `mcp.list` 的那份服务器清单（每条带 `scope`，两层的条数从这里数） */
   servers: readonly McpEntry[];

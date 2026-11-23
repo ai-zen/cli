@@ -2,7 +2,7 @@
  * 斜杠命令执行器 —— 表驱动。
  *
  * 命令的**元数据**（名字 / 别名 / 说明 / 接的方法 / 是否阻塞输入）在 `commands/registry.ts`；
- * **执行体**在本文件末尾的 `HANDLERS` 表里。两者以 `Record<CommandName, CommandHandler>` 绑定，
+ * **Agent**在本文件末尾的 `HANDLERS` 表里。两者以 `Record<CommandName, CommandHandler>` 绑定，
  * 于是「新增命令忘了写处理器」是编译错误（`switch` 那套形状下，漏一个分支只会在运行时落到
  * 「未知命令」）。
  *
@@ -12,8 +12,8 @@
  *
  * | 看起来像规则的 | 谁给 |
  * |---|---|
- * | 模型/助手能不能用、不能用为什么 | `ModelView.available` / `AgentView.available` + `unavailableReason` |
- * | 生效模型、思考档位现状与可选档 | `ModelState` / `ThinkingState`（助手视图里是同一个形状） |
+ * | 模型/AgentDefinition 能不能用、不能用为什么 | `ModelView.available` / `AgentView.available` + `unavailableReason` |
+ * | 生效模型、思考档位现状与可选档 | `ModelState` / `ThinkingState`（AgentDefinition 视图里是同一个形状） |
  * | 会话列表怎么排 | `session.list`（置顶 + 创建时间倒序由宿主排好） |
  * | 撤回会删掉什么 | `session.revert` 的入参是**消息 id**，不由客户端数下标 |
  * | 交接降级没降级 | `handoff.start` 的 `degraded` / `usedMode` / `problem` |
@@ -21,7 +21,7 @@
  * ## 两个口子：会话契约 + 一条连接
  *
  * 会话域（发话、撤回、换模型、交接、重载）走 {@link ChatSessionLike} —— 它负责把
- * 本机那份现场跟宿主对齐；配置 / 助手 / 宿主域只读或只写一次，走 {@link ChatCommandHost.call}
+ * 本机那份现场跟宿主对齐；配置 / AgentDefinition / 宿主域只读或只写一次，走 {@link ChatCommandHost.call}
  * 直接说契约方法（`config.*` / `agent.*` / `model.*` / `host.*`）。命令层**不**吃盘、不持有
  * 第二份配置：界面说「改好了」与宿主真正用的那份必须是同一份。
  *
@@ -111,7 +111,7 @@ export interface ChatCommandHost {
    * 调一个**旧方法**（`call`：只有 `session.create` / `session.send` 能真的转成 `api.*`，
    * 其余抛 `unsupported`）。
    *
-   * 还没搬的域（配置 / 助手 / 模型 / MCP）仍然按旧名说话，形状直接取旧方法表
+   * 还没搬的域（配置 / AgentDefinition / 模型 / MCP）仍然按旧名说话，形状直接取旧方法表
    * （`call<M extends MethodName>`），于是入参出参与那时的宿主逐字一致。
    */
   call: HostConnection["call"];
@@ -119,7 +119,7 @@ export interface ChatCommandHost {
    * **会话域与工作区域直连的那一面**（口径③）：
    *
    * 会话层不走 `call`，命令层要的那几条也一样 —— `workspace.list|create`、`config.get`
-   * （`/model` 要模型表、`/new` 要默认助手）都从这里直接问 procedure。
+   * （`/model` 要模型表、`/new` 要默认 AgentDefinition）都从这里直接问 procedure。
    */
   api: HostConnection["api"];
   /** 通知通道：命令反馈（切换结果 / 交接路径 …）走独立栏位，不进 messages */
@@ -152,7 +152,7 @@ export interface ChatCommandHost {
    */
   runNpm?: RunNpm;
   /**
-   * `/new`：同一个助手、当前选中的工作区另开一段会话，返回新会话的 id。
+   * `/new`：同一个 AgentDefinition、当前选中的工作区另开一段会话，返回新会话的 id。
    *
    * 为什么不是 `session.reset()`：那样会把**这一段的会话对象**挪到新会话上去，旧那一段的
    * 订阅当场就没了 —— 而它可能还在跑（PRD D4：切会话不打断）。开新会话因此归注册表。
@@ -217,9 +217,9 @@ export interface CommandExitValue {
   /** 重挂载后预填到输入框的文字（`/back` 把被撤回的那句话放回来） */
   initialInput?: string;
   /**
-   * 重挂载后挂回输入的素材 id（`/back` 撤回的那条消息里带的图，按原顺序）。
+   * 重挂载后挂回输入的 Asset id（`/back` 撤回的那条消息里带的图，按原顺序）。
    *
-   * 与 `initialInput` 是同一次回填的两半：文字进草稿、素材挂回输入，用户提交前看得见
+   * 与 `initialInput` 是同一次回填的两半：文字进草稿、Asset 挂回输入，用户提交前看得见
    * 自己撤回来了哪几张（PRD 3.9「带图的那条连图一起恢复」）。
    */
   initialAssetIds?: string[];
@@ -288,8 +288,8 @@ const HANDOFF_SKIP = "__skip__";
  * 交接执行者三选一（`/handoff` 那一屏）。
  *
  * `label` 贴近用户措辞，`hint` 交代取舍：保真 vs 省算力。`summary` 那一句必须说清「另起一个
- * **一次性执行体**」—— 两个选项的差别不在写得好不好，而在**谁去写**（这段会话自己的 agent
- * 接着写，还是起一个只干这一件事、干完就散的执行体）。
+ * **一次性 Agent**」—— 两个选项的差别不在写得好不好，而在**谁去写**（这段会话自己的 agent
+ * 接着写，还是起一个只干这一件事、干完就散的 Agent）。
  *
  * 只有 `/handoff` 一处用它，所以它就住在这一层；渲染层不认这几条（`pick()` 只收标签与值）。
  */
@@ -324,7 +324,7 @@ function isHandoffDeclined(error: unknown): boolean {
 /**
  * 一段消息内容里的文字（撤回列表的标签、回填输入框都用它）。
  *
- * 只取 `text` 段：图片 / 文件段没有可放回输入框的文字形态。素材那半在 `MessageInput.assetIds`
+ * 只取 `text` 段：图片 / 文件段没有可放回输入框的文字形态。Asset 那半在 `MessageInput.assetIds`
  * 里（`session.revert` 从段上的本地标记拆出来），与文字一起回填。
  */
 function textOf(content: AgentNS.MessageContent | undefined): string {
@@ -336,15 +336,15 @@ function textOf(content: AgentNS.MessageContent | undefined): string {
 }
 
 /**
- * 内容段上的本地素材标记（指向数据根下的一份素材）。
+ * 内容段上的本地 Asset 标记（指向数据根下的一份 Asset）。
  *
  * 写它的是 `user-content.ts` 的 `contentOfInput`（宿主的 `ASSET_ID_KEY` 是同一个词）；
- * 这里只读，不改它的含义 —— 数「这一段引用到了几份素材」靠的就是这个标记。
+ * 这里只读，不改它的含义 —— 数「这一段引用到了几份 Asset」靠的就是这个标记。
  */
 const ASSET_ID_KEY = "__asset_id";
 
 /**
- * 这一段消息引用到了几份素材（按 id 去重：同一张图被引用两次只算一份）。
+ * 这一段消息引用到了几份 Asset（按 id 去重：同一张图被引用两次只算一份）。
  *
  * 数的是**快照里的事实**：`session.open` 回的那一份消息，而不是本地镜像的旧样子 ——
  * 别的地方（另一台终端）刚发的那张图也算在代价里。参数的形状故意写得宽（只要「有一格
@@ -354,7 +354,7 @@ function referencedAssetCount(messages: readonly { content?: unknown }[]): numbe
   const ids = new Set<string>();
   for (const message of messages) {
     const content = message.content;
-    // 纯文本消息（`content` 是字符串）里没有素材段：没东西可数
+    // 纯文本消息（`content` 是字符串）里没有 Asset 段：没东西可数
     if (!Array.isArray(content)) continue;
     for (const section of content as Record<string, unknown>[]) {
       const assetId = section[ASSET_ID_KEY];
@@ -367,11 +367,11 @@ function referencedAssetCount(messages: readonly { content?: unknown }[]): numbe
 // ==================== 各命令 ====================
 
 /**
- * `/new` —— 同一个助手、**当前选中的工作区**另开一段会话（PRD D4：**不打断**当前那一段）。
+ * `/new` —— 同一个 AgentDefinition、**当前选中的工作区**另开一段会话（PRD D4：**不打断**当前那一段）。
  *
  * 四件事分开说清：
  *
- *   · 新会话由注册表开（`newSession`）：它知道这一段用的助手与 `/ws` 选过的工作区，
+ *   · 新会话由注册表开（`newSession`）：它知道这一段用的 AgentDefinition 与 `/ws` 选过的工作区，
  *     而开完之后那一段**立刻**在注册表里（下一步切过去只是接成它的听众）；
  *   · 旧那一段什么都不动：它留在注册表里继续跑，订阅也在（宿主本来就不随客户端换屏停跑）；
  *   · 切过去走 `load` 那一支重挂载：换一段会话要换一整套事实（消息、模型、思考档、目录），
@@ -799,7 +799,7 @@ async function cmdWsDelete(
   try {
     let removed: { sessions: string[] };
     try {
-      removed = await api.workspace.remove.mutate({ workspaceId: target.id });
+      removed = await api.workspace.delete.mutate({ workspaceId: target.id });
     } catch (error: unknown) {
       notice(t("cmd.ws.deleteFailed", { error: messageOf(error) }), "error");
       return;
@@ -940,7 +940,7 @@ const cmdWs: CommandHandler = async ({
  * 自己打算写的那个值 —— 两个值不一样时，屏幕上该相信的是库里的。
  *
  * 不带参数时得先知道现状才能「反着来」：现状从 `session.open` 里读（那一条同时给出会话行、
- * 执行体、消息与排队区，读的是宿主此刻的事实）。写了 `on` / `off` 就只跑一个往返。
+ * Agent、消息与排队区，读的是宿主此刻的事实）。写了 `on` / `off` 就只跑一个往返。
  */
 const cmdPin: CommandHandler = async ({ session, api, push, args }) => {
   const raw = args[0]?.toLowerCase();
@@ -996,14 +996,14 @@ const cmdBack: CommandHandler = async ({ session, push, rows, exit, pick }) => {
   }
   // 撤前撤后两次长度之差：宿主删掉的是哪一段（含选中那条它自己），得它删完才算数
   const before = session.messages.length;
-  const restored: MessageInput = await session.revert(choice);
+  const restored: MessageInput = await session.rewind(choice);
   const removed = before - session.messages.length;
   exit({
     restart: true,
     sessionId: session.sessionId,
     messages: session.messages,
     initialInput: textOf(restored.content),
-    // 带图的那条：素材跟着回填一起交回输入框（顺序即原消息里的，去不去重由会话层说了算）
+    // 带图的那条：Asset 跟着回填一起交回输入框（顺序即原消息里的，去不去重由会话层说了算）
     initialAssetIds: restored.assetIds ?? [],
     // 旧屏的通知栏跟着卸载了：这两件事实只能带到新屏上说（见 `CommandExitValue.notice`）
     notice: t("cmd.back.done", { n: removed }),
@@ -1076,8 +1076,8 @@ const cmdConfig: CommandHandler = async ({ openWizard }) => {
 
 /**
  * `/model` 能改的三个作用级别 —— 与模型的三级解析一一对应：
- * 会话行（`session.setModel`）> 助手定义（`agentDefinition.update` 的 `modelId`）> 全局兜底
- * （`config.setDefaults` 的 `defaultModel`）。
+ * 会话行（`session.updateModel`）> AgentDefinition（`agentDefinition.update` 的 `modelId`）> 全局兜底
+ * （`config.defaults.update` 的 `defaultModel`）。
  */
 export type ModelScope = "session" | "agent" | "global";
 
@@ -1102,13 +1102,13 @@ const MODEL_SCOPE_FLAGS: Record<string, ModelScope> = {
  * ```text
  * /model                 → 会话级选择器
  * /model <id>            → 会话级直切（**这一段**用它）
- * /model -a|--agent <id> → 助手定义（`agentDefinition.update`，影响以后的会话）
+ * /model -a|--agent <id> → AgentDefinition（`agentDefinition.update`，影响以后的会话）
  * /model -g|--global <id>→ 全局兜底（`config.defaults.defaultModel`）
  * /model -a|-g           → 对应档位的选择器（三档共用同一个选择器）
  * ```
  *
- * 为什么缺省落到**会话级**：`/model` 最常表达的是「这次换个模型」。写进助手定义会连带改掉
- * 所有用这个助手的会话（另一个终端里正聊着的会话会莫名换模型），代价远大于收益 ——
+ * 为什么缺省落到**会话级**：`/model` 最常表达的是「这次换个模型」。写进 AgentDefinition 会连带改掉
+ * 所有用这个 AgentDefinition 的会话（另一个终端里正聊着的会话会莫名换模型），代价远大于收益 ——
  * 要改定义就显式说 `-a`。
  */
 function parseModelSelection(args: readonly string[]): ModelSelection {
@@ -1120,11 +1120,11 @@ function parseModelSelection(args: readonly string[]): ModelSelection {
 }
 
 /**
- * 模型现在**来自哪一档**：只有两句事实 —— 「这一段选的」与「跟随助手定义」。
+ * 模型现在**来自哪一档**：只有两句事实 —— 「这一段选的」与「跟随 AgentDefinition」。
  *
- * 这一刀（口径⑤）收窄了它：新契约的会话行上只有 `modelId` 一个字段，助手定义那条路是
+ * 这一刀（口径⑤）收窄了它：新契约的会话行上只有 `modelId` 一个字段，AgentDefinition 那条路是
  * `agentDefinition.get`（下一刀搬），而「全局兜底」那一档在会话可见的事实里根本读不出来 ——
- * 所以说「这一段选的 / 跟随助手定义」两句，比原先那句「解析来源」更诚实。
+ * 所以说「这一段选的 / 跟随 AgentDefinition」两句，比原先那句「解析来源」更诚实。
  *
  * `ChatSessionLike.model.source` 就是那两格（`session/types.ts` 的 `ModelState`）。
  */
@@ -1137,7 +1137,7 @@ function modelSourceOf(ctx: Pick<CommandContext, "session">): ModelScope {
  *
  * ## 这一问不改结论
  *
- * 判词是「**只允许空闲时候换**」（`PLAN.md` §5.5）：宿主的 `session.setModel` /
+ * 判词是「**只允许空闲时候换**」（`PLAN.md` §5.5）：宿主的 `session.updateModel` /
  * `session.setThinking` 开头就是 `assertNoWorkInHand`，手上有活就回 `busy`（`reason: "working"`），
  * **一个字节都不写库**；忙时打标记、变闲再兑现那一套宿主里没有。客户端这边能做、也只能做的是
  * 把这件事**发请求之前**说清 —— 让用户自己决定要不要现在试，而不是等他扑上一条
@@ -1148,7 +1148,7 @@ function modelSourceOf(ctx: Pick<CommandContext, "session">): ModelScope {
  *
  * ## 为什么只在会话级问
  *
- * 会被拒的只有写会话行那两扇门。写助手定义（`agentDefinition.update`）与全局兜底不会被拒：它们的生效路是 `host.reload` 的「刷 Scope + invalidate」，忙着的那段由宿主在
+ * 会被拒的只有写会话行那两扇门。写 AgentDefinition（`agentDefinition.update`）与全局兜底不会被拒：它们的生效路是 `host.reload` 的「刷 Scope + invalidate」，忙着的那段由宿主在
  * 它变闲之后才换掉 agent（`app.ts` 的 `refreshScopesFor`）—— 手里那批不会被抽掉，也没人会拒。
  * 拿「这次请求会被拒」去吓那里的人一遍，就是纯误报。
  *
@@ -1205,14 +1205,14 @@ const cmdModel: CommandHandler = async ({ session, api, push, args, pick }) => {
   /**
    * 这一档现在是什么（只用于「已经是它了」的短路）。三档各读各的事实：
    *   - 会话级：会话行上的生效模型 —— 用户看到的就是它；
-   *   - 助手定义：定义上的 `modelId`（多一次往返，值得：`/model -a` 是低频命令，而拿生效
+   *   - AgentDefinition：定义上的 `modelId`（多一次往返，值得：`/model -a` 是低频命令，而拿生效
    *     模型去比会把「定义已经是它、只是本会话覆盖了别的」误报成「已切换」）；
    *   - 全局兜底：`config.defaultModel`（`config.get` 已经读回来了，不再多发一趟）。
    */
   const currentOfScope = async (): Promise<string | null | undefined> => {
     if (selection.scope === "session") return session.modelId;
     if (selection.scope === "global") return config.defaultModel;
-    const { definition } = await api.agentDefinition.get.query({ agentId: session.agentId });
+    const { definition } = await api.config.agents.get.query({ agentId: session.agentId });
     return definition.modelId;
   };
   if (chosen === (await currentOfScope())) {
@@ -1234,16 +1234,16 @@ const cmdModel: CommandHandler = async ({ session, api, push, args, pick }) => {
   }
   try {
     // 三条写路径各写各的那一档，参数与校验都在宿主：
-    //   session → 会话行（只影响这一段，顺带把思考档清回「跟随助手默认」）
-    //   agent   → 助手定义（影响所有用它的会话，顺带清掉定义上的思考参数）
-    //   global  → `config.defaultModel`（只在助手没绑模型时兜底）
+    //   session → 会话行（只影响这一段，顺带把思考档清回「跟随 AgentDefinition 默认」）
+    //   agent   → AgentDefinition（影响所有用它的会话，顺带清掉定义上的思考参数）
+    //   global  → `config.defaultModel`（只在 AgentDefinition 没绑模型时兜底）
     if (selection.scope === "session") {
-      await session.setModel(chosen);
+      await session.updateModel(chosen);
       push(t("cmd.model.done", { scope: scopeName, name: target.name, id: chosen }));
       return;
     }
     if (selection.scope === "agent") {
-      await api.agentDefinition.update.mutate({
+      await api.config.agents.update.mutate({
         agentId: session.agentId,
         change: { modelId: chosen },
       });
@@ -1260,7 +1260,7 @@ const cmdModel: CommandHandler = async ({ session, api, push, args, pick }) => {
       );
       return;
     }
-    await api.config.setDefaults.mutate({ defaultModel: chosen });
+    await api.config.defaults.update.mutate({ defaultModel: chosen });
     await session.reload();
     push(t("cmd.model.done", { scope: scopeName, name: target.name, id: chosen }));
   } catch (error: unknown) {
@@ -1269,13 +1269,13 @@ const cmdModel: CommandHandler = async ({ session, api, push, args, pick }) => {
 };
 
 /**
- * `/think` 的两个作用级别：会话行（`session.setThinkingLevel`）与助手定义
+ * `/think` 的两个作用级别：会话行（`session.updateThinkingLevel`）与 AgentDefinition
  * （`agentDefinition.update` 的 `modelParams`）。
  */
 type ThinkScope = "session" | "agent";
 
 /**
- * 助手级「清掉助手上的思考参数」那一项的哨兵值。
+ * AgentDefinition 级「清掉 AgentDefinition 上的思考参数」那一项的哨兵值。
  *
  * 选择器的 `value` 是 `string`，而「清掉」在协议里是 `level: null` —— 契约里没有一个叫
  * 「清掉」的档位名，所以这一项要用一个不可能与档位名相撞的值来标记（同 `HANDOFF_SKIP` 的
@@ -1289,25 +1289,25 @@ const THINK_CLEAR = "__clear__";
  *
  * 两档的「现状」来源不同：
  *   · 会话级 = 会话层的派生视图 `session.thinking`（会话行上的档位名 + 生效模型的档位表）；
- *   · 助手级 = 定义上的 `modelParams` **拿档位表反查**（`reasoningEffort.agentThinkingOf`）——
+ *   · AgentDefinition 级 = 定义上的 `modelParams` **拿档位表反查**（`reasoningEffort.agentThinkingOf`）——
  *     定义里存的是展开后的参数，不是档位名。
  * 两档都是同一个形状（`ThinkingState`），这一层只认 `levels` / `selected` / `source` 三个字段。
  *
  * ## 两档各有一个「这一层不再写档位」
  *
  * 意思一样（这一层没有覆盖了），写法与后果不同，所以是两个动作、两句文案：
- *   · 会话级 = `session.setThinking(null)`：会话行上那个档位名清空，这一段回到**跟随助手定义**
+ *   · 会话级 = `session.updateThinkingLevel(null)`：会话行上那个档位名清空，这一段回到**跟随 AgentDefinition**
  *     上那份参数（PRD 4.7「有上游默认、会话可覆盖」）；
- *   · 助手级 = `agentDefinition.update({ change: { modelParams } })`：把定义上属于思考策略的那些
+ *   · AgentDefinition 级 = `agentDefinition.update({ change: { modelParams } })`：把定义上属于思考策略的那些
  *     参数**剔掉**（`modelParamsWithLevel` 给的是剔干净的那一份），
  *     以后的会话、这一段重建之后的 agent 都回到模型的默认参数。
- * 助手级没有「再上一层」可跟，所以它不叫「跟随」而直说「清掉」。
+ * AgentDefinition 级没有「再上一层」可跟，所以它不叫「跟随」而直说「清掉」。
  *
  * ## 标题必须说清作用级别
  *
- * 两档用**同一个选择器**，条目也几乎一样（都是一串档位 + 一条「不再写这一层」）—— 标题于是成了
+ * 两档用**同一个选择器**，InboxEntry 也几乎一样（都是一串档位 + 一条「不再写这一层」）—— 标题于是成了
  * 唯一说得出「改的是哪一层」的地方。不说的后果：`/think` 与 `/think -a` 弹出来一模一样，用户
- * 选完才发现改的是助手定义（影响以后所有新会话），而不是这一段（PRD 4.7：思考深度有上游默认、
+ * 选完才发现改的是 AgentDefinition（影响以后所有新会话），而不是这一段（PRD 4.7：思考深度有上游默认、
  * 会话可覆盖）。`/model` 一直是这么办的，这里补齐。
  */
 const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEffortView }) => {
@@ -1316,7 +1316,7 @@ const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEff
   const direct = scope === "agent" ? args[1] : args[0];
 
   /**
-   * 助手级要的两样事实：定义本身（`agentDefinition.get`）与档位表（`config.get` 的 `presets`）。
+   * AgentDefinition 级要的两样事实：定义本身（`agentDefinition.get`）与档位表（`config.get` 的 `presets`）。
    *
    * 定义上存的是**展开后的参数**（`modelParams`），所以「现在是哪一档」只能拿表反查
    * （`reasoningEffort.agentThinkingOf`）。会话级不用这两趟：会话行上的档位由宿主展开，
@@ -1325,7 +1325,7 @@ const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEff
   const snapshot = scope === "agent" ? await api.config.get.query() : null;
   const definition =
     scope === "agent"
-      ? toDefinition((await api.agentDefinition.get.query({ agentId: session.agentId })).definition)
+      ? toDefinition((await api.config.agents.get.query({ agentId: session.agentId })).definition)
       : null;
   const thinking =
     snapshot && definition
@@ -1343,7 +1343,7 @@ const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEff
     push(t("cmd.think.notAdjustable", { id: modelLabel }), "error");
     return;
   }
-  // `default`（跟随助手定义）只有会话行上有意义：助手定义本身就是默认，它没有「再上一层」
+  // `default`（跟随 AgentDefinition）只有会话行上有意义：AgentDefinition 本身就是默认，它没有「再上一层」
   const unknownLevel =
     direct !== undefined &&
     !thinking.levels.includes(direct) &&
@@ -1356,16 +1356,16 @@ const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEff
   // 「当前」= 这一层真正写着的那一档；`following_default` 时没有任何一档被选中
   const current = thinking.source === "manual" ? thinking.selected : null;
   // 「清掉 / 跟随默认」那一项现在的状态（有它才好在标签上标「当前」、也才好判「没变」）：
-  //   · 会话级看这段会话自己选没选 —— `custom` 是手写在**助手定义**上的，会话行仍然空着，
+  //   · 会话级看这段会话自己选没选 —— `custom` 是手写在**AgentDefinition**上的，会话行仍然空着，
   //     所以那时这一段本来就已经是「跟随」；
-  //   · 助手级看定义上还带不带思考参数 —— `custom` 正是「带着却凑不成任何一档」，
+  //   · AgentDefinition 级看定义上还带不带思考参数 —— `custom` 正是「带着却凑不成任何一档」，
   //     那时「清掉」是一次真改动（`current` 却是 `null`，不能拿它比）。
   const cleared = scope === "session" ? current === null : thinking.source === "following_default";
   let answer = direct;
   if (answer === undefined) {
     const items: SelectItem<string>[] = [
       {
-        // 同一个标签「跟随模型默认」：会话级是「回到助手定义上那份」，助手级是「定义上不再
+        // 同一个标签「跟随模型默认」：会话级是「回到 AgentDefinition 上那份」，AgentDefinition 级是「定义上不再
         // 写思考参数」。两句话说的是这件事在这一层各自的意思，所以 hint 分开写。
         label: `${t("cmd.think.followDefault")}${cleared ? t("common.current") : ""}`,
         value: scope === "session" ? "default" : THINK_CLEAR,
@@ -1378,7 +1378,7 @@ const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEff
       })),
     ];
     const levelText = thinkingView(thinking).text;
-    // 作用级别印在标题上：会话级是「这一段」，助手级是「这个助手（影响以后新开的会话）」
+    // 作用级别印在标题上：会话级是「这一段」，AgentDefinition 级是「这个 AgentDefinition（影响以后新开的会话）」
     const title =
       scope === "agent"
         ? t("cmd.think.titleAgent", { level: levelText })
@@ -1391,7 +1391,7 @@ const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEff
     answer = picked;
   }
 
-  // `default`（会话级回到跟随）与哨兵值（助手级清掉定义上的参数）都落到 `null`：两者在协议里
+  // `default`（会话级回到跟随）与哨兵值（AgentDefinition 级清掉定义上的参数）都落到 `null`：两者在协议里
   // 就是同一个「这一层不要档位了」
   const next = answer === "default" || answer === THINK_CLEAR ? null : answer;
   // 「清掉」那一档不能跟 `current` 比：`custom` 时 `current` 也是 `null`，可定义上确实带着参数
@@ -1408,17 +1408,17 @@ const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEff
 
   try {
     if (scope === "session") {
-      await session.setThinking(next);
+      await session.updateThinkingLevel(next);
       // 状态栏先跟上：`session.setThinking` 回来的那份就是新的现状
       setEffortView(thinkingView(session.thinking));
       push(t("effort.summarySession", { label: effortLabelText(next), model: modelLabel }));
       return;
     }
-    // 助手级：写定义 —— 档位展开成参数写进 `AgentDefinition.modelParams`，`null` 是把思考那几个
+    // AgentDefinition 级：写定义 —— 档位展开成参数写进 `AgentDefinition.modelParams`，`null` 是把思考那几个
     // 键剔掉（与思考无关的参数比如 temperature 原样留着，见 `modelParamsWithLevel`）。写完这段
     // 会话要按新定义重建一次，状态栏与下一次请求的参数才是新的。
     const updated = (
-      await api.agentDefinition.update.mutate({
+      await api.config.agents.update.mutate({
         agentId: session.agentId,
         change: {
           modelParams: modelParamsWithLevel(
@@ -1443,20 +1443,20 @@ const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEff
 };
 
 /**
- * `/agent` —— 选「以后的会话用哪个助手」。
+ * `/agent` —— 选「以后的会话用哪个 AgentDefinition」。
  *
- * 助手在会话创建时定死（PRD L7：契约里没有 `session.setAgent`），所以这一条写的只能是
- * 默认助手（`config.setDefaults` 的 `defaultAgent`）。
+ * AgentDefinition 在会话创建时定死（PRD L7：契约里没有 `session.setAgent`），所以这一条写的只能是
+ * 默认 AgentDefinition（`config.defaults.update` 的 `defaultAgent`）。
  *
- * 「这个助手现在能不能用」这一格**没有**了：旧契约的 `AgentView.available` /
+ * 「这个 AgentDefinition 现在能不能用」这一格**没有**了：旧契约的 `AgentView.available` /
  * `unavailableReason` 随那一组形状一起退场，新契约回的是定义本身（`AgentDefinition`）。
  * 要判「跑不跑得起来」得解析模型、查端点密钥 —— 那是宿主的判断，客户端算一遍就是第二份会漂的
- * 规则。所以这里只答两件事：这个助手指着哪个模型、默认助手现在是谁。
+ * 规则。所以这里只答两件事：这个 AgentDefinition 指着哪个模型、默认 AgentDefinition 现在是谁。
  */
 const cmdAgent: CommandHandler = async ({ session, api, push, args, pick }) => {
   const [{ config }, definitions] = await Promise.all([
     api.config.get.query(),
-    api.agentDefinition.list.query(),
+    api.config.agents.list.query(),
   ]);
   const list = agentListOf(definitions, config);
   const choices = listAgentChoices(config, list);
@@ -1502,8 +1502,8 @@ const cmdAgent: CommandHandler = async ({ session, api, push, args, pick }) => {
   }
 
   try {
-    // 「默认助手」是配置里的**一个字段**，走 `config.setDefaults` 那条窄方法
-    await api.config.setDefaults.mutate({ defaultAgent: chosen });
+    // 「默认 AgentDefinition」是配置里的**一个字段**，走 `config.defaults.update` 那条窄方法
+    await api.config.defaults.update.mutate({ defaultAgent: chosen });
     if (chosen === session.agentId) {
       push(t("cmd.agent.alreadyOn", { summary: check.summary }));
       return;
@@ -1517,8 +1517,8 @@ const cmdAgent: CommandHandler = async ({ session, api, push, args, pick }) => {
 /**
  * `/reload` —— 让宿主重新发现能力（MCP 服务器、工具、skill、subagent），再把这一段手里的事实重取一次。
  *
- * 真的刷新动作在宿主那一侧（`scope.reload`）：能力容器按目录活在宿主进程里，客户端连容器都摸不到。
- * 回执里的数字原样上屏 —— `0/2 刷成了` 与 `2/2 刷成了` 是两件事，一声「已重新加载」分不开它们。
+ * 真的刷新动作在宿主那一侧（`scope.reload`）：Scope 按目录活在宿主进程里，客户端连容器都摸不到。
+ * 回执里的数字原样上屏 —— `0/2 刷成了 ` 与 `2/2 刷成了 ` 是两件事，一声「已重新加载」分不开它们。
  */
 const cmdReload: CommandHandler = async ({ session, push }) => {
   try {
@@ -1566,7 +1566,7 @@ const cmdMcp: CommandHandler = async ({ session, push, args, openWizard, api }) 
   // 问题）。
   let scope = explicit;
   if (scope === null) {
-    const { servers } = await api.mcp.list.query({ workspaceId: session.workspaceId });
+    const { servers } = await api.config.mcp.list.query({ workspaceId: session.workspaceId });
     scope = pickStartScope(servers);
   }
   await openWizard({ kind: "mcp", scope });
@@ -1575,7 +1575,7 @@ const cmdMcp: CommandHandler = async ({ session, push, args, openWizard, api }) 
 const cmdLang: CommandHandler = async ({ push, args, refreshLocale, api, logger }) => {
   // `/lang` 无参在中文 / 英文之间切；`/lang zh`、`/lang en` 直接指定。
   // 语言是用户的属性、不是连接的属性：宿主那一份挂在宿主应用上、值来自配置，所以这里改的是
-  // 配置里的那一格（`config.setGlobal`），宿主随后按它渲染自己那侧的句子。客户端自己那一份
+  // 配置里的那一格（`config.update`），宿主随后按它渲染自己那侧的句子。客户端自己那一份
   // 管界面文案：`persistLocale` 记本机偏好，`refreshLocale` 让已经画出来的东西立刻换过来。
   const wanted = args[0]?.toLowerCase();
   // 候选集就是 `SUPPORTED_LOCALES`（一处真相）：这句“不认识这个语言”与清单判的是同一份
@@ -1587,7 +1587,7 @@ const cmdLang: CommandHandler = async ({ push, args, refreshLocale, api, logger 
   }
   const target = picked ?? (getLocale() === "zh" ? "en" : "zh");
   // 回执是改完之后的整份配置：本机偏好落的是它回来的那一格，不拿这里打算写的那一格顶上
-  const { config } = await api.config.setGlobal.mutate({ language: target });
+  const { config } = await api.config.update.mutate({ language: target });
   const applied = normalizeLocale(config.language);
   // 回执里没有语言这一格 = 没有事实可落，界面保持原样（也不说“已切换”）
   if (!applied) return;
@@ -1721,7 +1721,7 @@ const cmdKey: CommandHandler = async ({ openKeyEditor }) => {
 };
 
 /**
- * `/handoff` —— 只写一份交接文档：不换记忆、不建存档会话、不换执行体。
+ * `/handoff` —— 只写一份交接文档：不换记忆、不建存档会话、不换 Agent。
  *
  * `/migrate` —— 写文档并立刻换手：记忆换成新的一份，旧记忆成为一段已存档会话。
  *
@@ -1741,7 +1741,7 @@ const cmdKey: CommandHandler = async ({ openKeyEditor }) => {
  * —— 它要等写完才有；写到哪、成没成，走宿主的通知，界面不必自己猜。
  *
  * 两条都不换屏、不换会话：换手是原地换记忆，id 不变、侧栏位置不变，旧记忆变成另一段
- * `已存档_<原名>` 会话出现在列表里；只写文档那一档连记忆都不动。所以这里既不迁移屏、也不改显示
+ * ` 已存档_<原名>` 会话出现在列表里；只写文档那一档连记忆都不动。所以这里既不迁移屏、也不改显示
  * 起点。
  */
 const cmdHandoff: CommandHandler = async ({ session, push, args, pick }) => {
@@ -1756,7 +1756,7 @@ const cmdHandoff: CommandHandler = async ({ session, push, args, pick }) => {
   }
   /*
    * 执行者三选一（旧版 `auto-migrate-confirm.ts` 那一屏，这一版补回）：`self` 这段会话自己写、
-   * `summary` 另起一个一次性执行体写、`HANDOFF_SKIP` 什么都不做。
+   * `summary` 另起一个一次性 Agent 写、`HANDOFF_SKIP` 什么都不做。
    *
    * 显式写了 `/handoff self|summary` 就不再问 —— 选择器只是「没指定时」的那一问。
    *
@@ -1765,7 +1765,7 @@ const cmdHandoff: CommandHandler = async ({ session, push, args, pick }) => {
    * `runCommand` 的**唯一**调用方是 TUI 的 `chat.tsx`（`--no-tui` / stdio 那条路只发一句话，
    * 不解析斜杠命令），所以这一屏一定有人在那儿按。真要让 stdio 也能触发 `/handoff`，就让它说
    * `/handoff self` —— 那就是「不问、直接按 `self` 发」的落点：**不替用户挑执行者**，因为
-   * `summary` 会另起一个执行体去写，那不是「没人可问」能替人决定的事。
+   * `summary` 会另起一个 Agent 去写，那不是「没人可问」能替人决定的事。
    */
   const answer = handoff.mode ?? (await pick(t("cmd.handoff.title"), handoffModeItems()));
   // 跳过本次：一次 procedure 都不调，只说一句
@@ -1847,24 +1847,24 @@ const cmdExit: CommandHandler = async ({ doExit }) => {
 };
 
 /**
- * `/delete` —— 删掉**当前这一段会话**（`session.remove`，硬删）。
+ * `/delete` —— 删掉**当前这一段会话**（`session.delete`，硬删）。
  *
  * ## 为什么必须先把代价摆出来
  *
  * PRD 1.2 把「用户删掉这段会话」列在「能让一段会话死的三条路」里，4.1 要求「删前警告并把代价
- * 说清」：删了就是硬删，消息与素材一起没，那个消息数本来就是「你这段会话攒下来的全部」。
+ * 说清」：删了就是硬删，消息与 Asset 一起没，那个消息数本来就是「你这段会话攒下来的全部」。
  * 所以先问一次（两档，与 `/shutdown` 同一个交互形状），问的那一句里两个数一个不少：
  *
  *   · 消息条数 = `session.open` 那份快照里 `messages` 的长度；
- *   · 素材份数 = 那些消息的内容段上带 `__asset_id` 的标记去重计数（`referencedAssetCount`）。
+ *   · Asset 份数 = 那些消息的内容段上带 `__asset_id` 的标记去重计数（`referencedAssetCount`）。
  *
  * 两个数都从**宿主此刻的那一份快照**里数，不从本地镜像猜：另一台终端刚发的那张图也算在
- * 代价里。**不为它新增任何 procedure**：`session.open` 与 `session.remove` 都是现成的。
+ * 代价里。**不为它新增任何 procedure**：`session.open` 与 `session.delete` 都是现成的。
  *
  * ## 删完不能停在一段已经不存在的会话上
  *
  * 上屏的数字用**回执里的**（宿主删之前数的那一份：`messages` 与跟着删掉的 `assets`），不是
- * 自己算的那一份 —— 两个数可能不一样（素材是按引用归零才算删掉的）。
+ * 自己算的那一份 —— 两个数可能不一样（Asset 是按引用归零才算删掉的）。
  *
  * 删成功之后先做一件事：把这一段从**本进程的会话登记**里摘掉（`dropSession`，连带它那份订阅
  * 解掉）。不摘的话，后续「切回去」会指向一段已经不存在的东西，而它的订阅也留在那儿白推。
@@ -1912,7 +1912,7 @@ const cmdDelete: CommandHandler = async ({
   try {
     let removed: { messages: number; assets: number };
     try {
-      removed = await api.session.remove.mutate({ sessionId: session.sessionId });
+      removed = await api.session.delete.mutate({ sessionId: session.sessionId });
     } catch (error: unknown) {
       push(t("cmd.delete.failed", { error: messageOf(error) }), "error");
       return;
@@ -1941,13 +1941,13 @@ const cmdDelete: CommandHandler = async ({
 };
 
 /**
- * `/kill [id|名字]` —— 杀死一段会话的**执行体**（`agent.kill`）。
+ * `/kill [id|名字]` —— 杀死一段会话的**Agent**（`agent.kill`）。
  *
  * ## 它杀的是什么
  *
  * PRD 1.2「死的路只有三条：用户按杀死、用户删掉这段会话、进程退出」，其中**只有按杀死**会
- * 让用户没注意到的东西（没消费的条目）悄悄消失；4.1「中断不是杀死」那张表把这三件事说死了：
- * 杀死之后没有 agent 了、在途请求被掐断、没消费的条目作废（库里也删）、记忆照旧在。
+ * 让用户没注意到的东西（没消费的 InboxEntry）悄悄消失；4.1「中断不是杀死」那张表把这三件事说死了：
+ * 杀死之后没有 agent 了、在途请求被掐断、没消费的 InboxEntry 作废（库里也删）、记忆照旧在。
  *
  * 所以杀完**不换屏、不摘登记、不删历史**：那一段会话还在（`session.list` 里还在，打开还能看），
  * 只是这一段现在没有 agent 了 —— 下一次发话会重新叫起来（`session.ts` 的 `send`）。
@@ -1967,7 +1967,7 @@ const cmdDelete: CommandHandler = async ({
  *
  * ## 已经死了的那一段
  *
- * 宿主那边的 `agent.kill` 对没有执行体的一段是**空操作**（运行时里没有这一条登记就没有可收的
+ * 宿主那边的 `agent.kill` 对没有 Agent 的一段是**空操作**（运行时里没有这一条登记就没有可收的
  * 东西）：队列里那几条一行也不会被作废（作废是内核 `kill()` 报的那条事实带来的）。所以那时
  * 「N 条会作废」就是一句假话 —— 直接说清现状，并指到真正能清排队区的那条命令（`/free`）。
  */
@@ -1989,7 +1989,7 @@ const cmdKill: CommandHandler = async ({ session, api, liveSessions, push, args,
   // ② 代价：这一段的死活与排队条数（镜像里那两格，现读）
   const facts = await killFacts({ session, api, liveSessions }, target.id);
   if (facts.alive === false) {
-    // 早没有执行体了：`agent.kill` 是空操作，什么都不会被作废（见本命令的注释）
+    // 早没有 Agent 了：`agent.kill` 是空操作，什么都不会被作废（见本命令的注释）
     push(t("cmd.kill.alreadyDead", { name: target.name }));
     return;
   }
@@ -2007,7 +2007,7 @@ const cmdKill: CommandHandler = async ({ session, api, liveSessions, push, args,
 
   // ④ 真杀：只有 `agent.kill` 这一条。不换屏、不摘登记、不清历史 —— 杀的不是这一段会话
   try {
-    await api.agent.kill.mutate({ sessionId: target.id });
+    await api.runtime.agent.kill.mutate({ sessionId: target.id });
   } catch (error: unknown) {
     push(t("cmd.kill.failed", { error: messageOf(error) }), "error");
     return;
@@ -2160,7 +2160,7 @@ const HANDLERS: Record<CommandName, CommandHandler> = {
   handoff: cmdHandoff,
   migrate: cmdMigrate,
   help: cmdHelp,
-  /** 杀死执行体（与删除分开：那一段会话还在，只是没有 agent 了） */
+  /** 杀死 Agent（与删除分开：那一段会话还在，只是没有 agent 了） */
   kill: cmdKill,
   delete: cmdDelete,
   shutdown: cmdShutdown,

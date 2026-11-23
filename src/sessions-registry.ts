@@ -129,7 +129,7 @@ export interface LiveSession {
    * 还没落成消息的排队**条数**（PRD 4.1）。
    *
    * 这里只要一个数（跨进程的会话列表只说得出一句「还有几句没送出去」），它由会话那边的
-   * `session.inboxPending` 派生（= `session.inbox.length`）—— 不在这里拿条目另算一遍。
+   * `session.inboxPending` 派生（= `session.inbox.length`）—— 不在这里拿 InboxEntry 另算一遍。
    */
   inboxPending: number;
   /**
@@ -160,9 +160,9 @@ export interface SessionHub {
   /** 屏幕走了：只摘听众，**不**动会话（它还在后台跑） */
   detach(sink: ChatSessionNotifier): void;
   /**
-   * `/new`：同一个助手、**当前选中的工作区**开一段新会话，返回新会话的 id。
+   * `/new`：同一个 AgentDefinition、**当前选中的工作区**开一段新会话，返回新会话的 id。
    *
-   * 与「换成已有的某一段」不同，这一条得由持有会话的一方做：助手与工作区（`/ws` 选过的那个）
+   * 与「换成已有的某一段」不同，这一条得由持有会话的一方做：AgentDefinition 与工作区（`/ws` 选过的那个）
    * 都在当前这段会话上。旧那一段**什么都不变**：它留在注册表里继续跑。
    */
   newSegment(): Promise<string>;
@@ -187,7 +187,7 @@ export interface SessionHub {
    * 收尾由发起删除的那条命令自己做。
    *
    * 为什么要提前报名而不是删完再说：宿主在 mutation 里就把事件推到这条流上，它到得比那次调用
-   * 的回执**早**。等回执落地再报名，屏幕已经被那一下惊动过一次了。
+   * 的回执**早**。等回执写进 messages 再报名，屏幕已经被那一下惊动过一次了。
    *
    * 回一个「收尾完了」：发起的那条命令在它自己的收尾之后调它（失败也要调 —— 一条永不到来的
    * 事件否则会让这一段以后被别处删掉时也不出声）。
@@ -214,7 +214,7 @@ export class SessionRegistry implements SessionHub {
    * 加一条订阅 —— 开两遍就是两条 driver、两套订阅，之后每一条事件都被处理两次。
    */
   private readonly opening = new Map<string, Promise<Entry>>();
-  /** 最近一次 `enter` 的那一段（`/new` 要知道「当前是哪一段」才问得出助手与工作区） */
+  /** 最近一次 `enter` 的那一段（`/new` 要知道「当前是哪一段」才问得出 AgentDefinition 与工作区） */
   private current: Entry | null = null;
   /**
    * 这条事件流上的那一条订阅（只听 `session.removed`，见 {@link onRemoved}）。
@@ -284,7 +284,7 @@ export class SessionRegistry implements SessionHub {
 
   detach(sink: ChatSessionNotifier): void {
     // 按**听众身份**摘，而不是「把当前这一段摘掉」：重挂载时新屏可能已经接上了（它的 `enter`
-    // 先落地），照位置摘会把新屏的听众一起摘掉，那一段此后再也推不动界面。
+    // 先写进 messages），照位置摘会把新屏的听众一起摘掉，那一段此后再也推不动界面。
     for (const entry of this.entries) {
       if (entry.channel.sink !== sink) continue;
       entry.channel.sink = null;
@@ -303,7 +303,7 @@ export class SessionRegistry implements SessionHub {
       announce(current.channel, text, tone),
     );
     /**
-     * 建一段新会话 —— `session.create` 只写库：不唤醒执行体，也不投递任何东西。于是这一段开出来
+     * 建一段新会话 —— `session.create` 只写库：不唤醒 Agent，也不投递任何东西。于是这一段开出来
      * 是死的，第一次发话时会话层会先叫起来再投。
      */
     const { session } = await this.connection.api.session.create.mutate({
@@ -317,10 +317,10 @@ export class SessionRegistry implements SessionHub {
   }
 
   /**
-   * 下一段会话用哪个助手：**宿主配置里的默认助手**（`config.get` 的 `defaultAgent`）。
+   * 下一段会话用哪个 AgentDefinition：**宿主配置里的默认 AgentDefinition**（`config.get` 的 `defaultAgent`）。
    *
-   * 从前的实现抄的是当前这一段的 `agentId`，于是 `/agent` 写完默认助手之后 `/new` 出来的
-   * 还是旧助手。
+   * 从前的实现抄的是当前这一段的 `agentId`，于是 `/agent` 写完默认 AgentDefinition 之后 `/new` 出来的
+   * 还是旧 AgentDefinition。
    *
    * 问不到（连接断了 / 宿主没给）就退回当前这一段：宁可按一个确定的来，也不要让 `/new`
    * 因为一条附加查询失败而开不了。但退回这件事要说出来。

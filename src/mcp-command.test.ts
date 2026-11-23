@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import type { McpEntry, McpScope, McpServerConfig } from "./config.js";
+import type { McpEntry, McpScope, McpServerDefinition } from "./config.js";
 import { mcpEntriesOf, parseMcpScope, pickStartScope } from "./mcp-command.js";
 
 /** 一条服务器（`mcp.list` 的一行里那半格） */
-const serverOf = (id: string): McpServerConfig => ({ id, transport: "stdio", command: "npx" });
+const serverOf = (id: string): McpServerDefinition => ({ id, transport: "stdio", command: "npx" });
 
 /** `mcp.list` 的一行：这一条 + 它写在哪一层 */
 const entryOf = (scope: McpScope, id: string): McpEntry => ({ scope, server: serverOf(id) });

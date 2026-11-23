@@ -64,7 +64,7 @@ export function PhaseLine({ label }: { label: string }) {
 // ==================== 选择列表 ====================
 
 /**
- * 选择器条目的形状住在命令层（`commands/types.ts`）—— 命令层**产出**条目、这里**渲染**它，
+ * 选择器 InboxEntry 的形状住在命令层（`commands/types.ts`）—— 命令层**产出**InboxEntry、这里**渲染**它，
  * 所以它是两边共享的词汇而不是本文件的私有类型。这里再转出一遍，是为了让 tui 内的引用
  * 路径保持不变（`../components.js`）；新增字段去那边加。
  */
@@ -78,7 +78,7 @@ export interface SelectListProps<T> {
   /**
    * 终端列数：提供时把每项裁成严格单行。
    *
-   * 「吸底」布局的顶部留白是按行数算的，任一条目折行都会多占一行、把整帧顶高一格，
+   * 「吸底」布局的顶部留白是按行数算的，任一 InboxEntry 折行都会多占一行、把整帧顶高一格，
    * 故列表类屏幕必须传它。
    */
   columns?: number;
@@ -184,7 +184,7 @@ const INNER_SEPARATOR = " · ";
 /**
  * 一块 → 一段带样式的文本（旧版那三块的样子，见 `cli-old-archive` 的 `statusBarBlocks`）。
  *
- * 块内**不再写块名**：旧版就没写（「模型 助手一」变成「◆ 助手一 · agent 助手一」），
+ * 块内**不再写块名**：旧版就没写（「模型 AgentDefinition 一」变成「◆ AgentDefinition 一 · agent AgentDefinition 一」），
  * 身份块自己带着标签（` · agent `、` · 思考 ` 由词条给），用量块每段都是自带单位的数字。
  * 值从 `facts` 里挑，这里不做任何算术 —— 用量那两个数也已经算好了（会话层从消息的 `usage`
  * 上算，见 `../status-blocks.ts` 的文件头）。
@@ -195,7 +195,7 @@ function statusBlockSegments(block: StatusBlock, hint: string | undefined): Stat
   switch (block.id) {
     case "identity": {
       const { model, agent, thinking } = block.facts;
-      // 身份块：品牌标记 + 模型 · 助手 · 思考强度，一段紧接一段（分隔符在词条里，旧版如此）。
+      // 身份块：品牌标记 + 模型 · AgentDefinition · 思考强度，一段紧接一段（分隔符在词条里，旧版如此）。
       //
       // 模型那一格**只写 id**：宿主这一版不再把「模型名字」当一条事实发下来（配置里的显示名
       // 是另一处的事），而状态栏要说的是一个能拿去 `/model` 用的标识 —— 见口径⑥。
@@ -204,7 +204,7 @@ function statusBlockSegments(block: StatusBlock, hint: string | undefined): Stat
         { text: "◆ ", color: theme.brand[0] },
         { text: model.modelId ?? t("status.noModel"), color: theme.accent },
         { text: t("status.agent"), color: theme.dim },
-        // 定义没了（助手被删）时宿主给 `available: false`：说「不知道」显示 id，并标成警告色
+        // 定义没了（AgentDefinition 被删）时宿主给 `available: false`：说「不知道」显示 id，并标成警告色
         {
           text: agent.name ?? agent.agentId,
           color: agent.available === false ? theme.warn : theme.assistant,
@@ -214,9 +214,9 @@ function statusBlockSegments(block: StatusBlock, hint: string | undefined): Stat
       ];
     }
     case "gates": {
-      // 四件事（PRD 4.4）：闲 / 忙、输入闸、输出闸、死活。
+      // 四件事（PRD 4.4）：闲 / 忙、输入开关、输出开关、死活。
       //
-      // 忙闲常显（一个字）—— 它是每一秒都在变的那一格，也是用户最关心的；两闸与死活只在
+      // 忙闲常显（一个字）—— 它是每一秒都在变的那一格，也是用户最关心的；两开关与死活只在
       // **非默认**时出现：它们正常就是「开 / 开 / 活」，把三个「正常」也画上去是每帧占三个词的
       // 宽度而零信息。异常时它们各自说自己那一句，绝不压成一个「暂停」。
       const { status, inputPaused, outputPaused, alive } = block.facts;
@@ -257,7 +257,7 @@ function statusBlockSegments(block: StatusBlock, hint: string | undefined): Stat
       // 速率这一段只管速率：用量那两个数在上一块（同一个数字摆两处就必然会漂）。
       //
       // 生成中只认实时值（没有就整块留白）；手上没活时展示这一批的平均。
-      // 用块里的 `working`（会话的忙闲那一格）而不是 `rate.running` 做门闸：`/update` 这类阻塞
+      // 用块里的 `working`（会话的忙闲那一格）而不是 `rate.running` 做门开关：`/update` 这类阻塞
       // 命令也会让界面转圈，但那不是生成，没有速率可说。
       const { rate, working } = block.facts;
       const rateText = working
@@ -494,7 +494,7 @@ export function inboxAreaLines(count: number): number {
 }
 
 /**
- * 一条排队条目的前缀：用户自己排的那句说「排队中」（词条），其他来源（`session` 等）
+ * 一条排队 InboxEntry 的前缀：用户自己排的那句说「排队中」（词条），其他来源（`session` 等）
  * 原样上屏 —— 内部来源名不对翻译表，超 `INBOX_SOURCE_MAX` 字符截断加 `…`。
  */
 export function inboxPrefix(source: AgentNS.MessageSource): string {
@@ -515,8 +515,8 @@ export function inboxPrefix(source: AgentNS.MessageSource): string {
  *
  * 显示规则（刻意只有这些，不加标题、不加边框）：
  *   · 最多 `INBOX_MAX_ROWS` 行；0 条时整块不渲染、不占行；
- *   · 每条一行：`前缀 + preview`，`truncate`（折行会把输入框顶出屏幕）；
- *   · 条目数 > `INBOX_MAX_ROWS` 时，最后一行说「还有 N 条」（N = 没显示出来的条数）。
+ *   · 每条一行：` 前缀 + preview`，`truncate`（折行会把输入框顶出屏幕）；
+ *   · InboxEntry 数 > `INBOX_MAX_ROWS` 时，最后一行说「还有 N 条」（N = 没显示出来的条数）。
  */
 export function InboxArea({ items }: { items: readonly InboxItem[] }) {
   if (items.length === 0) return null;

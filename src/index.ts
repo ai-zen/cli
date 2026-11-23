@@ -17,8 +17,8 @@
 // 背景（OOM 根因）：Node 官方分发版没有内置“production” React，react/react-reconciler
 // 的入口用 `process.env.NODE_ENV !== "production"` 决定引用哪个构建。若此变量为空，
 // 就会加载 *development* 版 reconciler —— 它每次渲染都会调用 `performance.measure()`
-// （User Timing API），而 Node 的 performance 条目缓冲**无界且从不逐出**。长时间流式
-// TUI 会话下条目数持续增长，约 55 分钟即把堆顶到 heap_size_limit（本机 ~1GB）触发 OOM。
+// （User Timing API），而 Node 的 performance InboxEntry 缓冲**无界且从不逐出**。长时间流式
+// TUI 会话下 InboxEntry 数持续增长，约 55 分钟即把堆顶到 heap_size_limit（本机 ~1GB）触发 OOM。
 //
 // ESM 的静态 `import` 会被提升到模块体之前执行，所以这条赋值护不住任何**静态** import 的
 // React；它护住的是 `CliApp` 里那句**动态** `await import("./tui/index.js")`。
@@ -41,7 +41,7 @@ import { CliApp } from "./app.js";
 /**
  * 退出码只有一个出口：`CliApp.run()` 返回数字，这里交给 `process.exitCode`。
  *
- * 不用 `process.exit(code)`：那会砍掉还没落地的写入（stdout 是管道时尤其明显）。
+ * 不用 `process.exit(code)`：那会砍掉还没写进 messages 的写入（stdout 是管道时尤其明显）。
  * `run()` 的 promise 也不浮空 —— 启动路径上失败只该变成一行可读的日志 + 退出码 1，
  * 而不是一条 unhandled rejection。
  */

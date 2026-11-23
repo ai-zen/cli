@@ -139,7 +139,7 @@ describe("工作区屏：列 / 选", () => {
     const screen = mountScreen(host.connection);
     // 等列表真的画出来（而不是「睡 20ms 大概够了」）
     await until(() => screen.frame().includes("甲"), "工作区列表画出来");
-    // 画出来 ≠ 有人接键：`useInput` 的订阅在这之后一拍才落地
+    // 画出来 ≠ 有人接键：`useInput` 的订阅在这之后一拍才写进 messages
     await settle();
 
     const frame = screen.frame();

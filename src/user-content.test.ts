@@ -3,10 +3,10 @@
  *
  * 四件事要钉住：
  *   1. 没有图片时**只交文字**（`content` 就是那一串，不包成一段 `text`）；
- *   2. 图片变成的是**带 `__asset_id` 的内容段**（素材怎么变成厂商要的形状由宿主按实发模型决定，
+ *   2. 图片变成的是**带 `__asset_id` 的内容段**（Asset 怎么变成厂商要的形状由宿主按实发模型决定，
  *      客户端只说「用了哪几张」）；
  *   3. 一张都没上去时文字照发，失败原因逐张进 `warnings`（绝不假成功、也不静默丢消息）；
- *   4. 上传成功那一刻，素材行里的事实（宽高、文件名）留在本机，而段上不多一个字。
+ *   4. 上传成功那一刻，Asset 行里的事实（宽高、文件名）留在本机，而段上不多一个字。
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,12 +20,12 @@ import type { AssetFailure, AssetSource, UploadAssetsResult } from "./server-cli
 import { ClientError } from "./server-client/index.js";
 import type { ClipboardImage } from "./clipboard.js";
 
-// 本机那份素材事实是进程级状态：每一份用例从「刚启动」开始，也不把状态留给下一份用例
+// 本机那份 Asset 事实是进程级状态：每一份用例从「刚启动」开始，也不把状态留给下一份用例
 beforeEach(() => forgetAssetFacts());
 
 const image: ClipboardImage = { base64: Buffer.from("ABC").toString("base64"), mime: "image/png" };
 
-/** 宿主回的素材行（`asset.upload` 的出参；`id` 就是内容段上那个 `__asset_id`） */
+/** 宿主回的 Asset 行（`asset.upload` 的出参；`id` 就是内容段上那个 `__asset_id`） */
 function assetRef(id: string, name = "pasted-1.png") {
   return { id, sha256: `sha-${id}`, mime: "image/png", name, createdAt: 1, width: 1, height: 1 };
 }

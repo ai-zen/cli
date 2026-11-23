@@ -6,7 +6,7 @@
  * 宿主把整包 wire 方法换成 tRPC procedure 之后，CLI 里还留着一批按**旧方法名**说话的调用点
  * （`call("config.get")` 这种）。它们不能一次全搬完，所以这一刀的形式是**两路并存**（口径④）：
  *
- *   · **`api` 直连** —— 会话域走它（`session.open` / `agent.send` / 三道闸 / …），不经过本文件；
+ *   · **`api` 直连** —— 会话域走它（`session.open` / `agent.send` / 三道开关 / …），不经过本文件；
  *   · **`call` 旧路** —— 还没搬的域走它，**一律抛** `ClientError("unsupported", …)`。
  *
  * 于是「哪些已经通了、哪些还抛」有了唯一一处可查的地方：{@link LEGACY_METHODS}。
@@ -26,7 +26,7 @@
  *   · **「已接」只有一个判据**：`call(名字, 参数)` 能真的转成 `api.*` 的一次调用。转不了的
  *     一律「未搬」，实现抛 `ClientError("unsupported", …)`，文案里带方法名；
  *   · `agent.send` **不是**旧方法名。旧的 `session.create` / `session.send` 是「已接」：前者转成
- *     `api.session.create`（只建一行），后者转成 `api.agent.send`（只投递）。
+ *     `api.session.create`（只建一行），后者转成 `api.runtime.agent.send`（只投递）。
  *
  * ## 「已接」这一列今天指什么
  *
@@ -69,7 +69,7 @@ export type RetiredMethodName =
   | "host.reload"
   | "config.get"
   | "config.patch"
-  | "config.setDefaults"
+  | "config.defaults.update"
   | "config.getDiscovery"
   | "config.saveMcp"
   | "config.deleteMcp"
@@ -128,7 +128,7 @@ export const LEGACY_METHODS: readonly LegacyMethodRow[] = [
   { legacy: "workspace.create", today: "workspace.create", status: "未搬" },
   { legacy: "workspace.get", today: "没有（用 workspace.list + find）", status: "未搬" },
   { legacy: "workspace.rename", today: "workspace.rename", status: "未搬" },
-  { legacy: "workspace.remove", today: "workspace.remove", status: "未搬" },
+  { legacy: "workspace.delete", today: "workspace.delete", status: "未搬" },
 
   // ---- session.* ----
   { legacy: "session.list", today: "session.list", status: "未搬" },
@@ -158,12 +158,12 @@ export const LEGACY_METHODS: readonly LegacyMethodRow[] = [
     status: "未搬",
   },
   { legacy: "session.revert", today: "session.rewind", status: "未搬" },
-  { legacy: "session.setModel", today: "session.setModel", status: "未搬" },
-  { legacy: "session.setThinking", today: "session.setThinkingLevel", status: "未搬" },
-  { legacy: "session.setThresholds", today: "session.setThresholds", status: "未搬" },
+  { legacy: "session.updateModel", today: "session.updateModel", status: "未搬" },
+  { legacy: "session.setThinking", today: "session.updateThinkingLevel", status: "未搬" },
+  { legacy: "session.updateThresholds", today: "session.updateThresholds", status: "未搬" },
   {
-    legacy: "session.transient",
-    today: "session.transient（入参换成 `{ cwd, agentId, content }`）",
+    legacy: "runtime.agent.runOnce",
+    today: "runtime.agent.runOnce（入参换成 `{ cwd, agentId, content }`）",
     status: "未搬",
   },
 
@@ -176,8 +176,12 @@ export const LEGACY_METHODS: readonly LegacyMethodRow[] = [
 
   // ---- notice.* ----
   { legacy: "notice.list", today: "notice.list", status: "未搬" },
-  { legacy: "notice.dismiss", today: "没有（改用 notice.clear({ sessionId })）", status: "未搬" },
-  { legacy: "notice.clear", today: "notice.clear", status: "未搬" },
+  {
+    legacy: "notice.dismiss",
+    today: "没有（改用 notice.deleteAll({ sessionId })）",
+    status: "未搬",
+  },
+  { legacy: "notice.deleteAll", today: "notice.deleteAll", status: "未搬" },
 
   // ---- config.* ----（配置域这一刀搬完：见 `LEGACY_METHODS` 文件头「已接指什么」）
   {
@@ -187,12 +191,12 @@ export const LEGACY_METHODS: readonly LegacyMethodRow[] = [
   },
   {
     legacy: "config.patch",
-    today: "config.setDefaults / config.setGlobal（默认项五格 | 上限 + 中断策略两项）",
+    today: "config.defaults.update / config.update（默认项五格 | 上限 + 中断策略两项）",
     status: "已接",
   },
   {
-    legacy: "config.setDefaults",
-    today: "config.setDefaults（`null` = 清空那一项）",
+    legacy: "config.defaults.update",
+    today: "config.defaults.update（`null` = 清空那一项）",
     status: "已接",
   },
   {
@@ -212,12 +216,12 @@ export const LEGACY_METHODS: readonly LegacyMethodRow[] = [
   },
   {
     legacy: "config.saveEndpoint",
-    today: "config.endpoint.add（新建） / config.endpoint.update（改一条）",
+    today: "config.endpoints.create（新建） / config.endpoints.update（改一条）",
     status: "已接",
   },
-  { legacy: "config.deleteEndpoint", today: "config.endpoint.remove", status: "已接" },
+  { legacy: "config.deleteEndpoint", today: "config.endpoints.delete", status: "已接" },
 
-  // ---- agent.* ----（助手定义那一面：`agentDefinition.*`）
+  // ---- agent.* ----（AgentDefinition 那一面：`agentDefinition.*`）
   { legacy: "agent.list", today: "agentDefinition.list", status: "已接" },
   { legacy: "agent.get", today: "agentDefinition.get", status: "已接" },
   { legacy: "agent.create", today: "agentDefinition.create", status: "已接" },
@@ -231,19 +235,19 @@ export const LEGACY_METHODS: readonly LegacyMethodRow[] = [
   },
   { legacy: "agent.restoreFactory", today: "agentDefinition.reset", status: "已接" },
 
-  // ---- model.* ----（模型与图片模型：`config.model.*` / `config.imageModel.*`）
+  // ---- model.* ----（模型与图片模型：`config.models.*` / `config.imageModels.*`）
   { legacy: "model.list", today: "config.get（`config.models`）", status: "已接" },
   { legacy: "model.listImages", today: "config.get（`config.imageModels`）", status: "已接" },
-  { legacy: "model.create", today: "config.model.add", status: "已接" },
-  { legacy: "model.update", today: "config.model.update", status: "已接" },
-  { legacy: "model.delete", today: "config.model.remove", status: "已接" },
-  { legacy: "model.restoreFactory", today: "config.model.reset", status: "已接" },
+  { legacy: "model.create", today: "config.models.create", status: "已接" },
+  { legacy: "model.update", today: "config.models.update", status: "已接" },
+  { legacy: "model.delete", today: "config.models.delete", status: "已接" },
+  { legacy: "model.restoreFactory", today: "config.models.reset", status: "已接" },
   {
     legacy: "model.saveImage",
-    today: "config.imageModel.add（新建） / config.imageModel.update（改一条）",
+    today: "config.imageModels.create（新建） / config.imageModels.update（改一条）",
     status: "已接",
   },
-  { legacy: "model.deleteImage", today: "config.imageModel.remove", status: "已接" },
+  { legacy: "model.deleteImage", today: "config.imageModels.delete", status: "已接" },
 
   // ---- asset.* ----
   { legacy: "asset.begin", today: "asset.upload（一段式，不再分三段）", status: "未搬" },
@@ -280,7 +284,7 @@ export interface LegacyCall {
  * 造一条旧路。
  *
  * **已接**的两条在这里转成 procedure 调用：`session.create` → `api.session.create`（只建行，
- * 不唤醒也不投递），`session.send` → `api.agent.send`（只投给活着的执行体）；其余一律抛
+ * 不唤醒也不投递），`session.send` → `api.runtime.agent.send`（只投给活着的 Agent）；其余一律抛
  * `ClientError("unsupported", …)`，文案里带方法名 —— 用户看到的是「`agent.get` 这条路这一版
  * 还没接」，而不是一句没有主语的「不支持」。
  */
@@ -291,7 +295,7 @@ export function createLegacyCall(api: HostClient["api"], language?: string): Leg
         const sent = params as MethodParams<"session.send">;
         const opened = await api.session.open.query({ sessionId: sent.sessionId });
         const messageId = newMessageId();
-        await api.agent.send.mutate({
+        await api.runtime.agent.send.mutate({
           workspaceId: opened.session.workspaceId,
           agentId: opened.session.agentId,
           content: sent.input.content,
@@ -302,7 +306,7 @@ export function createLegacyCall(api: HostClient["api"], language?: string): Leg
       }
       case "session.create": {
         const created = params as MethodParams<"session.create">;
-        // 建行只写库：这一条旧路要的是一行，不该顺手唤醒执行体，也不该投一条空正文过去
+        // 建行只写库：这一条旧路要的是一行，不该顺手唤醒 Agent，也不该投一条空正文过去
         const { session } = await api.session.create.mutate({
           workspaceId: created.workspaceId,
           agentId: created.agentId,

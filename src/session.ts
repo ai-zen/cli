@@ -4,9 +4,9 @@
  * ## 这一层现在做四件事
  *
  * 1. **读事实**：镜像（`connection.open(sessionId)` 一次取全 + `HostEvent` 增量，见
- *    `server-client/mirror.ts`）、模型与档位（`api.config.get` 与 `api.agentDefinition.get`，
+ *    `server-client/mirror.ts`）、模型与档位（`api.config.get` 与 `api.config.agents.get`，
  *    派生成 `ModelState` / `ThinkingState`）、挂着的题（`api.question.list`）；
- * 2. **转发命令**：`agent.send` / `agent.wake` / 三道闸 / `session.*` —— 大多是一行；
+ * 2. **转发命令**：`agent.send` / `agent.wake` / 三道开关 / `session.*` —— 大多是一行；
  * 3. **把状态交给界面**：`ChatSessionLike` 那些只读字段；
  * 4. **两样契约里没有、但界面要的推算**：阶段那句话（消费方算）、生成速率（本文件算，按
  *    「正文长度的差」采 —— 新契约没有增量事件，每次 `message.changed` 推的是整条消息）。
@@ -20,7 +20,7 @@
  *
  * ## 这一层不攒的东西
  *
- * 消息与四件事都不在这里攒：它们在镜像里（宿主的整条消息直接replace，没有「折 chunk」这一步）。
+ * 消息与四件事都不在这里攒：它们在镜像里（宿主的整条消息直接 replace，没有「折 chunk」这一步）。
  * 这一层只订阅事件去**催帧、采样、放行等结局的人**。
  */
 
@@ -102,11 +102,11 @@ export class RemoteChatSession implements ChatSessionLike {
 
   /** 配置那一份（模型表 + 档位表）；`null` = 还没读到 */
   private configValue: { config: AppConfig; presets: ReasoningPresets } | null = null;
-  /** 助手定义上绑的模型 id（`source` 那一格与 `/think` 的回落都看它）；`undefined` = 还没读到 */
+  /** AgentDefinition 上绑的模型 id（`source` 那一格与 `/think` 的回落都看它）；`undefined` = 还没读到 */
   private definitionModelId: string | null | undefined = undefined;
-  /** 助手定义的可用性（读不出来 = `false`，还没读 = `null`） */
+  /** AgentDefinition 的可用性（读不出来 = `false`，还没读 = `null`） */
   private definitionAvailable: boolean | null = null;
-  /** 助手定义的名字（定义没了就是 `null`：说「不知道」，不编一个像真的名字） */
+  /** AgentDefinition 的名字（定义没了就是 `null`：说「不知道」，不编一个像真的名字） */
   private definitionName: string | null = null;
   /** 这段会话所在工作区的 cwd（宿主这一版只在 `workspace.list` 里给） */
   private workspaceCwdValue: string | null = null;
@@ -120,7 +120,7 @@ export class RemoteChatSession implements ChatSessionLike {
    * **不是**「一轮」的标记，只是一次集合差，问完就丢。
    */
   private sentBaseline: Set<string> | null = null;
-  /** 正在跑的补拉；`waitForReply` 要等它落地才交还控制权 */
+  /** 正在跑的补拉；`waitForReply` 要等它写进 messages 才交还控制权 */
   private catchingUp: Promise<void> | null = null;
   /** 等下文的人（`waitForReply` / 重新评估） */
   private readonly waiters: Array<() => void> = [];
@@ -230,7 +230,7 @@ export class RemoteChatSession implements ChatSessionLike {
     return this.mirror.roster;
   }
 
-  /** 这段会话的助手（id 是身份；名字与可用性来自定义） */
+  /** 这段会话的 AgentDefinition（id 是身份；名字与可用性来自定义） */
   get agentState(): AgentState {
     return {
       agentId: this.mirror.session.agentId,
@@ -290,7 +290,7 @@ export class RemoteChatSession implements ChatSessionLike {
       modelId,
       name: row?.name ?? modelId ?? "",
       vision: row?.vision === true,
-      // 会话行上那个 id 与助手定义绑的是同一个 → 这一段的模型来自定义；否则来自这一段自己
+      // 会话行上那个 id 与 AgentDefinition 绑的是同一个 → 这一段的模型来自定义；否则来自这一段自己
       source: modelId !== null && modelId === this.definitionModelId ? "agent" : "session",
     };
   }
@@ -299,8 +299,8 @@ export class RemoteChatSession implements ChatSessionLike {
    * 思考强度的现状（派生视图）。
    *
    * 档位表来自 `api.config.get()` 的 `presets`，表由**生效模型**的 `reasoningPreset` 指过来
-   * —— 用助手定义上那个模型去查会读错表，这段会话换过模型时两边不是同一个。生效模型为空时
-   * 回落成助手定义绑的那个（它才是「跟随助手定义」时真正会生效的那一个）。
+   * —— 用 AgentDefinition 上那个模型去查会读错表，这段会话换过模型时两边不是同一个。生效模型为空时
+   * 回落成 AgentDefinition 绑的那个（它才是「跟随 AgentDefinition」时真正会生效的那一个）。
    */
   get thinking(): ThinkingState {
     const effective = this.mirror.session.modelId ?? this.definitionModelId ?? null;
@@ -333,7 +333,7 @@ export class RemoteChatSession implements ChatSessionLike {
     return this.mirror.session.modelId;
   }
 
-  /** 排队条目（镜像里的那一格：`session.open` 的 `inbox` + `agent.inbox` 事件） */
+  /** 排队 InboxEntry（镜像里的那一格：`session.open` 的 `inbox` + `agent.inbox` 事件） */
   get inbox(): readonly InboxItem[] {
     return this.mirror.snapshot().inbox;
   }
@@ -356,15 +356,15 @@ export class RemoteChatSession implements ChatSessionLike {
    * ## 发之前先判死活
    *
    * PRD 4.1「生死」的第三条起跑路：「客户端点发送时先判这段是死是活，死的就调接口复活、再投递」。
-   * 宿主那一侧 **不做** 这一步：带 `sessionId` 而这一段没有执行体时，`agent.send` 只回
+   * 宿主那一侧 **不做** 这一步：带 `sessionId` 而这一段没有 Agent 时，`agent.send` 只回
    * `not_found`（「先唤醒再投递是客户端的编排」就写在 `modules/api/agent.ts` 里）。
    *
    * 所以判在**这一层**：所有发话入口共用它，而不是每个入口各写一遍。判据是**镜像里死活那一格
    * 现读**（`alive`：打开时 `session.open` 报一次，之后按 `agent.alive` 换）：
    *
-   *   · `true` —— 已有执行体，那一次 `wake` 是白跑的往返，**不打**；
-   *   · `false` —— 打开那一刻 `live` 就是 `null`（宿主口径：没有执行体即是死），先叫再投；
-   *   · `null` —— 还没读到，不当成「活」，也先叫一声（有执行体时宿主的 `wake` 是空操作）。
+   *   · `true` —— 已有 Agent，那一次 `wake` 是白跑的往返，**不打**；
+   *   · `false` —— 打开那一刻 `live` 就是 `null`（宿主口径：没有 Agent 即是死），先叫再投；
+   *   · `null` —— 还没读到，不当成「活」，也先叫一声（有 Agent 时宿主的 `wake` 是空操作）。
    *
    * 唤醒或投递没成，就到这里为止：**不重试、不兜底**（与全仓「不重试」同一条口径），宿主原话
    * 照传。唤醒那一句额外缀上「未能叫起来」的上下文，投递被拒（比如中间那一段被杀掉）只报原话。
@@ -372,7 +372,7 @@ export class RemoteChatSession implements ChatSessionLike {
    *
    * ## 其余三件不在这里
    *
-   * **不开闸**（「用户点发送就是继续」那一手是 {@link resume}）、**不判阶段**、**不替宿主兜底**：
+   * **不开开关**（「用户点发送就是继续」那一手是 {@link resume}）、**不判阶段**、**不替宿主兜底**：
    * 忙不忙不是判据 —— 活着就收下入队，什么时候取走是它自己的事。
    *
    * 同步拒绝（有问题挡着 / 目标已死 / 连接已断）不进事件通道：那是「这句没发出去」，报进通知栏，
@@ -391,14 +391,14 @@ export class RemoteChatSession implements ChatSessionLike {
         upload: (sources: readonly AssetSource[]) => uploadAssets(this.connection, sources),
       });
       for (const warning of built.warnings) this.notifier.onNotice(warning, "info");
-      // 撤回带回来的素材已经传上去过了（id 就是那一次上传的凭证），不再传一遍
+      // 撤回带回来的 Asset 已经传上去过了（id 就是那一次上传的凭证），不再传一遍
       const content = withRestoredAssets(built.input, assetIds);
 
       // ① 先判死活（镜像里那一格，现读）：死 / 还没读到就先叫一声，再投递。
       // 确知活着就跳过这一步 —— `agent.wake` 往返一次只为得到「本来就有」这个答案不值。
       if (this.alive !== true) {
         try {
-          await this.start();
+          await this.wake();
         } catch (error: unknown) {
           // 叫不起来就不投：不重试、不兜底（本机装配真的失败时重叫多少次都一样）
           this.sentBaseline = null;
@@ -411,7 +411,7 @@ export class RemoteChatSession implements ChatSessionLike {
       this.sentBaseline = new Set(this.mirror.messages.map((message) => message.id));
 
       const messageId = newMessageId();
-      await this.connection.api.agent.send.mutate({
+      await this.connection.api.runtime.agent.send.mutate({
         workspaceId: this.mirror.session.workspaceId,
         agentId: this.mirror.session.agentId,
         content,
@@ -437,27 +437,27 @@ export class RemoteChatSession implements ChatSessionLike {
   /**
    * 复活：**确保这段会话有 agent**（`agent.wake`，PRD 1.2 / PLAN §5.1）。
    *
-   * 已经有执行体时宿主是空操作。失败**不吞**（装配可能真的失败）：「按发送」那条路得知道这句
+   * 已经有 Agent 时宿主是空操作。失败**不吞**（装配可能真的失败）：「按发送」那条路得知道这句
    * 到底有没有发出去，所以错往上抛，由调用方说清楚。
    */
-  async start(): Promise<void> {
-    await this.connection.api.agent.wake.mutate({ sessionId: this.sessionIdValue });
+  async wake(): Promise<void> {
+    await this.connection.api.runtime.agent.wake.mutate({ sessionId: this.sessionIdValue });
     this.notifyChange(true);
   }
 
-  /** 暂停：**只关输出闸**（`agent.pause`，PRD 4.4）。留给程序化与内部用，界面上不暴露 */
-  async pause(): Promise<void> {
-    await this.connection.api.agent.pause.mutate({ sessionId: this.sessionIdValue });
+  /** 暂停：**只关输出开关**（`agent.pause`，PRD 4.4）。留给程序化与内部用，界面上不暴露 */
+  async pauseOutput(): Promise<void> {
+    await this.connection.api.runtime.agent.pauseOutput.mutate({ sessionId: this.sessionIdValue });
     this.notifyChange(true);
   }
 
   /**
-   * 继续：**只开输出闸、不投任何东西**（`agent.resume`，PRD 4.4）。
+   * 继续：**只开输出开关、不投任何东西**（`agent.resume`，PRD 4.4）。
    *
-   * 错照旧往上抛：调用方（`runSubmit`）得说清楚「开闸没成，所以这句没发」。
+   * 错照旧往上抛：调用方（`runSubmit`）得说清楚「开开关没成，所以这句没发」。
    */
-  async resume(): Promise<void> {
-    await this.connection.api.agent.resume.mutate({ sessionId: this.sessionIdValue });
+  async resumeOutput(): Promise<void> {
+    await this.connection.api.runtime.agent.resumeOutput.mutate({ sessionId: this.sessionIdValue });
     this.notifyChange(true);
   }
 
@@ -465,9 +465,9 @@ export class RemoteChatSession implements ChatSessionLike {
    * 等**这一句**真的有了下文。
    *
    * 判据全部来自契约事实，没有一条是「一轮」：
-   *   · 发出去之后出现了新消息（用户那句落地、或答复那条冒出来）；
+   *   · 发出去之后出现了新消息（用户那句写进 messages、或答复那条冒出来）；
    *   · 忙闲那一格回到了 `idle`（= 手上没活且队列真空）；
-   *   · 没有一条助手消息还停在 `pending` / `writing`。
+   *   · 没有一条 AgentDefinition 消息还停在 `pending` / `writing`。
    */
   async waitForReply(): Promise<void> {
     for (;;) {
@@ -480,7 +480,7 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   abort(): void {
-    void this.connection.api.agent.abort
+    void this.connection.api.runtime.agent.abort
       .mutate({ sessionId: this.sessionIdValue })
       .catch((error: unknown) => this.notifier.onNotice(messageOf(error), "error"));
   }
@@ -493,30 +493,30 @@ export class RemoteChatSession implements ChatSessionLike {
   /**
    * 让宿主重新发现能力（MCP 服务器、工具、skill、subagent），再把这一段手里的事实重取一次。
    *
-   * 刷新是宿主那一侧的事（`scope.reload`）：能力容器按目录活在宿主进程里，客户端连容器都摸
+   * 刷新是宿主那一侧的事（`scope.reload`）：Scope 按目录活在宿主进程里，客户端连容器都摸
    * 不到，能做的只有说一句「现在刷一遍」。回执里的数字就是那一手的结果，原样交回调用方 ——
    * 「刷了几份、有没有没刷成的」只有宿主答得上来，这里不自己编。
    *
    * 后两步（模型表 / 题）留着：刷新之后手里那几份事实本来就可能变，重取一次是本该做的。
    */
   async reload(): Promise<ScopeReloadReport> {
-    const report = await this.connection.api.scope.reload.mutate();
+    const report = await this.connection.api.runtime.scope.reload.mutate();
     await this.refreshModelFacts();
     await this.refreshQuestions();
     this.notifyChange(true);
     return report;
   }
 
-  /** 换**这一段会话**的模型（`session.setModel`，PRD F-B4） */
-  async setModel(modelId: string | null): Promise<void> {
+  /** 换**这一段会话**的模型（`session.updateModel`，PRD F-B4） */
+  async updateModel(modelId: string | null): Promise<void> {
     if (modelId === null) {
-      // 宿主这一版只收一个真实存在的模型 id（`modelId: z.string()`）：`null` 那条「回到助手
+      // 宿主这一版只收一个真实存在的模型 id（`modelId: z.string()`）：`null` 那条「回到 AgentDefinition
       // 定义」的路没有对应 procedure，如实拒绝，不偷偷换成定义上那个 id
       throw new Error(
-        "宿主这一版没有「回到助手定义上那个模型」的入口（`session.setModel` 只收 id）",
+        "宿主这一版没有「回到助手定义上那个模型」的入口（`session.updateModel` 只收 id）",
       );
     }
-    await this.connection.api.session.setModel.mutate({
+    await this.connection.api.session.updateModel.mutate({
       sessionId: this.sessionIdValue,
       modelId,
     });
@@ -538,9 +538,9 @@ export class RemoteChatSession implements ChatSessionLike {
     this.notifyChange(true);
   }
 
-  /** 改**这一段会话**的思考档位（`null` = 跟随助手默认，`session.setThinkingLevel`） */
-  async setThinking(level: string | null): Promise<void> {
-    await this.connection.api.session.setThinkingLevel.mutate({
+  /** 改**这一段会话**的思考档位（`null` = 跟随 AgentDefinition 默认，`session.updateThinkingLevel`） */
+  async updateThinkingLevel(level: string | null): Promise<void> {
+    await this.connection.api.session.updateThinkingLevel.mutate({
       sessionId: this.sessionIdValue,
       level,
     });
@@ -552,10 +552,10 @@ export class RemoteChatSession implements ChatSessionLike {
    * 撤回到某条用户消息**之前**（`session.rewind`）：其后消息硬删，被撤回的内容由宿主给回来。
    *
    * 回的是**输入那一份载体**（{@link MessageInput}），不是光秃秃的内容：那条消息里带的图在段上
-   * 留着素材 id，拆出来放进 `assetIds` —— 输入框那一侧才谈得上「把图也带回来」（PRD 3.9：
+   * 留着 Asset id，拆出来放进 `assetIds` —— 输入框那一侧才谈得上「把图也带回来」（PRD 3.9：
    * 输入历史＝这段会话里的用户消息，带图的那条连图一起恢复）。
    */
-  async revert(beforeMessageId: string): Promise<MessageInput> {
+  async rewind(beforeMessageId: string): Promise<MessageInput> {
     const { content } = await this.connection.api.session.rewind.mutate({
       sessionId: this.sessionIdValue,
       messageId: beforeMessageId,
@@ -618,14 +618,14 @@ export class RemoteChatSession implements ChatSessionLike {
   /**
    * 清空这段会话的排队区（`agent.clearInbox`）—— 回宿主数的那个条数。
    *
-   * 排队区分两处存（执行体内存里的队列、`inbox` 表里的行），怎么清是宿主的判据（有活执行体就
+   * 排队区分两处存（Agent 内存里的队列、`inbox` 表里的行），怎么清是宿主的判据（有活 Agent 就
    * 走内核作废，没有就直接清库行并自己推一条空队列），客户端只认它回来的 `cleared`。
    *
    * 失败照这一族别的调用一样**抛出去**（`rename` / `pin` 那些也是 `await` 完就完）：`/free` 要的
    * 是「清干净了没有」，吞掉就成了假装清成功 —— 这与从前那句「宿主没有这条 procedure」不是一回事。
    */
   async clearInbox(): Promise<number> {
-    const { cleared } = await this.connection.api.agent.clearInbox.mutate({
+    const { cleared } = await this.connection.api.runtime.agent.clearInbox.mutate({
       sessionId: this.sessionIdValue,
     });
     return cleared;
@@ -859,7 +859,7 @@ export class RemoteChatSession implements ChatSessionLike {
     this.rate.finish();
   }
 
-  /** 整段会话的累计产出 token（把每条助手消息上的 `usage` 加起来） */
+  /** 整段会话的累计产出 token（把每条 AgentDefinition 消息上的 `usage` 加起来） */
   private completionTokens(): number {
     let total = 0;
     for (const message of this.mirror.messages) {
@@ -915,7 +915,7 @@ export class RemoteChatSession implements ChatSessionLike {
     }
   }
 
-  /** 重取模型 / 档位那两格（配置与助手定义） */
+  /** 重取模型 / 档位那两格（配置与 AgentDefinition） */
   private async refreshModelFacts(): Promise<void> {
     try {
       this.configValue = await this.connection.api.config.get.query();
@@ -923,14 +923,14 @@ export class RemoteChatSession implements ChatSessionLike {
       // 读不到就是「不知道模型表」：`model` / `thinking` 会回落成 id 与空档位表，不编
     }
     try {
-      const { definition } = await this.connection.api.agentDefinition.get.query({
+      const { definition } = await this.connection.api.config.agents.get.query({
         agentId: this.mirror.session.agentId,
       });
       this.definitionModelId = definition.modelId ?? null;
       this.definitionName = definition.name;
       this.definitionAvailable = true;
     } catch {
-      // 定义没了（助手被删）：`available: false`，名字与模型都如实回空
+      // 定义没了（AgentDefinition 被删）：`available: false`，名字与模型都如实回空
       this.definitionModelId = null;
       this.definitionName = null;
       this.definitionAvailable = false;
@@ -1082,8 +1082,8 @@ async function openSession(
 
   const agentId = input.agentId ?? (await defaultAgentId(connection));
   /**
-   * 建一段新会话 —— `session.create` 只写库：不唤醒执行体，也不投递任何东西。于是刚建出来的
-   * 这一段是一段没有执行体的会话，第一次发话时 {@link RemoteChatSession.send} 会先叫起来再投。
+   * 建一段新会话 —— `session.create` 只写库：不唤醒 Agent，也不投递任何东西。于是刚建出来的
+   * 这一段是一段没有 Agent 的会话，第一次发话时 {@link RemoteChatSession.send} 会先叫起来再投。
    */
   const { session } = await connection.api.session.create.mutate({ workspaceId, agentId });
   return await loadSession(connection, session.id);
@@ -1097,7 +1097,7 @@ async function loadSession(connection: HostConnection, sessionId: string): Promi
   let definitionAvailable: boolean | null = null;
   let definitionName: string | null = null;
   try {
-    const { definition } = await connection.api.agentDefinition.get.query({
+    const { definition } = await connection.api.config.agents.get.query({
       agentId: mirror.session.agentId,
     });
     definitionModelId = definition.modelId ?? null;
@@ -1134,7 +1134,7 @@ async function readConfig(
   }
 }
 
-/** 没点名助手时用宿主配置里的默认助手（缺省项归宿主，客户端不猜） */
+/** 没点名 AgentDefinition 时用宿主配置里的默认 AgentDefinition（缺省项归宿主，客户端不猜） */
 async function defaultAgentId(connection: HostConnection): Promise<string> {
   const { config } = await connection.api.config.get.query();
   const agentId = config.defaultAgent;
@@ -1181,7 +1181,7 @@ async function rememberSession(
   }
 }
 
-/** 一条新消息 id（客户端给的那个 id：宿主据它认「落地的是哪一条」） */
+/** 一条新消息 id（客户端给的那个 id：宿主据它认「写进 messages 的是哪一条」） */
 function newMessageId(): string {
   return `cli-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -1204,11 +1204,11 @@ function messageOf(error: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// 内容段 ↔ 素材 id（撤回回填时把图带回去）
+// 内容段 ↔ Asset id（撤回回填时把图带回去）
 // ---------------------------------------------------------------------------
 
 /**
- * 段上的本地标记：指回数据根下的一份素材。
+ * 段上的本地标记：指回数据根下的一份 Asset。
  *
  * 写它的是 `user-content.ts`（`contentOfInput`），宿主 `ASSET_ID_KEY` 是同一个词；这里只读，
  * 不造第二个名字。
@@ -1216,7 +1216,7 @@ function messageOf(error: unknown): string {
 const ASSET_ID_KEY = "__asset_id";
 
 /**
- * 一条消息的内容 → 它挂着的素材 id（**按原顺序、不去重**）。
+ * 一条消息的内容 → 它挂着的 Asset id（**按原顺序、不去重**）。
  *
  * 不去重是有意的：同一张图在同一条消息里出现两次，用户就是放了两次 —— 去重会让撤回之后
  * 少一张，而那是静默改用户的消息。
@@ -1232,9 +1232,9 @@ function assetIdsOfContent(content: AgentNS.MessageContent | undefined): string[
 }
 
 /**
- * 把已经传上去的素材（撤回回填的那几张）挂进这次要发的内容里。
+ * 把已经传上去的 Asset（撤回回填的那几张）挂进这次要发的内容里。
  *
- * 它们排在**这一次新粘贴的之前**：原消息里本来就在前面，用户新贴的是后加的。素材段由
+ * 它们排在**这一次新粘贴的之前**：原消息里本来就在前面，用户新贴的是后加的。Asset 段由
  * `contentOfInput` 拼（段上那个标记键只有 `user-content.ts` 认），这里只决定摆在哪一段后面 ——
  * 文字在最前，之后依次是撤回带回来的、这次传上去的。
  */

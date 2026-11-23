@@ -1,4 +1,4 @@
-// 多行文本编辑屏 PromptEditorScreen（助手的提示词 / 函数说明 / 参数 schema）
+// 多行文本编辑屏 PromptEditorScreen（AgentDefinition 的提示词 / 函数说明 / 参数 schema）
 //
 // ## 为什么内容不在这屏里敲
 //
@@ -55,7 +55,7 @@ export interface PromptEditorScreenProps {
   /**
    * 写盘之前先出一次确认（PRD 1.6「二次确认要能先给代价、再真做」）。
    *
-   * 助手的提示词 / 函数说明 / 参数 schema 是**定义**的一部分：改一次，所有用这个助手的会话都跟
+   * AgentDefinition 的提示词 / 函数说明 / 参数 schema 是**定义**的一部分：改一次，所有用这个 AgentDefinition 的会话都跟
    * 着变。所以保存之前要先把代价说清（说人话：正在看的那段回答会断）。
    */
   confirm?: { title: string; cost: readonly string[] };
@@ -72,7 +72,7 @@ export interface PromptEditorScreenProps {
  *
  * 两处务实的选择：
  *   - **没改动就不写盘**：编辑器原样退出（`:q`）不该换来一次 `agent.update` ——
- *     那会把出厂助手悄悄标成自定义，也白白多一条通知；
+ *     那会把出厂 AgentDefinition 悄悄标成自定义，也白白多一条通知；
  *   - **校验失败保留草稿**（`draft`）：参数 schema 不是合法 JSON 时，用户刚打的那几十行还在
  *     屏上，再按 `Enter` 是在它上面接着改，而不是退回原值重敲。
  */
@@ -100,7 +100,7 @@ export function PromptEditorScreen({
   // 草稿优先：失败过一次之后屏上/编辑器里都该是「用户改过的那份」
   const current = draft ?? text;
 
-  /** 真的把那一次写发出去（确认之后的落地） */
+  /** 真的把那一次写发出去（确认之后的写进 messages） */
   const commit = async (edited: string) => {
     try {
       const failure = await onSave(edited);

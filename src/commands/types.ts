@@ -23,7 +23,7 @@
 
 import type { McpEditableScope } from "../config.js";
 
-/** 选择器条目：`value` 原样回到 `pick()` 的答案里（命令层自己解释它的含义） */
+/** 选择器 InboxEntry：`value` 原样回到 `pick()` 的答案里（命令层自己解释它的含义） */
 export interface SelectItem<T> {
   label: string;
   value: T;

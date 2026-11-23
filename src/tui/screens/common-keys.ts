@@ -99,7 +99,7 @@ export interface ClearAllNoticesDeps {
  * ⌘ / PgUp / PgDn 给了滚动。
  *
  * 这里**不做**任何清除动作：清全部会连全局通知、连别的会话的通知一起抹掉，所以它只开那一问
- * （`chat.tsx` 的 `clearAllNotices`），用户点头之后才发 `notice.clear`。
+ * （`chat.tsx` 的 `clearAllNotices`），用户点头之后才发 `notice.deleteAll`。
  *
  * @returns 是否已消费该键
  */

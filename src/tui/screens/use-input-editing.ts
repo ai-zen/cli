@@ -48,9 +48,9 @@ export interface InputEditingDeps {
    */
   historySource: () => readonly HistoryEntry[];
   /**
-   * 把历史里的附件放回输入区（`↑` 回到带图的消息时）：内联图片的字节 + 已经传上去的素材 id。
+   * 把历史里的附件放回输入区（`↑` 回到带图的消息时）：内联图片的字节 + 已经传上去的 Asset id。
    *
-   * 两样一起给：只放回字节的话，走素材上传那种图在 `↑` 时静默丢失（PRD 3.9「带图的那条
+   * 两样一起给：只放回字节的话，走 Asset 上传那种图在 `↑` 时静默丢失（PRD 3.9「带图的那条
    * 连图一起恢复」）。没有附件时两边都是空数组 —— 那不是「没变化」，是「这一条没有图」。
    */
   restoreAttachments: (images: readonly ClipboardImage[], assetIds: readonly string[]) => void;

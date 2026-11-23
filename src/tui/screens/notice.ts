@@ -7,7 +7,7 @@
  * 那一行写的是两个键（三档粒度里的后两档，`prd/08-client.md` 的通知那一节）：
  *
  *   · `Alt+X`（`common-keys.ts` 的 `handleClearNoticesKey`）：清掉本地队列
- *     （{@link NoticeChannel.clear}），再让宿主把**这一段会话**的通知清掉（`notice.clear` 的
+ *     （{@link NoticeChannel.clear}），再让宿主把**这一段会话**的通知清掉（`notice.deleteAll` 的
  *     按会话那一档，见 `pending-notices.ts` 的 `clearSessionNotices`，入参是 `sessionId`）——
  *     不给 `sessionId` 就是「清整个宿主库」，会把别的会话还没上屏的通知一起抹掉。
  *   · `Alt+Shift+X`（`handleClearAllNoticesKey`）：「清全部」。它自己不发任何请求，只开一次
@@ -200,5 +200,5 @@ export interface NoticeBarContent {
 export function noticeBarContent(notices: readonly Notice[], columns: number): NoticeBarContent {
   const lines = noticeLines(notices, columns);
   if (lines.length === 0) return { lines, hint: null, height: 0 };
-  return { lines, hint: t("notice.clearHint"), height: lines.length + 1 };
+  return { lines, hint: t("notice.deleteAllHint"), height: lines.length + 1 };
 }

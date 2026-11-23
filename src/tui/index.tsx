@@ -205,7 +205,7 @@ function CredentialGate({
  * 配置本身残缺（模型 / 端点不存在）时不在此拦截 —— 交给会话屏报错，
  * 那里可按 `k` 打开配置中心自行修配置。
  *
- * 三份快照（配置 / 助手清单 / 发现视图）只在真要开屏时才读：向导整屏接管要用它们。
+ * 三份快照（配置 / AgentDefinition 清单 / 发现视图）只在真要开屏时才读：向导整屏接管要用它们。
  */
 async function ensureCredential(
   connection: HostConnection,
@@ -218,8 +218,8 @@ async function ensureCredential(
   if (!credential || credential.configured) return true;
 
   const [agents, { servers }] = await Promise.all([
-    connection.api.agentDefinition.list.query(),
-    connection.api.mcp.list.query({ workspaceId }),
+    connection.api.config.agents.list.query(),
+    connection.api.config.mcp.list.query({ workspaceId }),
   ]);
 
   const result = (await mount(
@@ -259,19 +259,19 @@ interface ChatTarget {
 }
 
 /**
- * 这一屏的目标：**哪个助手 + 哪个工作区**。
+ * 这一屏的目标：**哪个 AgentDefinition + 哪个工作区**。
  *
  * 模型不在这里算，也一并不在这里校验 —— 「这段会话实际用哪个模型」只有会话说得准
- * （见 {@link openTargetSession}）。客户端自己拿助手定义加全局兜底推一遍，等于把宿主那套
- * 三级解析（会话级 → 助手 → 全局）抄成两级：会话级覆盖存在时它必然算错，而错的后果不是报错，
+ * （见 {@link openTargetSession}）。客户端自己拿 AgentDefinition 加全局兜底推一遍，等于把宿主那套
+ * 三级解析（会话级 → AgentDefinition → 全局）抄成两级：会话级覆盖存在时它必然算错，而错的后果不是报错，
  * 是「状态栏显示 A、实发请求 B」。
  */
 async function resolveTarget(connection: HostConnection, workspaceId: string): Promise<ChatTarget> {
-  // 默认助手与助手定义都由宿主给（`config.get` + `agentDefinition.list`）：子 Agent 不是入口，
+  // 默认 AgentDefinition 与 AgentDefinition 都由宿主给（`config.get` + `agentDefinition.list`）：子 Agent 不是入口，
   // 定义里有没有 `function` 明说了这件事，客户端按它挑
   const [{ config }, definitions] = await Promise.all([
     connection.api.config.get.query(),
-    connection.api.agentDefinition.list.query(),
+    connection.api.config.agents.list.query(),
   ]);
   const list = agentListOf(definitions, config);
   const agentId = list.defaultAgentId ?? topLevelAgents(list)[0]?.id;
@@ -383,7 +383,7 @@ async function runChat(
   let current = target;
   let messages = target.messages;
   let initialInput: string | undefined;
-  /** 撤回回填的那几张素材（与 `initialInput` 同一次回填的两半，见 `CommandExitValue`） */
+  /** 撤回回填的那几张 Asset（与 `initialInput` 同一次回填的两半，见 `CommandExitValue`） */
   let initialAssetIds: string[] | undefined;
   /** 重挂载后要展示一次的系统提示（如 `/model` 的写入结果，旧实例已卸载，只能传给新屏） */
   let initialNotice: string | undefined;
@@ -622,7 +622,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
           return;
         }
 
-        // 直达会话：助手身份由宿主给（`agent.list`）—— 这一层只负责「哪个助手 + 哪个工作区」，
+        // 直达会话：AgentDefinition 身份由宿主给（`agent.list`）—— 这一层只负责「哪个 AgentDefinition + 哪个工作区」，
         // 「接不接上次」只在这里定：不带 `--new` 就带上 resume 意图，带上就一定是新会话。
         let target: ChatTarget | null = null;
         try {
@@ -638,7 +638,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
         if (!options.newSession) target = resumeLastSession(target);
 
         // 开/续接会话在凭据预检**之前**：模型只在开会话那一步才定下来（宿主按
-        // 「会话级 → 助手 → 全局」算，写进会话行），客户端自己算不出一模一样的那个值。
+        // 「会话级 → AgentDefinition → 全局」算，写进会话行），客户端自己算不出一模一样的那个值。
         const opened = await openTargetSession(sessions, target);
         let bootError: string | undefined;
         if ("bootError" in opened) {

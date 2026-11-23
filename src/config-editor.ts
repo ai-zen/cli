@@ -3,14 +3,14 @@
  *
  * ## 这里不写配置
  *
- * 写入全部走 procedure，而且**一次改动一次调用**：默认项走 `config.setDefaults`，上限与中断策略
- * 走 `config.setGlobal`，端点 / 模型 / 图片模型各走 `config.endpoint.*` / `config.model.*` /
- * `config.imageModel.*`，助手走 `agentDefinition.*`，MCP 走 `mcp.save` / `mcp.remove`。而且每个
+ * 写入全部走 procedure，而且**一次改动一次调用**：默认项走 `config.defaults.update`，上限与中断策略
+ * 走 `config.update`，端点 / 模型 / 图片模型各走 `config.endpoints.*` / `config.models.*` /
+ * `config.imageModels.*`，AgentDefinition 走 `agentDefinition.*`，MCP 走 `mcp.save` / `mcp.remove`。而且每个
  * 写口都回**整份** `AppConfig`，所以这一层连「改完拼一份新的」都不需要：宿主已经是那个落点。
  *
  * 于是剩下来的都是**不碰真相**的事：
  *   - 在宿主给的形状上挑字段（`AppConfig` / `AgentDefinition` 里找一条）；
- *   - 由名称派生 id（`config.model.add` / `config.endpoint.add` 的 id 由客户端定，宿主只负责落盘）；
+ *   - 由名称派生 id（`config.models.create` / `config.endpoints.create` 的 id 由客户端定，宿主只负责落盘）；
  *   - 把用户敲进去的文本解析成契约里的值（argv、`KEY=VALUE`、权限策略、函数参数 schema）；
  *   - 把「改了这一处」拼成一次 procedure 的入参（如提示词 → `agentDefinition.update` 的 `messages`）。
  *
@@ -19,7 +19,7 @@
  */
 
 import { AgentNS, Message } from "@ai-zen/agents-core";
-import type { AgentDefinition, AppConfig, Endpoint, Model } from "./config.js";
+import type { AgentDefinition, AppConfig, EndpointDefinition, ModelDefinition } from "./config.js";
 import { t } from "./i18n/index.js";
 
 /**
@@ -36,7 +36,7 @@ export const DEFAULT_MAX_TOOL_OUTPUT = 32768;
 export function findModel(
   config: Pick<AppConfig, "models">,
   modelId: string | undefined,
-): Model | undefined {
+): ModelDefinition | undefined {
   if (!modelId) return undefined;
   return config.models.find((model) => model.id === modelId);
 }
@@ -45,13 +45,13 @@ export function findModel(
 export function findEndpoint(
   config: AppConfig,
   endpointId: string | undefined,
-): Endpoint | undefined {
+): EndpointDefinition | undefined {
   if (!endpointId) return undefined;
   return config.endpoints.find((endpoint) => endpoint.id === endpointId);
 }
 
 /** 引用某端点的模型清单（用于提示改动波及范围） */
-export function modelsUsingEndpoint(config: AppConfig, endpointId: string): Model[] {
+export function modelsUsingEndpoint(config: AppConfig, endpointId: string): ModelDefinition[] {
   return config.models.filter((model) => model.endpointId === endpointId);
 }
 
@@ -127,7 +127,7 @@ export function summarizeEndpoints(config: AppConfig): string {
  * 某模型的端点密钥状态（给「这个模型现在能不能真的跑」那一格提示用）。
  *
  * 它是**配置里两格的事实**（模型的 `endpointId` + 那端点的 `apiKey` 空不空），不是宿主的
- * 「可用性」判断：旧契约曾把 `available` / `unavailableReason` 算好放在模型与助手上，这一版
+ * 「可用性」判断：旧契约曾把 `available` / `unavailableReason` 算好放在模型与 AgentDefinition 上，这一版
  * 没有了。所以这里只说得出「端点还在不在、密钥填没填」—— 而这也正是用户当下能改的那两件事。
  */
 export interface EndpointKeyState {
@@ -137,7 +137,7 @@ export interface EndpointKeyState {
   ready: boolean;
 }
 
-export function endpointKeyState(config: AppConfig, model: Model): EndpointKeyState {
+export function endpointKeyState(config: AppConfig, model: ModelDefinition): EndpointKeyState {
   const endpoint = findEndpoint(config, model.endpointId);
   if (!endpoint) return { endpointName: null, ready: false };
   return { endpointName: endpoint.name || endpoint.id, ready: endpoint.apiKey !== "" };
@@ -214,7 +214,7 @@ export function uniqueImageModelId(config: AppConfig, name: string): string {
   );
 }
 
-/** 由助手名派生唯一 id（在既有 id 集合内避让） */
+/** 由 AgentDefinition 名派生唯一 id（在既有 id 集合内避让） */
 export function uniqueAgentId(taken: Iterable<string>, name: string, fallback = "agent"): string {
   return deriveUniqueId(new Set(taken), name, fallback);
 }
@@ -371,10 +371,10 @@ export function patchPermission(
   return next;
 }
 
-// ==================== 助手提示词 / 函数定义 ====================
+// ==================== AgentDefinition 提示词 / 函数定义 ====================
 
 /**
- * 一条助手的函数定义。
+ * 一条 AgentDefinition 的函数定义。
  *
  * 只有子 Agent 才有（`AgentDefinition.function` 不在 = 不是子 Agent）。
  */

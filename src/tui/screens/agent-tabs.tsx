@@ -15,7 +15,7 @@ import { Box, Text } from "ink";
 import { theme } from "../theme.js";
 import type { SubAgentStatus } from "../../subagent-status.js";
 
-/** 一个可切换的 Agent 条目 */
+/** 一个可切换的 Agent InboxEntry */
 export interface AgentTab {
   /** 稳定 id：`"main"` 或子 Agent 视图 id */
   id: string;

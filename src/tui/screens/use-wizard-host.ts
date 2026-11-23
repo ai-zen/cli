@@ -7,7 +7,7 @@
 // 依赖方向是**注入**而非 import 会话：宿主要做的事（通知、重启、重载会话）都通过
 // `WizardHostDeps` 传进来，于是 hook 可以在测试里用假依赖跑完整生命周期。
 //
-// 读快照只有三处 procedure（`api.config.get` / `api.agentDefinition.list` / `api.mcp.list`），
+// 读快照只有三处 procedure（`api.config.get` / `api.config.agents.list` / `api.config.mcp.list`），
 // 写全在向导屏里 —— 它拿的是**同一条** `api`，所以这里不必再有一份「保存」的接口。
 import { useState } from "react";
 import type { AppConfig, McpEntry, ReasoningPresets } from "../../config.js";
@@ -48,12 +48,12 @@ export interface WizardHostState {
   wizardConfig: AppConfig | null;
   /** 同一份出参里的档位表（模型上的 `reasoningPreset` 指它的键） */
   wizardPresets: ReasoningPresets | null;
-  /** `agentDefinition.list` 的定义清单（+ 默认助手 id，来自 `config.defaultAgent`） */
+  /** `agentDefinition.list` 的定义清单（+ 默认 AgentDefinition id，来自 `config.defaultAgent`） */
   wizardAgents: AgentList | null;
   /** `mcp.list` 的服务器清单（每条带 `scope`） */
   wizardServers: McpEntry[] | null;
   /**
-   * 每个助手上挂着几段会话（「删助手」那句代价里的数字）。
+   * 每个 AgentDefinition 上挂着几段会话（「删 AgentDefinition」那句代价里的数字）。
    *
    * `null` = 数不出来（读失败 / 还没读）：那时代价只说影响面，不给数字 —— 编一个数比不说更糟。
    */
@@ -85,10 +85,10 @@ export function useWizardHost({
   );
 
   /**
-   * 读齐那三份快照（配置 + 档位表 / 助手定义 / MCP 清单）。
+   * 读齐那三份快照（配置 + 档位表 / AgentDefinition / MCP 清单）。
    *
    * **串行**不并行：三条请求并发时任何一条炸，报出来的都是同一个 catch，「哪一份读不出来」就
-   * 没影了。三份都必须有 —— 向导屏是一个整体（菜单上同时印端点、模型、MCP 两层、助手与默认项），
+   * 没影了。三份都必须有 —— 向导屏是一个整体（菜单上同时印端点、模型、MCP 两层、AgentDefinition 与默认项），
    * 少一份就只能渲染半块屏。
    *
    * `config.get` 一次给配置**和**档位表：它们是两个文件，但界面要同时看见（模型上那一格
@@ -97,15 +97,16 @@ export function useWizardHost({
   const readSnapshots = async () => {
     const { config, presets } = await api.config.get.query();
     // 清单原样交给 `agentListOf`：wire 上的定义只剩字段，转换只有那一处（`toDefinition`）
-    const definitions = await api.agentDefinition.list.query();
-    const servers = workspaceId === "" ? [] : (await api.mcp.list.query({ workspaceId })).servers;
+    const definitions = await api.config.agents.list.query();
+    const servers =
+      workspaceId === "" ? [] : (await api.config.mcp.list.query({ workspaceId })).servers;
     return { config, presets, agents: agentListOf(definitions, config), servers };
   };
 
   /**
-   * 每个助手上挂着几段会话（`workspace.list` → 逐个 `session.list`）。
+   * 每个 AgentDefinition 上挂着几段会话（`workspace.list` → 逐个 `session.list`）。
    *
-   * 只有「删助手」那一处要这个数（PRD 3.4 要删之前说清影响面）。两条都是已有的读 procedure，
+   * 只有「删 AgentDefinition」那一处要这个数（PRD 3.4 要删之前说清影响面）。两条都是已有的读 procedure，
    * 客户端编排：宿主这一版的 `session.list` 只按工作区列（与 `/load --all` 同一条路）。
    *
    * 数不出来就往 `null` 走：代价那一句改成一句人话，**不编数字**。也不把这个失败报上去 ——
@@ -129,7 +130,7 @@ export function useWizardHost({
 
   const openWizard = async (step: WizardStep) => {
     try {
-      // 会话计数与三份快照并行：它只是给「删助手」多一格事实，不该把整屏拖慢一拍
+      // 会话计数与三份快照并行：它只是给「删 AgentDefinition」多一格事实，不该把整屏拖慢一拍
       const [{ config, presets, agents, servers }, sessionsByAgent] = await Promise.all([
         readSnapshots(),
         countSessionsByAgent(),

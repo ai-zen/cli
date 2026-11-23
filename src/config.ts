@@ -4,9 +4,9 @@
  * ## 谁拥有配置
  *
  * 宿主。读写都走 procedure：读 `api.config.get.query()` 一次给全（`AppConfig` + 档位表），
- * 写各归各的门 —— `config.setDefaults` / `config.setGlobal` / `config.endpoint.*` /
- * `config.model.*` / `config.imageModel.*` / `config.presets.set`，助手定义走
- * `api.agentDefinition.*`，MCP 走 `api.mcp.*`。本进程既不持有第二份真相，也不在本地拼一份
+ * 写各归各的门 —— `config.defaults.update` / `config.update` / `config.endpoints.*` /
+ * `config.models.*` / `config.imageModels.*` / `config.presets.update`，AgentDefinition 走
+ * `api.config.agents.*`，MCP 走 `api.mcp.*`。本进程既不持有第二份真相，也不在本地拼一份
  * 「整个配置」再整体写回 —— 而且**每个写口都回整份 `AppConfig`**，界面拿到的是改完之后那一份，
  * 不必自己把补丁叠到手里那份快照上。
  *
@@ -17,7 +17,7 @@
  *
  *   <dataRoot>/                     ← `AI_ZEN_DIR`，缺省 `~/.ai-zen`
  *   ├── ai-zen.db                   ← 库：会话、消息、通知、问题都在这里（没有「每条会话一个文件」）
- *   ├── assets/                     ← 附件与上传上来的素材
+ *   ├── assets/                     ← 附件与上传上来的 Asset
  *   ├── config.json                 ← SDK 的配置（端点 / 模型 / 默认项 / 上限 / 行为开关）
  *   ├── reasoning-presets.json      ← 档位表（模型上的 `reasoningPreset` 指它的键）
  *   ├── host.json                   ← 宿主自己的设置（端口、实例对外与否…）
@@ -29,7 +29,7 @@
  *   │   │                             launch.log（每次拉起清空）
  *   │   │                             keys.log（默认关）
  *   │   └── desktop/                ← 将来的桌面端（今天只占名字，不建目录）
- *   ├── agents/                     ← 助手定义（一实体一文件）
+ *   ├── agents/                     ← AgentDefinition（一实体一文件）
  *   ├── sub-agents/                 ← 子 Agent 定义
  *   ├── skills/  tools/             ← 用户级 Skill 与工具
  *   └── mcp.json                    ← 用户级 MCP（MCP 五层链里的一层）
@@ -40,7 +40,7 @@
  *   <cwd>/.ai-zen/{skills,tools,sub-agents}/、<cwd>/.agents/{skills,tools,sub-agents}/
  *
  * 这些路径**不由本进程推导**：客户端与服务端可能不是同一台机器，算出来的第二份答案会在两机
- * 部署时安静地错。要看某一层现在有什么，问 `api.mcp.list`（每条带 `scope`）；要问数据根在哪，
+ * 部署时安静地错。要看某一层现在有什么，问 `api.config.mcp.list`（每条带 `scope`）；要问数据根在哪，
  * 那不在配置里 —— `config.get` 回来的 `AppConfig` 没有这一格（旧版那个 `configDir` 已随旧契约
  * 退场）。数据根是本进程自己的事实：`CliEnv.aiZenDir`（`--ai-zen-dir` / `AI_ZEN_DIR`）。
  *
@@ -53,10 +53,10 @@
 import type {
   AgentDefinition,
   AppConfig,
-  Endpoint,
-  ImageModel,
-  McpServerConfig,
-  Model,
+  EndpointDefinition,
+  ImageModelDefinition,
+  McpServerDefinition,
+  ModelDefinition,
   ReasoningPreset,
   ReasoningPresets,
   TokenThresholds,
@@ -65,10 +65,10 @@ import type {
 export type {
   AgentDefinition,
   AppConfig,
-  Endpoint,
-  ImageModel,
-  McpServerConfig,
-  Model,
+  EndpointDefinition,
+  ImageModelDefinition,
+  McpServerDefinition,
+  ModelDefinition,
   ReasoningPreset,
   ReasoningPresets,
   TokenThresholds,
@@ -113,8 +113,8 @@ export const MCP_SCOPE_OF: Record<McpEditableScope, McpScope> = {
   workspace: "workspaceAiZen",
 };
 
-/** `api.mcp.list.query()` 的一行：这一条 + 它写在哪一层 */
+/** `api.config.mcp.list.query()` 的一行：这一条 + 它写在哪一层 */
 export interface McpEntry {
   scope: McpScope;
-  server: McpServerConfig;
+  server: McpServerDefinition;
 }

@@ -53,7 +53,7 @@ export interface CommandMeta {
  * 命令处理器表以 `Record<CommandName, …>` 声明，于是「新增命令但忘了写处理器」是
  * **编译错误**，而不是运行时静默落到「未知命令」。
  *
- * 但 `as const` 的代价是联合类型里**没有别名的条目压根没有 `aliases` 字段**，
+ * 但 `as const` 的代价是联合类型里**没有别名的 InboxEntry 压根没有 `aliases` 字段**，
  * 遍历时访问会报错。所以这里只把它作为内部字面量，对外导出的
  * {@link COMMAND_REGISTRY} 放宽成 `readonly CommandMeta[]` —— 类型保护一分不少，
  * 而所有遍历点都能直接读 `command.aliases`，不需要额外的取值 helper。
@@ -70,7 +70,7 @@ export interface CommandMeta {
  * （旧版升的是 CLI 自己；现在装的是宿主包、重启的是宿主，PRD 3.8 / 2.3）。
  *
  * `back` 是主名、`revert` 退成别名：用户说的是「回到那条消息之前」，而契约方法名
- * `session.revert` 本来就在执行体里写明，不必让命令名去迁就它。
+ * `session.revert` 本来就在 Agent 里写明，不必让命令名去迁就它。
  *
  * `descriptionKey` 的键名与命令名对齐（`cmd.upgrade.*` 跟着 `upgrade`、`cmd.back.*` 跟着
  * `back`）：键名和命令名不一致时，下一个人改文案得先猜哪一份字典说的是哪条命令。
@@ -123,14 +123,14 @@ const REGISTRY_ENTRIES = [
   { name: "mcp", descriptionKey: "cmd.mcp.desc" },
   { name: "key", descriptionKey: "cmd.key.desc" },
   /**
-   * `/reload` 让宿主重新发现能力（MCP 服务器、工具、skill、subagent）：能力容器活在宿主进程里，
+   * `/reload` 让宿主重新发现能力（MCP 服务器、工具、skill、subagent）：Scope 活在宿主进程里，
    * 这一条是那个「现在刷一遍」的入口，回执里说清刷了几份、有没有没刷成的。
    */
   { name: "reload", descriptionKey: "cmd.reload.desc" },
   { name: "upgrade", descriptionKey: "cmd.upgrade.desc" },
   { name: "lang", descriptionKey: "cmd.lang.desc" },
   /**
-   * 交接两条，后果不同，所以是两个名字：`/handoff` 只写一份文档（`kind: "document"`，记忆与执行体
+   * 交接两条，后果不同，所以是两个名字：`/handoff` 只写一份文档（`kind: "document"`，记忆与 Agent
    * 都不动），`/migrate` 写完就换手（`kind: "swap"`，旧记忆成为一段已存档会话）。两句说明也就得
    * 各说各的，菜单上才分得开。
    */
@@ -138,12 +138,12 @@ const REGISTRY_ENTRIES = [
   { name: "migrate", descriptionKey: "cmd.migrate.desc", blocksInput: true },
   { name: "help", descriptionKey: "cmd.help.desc" },
   /**
-   * `/kill` 杀死一段会话的**执行体**（`agent.kill`）：PRD 1.2 里「能让一段会话死的三条路」
-   * 之一，而且只有这一条会让没消费的条目悄然消失 —— 所以它排在 `/delete` 前面、与 `/delete`
+   * `/kill` 杀死一段会话的**Agent**（`agent.kill`）：PRD 1.2 里「能让一段会话死的三条路」
+   * 之一，而且只有这一条会让没消费的 InboxEntry 悄然消失 —— 所以它排在 `/delete` 前面、与 `/delete`
    * `/shutdown` 挨着摆（三条都是一次确认之后不可撤销的动作）。
    *
    * 与 `/delete` 分的很清楚：`/kill` 收掉的是 agent，会话行与历史一个字不动；`/delete` 删的
-   * 是那一段会话本身（消息与素材一起没）。名字取 `kill` —— 它就是一回事。
+   * 是那一段会话本身（消息与 Asset 一起没）。名字取 `kill` —— 它就是一回事。
    */
   { name: "kill", descriptionKey: "cmd.kill.desc" },
   /**
@@ -233,7 +233,7 @@ export function parseCommandInput(text: string): { name: string; args: string[] 
   return { name: name.toLowerCase(), args };
 }
 
-/** 命令展示条目：等价写法（如 `/exit` `/quit`）折叠为一条 */
+/** 命令展示 InboxEntry：等价写法（如 `/exit` `/quit`）折叠为一条 */
 export interface CommandHint {
   /** 全部等价写法（不含 `/` 前缀），首个为主命令名 */
   names: string[];
@@ -243,7 +243,7 @@ export interface CommandHint {
   description: string;
 }
 
-/** 展开全部命令为展示条目（别名折叠） */
+/** 展开全部命令为展示 InboxEntry（别名折叠） */
 export function getCommandHints(): CommandHint[] {
   return COMMAND_REGISTRY.map((command) => {
     const names = [command.name, ...(command.aliases ?? [])];

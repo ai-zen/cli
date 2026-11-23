@@ -2,13 +2,13 @@
  * 中文词条（默认兜底语言之外的另一半）。
  *
  * 约定：
- * - 扁平 key，`域.语义` 分组；
+ * - 扁平 key，` 域.语义 ` 分组；
  * - `{name}` 为插值占位；
  * - `\u00a0`（不换行空格）用于把「数字 + 单位」绑成一格，窄屏折行时不会被拆开。
  *
  * ## 文案口径（改字之前先读这一段）
  *
- * 1. **一个概念只有一个词**：宿主 / 工作区 / 会话 / 助手 / 模型 / 端点 / 工具 / 技能 /
+ * 1. **一个概念只有一个词**：宿主 / 工作区 / 会话 / AgentDefinition / 模型 / 端点 / 工具 / 技能 /
  *    MCP 服务器 / 思考强度。同一个东西在不同屏幕上换着叫，用户会以为是两件事。
  * 2. **括号只放事实**：当前值、可选值、路径、归属哪台机器、做下去的后果。
  *    括号里**不写内部字段名**（`reasoningPreset` / `mcpServers` / `messages` / `keep`）——
@@ -105,19 +105,19 @@ export const zh: Record<string, string> = {
   "notice.pressCtrlDAgain": "再按一次 Ctrl+D 退出",
   "notice.languageChanged": "界面语言已切换为中文",
   // 两个清空入口写在同一行提示里（分隔用「；」而不加装饰：栏位上的句子不加任何前缀）
-  "notice.clearHint": "Alt+X 清本会话的通知；Alt+Shift+X 清全部",
+  "notice.deleteAllHint": "Alt+X 清本会话的通知；Alt+Shift+X 清全部",
   "notice.cleared": "已清空这一段的通知",
-  "notice.clearFailed": "清空通知失败：{error}",
+  "notice.deleteAllFailed": "清空通知失败：{error}",
   // 三档粒度里的第三档（清全部）：它会把**全局**通知与**别的会话**的通知一起清掉，
   // 所以这一问必须把这两件事说出来（PRD「清全部要明说，不能顺手全清」）
-  "notice.clearAllTitle":
+  "notice.deleteAllAllTitle":
     "清空全部 {n} 条通知？全局通知不属于任何一段会话，所以会一起清掉；别的会话还没看过的通知也会一起清掉。不会回来。",
-  "notice.clearAllConfirm": "清空全部",
-  "notice.clearAllCancel": "不清",
-  "notice.clearAllDone": "已清空全部 {n} 条通知（含全局通知、别的会话的通知）",
-  "notice.clearAllCancelled": "没有清任何通知",
-  "notice.clearAllFailed": "清空全部通知失败：{error}",
-  "notice.clearAllListFailed": "读不到通知清单，所以什么都没清：{error}",
+  "notice.deleteAllAllConfirm": "清空全部",
+  "notice.deleteAllAllCancel": "不清",
+  "notice.deleteAllAllDone": "已清空全部 {n} 条通知（含全局通知、别的会话的通知）",
+  "notice.deleteAllAllCancelled": "没有清任何通知",
+  "notice.deleteAllAllFailed": "清空全部通知失败：{error}",
+  "notice.deleteAllAllListFailed": "读不到通知清单，所以什么都没清：{error}",
   // 图片：终端里不能内联渲染，但可以交给本机默认程序打开（`system-editor.ts`）
   "notice.imagePickTitle": "打开哪一张图片？选中就用本机默认程序打开",
   "notice.imagePickItem": "第 {message} 条消息 · 第 {image} 张",
@@ -143,9 +143,9 @@ export const zh: Record<string, string> = {
   "cmd.clear.desc": "清屏（排队区归 /free）",
   "cmd.free.desc": "清空排队区：还没送出去的话",
   "cmd.free.inboxCleared": "已清掉排队区里 {n} 条还没送出的话",
-  "cmd.config.desc": "打开配置中心：端点、模型、助手",
-  "cmd.model.desc": "切换模型：本次会话 / 助手 / 全局",
-  "cmd.agent.desc": "设置默认助手，只影响以后新开的会话",
+  "cmd.config.desc": "打开配置中心：端点、模型、助手定义",
+  "cmd.model.desc": "切换模型：本次会话 / 助手定义 / 全局",
+  "cmd.agent.desc": "设默认助手定义，只影响新会话",
   "cmd.reload.desc": "重新发现工具、技能与 MCP 服务器",
   // `/upgrade`：键名与命令名一致（`registry.ts` 的 `descriptionKey` 就是这几条）
   "cmd.upgrade.desc": "挑发布标签里最高的一版，让宿主换过去",
@@ -173,10 +173,10 @@ export const zh: Record<string, string> = {
   // 三档共用同一个选择器：标题说「这次改哪一档」+「当前生效的是哪一档」
   "cmd.model.title": "切换模型 · {scope}（当前生效：{level}）",
   "cmd.model.scope.session": "本次会话",
-  "cmd.model.scope.agent": "助手",
+  "cmd.model.scope.agent": "助手定义",
   "cmd.model.scope.global": "全局",
   "cmd.model.cancelled": "已取消切换模型",
-  "cmd.agent.noAgents": "还没有任何助手，请用 /config 新建",
+  "cmd.agent.noAgents": "还没有任何助手定义，请用 /config 新建",
   "cmd.agent.unavailable": " · 不可用",
   "cmd.agent.title": "选择主助手，同时设为默认",
   "cmd.agent.cancelled": "已取消切换主助手",
@@ -208,8 +208,8 @@ export const zh: Record<string, string> = {
   "cmd.think.followDefault": "跟随模型默认",
   // 参数跟着「模型来自哪一级」走：模型是本段会话换的时，参数也写在这一段
   "cmd.think.clearHintSession": "清掉本次会话上的思考参数",
-  // 助手级那一项清的是**定义文件**里的思考参数（影响所有用这个助手的会话）
-  "cmd.think.clearHintAgent": "清掉助手上的思考参数",
+  // AgentDefinition 级那一项清的是**定义文件**里的思考参数（影响所有用这个 AgentDefinition 的会话）
+  "cmd.think.clearHintAgent": "清掉助手定义上的思考参数",
   "cmd.think.cancelled": "已取消切换思考强度",
   "cmd.think.unchanged": "思考强度没变",
   "cmd.help.title": "可用命令：",
@@ -280,7 +280,7 @@ export const zh: Record<string, string> = {
   "cmd.shutdown.confirm": "关闭宿主，断开其他客户端",
   "cmd.shutdown.cancel": "取消",
   "cmd.shutdown.cancelled": "已取消关闭宿主",
-  // 杀执行体：先摆代价（排队区里那几条会作废）再问一次；历史与这一段会话本身都保留
+  // 杀 Agent：先摆代价（排队区里那几条会作废）再问一次；历史与这一段会话本身都保留
   // （PRD 1.2「死的路只有三条」、4.1「中断不是杀死」那张表）
   "cmd.kill.title":
     "杀死「{name}」？排队区里 {pending} 条还没被取走的话会作废，在途的请求会被掐断；这一段会话与历史都保留，只是 agent 没了，下次发话会重新叫起来。",
@@ -314,8 +314,8 @@ export const zh: Record<string, string> = {
   "cmd.model.already": "已经是「{scope}」模型：{id}",
   "cmd.model.done": "已切换「{scope}」模型：{name}（{id}）",
   "cmd.model.failed": "切换模型失败：{error}",
-  "cmd.agent.unknown": "未知助手：{id}（可选：{options}）",
-  "cmd.agent.unavailableReason": "助手「{name}」不可用：{reason}",
+  "cmd.agent.unknown": "未知助手定义：{id}（可选：{options}）",
+  "cmd.agent.unavailableReason": "助手定义「{name}」不可用：{reason}",
   "cmd.agent.alreadyOn": "{summary}（当前会话已经在这个助手上）",
   "cmd.agent.failed": "切换主助手失败：{error}",
   // 解析器认 user / workspace、缩写 u / w，以及旧版的 global / project（`mcp-command.ts`）
@@ -327,7 +327,7 @@ export const zh: Record<string, string> = {
   "cmd.think.unknown": "未知强度：{level}（可选 {options} / default）",
   // 两档各一个标题：`/think` 与 `/think -a` 的选择器长得一样，标题是唯一说清「改的是哪一层」的地方
   "cmd.think.titleSession": "思考强度 · 这一段（当前：{level}）",
-  "cmd.think.titleAgent": "思考强度 · 这个助手（影响以后新开的会话；当前：{level}）",
+  "cmd.think.titleAgent": "思考强度 · 这个助手定义（影响以后新开的会话；当前：{level}）",
   "cmd.think.failed": "切换思考强度失败：{error}",
   "cmd.load.tooMany": "选择要打开的会话（只显示最近 {n} 条）",
   "cmd.load.tooManyAll": "选择要打开的会话 · 所有工作区（只显示最近 {n} 条）",
@@ -337,7 +337,8 @@ export const zh: Record<string, string> = {
   "cmd.busySwitch.cancel": "等它闲下来再换",
   "cmd.busySwitch.cancelled": "已取消：等这一段闲下来再换",
   "cmd.handoff.unknownMode": "未知的交接方式：{who}（可选 self / summary）",
-  "cmd.handoff.started": "写文档已开始：写完之后宿主会告诉你文档在哪；这段会话的记忆与执行体都不动",
+  "cmd.handoff.started":
+    "写文档已开始：写完之后宿主会告诉你文档在哪；这段会话的记忆与 Agent 都不动",
   "cmd.handoff.failed": "写交接文档失败：{error}",
   "cmd.migrate.started":
     "交接已开始：写完之后这段会话的记忆换成新版，旧记忆成为一段已存档会话（id 不变、屏幕不换）",
@@ -348,10 +349,10 @@ export const zh: Record<string, string> = {
 
   // ---------- 交接选择器 / 子任务通知 / 启动屏 / 消息占位 ----------
   // 执行者三选一：label 贴近用户措辞，hint 交代取舍。`summary` 那一句必须说清「另起一个
-  // 一次性执行体」—— 两个选项的差别不在写得好不好，而在谁去写。
+  // 一次性 Agent」—— 两个选项的差别不在写得好不好，而在谁去写。
   "handoff.modeSelf": "这段会话自己写交接文档",
   "handoff.modeSelfHint": "准确 · 会核实真实状态",
-  "handoff.modeSummary": "另起一个一次性执行体写交接文档",
+  "handoff.modeSummary": "另起一个一次性 Agent 写交接文档",
   "handoff.modeSummaryHint": "快且省 · 不核实文件",
   "handoff.modeSkip": "不交接",
   "handoff.modeSkipHint": "跳过本次",
@@ -382,20 +383,20 @@ export const zh: Record<string, string> = {
   "msg.userHeader": "❯ 你",
   "msg.aiHeader": "✦ AI",
 
-  // ---------- 业务模块返回的 summary / 报错（思考档位 / 切模型 / 切助手 / 交接） ----------
+  // ---------- 业务模块返回的 summary / 报错（思考档位 / 切模型 / 切 AgentDefinition / 交接） ----------
   "effort.followDefault": "跟随模型默认",
   "effort.quoted": "「{label}」",
-  "effort.summary": "思考强度已设为 {label} · 写入助手「{id}」（模型 {model}）",
-  // 会话级那条路写的是会话存档（不碰助手定义），所以文案不提助手
+  "effort.summary": "思考强度已设为 {label} · 写入助手定义「{id}」（模型 {model}）",
+  // 会话级那条路写的是会话存档（不碰 AgentDefinition），所以文案不提 AgentDefinition
   "effort.summarySession": "思考强度已设为 {label} · 写入本次会话（模型 {model}）",
   "modelSwitch.resetHint": " · 思考强度已重置为模型默认",
-  "modelSwitch.summary": "已切换模型：{name}（{id}）· 写入助手「{agent}」{hint}",
-  "agentSwitch.err.agentMissing": "助手「{id}」不存在",
+  "modelSwitch.summary": "已切换模型：{name}（{id}）· 写入助手定义「{agent}」{hint}",
+  "agentSwitch.err.agentMissing": "助手定义「{id}」不存在",
   "agentSwitch.summary": "已切换主助手：{name}（{id}）· 模型 {model}（{modelId}）",
 
   // ---------- 入口 / 退出 / 时间格式 ----------
-  "app.goodbye": "\n再见 👋\n",
-  "app.noAgents": "没有可用的助手，请先在配置中心新建一个",
+  "app.goodbye": "\n 再见 👋\n",
+  "app.noAgents": "没有可用的助手定义，请先在配置中心新建一个",
   "app.bootFailed": "✖ 无法启动会话：{error}",
   "app.unexpected": "✖ 意外错误：{error}",
 
@@ -446,11 +447,11 @@ export const zh: Record<string, string> = {
   // ---------- `ai --help`（在 TUI 之外打印，故单独在 help 分支初始化语言） ----------
   "cli.help.title": "ai — AI-Zen CLI v{version}",
   "cli.help.usage":
-    "\n用法:\n  ai                      进入交互式界面（TUI，需 stdin/stdout 为 TTY）\n  ai <提示词>              以纯 stdio 模式提问，结果写入 stdout\n  cat 文件 | ai “总结要点”  通过管道传入内容，参数作为指令\n  ai hook install         安装 shell 兜底钩子（命令不存在时转发给 AI）\n  ai hook uninstall       卸载 shell 兜底钩子",
+    "\n 用法:\n  ai                      进入交互式界面（TUI，需 stdin/stdout 为 TTY）\n  ai <提示词>              以纯 stdio 模式提问，结果写入 stdout\n  cat 文件 | ai “总结要点”  通过管道传入内容，参数作为指令\n  ai hook install         安装 shell 兜底钩子（命令不存在时转发给 AI）\n  ai hook uninstall       卸载 shell 兜底钩子",
   "cli.help.options":
-    "\n选项:\n  --save                  保存本次会话到存档（默认不落盘）\n  --tui [提示词…]          强制进入交互界面，提示词作为首条消息自动发送（shell 钩子用）\n  --new                   进入交互界面时开新会话，不续接上一次\n  --server <url>          连到显式指定的宿主（如 wss://example.com/ai-zen；也可用 AI_ZEN_SERVER_URL）\n  -h, --help              显示本帮助\n  -v, --version           显示版本号\n  --server-status         打印常驻宿主的状态（JSON，未运行退出码 1）",
+    "\n 选项:\n  --save                  保存本次会话到存档（默认不落盘）\n  --tui [提示词…]          强制进入交互界面，提示词作为首条消息自动发送（shell 钩子用）\n  --new                   进入交互界面时开新会话，不续接上一次\n  --server <url>          连到显式指定的宿主（如 wss://example.com/ai-zen；也可用 AI_ZEN_SERVER_URL）\n  -h, --help              显示本帮助\n  -v, --version           显示版本号\n  --server-status         打印常驻宿主的状态（JSON，未运行退出码 1）",
   "cli.help.notes":
-    "\n说明:\n  stdio 模式无任何交互，结果走 stdout、日志走 stderr，成功退出码 0。\n  远端令牌用 AI_ZEN_SERVER_TOKEN 传，不写命令行（argv 会出现在 ps 输出与 shell 历史里）。",
+    "\n 说明:\n  stdio 模式无任何交互，结果走 stdout、日志走 stderr，成功退出码 0。\n  远端令牌用 AI_ZEN_SERVER_TOKEN 传，不写命令行（argv 会出现在 ps 输出与 shell 历史里）。",
 
   // ---------- `ai hook install / uninstall`（非 TUI 输出，同 help 一样在分支内先初始化语言） ----------
   "cli.hookUsage": "用法: ai hook install|uninstall",

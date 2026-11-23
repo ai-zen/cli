@@ -65,7 +65,7 @@ export function systemOpenCommand(platform: string = process.platform): OpenComm
  *
  * 做成值而不是异常，是因为这三件的“下一步”不一样：「没有打开命令」是这台机器的环境问题，
  * 「命令跑了但失败」是那个程序的问题，两者都应当把**文件路径**告诉用户（他已经拿到字节了，
- * 自己拖进看图器就行）；而“素材不在”根本不在这份结果的范围内（那在取字节那一步就已经失败了）。
+ * 自己拖进看图器就行）；而“Asset 不在”根本不在这份结果的范围内（那在取字节那一步就已经失败了）。
  */
 export type OpenFileResult =
   | { kind: "opened" }

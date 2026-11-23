@@ -16,7 +16,7 @@
  * 于是 CLI 自己拼两个**派生**的视图（不是第二份真相，每次读都是现算）：
  *
  *   · {@link ModelState}：`modelId` 来自会话行；`name` / `vision` 来自 `api.config.get()` 的
- *     模型表；`source` = 会话行上那个 id 与助手定义绑的那个是否同一个；
+ *     模型表；`source` = 会话行上那个 id 与 AgentDefinition 绑的那个是否同一个；
  *   · {@link ThinkingState}：`levels` 是生效模型的 `reasoningPreset` 在 `presets` 里那张表的
  *     键，`selected` 是会话行上的 `thinkingLevel`。
  *
@@ -62,13 +62,13 @@ export interface ModelState {
   modelId: string | null;
   /** 模型表里的显示名（模型不在配置里时回落成 id） */
   name: string;
-  /** 能不能看图（`Model.vision`；缺省 false） */
+  /** 能不能看图（`ModelDefinition.vision`；缺省 false） */
   vision: boolean;
-  /** `agent` = 会话行上那个就是助手定义绑的那个；`session` = 这一段自己定的 */
+  /** `agent` = 会话行上那个就是 AgentDefinition 绑的那个；`session` = 这一段自己定的 */
   source: "agent" | "session";
 }
 
-/** 这段会话的助手（id 是身份，名字与可用性来自定义） */
+/** 这段会话的 AgentDefinition（id 是身份，名字与可用性来自定义） */
 export interface AgentState {
   agentId: string;
   name: string | null;
@@ -89,7 +89,7 @@ export interface ThinkingState {
   preset: string | null;
   /** 可选档位名；空数组 = 这个模型没有档位 */
   levels: string[];
-  /** 会话行上的 `thinkingLevel`；`null` = 跟随助手定义 */
+  /** 会话行上的 `thinkingLevel`；`null` = 跟随 AgentDefinition */
   selected: string | null;
   /** 这个值从哪来 */
   source: "following_default" | "manual" | "custom" | "not_adjustable";
@@ -120,7 +120,7 @@ export interface SubAgentFact {
 export type AttachmentLimits = { maxAssetBytes: number; maxAssetsPerMessage: number } | null;
 
 /**
- * 一条文件清单条目（`@` 补全用）。
+ * 一条文件清单 InboxEntry（`@` 补全用）。
  *
  * 宿主 `workspace.files` 只给相对路径，所以 `kind` 现在恒 `"file"`（目录不进那份清单，见
  * `session.ts` 的 `toFileEntry`）；这一格留着是因为屏幕与 `mention.ts` 都按它决定要不要补尾斜杠。
@@ -144,16 +144,16 @@ export interface WorkspaceFiles {
 }
 
 /**
- * 一次用户输入：core 的内容形状 + 已上传的素材 id。
+ * 一次用户输入：core 的内容形状 + 已上传的 Asset id。
  *
  * 它是 CLI 内部的**载体**（不是出网形状）：`session.send` 把 `assetIds` 折成带 `__asset_id` 的
  * 内容段（`user-content.ts` 的 `contentOfInput`）；`session.rewind`（撤回）回填的也是这一份 ——
- * 那条消息里带的图从段上的标记拆回 `assetIds`，于是「文字进草稿、素材挂回输入」是同一件事的
+ * 那条消息里带的图从段上的标记拆回 `assetIds`，于是「文字进草稿、Asset 挂回输入」是同一件事的
  * 两半。
  */
 export interface MessageInput {
   content: AgentNS.MessageContent;
-  /** 已上传、待折成内容段的素材 id（顺序即用户的摆放顺序） */
+  /** 已上传、待折成内容段的 Asset id（顺序即用户的摆放顺序） */
   assetIds?: string[];
 }
 
@@ -190,13 +190,13 @@ export type HandoffThen = "document_only" | "new_session";
 /**
  * 这一趟交接是哪一档（宿主 `handoff.start` 的 `kind`）：
  *
- *   · `document`：只写交接文档 —— 记忆、存档会话、执行体的身份都不动；
+ *   · `document`：只写交接文档 —— 记忆、存档会话、Agent 的身份都不动；
  *   · `swap`：写完文档就把记忆换成新的一份，旧记忆成为一段已存档会话。
  */
 export type HandoffKind = "document" | "swap";
 
 /**
- * `scope.reload` 的回执：宿主那一遍刷了几份能力容器、哪几份没刷成。
+ * `scope.reload` 的回执：宿主那一遍刷了几份 Scope、哪几份没刷成。
  *
  * 数字与失败项都是宿主给的，客户端一个都不自己算：「刷了几份」只有宿主知道（容器活在它那侧）。
  */
@@ -292,7 +292,7 @@ export type HostEvent = import("../server-client/index.js").HostEvent;
  * 表现，不是存下来的第二份状态。
  */
 export interface ChatSessionLike {
-  /** 这段会话的助手（创建时定死，PRD L7） */
+  /** 这段会话的 AgentDefinition（创建时定死，PRD L7） */
   readonly agentId: string;
   /** 这段会话的 id（`session.*` 与交接都按它说话） */
   readonly sessionId: string;
@@ -311,7 +311,7 @@ export interface ChatSessionLike {
   /** 名册上那些 subagent（客户端现推，见 `server-client/mirror.ts`） */
   readonly subAgents: readonly SubAgentFact[];
 
-  /** 四件事的各一格（PRD 4.4）：忙闲 / 输入闸 / 输出闸 / 死活 */
+  /** 四件事的各一格（PRD 4.4）：忙闲 / 输入开关 / 输出开关 / 死活 */
   readonly status: SessionActivity | null;
   readonly inputPaused: boolean | null;
   readonly outputPaused: boolean | null;
@@ -329,7 +329,7 @@ export interface ChatSessionLike {
   readonly thinking: ThinkingState;
   /** 宿主给的那份会话行 */
   readonly view: SessionSnapshot;
-  /** 队里还没被取走的条目（顺序即取件顺序） */
+  /** 队里还没被取走的 InboxEntry（顺序即取走顺序） */
   readonly inbox: readonly InboxItem[];
   /** 排队**条数** —— 派生自 {@link inbox}（= `inbox.length`），不是第二份真相 */
   readonly inboxPending: number;
@@ -342,7 +342,7 @@ export interface ChatSessionLike {
    * 发一句（**只投递**，受理即返回，PRD 4.2 / PLAN §5.1）。
    *
    * `images` 是这一次**还没上传**的剪贴板图片（发送时先传再发）；`assetIds` 是**已经传上去
-   * 过的**素材（撤回回填的那几张，见 {@link revert}）—— 后者不再传一遍：同一张图全机只存一份，
+   * 过的**Asset（撤回回填的那几张，见 {@link revert}）—— 后者不再传一遍：同一张图全机只存一份，
    * 传第二遍既浪费也不是同一份（PRD 1.8）。
    */
   send(
@@ -351,14 +351,14 @@ export interface ChatSessionLike {
     assetIds?: readonly string[],
   ): Promise<void>;
   /** 复活：**确保这段会话有 agent**（`agent.wake`，PRD 1.2 / PLAN §5.1） */
-  start(): Promise<void>;
-  /** 暂停：**只关输出闸**（`agent.pause`，PRD 4.4） */
-  pause(): Promise<void>;
-  /** 继续：**只开输出闸、不投任何东西**（`agent.resume`，PRD 4.4） */
-  resume(): Promise<void>;
+  wake(): Promise<void>;
+  /** 暂停：**只关输出开关**（`agent.pause`，PRD 4.4） */
+  pauseOutput(): Promise<void>;
+  /** 继续：**只开输出开关、不投任何东西**（`agent.resume`，PRD 4.4） */
+  resumeOutput(): Promise<void>;
   /** 等**这一句**有了下文（界面用它包忙碌态，stdio 用它等答案） */
   waitForReply(): Promise<void>;
-  /** 中止在途的请求与工具，并把输出闸关上（`agent.abort`，PRD 4.4） */
+  /** 中止在途的请求与工具，并把输出开关关上（`agent.abort`，PRD 4.4） */
   abort(): void;
   /**
    * 换到另一个工作区（`/ws` 选中之后调）。**这一段会话不动**
@@ -367,24 +367,24 @@ export interface ChatSessionLike {
   /**
    * 让宿主重新发现能力（`scope.reload`），再把手里那几份事实重取一遍。
    *
-   * 回来的那一份是宿主给的回执：刷了几份能力容器、有没有没刷成的 —— 调用方据此说一句人话。
+   * 回来的那一份是宿主给的回执：刷了几份 Scope、有没有没刷成的 —— 调用方据此说一句人话。
    */
   reload(): Promise<ScopeReloadReport>;
-  /** 换**这一段会话**的模型（`session.setModel`） */
-  setModel(modelId: string | null): Promise<void>;
+  /** 换**这一段会话**的模型（`session.updateModel`） */
+  updateModel(modelId: string | null): Promise<void>;
   /** 改这一段的**名字**（`session.rename`） */
   rename(name: string): Promise<void>;
-  /** 改**这一段会话**的思考档位（`null` = 跟随助手定义，`session.setThinkingLevel`） */
-  setThinking(level: string | null): Promise<void>;
+  /** 改**这一段会话**的思考档位（`null` = 跟随 AgentDefinition，`session.updateThinkingLevel`） */
+  updateThinkingLevel(level: string | null): Promise<void>;
   /** 置顶 / 取消置顶这一段（`session.pin`） */
   pin(pinned: boolean): Promise<void>;
   /**
    * 撤回到某条用户消息**之前**（`session.rewind`），返回回填给输入框的内容。
    *
-   * 回来的 `assetIds` 是那条消息里挂着的素材（段上的本地标记拆出来的，按原顺序）——
+   * 回来的 `assetIds` 是那条消息里挂着的 Asset（段上的本地标记拆出来的，按原顺序）——
    * 输入框把它们一起摆回去，用户提交前看得见自己撤回来了哪几张。
    */
-  revert(beforeMessageId: string): Promise<MessageInput>;
+  rewind(beforeMessageId: string): Promise<MessageInput>;
   /** 交接（`handoff.start`）：**只回「开始了」**；`mode` 给了才是调用方挑的执行者 */
   handoff(options?: HandoffOptions): Promise<void>;
   /** `@` 补全的文件清单（`workspace.files`；`query` 交给宿主先筛） */
@@ -413,7 +413,7 @@ export interface QuestionView {
 /** `handoff()` 的入参：`sessionId` 由会话层自己带，调用方只说「谁去写」 */
 export interface HandoffOptions {
   /**
-   * 执行者：`self` = 这段会话自己的 agent 接着写，`summary` = 另起一个一次性执行体去写。
+   * 执行者：`self` = 这段会话自己的 agent 接着写，`summary` = 另起一个一次性 Agent 去写。
    *
    * 不给时不发这一格，执行者由宿主的缺省定（`handoff.start` 收的是可选 `mode`）。
    */
@@ -472,7 +472,7 @@ export interface ChatSessionNotifier {
 
 /** 开一段会话的入参 */
 export interface ChatSessionOptions {
-  /** 用哪个助手开新会话（已有 `sessionId` 时以那段会话的为准，PRD L7） */
+  /** 用哪个 AgentDefinition 开新会话（已有 `sessionId` 时以那段会话的为准，PRD L7） */
   agentId?: string;
   /** 按 id 打开一段已存在的会话（`/load` 选中的那段） */
   sessionId?: string;

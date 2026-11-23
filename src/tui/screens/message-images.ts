@@ -9,7 +9,7 @@
  *
  * ## 尺寸与文件名：有就给，没有就说「不知道多大」
  *
- * 素材的宽高是宿主**上传时量过的**，落在素材行上（`asset.upload` 那一行，
+ * Asset 的宽高是宿主**上传时量过的**，落在 Asset 行上（`asset.upload` 那一行，
  * `prd/09-attachments.md` 的「尺寸」一条）；而 `asset.get` 那个口回来的是字节，里面不带尺寸。
  * 消息的段上只有本地标记 `__asset_id`（那一册：那只是本地标记，用在客户端回显），段本身要按
  * 原样入库，所以客户端把上传那一刻的事实留在本机（`user-content.ts` 的 `localAssetFactsOf`）。
@@ -20,7 +20,7 @@
  *     查不到就老实说「不知道多大」；
  *   · 哪一个都不为尺寸另开一次请求。
  *
- * ## 「打得开」只看带素材 id 的那几张
+ * ## 「打得开」只看带 Asset id 的那几张
  *
  * 打开走的是 `asset.get`（客户端本地没有副本，只有 id），所以能打开的就是带 `__asset_id`
  * 的图片段；内联 base64 与远程 URL 那两种不在这一条路上（前者本地就有字节、后者根本不在宿主
@@ -32,7 +32,7 @@ import { t } from "../../i18n/index.js";
 import { localAssetFactsOf } from "../../user-content.js";
 
 /**
- * 段上的本地标记：指回数据根下的一份素材。
+ * 段上的本地标记：指回数据根下的一份 Asset。
  *
  * 写它的是 `user-content.ts`（`contentOfInput`），宿主 `ASSET_ID_KEY` 是同一个词；这里只读，
  * 不造第二个名字。
@@ -41,9 +41,9 @@ const ASSET_ID_KEY = "__asset_id";
 
 /** 一个图片段手里已有的事实（全都可以没有：没有就是不知道，不编） */
 export interface ImageFacts {
-  /** 素材 id（段上的本地标记）；内联 base64 / 远程 URL 没有 */
+  /** Asset id（段上的本地标记）；内联 base64 / 远程 URL 没有 */
   assetId?: string;
-  /** 素材宽高（宿主上传时量过；段上与本机都没有就是不知道） */
+  /** Asset 宽高（宿主上传时量过；段上与本机都没有就是不知道） */
   width?: number;
   height?: number;
   /** 文件名（段上带着、或本机上传那一刻记下过） */
@@ -56,7 +56,7 @@ export type ImageSection = { type: string; image_url?: { url?: string } } & Reco
 /**
  * 一个图片段 → 手里已有的事实（全都可以没有：没有就是不知道，不编）。
  *
- * 段上自带的优先（别的客户端上传时写下来的那一种）；段上没带的，按素材 id 查本机上传那一刻
+ * 段上自带的优先（别的客户端上传时写下来的那一种）；段上没带的，按 Asset id 查本机上传那一刻
  * 记下的那一份。两处都没有（别的客户端传的、进程重启过）就到此为止 —— 不推断、不发请求。
  */
 export function imageFactsOf(section: ImageSection): ImageFacts {
@@ -102,7 +102,7 @@ export function imagePlaceholderLines(section: ImageSection, index: number): str
   } else if (isInlineImage(section)) {
     lines.push(t("msg.imageInlineHeader", { n: index }));
   } else {
-    // 远程图片：地址本身就是一条事实，照旧带上（这一种没有素材，也没有尺寸）
+    // 远程图片：地址本身就是一条事实，照旧带上（这一种没有 Asset，也没有尺寸）
     lines.push(t("msg.imageUrlHeader", { url }));
   }
   lines.push(
@@ -125,7 +125,7 @@ export interface OpenableImage {
 }
 
 /**
- * 一段转录里**打得开**的那些图片（带素材 id 的），按出现顺序。
+ * 一段转录里**打得开**的那些图片（带 Asset id 的），按出现顺序。
  *
  * 不去重：同一张图在同一条消息里放两次就是两个位置，用户选的是「哪一张」，不是「哪个 id」。
  */

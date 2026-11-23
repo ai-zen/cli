@@ -4,7 +4,7 @@
  * `/mcp` 不自己做一套 MCP 编辑界面（那样「删除」和「新增」迟早长歪成两套实现），
  * 只负责把用户送进配置中心里已有的 MCP 界面（`{ kind: "mcp", scope }`）：
  * 增、删、改、启用/禁用、作用域切换都在那一个屏里，每次改一条走一条 procedure
- * （`api.mcp.save` / `api.mcp.remove`），回来的是**整份**服务器清单（每条带它写在哪一层）。
+ * （`api.config.mcp.update` / `api.config.mcp.delete`），回来的是**整份**服务器清单（每条带它写在哪一层）。
  *
  * 于是这里只剩两个真问题：**参数怎么认**、**无参数时默认进哪个作用域**。
  */
@@ -13,7 +13,7 @@ import {
   MCP_SCOPE_OF,
   type McpEditableScope,
   type McpEntry,
-  type McpServerConfig,
+  type McpServerDefinition,
 } from "./config.js";
 
 /**
@@ -26,7 +26,7 @@ import {
  * 全机共享）、`project` = 项目级（项目里 `.ai-zen/mcp.json`，只对这个目录生效），两者的落点
  * 与旧版一一对应。于是旧肌肉记忆不该换来一句「未知作用域」—— 用户要的是那一层，不是那个词。
  *
- * **映射只发生在这里**：下游（`mcpEntriesOf` / `openWizard` / `api.mcp.save`）看到的永远是
+ * **映射只发生在这里**：下游（`mcpEntriesOf` / `openWizard` / `api.config.mcp.update`）看到的永远是
  * 规范化的 `user` / `workspace`，再由 `config.ts` 的 `MCP_SCOPE_OF` 换成契约里的层名
  * （`user` / `workspaceAiZen`）。别把 `global` / `project` 放出去。
  *
@@ -55,7 +55,7 @@ export function parseMcpScope(raw?: string): McpEditableScope | null {
 export function mcpEntriesOf(
   servers: readonly McpEntry[],
   scope: McpEditableScope,
-): McpServerConfig[] {
+): McpServerDefinition[] {
   const wireScope = MCP_SCOPE_OF[scope];
   return servers.filter((entry) => entry.scope === wireScope).map((entry) => entry.server);
 }

@@ -1,6 +1,6 @@
 // 输入编辑 hook 的单元测试 —— 编辑器语义第一次有了直接断言
 //
-// 探针把每个编辑动作绑到一个字母键上，从真 stdin 驱动，再读回 `[草稿]@光标`。
+// 探针把每个编辑动作绑到一个字母键上，从真 stdin 驱动，再读回 `[草稿]@光标 `。
 // 这样测的是用户能感觉到的行为（删掉哪几个字素簇、光标停在哪），而不是把实现抄一遍。
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
@@ -48,7 +48,7 @@ function Probe({
   log: string[];
   /** 历史数据源（模拟 `session.messages` 派生出来的草稿） */
   entries: HistoryEntry[];
-  /** `↑` 把历史里的附件放回输入区时记在这里（字节在前、素材 id 在后，同一个数组） */
+  /** `↑` 把历史里的附件放回输入区时记在这里（字节在前、Asset id 在后，同一个数组） */
   restored: string[];
 }) {
   const e = useInputEditing({

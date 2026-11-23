@@ -15,7 +15,7 @@ import { AgentNS } from "@ai-zen/agents-core";
 
 afterEach(() => setLocale(DEFAULT_LOCALE));
 
-/** 一条助手消息（只写用例关心的那几格） */
+/** 一条 AgentDefinition 消息（只写用例关心的那几格） */
 function assistant(overrides: Partial<AgentNS.Message> = {}): AgentNS.Message {
   return {
     id: "m1",
@@ -74,7 +74,7 @@ describe("phaseLine（契约事实 → 阶段那一句话）", () => {
   it("忙、但这一批的消息还没落下来 → 连接中…", () => {
     setLocale("zh");
     expect(line({ status: "working", messages: [], inboxPending: 0 })).toBe("连接中…");
-    // 用户那句刚落、助手那条还没冒出来：同样还在等
+    // 用户那句刚落、AgentDefinition 那条还没冒出来：同样还在等
     expect(line({ status: "working", messages: [user()], inboxPending: 0 })).toBe("连接中…");
   });
 
@@ -82,9 +82,9 @@ describe("phaseLine（契约事实 → 阶段那一句话）", () => {
     setLocale("zh");
     // 一条消息都还没有，队里压着一句 → 排队
     expect(line({ status: "working", messages: [], inboxPending: 1 })).toBe("排队中…");
-    // 用户那句刚落（助手那条还没冒头）、后面还压着一句 → 排队
+    // 用户那句刚落（AgentDefinition 那条还没冒头）、后面还压着一句 → 排队
     expect(line({ status: "working", messages: [user()], inboxPending: 2 })).toBe("排队中…");
-    // 助手那条冒头了但还空着、队里还有货 → 还是排队（一个字都没吐出来）
+    // AgentDefinition 那条冒头了但还空着、队里还有货 → 还是排队（一个字都没吐出来）
     expect(line({ status: "working", messages: [user(), assistant()], inboxPending: 1 })).toBe(
       "排队中…",
     );

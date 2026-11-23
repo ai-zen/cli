@@ -4,7 +4,7 @@
 // 还是旧的，或者撤回成功了屏幕却一片空白。所以这份文件钉的是四类：
 //
 //   · 每条命令**只调一个契约方法**，入参形状与宿主 `wire` 一致（会话域走会话层，其余走 `call`）；
-//   · `/model` `/think` `/agent` 各自写到哪一层（会话行 / 助手定义 / 全局兜底），谁需要 reload；
+//   · `/model` `/think` `/agent` 各自写到哪一层（会话行 / AgentDefinition / 全局兜底），谁需要 reload；
 //   · `/back` `/new` `/migrate` 之后转录显示起点必须跟着重置（否则 `slice()` 恒为空）；
 //   · 失败只有一个出口：宿主拒绝是一条通知，不是一条未处理的 rejection。
 //
@@ -19,9 +19,9 @@ import { getCommandHints } from "./registry.js";
 import type {
   AgentDefinition,
   AppConfig,
-  Endpoint,
+  EndpointDefinition,
   McpEntry,
-  Model,
+  ModelDefinition,
   ReasoningPresets,
 } from "../config.js";
 import type {
@@ -98,7 +98,11 @@ function fakeApi(routes: Routes, calls: CallRecord[]): HostConnection["api"] {
 }
 
 /** 一个模型（`tokenThresholds` 是契约必填，用例不关心具体数值） */
-function modelView(id: string, name: string, overrides: Partial<Model> = {}): Model {
+function modelView(
+  id: string,
+  name: string,
+  overrides: Partial<ModelDefinition> = {},
+): ModelDefinition {
   return {
     id,
     name,
@@ -109,7 +113,7 @@ function modelView(id: string, name: string, overrides: Partial<Model> = {}): Mo
   };
 }
 
-const ENDPOINT: Endpoint = {
+const ENDPOINT: EndpointDefinition = {
   id: "ep-main",
   name: "主端点",
   baseUrl: "https://example.test/v1",
@@ -224,9 +228,9 @@ interface SessionStub {
   thinking: ChatSessionLike["thinking"];
   reset: () => Promise<string>;
   reload: () => Promise<ScopeReloadReport>;
-  setModel: (modelId: string | null) => Promise<void>;
-  setThinking: (level: string | null) => Promise<void>;
-  revert: (messageId: string) => Promise<{ content: AgentNS.MessageContent; assetIds?: string[] }>;
+  updateModel: (modelId: string | null) => Promise<void>;
+  updateThinkingLevel: (level: string | null) => Promise<void>;
+  rewind: (messageId: string) => Promise<{ content: AgentNS.MessageContent; assetIds?: string[] }>;
   handoff: (options: { mode?: string; kind?: string }) => Promise<void>;
   clearInbox: () => Promise<number>;
   rename: (name: string) => Promise<void>;
@@ -263,9 +267,9 @@ function sessionStub(overrides: Partial<SessionStub> = {}): SessionStub {
     reset: vi.fn(async () => "sess-2"),
     // 缺省：宿主那边一份容器、刷成了（`/reload` 那组按需覆盖成三档）
     reload: vi.fn(async () => ({ total: 1, refreshed: 1, failed: [] })),
-    setModel: vi.fn(async () => {}),
-    setThinking: vi.fn(async () => {}),
-    revert: vi.fn(async () => ({ content: "第二条" })),
+    updateModel: vi.fn(async () => {}),
+    updateThinkingLevel: vi.fn(async () => {}),
+    rewind: vi.fn(async () => ({ content: "第二条" })),
     handoff: vi.fn(async () => undefined),
     clearInbox: vi.fn(async () => 0),
     rename: vi.fn(async () => {}),
@@ -276,26 +280,26 @@ function sessionStub(overrides: Partial<SessionStub> = {}): SessionStub {
 /**
  * 缺省打桩：一条「哪都能问一句」的路由表，单个用例按需覆盖。
  *
- * 配置域这一刀的读口都换了名字：模型表在 `config.get` 里、助手定义是 `agentDefinition.*`、
+ * 配置域这一刀的读口都换了名字：模型表在 `config.get` 里、AgentDefinition 是 `agentDefinition.*`、
  * MCP 是 `mcp.list`（每条带 `scope`）。
  */
 function baseRoutes(): Routes {
   return {
     "config.get": () => ({ config: configView(), presets: presetsView() }),
-    "config.setDefaults": () => ({ config: configView() }),
-    "agentDefinition.get": () => ({ definition: agentView() }),
-    "agentDefinition.list": () => [agentView()],
-    "agentDefinition.update": () => ({ definition: agentView() }),
+    "config.defaults.update": () => ({ config: configView() }),
+    "config.agents.get": () => ({ definition: agentView() }),
+    "config.agents.list": () => [agentView()],
+    "config.agents.update": () => ({ definition: agentView() }),
     // `session.list` 的出参是会话行数组（顺序宿主排好：置顶优先 + 创建时间倒序）
     "session.list": () => [
       sessionView({ id: "sess-1", name: "会话一" }),
       sessionView({ id: "sess-2", name: "会话二" }),
     ],
-    "mcp.list": () => discoveryView(),
-    // `/kill` 的回执只有会话 id（宿主那边的执行体销毁没有别的可报）
-    "agent.kill": (params) => ({ sessionId: params.sessionId }),
+    "config.mcp.list": () => discoveryView(),
+    // `/kill` 的回执只有会话 id（宿主那边的 Agent 销毁没有别的可报）
+    "runtime.agent.kill": (params) => ({ sessionId: params.sessionId }),
     // 缺省按真宿主的样子回：收到的那几格写进整份配置再交回来
-    "config.setGlobal": (params) => ({ config: configView(params as Partial<AppConfig>) }),
+    "config.update": (params) => ({ config: configView(params as Partial<AppConfig>) }),
   };
 }
 
@@ -637,7 +641,7 @@ describe("/back：按消息 id 撤回，内容回填输入框", () => {
     await runCommand("back", "/back", host);
 
     expect(seen.labels).toEqual(["第二条", "第一条"]);
-    expect(session.revert).toHaveBeenCalledWith("u-1");
+    expect(session.rewind).toHaveBeenCalledWith("u-1");
   });
 
   it("撤回后重挂载：带上此刻的会话 id、宿主那份消息、以及被撤回的内容", async () => {
@@ -654,7 +658,7 @@ describe("/back：按消息 id 撤回，内容回填输入框", () => {
     const { host, session, notices } = createHost({
       session: {
         messages,
-        revert: vi.fn(async () => {
+        rewind: vi.fn(async () => {
           // 撤到 `u-2` 之前：它自己与它之后那条都没了
           messages.splice(2);
           return { content: "第二条" };
@@ -670,7 +674,7 @@ describe("/back：按消息 id 撤回，内容回填输入框", () => {
       sessionId: session.sessionId,
       messages: session.messages,
       initialInput: "第二条",
-      // 不带图的消息：素材那一格是空的（不是缺一格）
+      // 不带图的消息：Asset 那一格是空的（不是缺一格）
       initialAssetIds: [],
       // 两件事实带到新屏上：删掉几条、那句话已经回到输入框
       notice: t("cmd.back.done", { n: 2 }),
@@ -684,7 +688,7 @@ describe("/back：按消息 id 撤回，内容回填输入框", () => {
       session: {
         // 段上的本地标记就是 `__asset_id`（`user-content.ts` 写它的那个词）：同一张图
         // 出现两次就是两次，不去重
-        revert: vi.fn(async () => ({
+        rewind: vi.fn(async () => ({
           content: [
             { type: "text" as const, text: "看这两张" },
             { type: "image_url" as const, image_url: { url: "" }, __asset_id: "a-1" },
@@ -713,7 +717,7 @@ describe("/back：按消息 id 撤回，内容回填输入框", () => {
 
     await runCommand("back", "/back", host);
 
-    expect(session.revert).not.toHaveBeenCalled();
+    expect(session.rewind).not.toHaveBeenCalled();
     expect(host.exit).not.toHaveBeenCalled();
     expect(texts(notices)).toBe(t("cmd.back.cancelled"));
   });
@@ -752,7 +756,7 @@ describe("/back：按消息 id 撤回，内容回填输入框", () => {
 
     await runCommand("revert", "/revert", host);
 
-    expect(session.revert).toHaveBeenCalledWith("u-1");
+    expect(session.rewind).toHaveBeenCalledWith("u-1");
   });
 });
 
@@ -847,7 +851,7 @@ describe("/load：列表来自 session.list，选中后换会话", () => {
     expect(calls).toEqual([{ method: "session.list", params: { workspaceId: "ws-1" } }]);
   });
 
-  it("选中后交给上层换会话（只给 id，消息与助手由新的会话自己取）", async () => {
+  it("选中后交给上层换会话（只给 id，消息与助手定义由新的会话自己取）", async () => {
     const { host } = createHost();
     capturePick(host, "sess-2");
 
@@ -930,7 +934,7 @@ describe("/pin：只写 pinned 一个字段，顺序归宿主", () => {
   it("无参：先从 `session.open` 读现状，再按相反值写（入参与宿主 procedure 逐字一致）", async () => {
     const { host, calls, notices } = createHost({
       routes: {
-        // `session.open` 出参：会话行 + 执行体（`null` = 这一段没有执行体）+ 消息 + 排队区
+        // `session.open` 出参：会话行 + Agent（`null` = 这一段没有 Agent）+ 消息 + 排队区
         "session.open": () => ({
           session: sessionView({ pinned: false }),
           live: null,
@@ -1028,7 +1032,7 @@ describe("/pin：只写 pinned 一个字段，顺序归宿主", () => {
 // ==================== /model ====================
 
 /**
- * 助手级思考档位那两趟读：定义本身（`modelParams` 存的是**展开后的参数**）+ 档位表。
+ * AgentDefinition 级思考档位那两趟读：定义本身（`modelParams` 存的是**展开后的参数**）+ 档位表。
  *
  * 档位由客户端拿表反查（`reasoning-effort.ts` 的 `agentThinkingOf`），所以模型必须挂着
  * `reasoningPreset`，否则「不可调档」—— 那也是一种事实，另有用例守它。
@@ -1039,8 +1043,8 @@ function effortRoutes(definition: AgentDefinition) {
   });
   return {
     "config.get": () => ({ config, presets: presetsView() }),
-    "agentDefinition.get": () => ({ definition }),
-    "agentDefinition.update": () => ({ definition }),
+    "config.agents.get": () => ({ definition }),
+    "config.agents.update": () => ({ definition }),
   };
 }
 
@@ -1050,8 +1054,8 @@ describe("/model：三档作用级别各写各的那一层", () => {
 
     await runCommand("model", "/model m2", host);
 
-    expect(session.setModel).toHaveBeenCalledWith("m2");
-    // 只有「读模型表」这一次往返（`config.get` 一次给全），没有顺手改助手定义或全局兜底
+    expect(session.updateModel).toHaveBeenCalledWith("m2");
+    // 只有「读模型表」这一次往返（`config.get` 一次给全），没有顺手改 AgentDefinition 或全局兜底
     expect(methods(calls)).toEqual(["config.get"]);
     // 会话级写完宿主就回完整视图，再 reload 是白跑一个往返
     expect(session.reload).not.toHaveBeenCalled();
@@ -1068,10 +1072,10 @@ describe("/model：三档作用级别各写各的那一层", () => {
     await runCommand("model", "/model -a m2", host);
 
     expect(calls).toContainEqual({
-      method: "agentDefinition.update",
+      method: "config.agents.update",
       params: { agentId: "default", change: { modelId: "m2" } },
     });
-    expect(session.setModel).not.toHaveBeenCalled();
+    expect(session.updateModel).not.toHaveBeenCalled();
     // 定义变了：活着的这段会话要按新定义重建，状态栏与下一轮的请求才会跟上
     expect(session.reload).toHaveBeenCalledTimes(1);
     expect(notices.at(-1)!.text).toBe(
@@ -1090,10 +1094,10 @@ describe("/model：三档作用级别各写各的那一层", () => {
     await runCommand("model", "/model --global m2", host);
 
     expect(calls).toContainEqual({
-      method: "config.setDefaults",
+      method: "config.defaults.update",
       params: { defaultModel: "m2" },
     });
-    expect(session.setModel).not.toHaveBeenCalled();
+    expect(session.updateModel).not.toHaveBeenCalled();
     expect(session.reload).toHaveBeenCalledTimes(1);
     expect(notices.at(-1)!.text).toBe(
       t("cmd.model.done", { scope: t("cmd.model.scope.global"), name: "模型二", id: "m2" }),
@@ -1106,17 +1110,17 @@ describe("/model：三档作用级别各写各的那一层", () => {
     await runCommand("model", "/model -a nope", host);
 
     expect(methods(calls)).toEqual(["config.get"]);
-    expect(session.setModel).not.toHaveBeenCalled();
+    expect(session.updateModel).not.toHaveBeenCalled();
     expect(texts(notices)).toBe(t("cmd.model.unknown", { id: "nope", options: "m1 / m2" }));
   });
 
   it("已经是这一档的模型：不写、不 reload，说清模型其实来自哪一档", async () => {
-    // 生效模型 m1 来自助手定义（`source: "agent"`），用户 `/model m1`
+    // 生效模型 m1 来自 AgentDefinition（`source: "agent"`），用户 `/model m1`
     const { host, session, calls, notices } = createHost();
 
     await runCommand("model", "/model m1", host);
 
-    expect(session.setModel).not.toHaveBeenCalled();
+    expect(session.updateModel).not.toHaveBeenCalled();
     expect(session.reload).not.toHaveBeenCalled();
     // 只有「读模型表」这一次往返：来源那一格是会话自己给的（`model.source`），
     // 不再为此多问一次 `agentDefinition.get`
@@ -1163,7 +1167,7 @@ describe("/model：三档作用级别各写各的那一层", () => {
     await runCommand("model", "/model m2", host);
 
     expect(seen.title).toBe(t("cmd.busySwitch.title"));
-    expect(session.setModel).not.toHaveBeenCalled();
+    expect(session.updateModel).not.toHaveBeenCalled();
     // 确认之前只读了模型表：写请求根本没发出去
     expect(methods(calls)).toEqual(["config.get"]);
     expect(texts(notices)).toBe(t("cmd.busySwitch.cancelled"));
@@ -1174,7 +1178,7 @@ describe("/model：三档作用级别各写各的那一层", () => {
       session: {
         status: "working",
         // 宿主的 `assertNoWorkInHand`：手上还有活就拒
-        setModel: vi.fn(async () => {
+        updateModel: vi.fn(async () => {
           throw new Error("session is working");
         }),
       },
@@ -1183,7 +1187,7 @@ describe("/model：三档作用级别各写各的那一层", () => {
 
     await runCommand("model", "/model m2", host);
 
-    expect(session.setModel).toHaveBeenCalledWith("m2");
+    expect(session.updateModel).toHaveBeenCalledWith("m2");
     expect(texts(notices)).toBe(t("cmd.model.failed", { error: "session is working" }));
   });
 
@@ -1194,7 +1198,7 @@ describe("/model：三档作用级别各写各的那一层", () => {
 
     expect(host.pick).not.toHaveBeenCalled();
     expect(calls).toContainEqual({
-      method: "agentDefinition.update",
+      method: "config.agents.update",
       params: { agentId: "default", change: { modelId: "m2" } },
     });
     expect(session.reload).toHaveBeenCalledTimes(1);
@@ -1209,7 +1213,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
 
     await runCommand("think", "/think high", host);
 
-    expect(session.setThinking).toHaveBeenCalledWith("high");
+    expect(session.updateThinkingLevel).toHaveBeenCalledWith("high");
     expect(host.setEffortView).toHaveBeenCalled();
     // 会话行上的档位由宿主存，不需要重建 Agent
     expect(session.reload).not.toHaveBeenCalled();
@@ -1237,7 +1241,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
 
     await runCommand("think", "/think default", host);
 
-    expect(session.setThinking).toHaveBeenCalledWith(null);
+    expect(session.updateThinkingLevel).toHaveBeenCalledWith(null);
   });
 
   it("-a / --agent：写助手定义，并按新定义重建这段会话", async () => {
@@ -1249,14 +1253,14 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     await runCommand("think", "/think -a high", host);
 
     expect(calls).toContainEqual({
-      method: "agentDefinition.update",
+      method: "config.agents.update",
       params: {
         agentId: "default",
         // 档位展开成参数写进定义（配置即事实）：`high` → `{ reasoning_effort: "high" }`
         change: { modelParams: { reasoning_effort: "high" } },
       },
     });
-    expect(session.setThinking).not.toHaveBeenCalled();
+    expect(session.updateThinkingLevel).not.toHaveBeenCalled();
     expect(session.reload).toHaveBeenCalledTimes(1);
     expect(texts(notices)).toBe(
       t("effort.summary", {
@@ -1272,7 +1276,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
 
     await runCommand("think", "/think turbo", host);
 
-    expect(session.setThinking).not.toHaveBeenCalled();
+    expect(session.updateThinkingLevel).not.toHaveBeenCalled();
     expect(texts(notices)).toBe(t("cmd.think.unknown", { level: "turbo", options: "low / high" }));
   });
 
@@ -1310,11 +1314,11 @@ describe("/think：会话行与助手定义两个作用级别", () => {
 
     await runCommand("think", "/think high", host);
 
-    expect(session.setThinking).not.toHaveBeenCalled();
+    expect(session.updateThinkingLevel).not.toHaveBeenCalled();
     expect(texts(notices)).toBe(t("cmd.think.unchanged"));
   });
 
-  it("选择器把「跟随默认」标在会话级那一条上，助手级不出现它", async () => {
+  it("选择器把「跟随默认」标在会话级那一条上，助手定义级不出现它", async () => {
     const { host } = createHost();
     const seen = capturePick(host, null);
 
@@ -1323,8 +1327,8 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     expect(seen.labels).toEqual(["跟随模型默认（当前）", "低", "高"]);
   });
 
-  // 两档选择器的条目几乎一样，标题是唯一说清「改的是哪一层」的地方（PRD 4.7）
-  it("标题印出作用级别：会话级是「这一段」、助手级是「这个助手（影响以后新开的会话）」", async () => {
+  // 两档选择器的 InboxEntry 几乎一样，标题是唯一说清「改的是哪一层」的地方（PRD 4.7）
+  it("标题印出作用级别：会话级是「这一段」、助手定义级是「这个助手定义（影响以后新开的会话）」", async () => {
     const { host } = createHost();
     const sessionSeen = capturePick(host, null);
     await runCommand("think", "/think", host);
@@ -1338,12 +1342,12 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     // 两档各自的标题（当前档也都在里面）
     expect(sessionSeen.title).toBe(t("cmd.think.titleSession", { level: t("effort.default") }));
     expect(agentSeen.title).toBe(t("cmd.think.titleAgent", { level: t("effort.high") }));
-    // 两句话必须不一样，而且助手级要说清它管的是以后（不只是这一段）
+    // 两句话必须不一样，而且 AgentDefinition 级要说清它管的是以后（不只是这一段）
     expect(sessionSeen.title).not.toBe(agentSeen.title);
     expect(agentSeen.title).toContain("影响以后新开的会话");
   });
 
-  it("-a 的选择器里有一项「清掉助手上的思考参数」", async () => {
+  it("-a 的选择器里有一项「清掉助手定义上的思考参数」", async () => {
     const { host } = createHost({
       routes: effortRoutes(agentView({ modelId: "m1", modelParams: { reasoning_effort: "high" } })),
     });
@@ -1352,7 +1356,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     await runCommand("think", "/think -a", host);
 
     // 第一项就是「这一层不再写档位」那一项：标签与会话级那条同一个说法，
-    // hint 说清它删的是**助手定义**上的参数（会话级那条说的是本次会话）
+    // hint 说清它删的是**AgentDefinition**上的参数（会话级那条说的是本次会话）
     expect(seen.labels).toEqual(["跟随模型默认", "低", "高（当前）"]);
     expect(seen.hints[0]).toBe(t("cmd.think.clearHintAgent"));
     expect(seen.hints.slice(1)).toEqual(["low", "high"]);
@@ -1373,11 +1377,11 @@ describe("/think：会话行与助手定义两个作用级别", () => {
           }),
           presets: presetsView(),
         }),
-        "agentDefinition.get": () => ({
+        "config.agents.get": () => ({
           definition: agentView({ modelId: "m1", modelParams: { reasoning_effort: "high" } }),
         }),
         // 清完之后宿主给的那一份：定义上没有思考参数了，跟着模型默认走
-        "agentDefinition.update": () => ({
+        "config.agents.update": () => ({
           definition: agentView({ modelId: "m1", modelParams: {} }),
         }),
       },
@@ -1390,15 +1394,15 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     await runCommand("think", "/think -a", host);
 
     expect(calls).toContainEqual({
-      method: "agentDefinition.update",
+      method: "config.agents.update",
       params: {
         agentId: "default",
         // 清掉 = 把思考那几个键剔掉；`undefined` 在合并语义里是「这一项不改」，所以给空表
         change: { modelParams: {} },
       },
     });
-    // 写的是助手定义，不是会话行
-    expect(session.setThinking).not.toHaveBeenCalled();
+    // 写的是 AgentDefinition，不是会话行
+    expect(session.updateThinkingLevel).not.toHaveBeenCalled();
     expect(session.reload).toHaveBeenCalledTimes(1);
     expect(host.setEffortView).toHaveBeenCalledWith({ text: t("effort.default"), dimmed: false });
     expect(texts(notices)).toContain(
@@ -1421,7 +1425,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     await runCommand("think", "/think -a", host);
 
     expect(calls).toContainEqual({
-      method: "agentDefinition.update",
+      method: "config.agents.update",
       params: { agentId: "default", change: { modelParams: {} } },
     });
     expect(texts(notices)).not.toContain(t("cmd.think.unchanged"));
@@ -1435,7 +1439,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     await runCommand("think", "/think high", host);
 
     expect(seen.title).toBe(t("cmd.busySwitch.title"));
-    expect(session.setThinking).not.toHaveBeenCalled();
+    expect(session.updateThinkingLevel).not.toHaveBeenCalled();
     expect(host.setEffortView).not.toHaveBeenCalled();
     expect(texts(notices)).toBe(t("cmd.busySwitch.cancelled"));
   });
@@ -1444,7 +1448,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     const { host, session, notices } = createHost({
       session: {
         status: "working",
-        setThinking: vi.fn(async () => {
+        updateThinkingLevel: vi.fn(async () => {
           throw new Error("session is working");
         }),
       },
@@ -1453,7 +1457,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
 
     await runCommand("think", "/think high", host);
 
-    expect(session.setThinking).toHaveBeenCalledWith("high");
+    expect(session.updateThinkingLevel).toHaveBeenCalledWith("high");
     expect(texts(notices)).toBe(t("cmd.think.failed", { error: "session is working" }));
   });
 
@@ -1467,7 +1471,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
 
     expect(host.pick).not.toHaveBeenCalled();
     expect(calls).toContainEqual({
-      method: "agentDefinition.update",
+      method: "config.agents.update",
       params: { agentId: "default", change: { modelParams: { reasoning_effort: "high" } } },
     });
   });
@@ -1475,12 +1479,12 @@ describe("/think：会话行与助手定义两个作用级别", () => {
 
 // ==================== /agent ====================
 
-describe("/agent：选「以后的会话用哪个助手」（写默认助手）", () => {
+describe("/agent：选「以后的会话用哪个助手定义」（写默认助手定义）", () => {
   it("选中之后只写 defaultAgent 这一个字段", async () => {
     const { host, calls, notices } = createHost({
       routes: {
-        // `agentDefinition.list` 回的是**定义数组**（默认助手是配置里的那一格，见 `agentListOf`）
-        "agentDefinition.list": () => [
+        // `agentDefinition.list` 回的是**定义数组**（默认 AgentDefinition 是配置里的那一格，见 `agentListOf`）
+        "config.agents.list": () => [
           agentView(),
           agentView({ id: "coder", name: "编程 Agent", modelId: "m2" }),
         ],
@@ -1491,7 +1495,7 @@ describe("/agent：选「以后的会话用哪个助手」（写默认助手）"
     await runCommand("agent", "/agent", host);
 
     expect(calls).toContainEqual({
-      method: "config.setDefaults",
+      method: "config.defaults.update",
       params: { defaultAgent: "coder" },
     });
     expect(texts(notices)).toBe(
@@ -1513,9 +1517,9 @@ describe("/agent：选「以后的会话用哪个助手」（写默认助手）"
     expect(host.exit).not.toHaveBeenCalled();
   });
 
-  it("没有主助手：报错并指路 /config", async () => {
+  it("没有主助手定义：报错并指路 /config", async () => {
     const { host, notices } = createHost({
-      routes: { "agentDefinition.list": () => [] },
+      routes: { "config.agents.list": () => [] },
     });
 
     await runCommand("agent", "/agent", host);
@@ -1529,19 +1533,19 @@ describe("/agent：选「以后的会话用哪个助手」（写默认助手）"
 describe("/mcp：入口作用域看 mcp.list 的 scope", () => {
   it("项目层有条目时默认进项目层（workspace）", async () => {
     const { host, calls } = createHost({
-      routes: { "mcp.list": () => ({ servers: [MCP_ENTRY] }) },
+      routes: { "config.mcp.list": () => ({ servers: [MCP_ENTRY] }) },
     });
 
     await runCommand("mcp", "/mcp", host);
 
-    expect(calls).toEqual([{ method: "mcp.list", params: { workspaceId: "ws-1" } }]);
+    expect(calls).toEqual([{ method: "config.mcp.list", params: { workspaceId: "ws-1" } }]);
     expect(host.openWizard).toHaveBeenCalledWith({ kind: "mcp", scope: "workspace" });
   });
 
   it("项目层为空时默认进用户层（user）", async () => {
     const { host } = createHost({
       routes: {
-        "mcp.list": () => ({
+        "config.mcp.list": () => ({
           servers: [mcpEntry("user", { id: "pty", transport: "stdio", command: "npx" })],
         }),
       },
@@ -1608,12 +1612,12 @@ describe("/lang：语言是用户的属性，不是连接的属性", () => {
   // 临时根在整个文件里是同一份，上一个用例落的偏好会留着：每一条都从「没选过」开始
   beforeEach(() => rmSync(join(zen.dir, "cli"), { recursive: true, force: true }));
 
-  it("/lang en：只打一次 config.setGlobal，本机偏好取回执里那一格", async () => {
-    const { host, calls, notices } = createHost({ routes: { "config.setGlobal": echoGlobal } });
+  it("/lang en：只打一次 config.update，本机偏好取回执里那一格", async () => {
+    const { host, calls, notices } = createHost({ routes: { "config.update": echoGlobal } });
 
     await runCommand("lang", "/lang en", host);
 
-    expect(calls).toEqual([{ method: "config.setGlobal", params: { language: "en" } }]);
+    expect(calls).toEqual([{ method: "config.update", params: { language: "en" } }]);
     expect(prefLanguage()).toBe("en");
     expect(host.refreshLocale).toHaveBeenCalledTimes(1);
     expect(texts(notices)).toBe(t("notice.languageChanged"));
@@ -1621,26 +1625,26 @@ describe("/lang：语言是用户的属性，不是连接的属性", () => {
 
   it("/lang zh：同一个写口，本机偏好回到中文", async () => {
     setLocale("en");
-    const { host, calls } = createHost({ routes: { "config.setGlobal": echoGlobal } });
+    const { host, calls } = createHost({ routes: { "config.update": echoGlobal } });
 
     await runCommand("lang", "/lang zh", host);
 
-    expect(calls).toEqual([{ method: "config.setGlobal", params: { language: "zh" } }]);
+    expect(calls).toEqual([{ method: "config.update", params: { language: "zh" } }]);
     expect(prefLanguage()).toBe("zh");
   });
 
   it("无参时切到当前这一门的对面", async () => {
-    const { host, calls } = createHost({ routes: { "config.setGlobal": echoGlobal } });
+    const { host, calls } = createHost({ routes: { "config.update": echoGlobal } });
 
     await runCommand("lang", "/lang", host);
 
-    expect(calls).toEqual([{ method: "config.setGlobal", params: { language: "en" } }]);
+    expect(calls).toEqual([{ method: "config.update", params: { language: "en" } }]);
   });
 
   it("回执里没有语言这一格：不拿打算写的那个值顶上", async () => {
     // 真宿主写进去了才会回整份，这里只是钉住「本机偏好只吃回执里的那一格」
     const { host, notices } = createHost({
-      routes: { "config.setGlobal": () => ({ config: configView() }) },
+      routes: { "config.update": () => ({ config: configView() }) },
     });
 
     await runCommand("lang", "/lang en", host);
@@ -1666,7 +1670,7 @@ describe("/lang：语言是用户的属性，不是连接的属性", () => {
   it("宿主拒绝时把那句话如实上屏，本机偏好不动", async () => {
     const { host, notices } = createHost({
       routes: {
-        "config.setGlobal": () => {
+        "config.update": () => {
           throw new Error("language must be one of en / zh");
         },
       },
@@ -1718,8 +1722,8 @@ describe("/handoff 与 /migrate：同一个方法，两种后续", () => {
       t("handoff.modeSummary"),
       t("handoff.modeSkip"),
     ]);
-    // 「独立摘要」那一句要说清它会另起一个一次性执行体来写
-    expect(seen.labels[1]).toContain("一次性执行体");
+    // 「独立摘要」那一句要说清它会另起一个一次性 Agent 来写
+    expect(seen.labels[1]).toContain("一次性 Agent");
     // 挑定的执行者与「只写文档」这一档一起交出去（宿主 `handoff.start` 的 `mode` / `kind`）
     expect(session.handoff).toHaveBeenCalledWith({ kind: "document", mode: "self" });
     expect(host.clearTranscript).not.toHaveBeenCalled();
@@ -2152,11 +2156,11 @@ describe("/ws delete：先摆代价、再一次确认、连带删会话", () => 
         workspaceRow("ws-2", "/work/b", "乙"),
       ],
       "session.list": (params) => perWorkspace[String(params.workspaceId)] ?? [],
-      "workspace.remove": () => ({ sessions: removed }),
+      "workspace.delete": () => ({ sessions: removed }),
     };
   }
 
-  it("确认之前只有两次读：`workspace.remove` 一次没调，选「否」就说一句", async () => {
+  it("确认之前只有两次读：`workspace.delete` 一次没调，选「否」就说一句", async () => {
     const { host, calls, notices } = createHost({
       routes: deleteRoutes({ "ws-1": [sessionView()] }),
     });
@@ -2299,7 +2303,7 @@ describe("/ws delete：先摆代价、再一次确认、连带删会话", () => 
     const { host, notices } = createHost({
       routes: {
         ...deleteRoutes({ "ws-1": [sessionView()] }),
-        "workspace.remove": () => {
+        "workspace.delete": () => {
           throw new Error("找不到这个项目");
         },
       },
@@ -2331,7 +2335,7 @@ describe("/ws delete：先摆代价、再一次确认、连带删会话", () => 
     const failing = createHost({
       routes: {
         ...deleteRoutes({ "ws-1": [sessionView()] }),
-        "workspace.remove": () => {
+        "workspace.delete": () => {
           throw new Error("宿主拒了");
         },
       },
@@ -2352,7 +2356,7 @@ describe("/ws delete：先摆代价、再一次确认、连带删会话", () => 
  * `moveAfterGone` 是**三条路共用**的那一套收尾：`/delete`、`/ws delete`、以及「别处删掉了这一
  * 屏正看着的那一段」那条事件。换到哪一段、没地方可换时说什么，只有这一处。
  *
- * （条目 1 的四种处境里，「删别段不换屏」与「一次连来三条只出声一次」在注册表那一层钉，
+ * （InboxEntry 1 的四种处境里，「删别段不换屏」与「一次连来三条只出声一次」在注册表那一层钉，
  * 见 `sessions-registry.test.ts`；这一组钉「换屏 / 回连接屏 / 留在这一屏」三种收尾。）
  */
 describe("moveAfterGone：一段会话没了之后往哪儿去", () => {
@@ -2459,13 +2463,13 @@ describe("moveAfterGone：一段会话没了之后往哪儿去", () => {
 // ==================== /kill ====================
 
 /**
- * `/kill` 收掉的是**执行体**（PRD 1.2「死的路只有三条」、4.1「中断不是杀死」那张表）：
- * 之后没有 agent 了、在途请求被掐断、没消费的条目作废；而**会话行与历史一个字不动**。
+ * `/kill` 收掉的是**Agent**（PRD 1.2「死的路只有三条」、4.1「中断不是杀死」那张表）：
+ * 之后没有 agent 了、在途请求被掐断、没消费的 InboxEntry 作废；而**会话行与历史一个字不动**。
  *
  * 这一组钉四件：只调 `agent.kill` 一条、先摆代价再问一次、杀完不换屏也不清历史、
- * 已经死了的那一段不扉一句「N 条会作废」（宿主那边的 kill 对没有执行体的一段是空操作）。
+ * 已经死了的那一段不扉一句「N 条会作废」（宿主那边的 kill 对没有 Agent 的一段是空操作）。
  */
-describe("/kill：先摆代价、再杀执行体、不换屏", () => {
+describe("/kill：先摆代价、再杀 Agent、不换屏", () => {
   it("不带参数 = 杀当前这一段：代价说清排队区几条会作废，并且只调 `agent.kill`", async () => {
     const { host, calls, notices } = createHost({
       // 排队区里还有 3 条没被取走（镜像里那一格）
@@ -2479,7 +2483,7 @@ describe("/kill：先摆代价、再杀执行体、不换屏", () => {
     expect(seen.title).toBe(t("cmd.kill.title", { name: "第一段", pending: 3 }));
     expect(seen.values).toEqual(["yes", "no"]);
     // 只有这一条写：杀的不是会话，是它的 agent
-    expect(calls).toEqual([{ method: "agent.kill", params: { sessionId: "sess-1" } }]);
+    expect(calls).toEqual([{ method: "runtime.agent.kill", params: { sessionId: "sess-1" } }]);
     expect(texts(notices)).toBe(t("cmd.kill.done", { name: "第一段" }));
     // 不换屏（这一段还在，只是没有 agent 了）、不摘登记、不清历史
     expect(host.exit).not.toHaveBeenCalled();
@@ -2516,7 +2520,7 @@ describe("/kill：先摆代价、再杀执行体、不换屏", () => {
 
     expect(seen.title).toBe(t("cmd.kill.title", { name: "另一段", pending: 0 }));
     expect(calls.at(-1)).toEqual({
-      method: "agent.kill",
+      method: "runtime.agent.kill",
       params: { sessionId: "7f3c9a10b2e4" },
     });
     expect(texts(notices)).toBe(t("cmd.kill.done", { name: "另一段" }));
@@ -2554,8 +2558,11 @@ describe("/kill：先摆代价、再杀执行体、不换屏", () => {
     await runCommand("kill", "/kill 另一段", named.host);
 
     expect(seen.title).toBe(t("cmd.kill.title", { name: "另一段", pending: 2 }));
-    expect(methods(named.calls)).toEqual(["session.list", "session.open", "agent.kill"]);
-    expect(named.calls.at(-1)).toEqual({ method: "agent.kill", params: { sessionId: "sess-9" } });
+    expect(methods(named.calls)).toEqual(["session.list", "session.open", "runtime.agent.kill"]);
+    expect(named.calls.at(-1)).toEqual({
+      method: "runtime.agent.kill",
+      params: { sessionId: "sess-9" },
+    });
     expect(texts(named.notices)).toBe(t("cmd.kill.done", { name: "另一段" }));
   });
 
@@ -2612,7 +2619,7 @@ describe("/kill：先摆代价、再杀执行体、不换屏", () => {
   it("宿主拒了：原话上屏，不重试、不兜底", async () => {
     const { host, calls, notices } = createHost({
       routes: {
-        "agent.kill": () => {
+        "runtime.agent.kill": () => {
           throw new Error("这一段正忙着，杀不了");
         },
       },
@@ -2621,7 +2628,7 @@ describe("/kill：先摆代价、再杀执行体、不换屏", () => {
 
     await runCommand("kill", "/kill", host);
 
-    expect(methods(calls)).toEqual(["agent.kill"]);
+    expect(methods(calls)).toEqual(["runtime.agent.kill"]);
     expect(texts(notices)).toBe(t("cmd.kill.failed", { error: "这一段正忙着，杀不了" }));
   });
 });
@@ -2639,7 +2646,7 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
    * 这一段的三条消息 + 一张被引用两次的图（`session.open` 快照里的那一份）。
    *
    * 段上的本地标记就是 `__asset_id`（`user-content.ts` 写它的那个词）：同一个 id 出现两次
-   * 只算一份素材，所以这一段是「3 条消息、2 份素材」。
+   * 只算一份 Asset，所以这一段是「3 条消息、2 份 Asset」。
    */
   const snapshotMessages = [
     { id: "u-1", createdAt: 1, role: AgentNS.Role.User, content: "第一条" },
@@ -2658,7 +2665,7 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
     { id: "a-1", createdAt: 3, role: AgentNS.Role.Assistant, content: "答" },
   ];
 
-  /** `session.open` 与 `session.remove` 的字面回执（不带 `session.list`：那条要按用例给） */
+  /** `session.open` 与 `session.delete` 的字面回执（不带 `session.list`：那条要按用例给） */
   function deleteRoutes(
     removed: { messages: number; assets: number } = { messages: 3, assets: 2 },
   ) {
@@ -2669,7 +2676,7 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
         messages: snapshotMessages,
         inbox: [],
       }),
-      "session.remove": () => removed,
+      "session.delete": () => removed,
     };
   }
 
@@ -2680,13 +2687,13 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
     await runCommand("delete", "/delete", host);
 
     expect(calls).toEqual([{ method: "session.open", params: { sessionId: "sess-1" } }]);
-    // 3 条消息、2 份素材（a-1 被引用两次）
+    // 3 条消息、2 份 Asset（a-1 被引用两次）
     expect(seen.title).toBe(t("cmd.delete.title", { name: "第一段", messages: 3, assets: 2 }));
     expect(seen.values).toEqual(["yes", "no"]);
     expect(seen.labels).toEqual([t("cmd.delete.confirm"), t("cmd.delete.cancel")]);
   });
 
-  it("选「否」/ Esc：一次写都没有（`session.remove` 一次没调），这一段还在", async () => {
+  it("选「否」/ Esc：一次写都没有（`session.delete` 一次没调），这一段还在", async () => {
     for (const answer of ["no", null]) {
       const { host, calls, notices } = createHost({ routes: deleteRoutes() });
       capturePick(host, answer);
@@ -2699,9 +2706,9 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
     }
   });
 
-  it("确认：调 `session.remove`，上屏的数字用回执里的（不用自己数的那一份）", async () => {
+  it("确认：调 `session.delete`，上屏的数字用回执里的（不用自己数的那一份）", async () => {
     const { host, calls } = createHost({
-      // 回执与自己数的不一样：素材按引用归零才算删掉，可能少于这一段引用过的份数
+      // 回执与自己数的不一样：Asset 按引用归零才算删掉，可能少于这一段引用过的份数
       routes: deleteRoutes({ messages: 2, assets: 1 }),
       // 这个项目里还有别的会话（`baseRoutes` 的 `session.list` 给了两段）：两句话跟着 `load` 一起带到新屏去
     });
@@ -2709,8 +2716,8 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
 
     await runCommand("delete", "/delete", host);
 
-    expect(methods(calls)).toEqual(["session.open", "session.remove", "session.list"]);
-    expect(calls[1]).toEqual({ method: "session.remove", params: { sessionId: "sess-1" } });
+    expect(methods(calls)).toEqual(["session.open", "session.delete", "session.list"]);
+    expect(calls[1]).toEqual({ method: "session.delete", params: { sessionId: "sess-1" } });
     // 屏幕换到同一段项目里最近的那一段，**上屏的数字是回执里的 2 / 1**（自己数的是 3 / 2）
     expect(host.exit).toHaveBeenCalledWith({
       load: { sessionId: "sess-2" },
@@ -2806,7 +2813,7 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
     const { host } = createHost({
       routes: {
         ...deleteRoutes(),
-        "session.remove": () => {
+        "session.delete": () => {
           throw new Error("找不到 id 为 sess-1 的会话");
         },
       },
@@ -2841,7 +2848,7 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
     const { host, notices } = createHost({
       routes: {
         ...deleteRoutes(),
-        "session.remove": () => {
+        "session.delete": () => {
           throw new Error("找不到 id 为 sess-1 的会话");
         },
       },

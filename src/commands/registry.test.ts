@@ -34,7 +34,7 @@ describe("会话命令元数据", () => {
   });
 
   it("说明保持简洁：中文 ≤ 36、英文 ≤ 52 显示宽度", () => {
-    // 斜杠菜单与 /help 都是一行一条，说明过长会把行塞满。上限紧贴当前最长条目：
+    // 斜杠菜单与 /help 都是一行一条，说明过长会把行塞满。上限紧贴当前最长 InboxEntry：
     // 中文 /mcp=35、英文 /upgrade=51，余量不大，改啰嗦了就会红。
     const LIMIT = { zh: 36, en: 52 } as const;
     for (const locale of ["zh", "en"] as const) {
@@ -105,7 +105,7 @@ describe("会话命令元数据", () => {
   });
 
   /**
-   * 展示条目只有「名字 / 别名 / 说明」三样。这里钉住「不带来的东西」：客户端不需要
+   * 展示 InboxEntry 只有「名字 / 别名 / 说明」三样。这里钉住「不带来的东西」：客户端不需要
    * 把命令再到回去映射成契约方法 —— 那是宿主的事，命令名归命令名（从前多一个 `method`
    * 字段专为 `/help` 去宿主取句子，现在 `/help` 用本地词条，那个字段跟着删了）。
    */
@@ -191,7 +191,7 @@ describe("命令前缀匹配", () => {
       {
         names: ["agent"],
         label: "/agent",
-        description: "设置默认助手，只影响以后新开的会话",
+        description: "设默认助手定义，只影响新会话",
       },
     ]);
     expect(canonicalCommandName("agent")).toBe("agent");

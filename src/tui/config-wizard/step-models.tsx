@@ -18,7 +18,7 @@ import { t } from "../../i18n/index.js";
 /**
  * 新建模型时先填的两条阈值。
  *
- * **宿主不补这两格**：`config.model.add` 收的是整条 `Model`，`ModelService` 写前就判「两条阈值
+ * **宿主不补这两格**：`config.models.create` 收的是整条 `ModelDefinition`，`ModelService` 写前就判「两条阈值
  * 都是数字」并且「交接线小于防护线」，缺了直接 `invalid_params`。所以「省略、让宿主套出厂默认」
  * 那句话不成立，客户端得给出一个起点；新建完立刻进详情屏，这两个数就在第一屏能改的地方。
  *
@@ -130,7 +130,7 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         label: t("wiz.models.delete"),
         danger: true,
         cost: deleteCost,
-        // 被助手定义引用时宿主照删（它只改指默认项），这里不做额外拦截
+        // 被 AgentDefinition 引用时宿主照删（它只改指默认项），这里不做额外拦截
         run: async () => {
           const failure = await deleteModel(model.id, t("wiz.models.deleted", { name }));
           if (!failure) go({ kind: "models" });
