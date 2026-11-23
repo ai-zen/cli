@@ -5,7 +5,7 @@
     "zh": "AI-Zen 宿主的终端客户端：连本机或远端的 @ai-zen/agents-host，交互界面与纯 stdio 两条路；讲清命令、配置中心、界面要素与跟宿主的关系",
     "en": "The terminal client for an AI-Zen host: connects to a local or remote @ai-zen/agents-host over one WebSocket, with an interactive interface and a pure stdio path; covers the commands, the configuration centre, the interface, and the relationship with the host"
   },
-  "version": "1.1.0-alpha.0",
+  "version": "1.1.0-alpha.3",
   "docsRoot": "docs",
   "locales": ["zh", "en"],
   "defaultLocale": "zh",
