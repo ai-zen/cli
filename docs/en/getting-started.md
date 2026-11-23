@@ -10,11 +10,11 @@ outline: deep
 
 The repository uses pnpm, and the build output is a bundled `dist/`:
 
-| Command | What it does |
-|---|---|
-| `pnpm install` | installs dependencies |
-| `pnpm build` | bundles the sources and the connection layer into `dist/` with rolldown |
-| `pnpm start` | `pnpm build`, then `node dist/index.js` |
+| Command        | What it does                                                            |
+| -------------- | ----------------------------------------------------------------------- |
+| `pnpm install` | installs dependencies                                                   |
+| `pnpm build`   | bundles the sources and the connection layer into `dist/` with rolldown |
+| `pnpm start`   | `pnpm build`, then `node dist/index.js`                                 |
 
 `package.json` declares three bin names — `ai`, `aiz`, `zen` — and all three point at `dist/index.js`. Installing the package globally on this machine (`npm install -g .`) puts those three names on the PATH.
 
@@ -22,15 +22,15 @@ The host is not a runtime dependency: `@ai-zen/agents-host` lives in `devDepende
 
 ## Launch parameters
 
-| Parameter | What it does |
-|---|---|
-| `--server <url>` | talk to this host instead of the local one |
-| `--new` | open a new session instead of resuming the last one (the interactive path only) |
-| `--tui [prompt…]` | force the interactive interface; trailing words are sent as the first message; rejected when stdin or stdout is not a TTY |
-| `--save` | keep a stdio call as a real session (ignored by the interactive path) |
-| `--server-status` | print the status of the host at that address as JSON and exit 0 when it answers, 1 when it does not; never launches anything |
-| `hook install` / `hook uninstall` | install or remove the shell fallback hook |
-| `-h`, `--help`, `-v`, `--version` | usage and version; the single words `ai help` / `ai version` are the same |
+| Parameter                         | What it does                                                                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `--server <url>`                  | talk to this host instead of the local one                                                                                   |
+| `--new`                           | open a new session instead of resuming the last one (the interactive path only)                                              |
+| `--tui [prompt…]`                 | force the interactive interface; trailing words are sent as the first message; rejected when stdin or stdout is not a TTY    |
+| `--save`                          | keep a stdio call as a real session (ignored by the interactive path)                                                        |
+| `--server-status`                 | print the status of the host at that address as JSON and exit 0 when it answers, 1 when it does not; never launches anything |
+| `hook install` / `hook uninstall` | install or remove the shell fallback hook                                                                                    |
+| `-h`, `--help`, `-v`, `--version` | usage and version; the single words `ai help` / `ai version` are the same                                                    |
 
 `--` ends option parsing, so a prompt may start with `-`.
 
@@ -48,12 +48,12 @@ npx -y @ai-zen/agents-host@<range> serve --ai-zen-dir <data root>
 
 The launch screen reports where the launch stands, one line at a time, and never a percentage (npm output is not parsed):
 
-| Stage | What is being waited for |
-|---|---|
-| Resolving the version | npx resolving which version in that range to use |
-| Installing | npx downloading and installing it |
-| Starting the host | the child process is up; waiting for the discovery file and the handshake |
-| connected | not drawn: the screen switches to the session |
+| Stage                 | What is being waited for                                                  |
+| --------------------- | ------------------------------------------------------------------------- |
+| Resolving the version | npx resolving which version in that range to use                          |
+| Installing            | npx downloading and installing it                                         |
+| Starting the host     | the child process is up; waiting for the discovery file and the handshake |
+| connected             | not drawn: the screen switches to the session                             |
 
 A failed launch adds the child process's own last line and accepts `R` to try again; `Esc` and `Ctrl+C` kill the child and go back to the connect screen without quitting. When a host is already listening, no stage ever arrives and the launch screen draws nothing at all.
 
@@ -61,18 +61,18 @@ A failed launch adds the child process's own last line and accepts `R` to try ag
 
 Nothing starts a host on the remote machine for you, so it is only ever connected to:
 
-| Form | Result |
-|---|---|
-| `ai --server <url>` | talk to this host instead of the local one |
-| `AI_ZEN_SERVER_URL` | same as `--server <url>`; the flag wins when both are given |
+| Form                                   | Result                                                                 |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| `ai --server <url>`                    | talk to this host instead of the local one                             |
+| `AI_ZEN_SERVER_URL`                    | same as `--server <url>`; the flag wins when both are given            |
 | the remote entry on the connect screen | address plus access token; an empty token means the local host's token |
 
 An address accepts `ws:`, `wss:`, `http:` and `https:`, and a path for a reverse-proxy mount; a bare `host:port` without a scheme is taken as `ws://`. A malformed address fails before anything connects or launches, with one sentence on stderr and exit code 2.
 
-| Environment variable | Meaning |
-|---|---|
-| `AI_ZEN_DIR` | data root (default `~/.ai-zen`) |
-| `AI_ZEN_SERVER_URL` | same as `--server <url>` |
+| Environment variable  | Meaning                            |
+| --------------------- | ---------------------------------- |
+| `AI_ZEN_DIR`          | data root (default `~/.ai-zen`)    |
+| `AI_ZEN_SERVER_URL`   | same as `--server <url>`           |
 | `AI_ZEN_SERVER_TOKEN` | credential for an explicit address |
 
 There is no `--token`: argv ends up in `ps` output and in shell history. Where credentials come from, in full, is on the [Host](./host.md) page.
@@ -83,11 +83,11 @@ There is no `--token`: argv ends up in `ps` output and in shell history. Where c
 
 Once connected, the client enters a project and opens a session:
 
-| Step | Local host | Remote host |
-|---|---|---|
-| Project | the directory `ai` was run in, reused when `workspace.list` already has it | the one entered last time on that host, otherwise a picker |
-| Session | the one opened last time in that project, unless `--new` is given | same |
-| Credential | a screen asks for the API key when the endpoint behind the effective model has none | same |
+| Step       | Local host                                                                          | Remote host                                                |
+| ---------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Project    | the directory `ai` was run in, reused when `workspace.list` already has it          | the one entered last time on that host, otherwise a picker |
+| Session    | the one opened last time in that project, unless `--new` is given                   | same                                                       |
+| Credential | a screen asks for the API key when the endpoint behind the effective model has none | same                                                       |
 
 ## Sending the first message
 
@@ -102,11 +102,11 @@ Four things worth knowing straight away:
 
 ## Quitting
 
-| How | Result |
-|---|---|
-| `/exit` or `/quit` | quits the client |
+| How                               | Result           |
+| --------------------------------- | ---------------- |
+| `/exit` or `/quit`                | quits the client |
 | `Ctrl+C` with an empty input line | quits the client |
-| `Ctrl+D` twice in a row | quits the client |
+| `Ctrl+D` twice in a row           | quits the client |
 
 Quitting only takes down this process: the host keeps running, and the session that was working keeps working on the host side. Shutting the host down is `/shutdown` (see [Host](./host.md)).
 
@@ -119,4 +119,4 @@ ai 你好，请介绍一下你自己。
 cat README.md | ai "用三句话总结"
 ```
 
-By default the call goes through `session.transient` with the directory it was run in: no session row is created, nothing appears in any session list. With `--save` it becomes a real session, and the session id is printed on stderr. Exit codes: 0 on success, 1 when the call fails, 2 when the invocation itself is wrong.
+By default the call goes through `runtime.agent.runOnce` with the directory it was run in: no session row is created, nothing appears in any session list. With `--save` it becomes a real session, and the session id is printed on stderr. Exit codes: 0 on success, 1 when the call fails, 2 when the invocation itself is wrong.

@@ -14,17 +14,17 @@ An empty session shows the brand block at the top of the transcript — logo, ta
 
 The layout is bottom-anchored. From the bottom up:
 
-| Position | What it is |
-|---|---|
-| Status bar | five blocks of facts plus the key hint |
-| Input line | the draft and the hardware cursor |
-| Divider | the boundary between the bottom area and the transcript |
-| Queue band | the messages still sitting in the inbox, not yet taken |
-| Phase line | what is happening right now, one line |
-| Command menu | shared by `/` commands and `@` path completion |
-| Attachment line | how many images are attached to this message |
-| Notice bar | the only place notices appear |
-| Sub-agent tabs | only while sub-agents exist |
+| Position        | What it is                                              |
+| --------------- | ------------------------------------------------------- |
+| Status bar      | five blocks of facts plus the key hint                  |
+| Input line      | the draft and the hardware cursor                       |
+| Divider         | the boundary between the bottom area and the transcript |
+| Queue band      | the messages still sitting in the inbox, not yet taken  |
+| Phase line      | what is happening right now, one line                   |
+| Command menu    | shared by `/` commands and `@` path completion          |
+| Attachment line | how many images are attached to this message            |
+| Notice bar      | the only place notices appear                           |
+| Sub-agent tabs  | only while sub-agents exist                             |
 
 Everything above the divider appears only while it has something to say, and the transcript takes whatever height is left. Each band is accounted for by its own line count: the phase line and the attachment line are always one line, the queue band at most three, the notice bar at most eight plus one line for its clear hints.
 
@@ -34,13 +34,13 @@ Scroll back through history with the mouse wheel or `PgUp` / `PgDn`; some termin
 
 Five blocks, each read from the session at frame time:
 
-| Block | Content |
-|---|---|
-| Identity | model id, agent name, reasoning effort |
-| Gates | busy or idle, plus stopped, output off and intake off whenever any of them is not in its normal state |
-| Usage | tokens of the last answer and tokens of all answers, summed by the client from each message's `usage` |
-| Rate | a live estimate while generating, the average of the last answer afterwards |
-| Keys | the key hint line of the interface |
+| Block    | Content                                                                                               |
+| -------- | ----------------------------------------------------------------------------------------------------- |
+| Identity | model id, agent name, reasoning effort                                                                |
+| Gates    | busy or idle, plus stopped, output off and intake off whenever any of them is not in its normal state |
+| Usage    | tokens of the last answer and tokens of all answers, summed by the client from each message's `usage` |
+| Rate     | a live estimate while generating, the average of the last answer afterwards                           |
+| Keys     | the key hint line of the interface                                                                    |
 
 Blocks are the unit of wrapping: a block that does not fit moves to the next line whole, and an empty block takes no width. The two blocks whose numbers are not yet known take no space at all rather than writing 0.
 
@@ -48,16 +48,16 @@ Blocks are the unit of wrapping: a block that does not fit moves to the next lin
 
 The phase line sits above the divider and appears while the agent has work in hand. It says the phase the client can read out of the facts it has:
 
-| Phase | When |
-|---|---|
-| handing off | this session is writing the document or waiting for it to finish; it covers every phase below |
-| waiting in the queue | the inbox still holds messages and this batch has produced nothing yet |
-| connecting | work is in hand but this batch's message has not landed |
-| awaiting the first token | the request is out and nothing has come back |
-| thinking | reasoning has arrived, the answer has not |
-| calling a tool | the arguments are still being assembled, or were just finished |
-| waiting for a tool to return | tools are running; when several run in parallel only the ones still running are named |
-| streaming | the answer text is flowing |
+| Phase                        | When                                                                                          |
+| ---------------------------- | --------------------------------------------------------------------------------------------- |
+| handing off                  | this session is writing the document or waiting for it to finish; it covers every phase below |
+| waiting in the queue         | the inbox still holds messages and this batch has produced nothing yet                        |
+| connecting                   | work is in hand but this batch's message has not landed                                       |
+| awaiting the first token     | the request is out and nothing has come back                                                  |
+| thinking                     | reasoning has arrived, the answer has not                                                     |
+| calling a tool               | the arguments are still being assembled, or were just finished                                |
+| waiting for a tool to return | tools are running; when several run in parallel only the ones still running are named         |
+| streaming                    | the answer text is flowing                                                                    |
 
 The two tool phases name the tools. The line is always exactly one line, and a label that does not fit is truncated. While a command that holds the input line runs, this line names the command.
 
@@ -65,13 +65,13 @@ The two tool phases name the tools. The line is always exactly one line, and a l
 
 While sub-agents exist, one tab line appears below the transcript. The `◈` in front of each tab carries the state:
 
-| Colour | State |
-|---|---|
-| blinking | running |
-| green | ended |
-| red | failed |
-| faint | stopped |
-| dim | still there, not moving |
+| Colour   | State                   |
+| -------- | ----------------------- |
+| blinking | running                 |
+| green    | ended                   |
+| red      | failed                  |
+| faint    | stopped                 |
+| dim      | still there, not moving |
 
 With an empty input line, `←` / `→` switch which transcript is shown. A tab only changes whose messages are being read; it does not change the session.
 
@@ -83,10 +83,10 @@ Three tones: info, warn, error (the host's four levels fold into these three, wi
 
 Two entries clear it:
 
-| Key | What it clears |
-|---|---|
-| `Alt+X` | this session's notices: the local queue plus `notice.clear` with this session id |
-| `Alt+Shift+X` | asks once, then clears everything — global notices and other sessions' included |
+| Key           | What it clears                                                                       |
+| ------------- | ------------------------------------------------------------------------------------ |
+| `Alt+X`       | this session's notices: the local queue plus `notice.deleteAll` with this session id |
+| `Alt+Shift+X` | asks once, then clears everything — global notices and other sessions' included      |
 
 ## The input line
 

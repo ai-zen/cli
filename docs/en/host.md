@@ -10,12 +10,12 @@ One process has one connection, and one connection talks to one host. Which host
 
 ## Local and remote
 
-| | Local | Remote |
-|---|---|---|
-| When | the connect screen's local entry was chosen, or the remembered choice is that one | `--server` / `AI_ZEN_SERVER_URL` was given, or the remote entry was chosen on the connect screen |
-| How it is found | `<data root>/run/host.json` and `run/token` | the address that was given |
-| When nothing answers | a host is fetched with `npx` (see below) | connect only; nothing is ever launched |
-| Credential | `<data root>/run/token`, written when the host starts | `AI_ZEN_SERVER_TOKEN`; for a loopback address, `run/token` also works |
+|                      | Local                                                                             | Remote                                                                                           |
+| -------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| When                 | the connect screen's local entry was chosen, or the remembered choice is that one | `--server` / `AI_ZEN_SERVER_URL` was given, or the remote entry was chosen on the connect screen |
+| How it is found      | `<data root>/run/host.json` and `run/token`                                       | the address that was given                                                                       |
+| When nothing answers | a host is fetched with `npx` (see below)                                          | connect only; nothing is ever launched                                                           |
+| Credential           | `<data root>/run/token`, written when the host starts                             | `AI_ZEN_SERVER_TOKEN`; for a loopback address, `run/token` also works                            |
 
 There is one rule for whether a host counts as local: the connection goes through the local discovery file, or the address's host is a loopback (`localhost`, `127.0.0.1`, `::1`). It decides two things — whether the directory `ai` was run in becomes the project to enter (see [Quick Start](./getting-started.md)), and which slot the last-entered project is remembered in.
 
@@ -29,12 +29,12 @@ npx -y @ai-zen/agents-host@<range> serve --ai-zen-dir <data root>
 
 `<range>` is the semver range this build was made against, baked into `dist/` at build time. The launch screen reports the launch as three stages that get drawn — resolving the version, installing, starting the host — one line at a time, never a percentage. The connected stage is not drawn: the screen switches straight to the session.
 
-| Situation | On screen |
-|---|---|
-| It came up | the stages advance line by line, and connecting swaps the screen |
-| It did not | one more line with the child process's own reason, and `R` fetches again |
-| `Esc` / `Ctrl+C` | the child process is killed and the connect screen returns, so another host can be chosen; the program does not quit |
-| A host is already listening | no stage ever arrives and the launch screen draws nothing at all |
+| Situation                   | On screen                                                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| It came up                  | the stages advance line by line, and connecting swaps the screen                                                     |
+| It did not                  | one more line with the child process's own reason, and `R` fetches again                                             |
+| `Esc` / `Ctrl+C`            | the child process is killed and the connect screen returns, so another host can be chosen; the program does not quit |
+| A host is already listening | no stage ever arrives and the launch screen draws nothing at all                                                     |
 
 The child process's output is written to `<data root>/logs/cli/launch.log`, rewritten on every launch; on a failure its last line is the reason shown on screen.
 
@@ -42,11 +42,11 @@ The child process's output is written to `<data root>/logs/cli/launch.log`, rewr
 
 Upgrading has three parts, and the client does only the first:
 
-| Part | Whose | What happens |
-|---|---|---|
-| 1. Pick the version | client | asks the registry for the dist-tags and takes the highest semver |
-| 2. Verify, record, ask to exit | host | verifies that version can be had, records which one to launch next, and exits for the upgrade |
-| 3. Install and launch | the launcher | reads that record, installs that version and starts it |
+| Part                           | Whose        | What happens                                                                                  |
+| ------------------------------ | ------------ | --------------------------------------------------------------------------------------------- |
+| 1. Pick the version            | client       | asks the registry for the dist-tags and takes the highest semver                              |
+| 2. Verify, record, ask to exit | host         | verifies that version can be had, records which one to launch next, and exits for the upgrade |
+| 3. Install and launch          | the launcher | reads that record, installs that version and starts it                                        |
 
 So `/upgrade` runs in five steps:
 
@@ -68,12 +68,12 @@ Quitting the client does not shut the host down: `/exit`, `/quit`, `Ctrl+C` on a
 
 ## Where credentials come from
 
-| Source | Used for |
-|---|---|
-| `<data root>/run/token` | the local path; the host writes this file when it starts |
-| `AI_ZEN_SERVER_TOKEN` | the explicit-address path |
+| Source                                | Used for                                                                         |
+| ------------------------------------- | -------------------------------------------------------------------------------- |
+| `<data root>/run/token`               | the local path; the host writes this file when it starts                         |
+| `AI_ZEN_SERVER_TOKEN`                 | the explicit-address path                                                        |
 | the token typed on the connect screen | written to `<data root>/cli/connection.json`; empty means the local host's token |
-| an explicit loopback address | `run/token` is read when the settings carry no token |
+| an explicit loopback address          | `run/token` is read when the settings carry no token                             |
 
 There is no `--token` argument: argv ends up in `ps` output and in shell history. The reason shown when a connection fails is redacted first, so the token itself never reaches the screen.
 

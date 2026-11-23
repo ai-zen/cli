@@ -10,13 +10,13 @@ outline: deep
 
 ## The division of labour
 
-| | Host | This client |
-|---|---|---|
-| Model calls, tool calls, sub-agents | yes | no |
-| Sessions, messages, inbox, gates, handoff, assets | in `<data root>/ai-zen.db` | read over the connection |
-| `<data root>/config.json` | read and written by the host | edited only through procedures |
-| The terminal | nothing | everything |
-| Launching a host | never launches itself | launches one when the connection is local and nothing answers |
+|                                                   | Host                         | This client                                                   |
+| ------------------------------------------------- | ---------------------------- | ------------------------------------------------------------- |
+| Model calls, tool calls, sub-agents               | yes                          | no                                                            |
+| Sessions, messages, inbox, gates, handoff, assets | in `<data root>/ai-zen.db`   | read over the connection                                      |
+| `<data root>/config.json`                         | read and written by the host | edited only through procedures                                |
+| The terminal                                      | nothing                      | everything                                                    |
+| Launching a host                                  | never launches itself        | launches one when the connection is local and nothing answers |
 
 The dividing line in one sentence: the host decides what is true at this moment, the client decides what an invocation does and how a frame looks.
 
@@ -30,13 +30,13 @@ On this machine it keeps four small files and its own log directory — the host
 
 ## Where to read next
 
-| Page | What it covers |
-|---|---|
-| [Quick Start](./getting-started.md) | install, build, the first launch (a host fetched with `npx`), connecting to a remote host, the first message, quitting |
-| [Commands](./commands.md) | the command tables grouped by session / configuration / handoff / host, aliases and arguments, the `/` menu and `/help` |
-| [Configuration](./configuration.md) | the configuration centre tree, each field written as it is edited, configuration living on the host |
-| [Interface](./interface.md) | the status bar, the phase line, sub-agent tabs, the notice bar, the input line |
-| [Host](./host.md) | local and remote hosts, local launch, `/upgrade`, `/shutdown`, credentials |
+| Page                                | What it covers                                                                                                          |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| [Quick Start](./getting-started.md) | install, build, the first launch (a host fetched with `npx`), connecting to a remote host, the first message, quitting  |
+| [Commands](./commands.md)           | the command tables grouped by session / configuration / handoff / host, aliases and arguments, the `/` menu and `/help` |
+| [Configuration](./configuration.md) | the configuration centre tree, each field written as it is edited, configuration living on the host                     |
+| [Interface](./interface.md)         | the status bar, the phase line, sub-agent tabs, the notice bar, the input line                                          |
+| [Host](./host.md)                   | local and remote hosts, local launch, `/upgrade`, `/shutdown`, credentials                                              |
 
 ## License
 
