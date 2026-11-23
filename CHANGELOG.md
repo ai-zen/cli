@@ -1,4 +1,4 @@
-## [1.1.0-alpha.3] - 2026-11-23
+## [1.1.0-alpha.4] - 2026-11-23
 
 > `1.0.2` was the last release cut, and everything after it — the move from a program that ran
 > its own agents to the terminal client of a resident host — never reached this file as a whole.
@@ -74,6 +74,20 @@
   `tsc`, `format:check`, the build and `check:imports` all clean: the bundle still contains
   neither `openai` nor `@modelcontextprotocol/sdk`, and `dist/` has no runtime import of
   `@ai-zen/agents-client`.
+
+### Renamed
+
+- **Every contract path follows the host's new names**: `api.runtime.agent.*` (including
+  `pauseOutput` / `resumeOutput`), `api.runtime.scope.reload`, `api.config.agents.*`,
+  `api.config.mcp.*`, `api.config.endpoints.*` / `models.*` / `imageModels.*`,
+  `api.config.defaults.update`, `api.config.update`, `session.delete`, `workspace.delete`,
+  `notice.deleteAll` / `notice.delete`, and `runtime.agent.runOnce` where `session.transient`
+  used to be.
+- **The client's own wrappers are named after the paths they call**: `updateModel`,
+  `updateThinkingLevel`, `rewind`, `wake`, `pauseOutput`, `resumeOutput`.
+- **Two words for two things in the interface**: `AgentDefinition` is 助手定义 (the template in the
+  configuration), a live `Agent` is 助手, and a `SubAgent` is 子助手. Switching, naming and listing
+  speak of 助手; creating, editing and deleting speak of 助手定义.
 
 ## [1.0.2] - 2026-11-09
 
