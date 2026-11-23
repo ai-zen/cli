@@ -239,6 +239,12 @@ The host's side of the same root: `ai-zen.db` (database), `config.json` (configu
 
 `pnpm test:all` runs all six (types, formatting, unit, build, artifact graph, end to end). The end-to-end suite needs `dist/` and a built host from the neighbouring `agents` checkout (`../agents/packages/host/dist/cli.js`); the local launch path is exercised through a fake `npx` that forwards to that entry, so nothing is downloaded. Do not run it next to another suite that starts real hosts.
 
+### Running against a local dev host
+
+`pnpm dev` builds the host from `../agents` and this CLI, starts that host as its child process and then starts the CLI against it — the host's log lines stay in the terminal and Ctrl+C takes both down. The data root defaults to the daily one (`~/.ai-zen`), so you are looking at real configuration and real sessions.
+
+If a host is already serving that root the script asks before touching it — "stop it and start the dev host?" — and an empty answer, `n` or anything else means nothing happens and it exits. Answer `y` and that host is stopped first. In a non-interactive shell (stdin is not a terminal) nobody can answer, so nothing happens either; `--replace` is the way to say yes up front. `--keep-host` leaves the dev host running when the CLI exits, `--skip-build` reuses the existing `dist/`. Everything after `--` goes to the CLI, e.g. `pnpm dev -- --resume`.
+
 ## License
 
 MIT

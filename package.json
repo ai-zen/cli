@@ -17,6 +17,7 @@
     "prebuild": "npm run clean",
     "build": "rolldown -c rolldown.config.mjs",
     "start": "npm run build && node ./dist/index.js",
+    "dev": "node scripts/dev.mjs",
     "prepublishOnly": "node scripts/check-publish.mjs && npm run scan:secrets && npm run test:all",
     "pretest": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
