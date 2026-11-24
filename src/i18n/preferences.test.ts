@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LogSink } from "@ai-zen/agents-logger";
 import { DEFAULT_LOCALE, getLocale, setLocale } from "./index.js";
-import { initLocale, persistLocale, readPreferences, writePreferences } from "./preferences.js";
+import {
+  initLocale,
+  persistLocale,
+  readPreferences,
+  writePreferences,
+  alignLocaleWithHost,
+} from "./preferences.js";
 
 /** 本文件创建过的临时目录，`afterAll` 统一删除（否则每跑一次测试就在 /tmp 留一堆） */
 const tempDirs: string[] = [];
@@ -125,5 +131,78 @@ describe("偏好文件读不出来 / 写不进去", () => {
     await persistLocale("zh", logger, join(blocker, "preferences.json"));
 
     expect(warnings.join("\n")).toContain("preferences.json");
+  });
+});
+
+describe("alignLocaleWithHost（出场那一次对齐）", () => {
+  /** 宿主那份语言的替身：读给什么、写到哪里由用例定 */
+  function hostOf(language: string | undefined) {
+    const written: string[] = [];
+    return {
+      written,
+      source: {
+        read: async () => language,
+        write: async (locale: string) => void written.push(locale),
+      },
+    };
+  }
+
+  it("宿主有值：以它为准，本机偏好也改回同一份", async () => {
+    const file = tmpPrefs();
+    await persistLocale("zh", logger, file);
+    const host = hostOf("en");
+
+    await alignLocaleWithHost(host.source, logger, file);
+
+    expect(getLocale()).toBe("en");
+    // 本机偏好也改成宿主那一份：下次启动不再对不上（不向宿主写任何东西）
+    expect(await readPreferences(logger, file)).toEqual({ language: "en" });
+    expect(host.written).toEqual([]);
+  });
+
+  it("宿主没这一格：把本机偏好推上去，两处从今天起是同一份", async () => {
+    setLocale("zh");
+    const host = hostOf(undefined);
+
+    await alignLocaleWithHost(host.source, logger, tmpPrefs());
+
+    expect(host.written).toEqual(["zh"]);
+    expect(getLocale()).toBe("zh");
+  });
+
+  it("与宿主已经一致：一个字都不写", async () => {
+    setLocale("zh");
+    const host = hostOf("zh");
+
+    await alignLocaleWithHost(host.source, logger, tmpPrefs());
+
+    expect(host.written).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
+  it("读不到宿主那一格：报一句，界面语言保持本机偏好", async () => {
+    setLocale("zh");
+    await alignLocaleWithHost(
+      {
+        read: async () => {
+          throw new Error("连不上");
+        },
+        write: async () => {},
+      },
+      logger,
+      tmpPrefs(),
+    );
+
+    expect(getLocale()).toBe("zh");
+    expect(warnings.join("\n")).toContain("连不上");
+  });
+
+  it("挑不知道的语言值：当作没设置，把本机偏好推上去", async () => {
+    setLocale("en");
+    const host = hostOf("fr");
+
+    await alignLocaleWithHost(host.source, logger, tmpPrefs());
+
+    expect(host.written).toEqual(["en"]);
   });
 });

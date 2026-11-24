@@ -19,7 +19,7 @@ import { dirname, join } from "node:path";
 import type { LogSink } from "@ai-zen/agents-logger";
 import { cliEnv } from "../env.js";
 import { readMemoryFile, type MemoryRead } from "../local-memory.js";
-import { detectLocale, setLocale, normalizeLocale, type Locale } from "./index.js";
+import { detectLocale, setLocale, getLocale, normalizeLocale, type Locale } from "./index.js";
 
 /**
  * 偏好文件路径；`AIZ_PREFERENCES_FILE` 可覆盖（调试与特殊部署用）。
@@ -115,4 +115,64 @@ export async function persistLocale(
 ): Promise<void> {
   setLocale(locale);
   await writePreferences({ language: locale }, logger, file);
+}
+
+/**
+ * 宿主那份语言的读写口。
+ *
+ * 形状给得这么窄，是为了让本模块只认「读一格 / 写一格」：拼 `config.get` / `config.update`
+ * 是调用方的事，这一层不 import 连接层。
+ */
+export interface HostLocaleSource {
+  /** 宿主配置里的 `language`（没有这一格就是 `undefined`） */
+  read(): Promise<string | undefined>;
+  /** 写宿主配置里的 `language` */
+  write(locale: Locale): Promise<void>;
+}
+
+/**
+ * 出场对齐：让「界面语言」与「宿主渲染的句子」是同一门语言。
+ *
+ * 语言存在两处：本机偏好（`preferences.json`）管界面文案，宿主配置的 `language` 管宿主自己渲染的
+ * 句子（题、通知、错误）。`/lang` 会两边一起写，缺的只是**第一次** —— `initLocale` 只按系统语言写
+ * 本机那份，从没告诉过宿主，于是界面是中文、交接那道题与宿主通知却是英文（宿主缺省 `en`）。
+ *
+ * 方向由现有设计定死：`/lang` 写的是宿主配置，所以**宿主有值就以它为准**（顺手把本机偏好也改回
+ * 同一份，下次启动不再对不上）；宿主没有这一格，就把本机偏好推上去补齐。之后两边由 `/lang` 一起
+ * 改，不会再漂。
+ *
+ * 问不到 / 写不进去都只报一句、保持现状：界面已经能用，语言不是拦路的事。
+ */
+export async function alignLocaleWithHost(
+  host: HostLocaleSource,
+  logger: LogSink,
+  file: string = preferencesFile(),
+): Promise<void> {
+  let hostLanguage: Locale | null;
+  try {
+    hostLanguage = normalizeLocale(await host.read());
+  } catch (error) {
+    logger.warn(`读不到宿主的语言设置：${reasonOf(error)}（界面语言保持本机偏好）`);
+    return;
+  }
+
+  // 宿主有这一格：它就是真相（`/lang` 写的就是它）
+  if (hostLanguage !== null) {
+    if (hostLanguage === getLocale()) return;
+    setLocale(hostLanguage);
+    await writePreferences({ language: hostLanguage }, logger, file);
+    return;
+  }
+
+  // 宿主没这一格（首次启动）：把本机偏好推上去，两处从今天起是同一份
+  try {
+    await host.write(getLocale());
+  } catch (error) {
+    logger.warn(`写不进宿主的语言设置：${reasonOf(error)}（宿主那侧仍是它自己的缺省）`);
+  }
+}
+
+/** 错误对象 → 一句能放进日志的话 */
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

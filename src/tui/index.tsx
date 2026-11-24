@@ -45,7 +45,7 @@ import { keyDebugStart } from "./key-debug.js";
 import { disableMouseTracking, enableMouseTracking } from "./mouse.js";
 import { quietCursor } from "./cursor-quiet.js";
 import { disableBracketedPaste, enableBracketedPaste } from "./paste.js";
-import { initLocale } from "../i18n/preferences.js";
+import { alignLocaleWithHost, initLocale } from "../i18n/preferences.js";
 import { t } from "../i18n/index.js";
 import { SessionRegistry } from "../sessions-registry.js";
 import type { LogNotices } from "../log-notices.js";
@@ -626,6 +626,21 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
       // 门过了：连哪台已经定下（可能是用户在屏上刚选的），现在才建那一条连接
       const connection = await openConnection(options.env, gate.settings);
       closeConnection = () => void connection.close();
+      /**
+       * 出场对齐一次：宿主渲染的句子（题、通知、错误）与界面文案必须同一门语言。
+       *
+       * `/lang` 会两边一起写，这一次只管「第一次」—— `initLocale` 只按系统语言写了本机那份，
+       * 没告诉过宿主。方向与取舍在 `alignLocaleWithHost` 里。
+       */
+      await alignLocaleWithHost(
+        {
+          read: async () => (await connection.api.config.get.query()).config.language,
+          write: async (locale) => {
+            await connection.api.config.update.mutate({ language: locale });
+          },
+        },
+        options.logger,
+      );
       /**
        * 会话注册表：**建在重挂载循环之外**（{@link runChat} 里那些 `/load` `/back` 只是换屏）。
        *
