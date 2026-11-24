@@ -554,8 +554,22 @@ export class RemoteChatSession implements ChatSessionLike {
    * 执行者（`mode`）只在**调用方显式挑过**时才发下去：不给时这一格不出现，执行者由宿主的缺省
    * 定 —— 与这一格加进来之前的每一趟一致（`handoff.start` 收的是可选 `mode`）。「之后接什么」
    * （旧 `then`）仍然没有：宿主这一版没有那一格。
+   *
+   * ## 死会话先叫起来
+   *
+   * 宿主那四条判据的第一条就是「这一段**有活着的 Agent**」，而刚打开、还没说过话的那一段
+   * （宿主重启之后每一段都是这一种）一条 Agent 都没有 —— 直接发只会拿回一句「没有运行中的Agent，
+   * 无法交接」，用户看到的是「我什么都没做，它凭什么交接不了」。
+   *
+   * 唤醒是**客户端的编排**（`modules/api/agent.ts` 里写着「先唤醒再投递」是客户端的事，宿主不做
+   * 兜底），所以判据放在这里，与 {@link send} 同一套：镜像里死活那一格不是 `true` 就先
+   * {@link wake}（`null` 也算「没读到」，叫一声；有 Agent 时宿主的 `wake` 是空操作）。
+   *
+   * 叫不起来就**不交接**：装配真的失败时（模型不可解析、缺凭证），错的原文照旧往上抛，由
+   * `/handoff` 那一层报成「交接失败：<原话>」—— 不重试、不兜底。
    */
   async handoff(options: HandoffOptions = {}): Promise<void> {
+    if (this.alive !== true) await this.wake();
     await this.connection.api.handoff.start.mutate({
       sessionId: this.sessionIdValue,
       ...(options.mode === undefined ? {} : { mode: options.mode }),

@@ -78,6 +78,8 @@ The receipt of `/reload` says how many scopes were refreshed and whether any fai
 
 Where the document went is the host's fact, so the receipt only says started; the notice carrying the path arrives in the notice bar when it is written.
 
+If this session is not running yet (every session is in that state after a host restart) you do not have to say something first: both commands wake it before doing anything ("wake, then act" is the same rule as sending a message), then hand off. If it cannot be woken, nothing is handed off and the host's original error is shown.
+
 Both run a model call, so the input line is held while they run.
 
 ## Host

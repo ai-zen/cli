@@ -1197,6 +1197,58 @@ describe("RemoteChatSession：命令层要的那几个动作", () => {
     expect(start?.params).toEqual({ sessionId: SESSION });
   });
 
+  /**
+   * 宿主那四条判据的第一条是「这一段有活着的 Agent」，而刚打开、还没说过话的那一段一条 Agent
+   * 都没有 —— 不先叫起来，用户直接敲 `/handoff` 只会拿回「没有运行中的Agent，无法交接」。
+   * 唤醒是客户端的编排（与 `send` 同一条口径），所以顺序必须是「先 wake，再 handoff.start」。
+   */
+  it("交接：死会话（`live: null`）先 `agent.wake`，再 `handoff.start`", async () => {
+    const host = hostLike({ open: openView({ live: null }) });
+    const { session } = await open(host);
+    expect(session.alive).toBe(false);
+
+    await session.handoff({ kind: "document" });
+
+    const methods = host.connection.methods();
+    const woke = methods.indexOf("runtime.agent.wake");
+    const started = methods.indexOf("handoff.start");
+    expect(woke).toBeGreaterThanOrEqual(0);
+    expect(started).toBeGreaterThan(woke);
+    // 唤醒那一次只带 sessionId；交接那一次仍原样带着 kind
+    const wake = host.connection.calls
+      .filter((call) => call.method === "runtime.agent.wake")
+      .at(-1);
+    expect(wake?.params).toEqual({ sessionId: SESSION });
+    const start = host.connection.calls.filter((call) => call.method === "handoff.start").at(-1);
+    expect(start?.params).toEqual({ sessionId: SESSION, kind: "document" });
+  });
+
+  it("交接：活着就照旧不多打一次 `agent.wake`", async () => {
+    const host = hostLike();
+    const { session } = await open(host);
+
+    await session.handoff();
+
+    expect(host.connection.methods()).not.toContain("runtime.agent.wake");
+    expect(host.connection.methods()).toContain("handoff.start");
+  });
+
+  it("交接：叫不起来就不交接（错的原文往上抛，一次不重试）", async () => {
+    const host = hostLike({
+      open: openView({ live: null }),
+      reply: (method) =>
+        method === "runtime.agent.wake" ? new Error("装配失败（缺凭证）") : undefined,
+    });
+    const { session } = await open(host);
+
+    await expect(session.handoff()).rejects.toThrow("装配失败（缺凭证）");
+
+    expect(host.connection.methods()).not.toContain("handoff.start");
+    expect(
+      host.connection.methods().filter((method) => method === "runtime.agent.wake"),
+    ).toHaveLength(1);
+  });
+
   it("交接收口：`session.handoff` 那一格收掉，「正在交接」跟着变", async () => {
     const host = hostLike();
     const { session } = await open(host);
