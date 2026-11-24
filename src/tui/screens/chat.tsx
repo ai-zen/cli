@@ -880,9 +880,6 @@ export function Chat(props: ChatScreenProps) {
           logger: deps.logger,
           notice: (text, tone) => noticeChannel.push(text, tone),
           clearTranscript,
-          // 选择器能放几条：终端行数 → 候选条数的换算在渲染层（`pickerCapacity`），
-          // 命令层只拿结果（它不该知道命令行数、状态栏、预留末行这些事）
-          rows: pickerCapacity(rows ?? 24),
           exit,
           suspendTerminal,
           // 命令层不需要关闭结果（要「等它关掉、并知道成没成」的是下面那个 `ensureKey`）：
@@ -1577,6 +1574,13 @@ export function Chat(props: ChatScreenProps) {
   }
 
   const cols = columns ?? 80;
+  /**
+   * 选择器覆盖层一次能画几条候选（窗高）：候选比它多时列表自己滚动，而不是溢出屏幕或被截断。
+   *
+   * 唯一一处算式是 `layout.ts` 的 `pickerCapacity`（它知道覆盖层与状态栏各占几行）——
+   * 布局预留高度（`pickerItems`）与覆盖层的 `maxRows` 都读这一个数，差一行输入框就会位移。
+   */
+  const pickerRows = pickerCapacity(rows ?? 24);
 
   const messages = session?.messages ?? [];
   const subAgents = session?.subAgents ?? [];
@@ -1767,7 +1771,8 @@ export function Chat(props: ChatScreenProps) {
     inboxLines,
     agentTabLines,
     overlay: pickerState ? "picker" : "none",
-    pickerItems: pickerState?.items.length ?? 0,
+    // 覆盖层只会画出窗口装得下的那几条（`SelectList` 的视窗），所以布局也按同一个数预留高度
+    pickerItems: pickerState ? Math.min(pickerState.items.length, pickerRows) : 0,
     viewTop,
     statusBarLines: statusRows.length,
     // 空会话的品牌块落在会话区垂直中部（贴顶太空、贴底太挤）
@@ -1846,6 +1851,7 @@ export function Chat(props: ChatScreenProps) {
           title={pickerState.title}
           items={pickerState.items}
           columns={cols}
+          maxRows={pickerRows}
           onPick={resolvePicker}
         />
       ) : (

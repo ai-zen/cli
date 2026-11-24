@@ -10,11 +10,19 @@ export function PickerOverlay({
   title,
   items,
   columns,
+  maxRows,
   onPick,
 }: {
   title: string;
   items: SelectItem<string>[];
   columns: number;
+  /**
+   * 一次最多画几条候选（窗高）。由屏幕按 `pickerCapacity` 算好递进来 —— 覆盖层不知道终端
+   * 行数、也不该去算（那份算式在 `layout.ts`，与「覆盖层占几行」同源）。
+   *
+   * 候选比窗高时列表**滚动**（`SelectList` 的视窗），而不是被截断或把整帧顶高。
+   */
+  maxRows: number;
   onPick: (value: string | null) => void;
 }) {
   useInput((input, key) => {
@@ -41,7 +49,7 @@ export function PickerOverlay({
         ? {title}
       </Text>
       <Box marginTop={1}>
-        <SelectList items={items} columns={columns} onSelect={(v) => onPick(v)} />
+        <SelectList items={items} columns={columns} maxRows={maxRows} onSelect={(v) => onPick(v)} />
       </Box>
       <Box marginTop={1}>
         <KeyHints

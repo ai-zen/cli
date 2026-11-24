@@ -129,7 +129,6 @@ function createHost(scenario: Scenario = {}) {
     logger: QUIET_LOG,
     notice: (text, tone) => notices.push({ text, tone }),
     clearTranscript: vi.fn(),
-    rows: 24,
     exit: vi.fn(),
     suspendTerminal: async (fn: () => void | Promise<void>) => {
       await fn();

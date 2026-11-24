@@ -46,6 +46,7 @@ function mount() {
         { label: "B", value: "b" },
       ]}
       columns={80}
+      maxRows={10}
       onPick={(value) => picked.push(value)}
     />,
   );
@@ -100,6 +101,7 @@ describe("PickerOverlay", () => {
         title={`${"前提。".repeat(30)} ${tail}`}
         items={[{ label: "A", value: "a" }]}
         columns={80}
+        maxRows={10}
         onPick={() => {}}
       />,
     );

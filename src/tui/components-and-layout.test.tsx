@@ -593,6 +593,55 @@ describe("SelectList", () => {
     expect(onSelect).toHaveBeenCalledWith("a");
     unmount();
   });
+
+  /**
+   * 装不下的候选**滚动**，不再截断：窗口只画 `maxRows` 条，高亮走到窗口外时窗口跟着走。
+   *
+   * 这两条钉的是同一件事的两面：行数恒等于窗高（否则覆盖层比可用帧还高，输入框被顶出屏幕），
+   * 而**每一条候选都到得了**（旧版 `slice` 之后排在后面的根本按不出来）。
+   */
+  const manyItems = Array.from({ length: 20 }, (_v, index) => ({
+    label: `第 ${index + 1} 条`,
+    value: `v${index}`,
+  }));
+
+  it("候选比窗高：只画 maxRows 行，且首/末行用 ↑ ↓ 说「还有」", async () => {
+    const { lastFrame, unmount } = render(
+      <SelectList items={manyItems} onSelect={() => {}} maxRows={5} />,
+    );
+    await tick();
+    const rows = (lastFrame() ?? "").split("\n").filter((row) => row.trim() !== "");
+    expect(rows).toHaveLength(5);
+    // 顶部就是第一条（窗口自顶部锚定），所以只有末尾那行说「下面还有」
+    expect(rows[0]).toContain("❯ 第 1 条");
+    expect(rows[0]).not.toContain("↑");
+    expect(rows[4]).toContain("↓");
+    expect(rows.join("\n")).not.toContain("第 6 条");
+    unmount();
+  });
+
+  it("高亮往下走：窗口跟着滚，最后一条也按得到（20 条 × 窗高 5）", async () => {
+    const onSelect = vi.fn();
+    const { stdin, lastFrame, unmount } = render(
+      <SelectList items={manyItems} onSelect={onSelect} maxRows={5} />,
+    );
+    for (let i = 0; i < 19; i += 1) {
+      stdin.write("\x1b[B");
+    }
+    await tick();
+    const rows = (lastFrame() ?? "").split("\n").filter((row) => row.trim() !== "");
+    expect(rows).toHaveLength(5);
+    // 末页贴底：窗口里是 16～20 条，光标在最后一条
+    expect(rows[4]).toContain("❯ 第 20 条");
+    // 上面还有 → 首行说「↑」
+    expect(rows[0]).toContain("↑");
+    expect(rows.join("\n")).not.toContain("第 15 条");
+
+    stdin.write("\r");
+    await tick();
+    expect(onSelect).toHaveBeenCalledWith("v19");
+    unmount();
+  });
 });
 
 // 空会话的品牌区由 `welcome.ts` 生成，用例分别在 `welcome.test.ts`（纯函数）与

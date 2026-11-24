@@ -43,30 +43,29 @@ export function ListStep<T>({
     ...(subtitle ? textRows(subtitle, columns, theme.dim) : []),
     ...(warning ? textRows(`✖ ${warning}`, columns, theme.error) : []),
   ];
-  // 列表项多到装不下时就截断（每项严格占一行，吸底布局才能精确留白）
+  // 每项严格占一行（吸底布局才能精确留白）；装不下时列表**自己滚动**，不截断候选
   const maxItems = Math.max(1, usableFrameRows(rows) - (headerRows.length + 3));
-  const visible = items.slice(0, maxItems);
-  const truncated = items.length > visible.length;
-  const contentLines =
-    headerRows.length + 1 + Math.max(visible.length, 1) + (truncated ? 1 : 0) + 1;
+  const visibleCount = Math.min(items.length, maxItems);
+  const contentLines = headerRows.length + 1 + Math.max(visibleCount, 1) + 1;
 
   return (
     <WizardFrame columns={columns} rows={rows} contentLines={contentLines}>
       <Header rows={headerRows} />
       <Box marginTop={1} flexDirection="column">
-        {visible.length > 0 ? (
+        {items.length > 0 ? (
           // key 绑定标题：切换步骤时强制重建，避免复用上一个列表的高亮索引
-          <SelectList key={title} items={visible} onSelect={onPick} columns={columns} />
+          <SelectList
+            key={title}
+            items={items}
+            onSelect={onPick}
+            columns={columns}
+            maxRows={maxItems}
+          />
         ) : (
           <Text color={theme.faint} wrap="truncate">
             {t("wiz.listEmpty")}
           </Text>
         )}
-        {truncated ? (
-          <Text color={theme.faint} wrap="truncate">
-            {t("wiz.truncated", { n: items.length, m: visible.length })}
-          </Text>
-        ) : null}
       </Box>
       <KeyHints
         hints={[

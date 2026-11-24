@@ -82,6 +82,18 @@ export interface SelectListProps<T> {
    * 故列表类屏幕必须传它。
    */
   columns?: number;
+  /**
+   * 一次最多画几条（视窗高度）。缺省 = 全画。
+   *
+   * 为什么要有它：候选可以比屏幕高（一家订阅式端点就带进来 19 条模型，`/ws` 也可能有几十个
+   * 工作区）。全部画出来的后果不是「被裁掉一截」，而是整块比可用帧还高 —— Ink 会把顶上的行
+   * 挤出终端，状态栏与输入框跟着看不见。给了它之后列表**滚动**：高亮往下走，视窗跟着走，
+   * 装不下的那几行被移出窗口（顶/末行左侧的 `↑` `↓` 说明「还有」）。
+   *
+   * 传进来的数必须与布局那份同源（`pickerCapacity` / `usableFrameRows` 算出来的），
+   * 否则「渲染几行」与「布局留几行」对不上，输入框会整体位移。
+   */
+  maxRows?: number;
 }
 
 /** 把列表项裁到单行（给提示文字留出空间）；未提供列数则原样返回 */
@@ -94,12 +106,30 @@ function fitItem<T>(item: SelectItem<T>, columns?: number): SelectItem<T> {
   return { ...item, label: clipWidth(item.label, labelMax), hint: clipWidth(item.hint, hintMax) };
 }
 
+/**
+ * 选择列表的视窗：**自顶部锚定**的连续滚动（与底部锚定的 `menuViewport` 相反，这里是自上往下读）。
+ *
+ * 高亮越过窗口底部就整窗下移，保证选中项永远在窗内；`from` 的第二个钳制保证末页贴底时
+ * 窗口里仍是连续的一段（不会只露出最后一条）。
+ */
+function listViewport(
+  total: number,
+  selected: number,
+  maxRows: number,
+): { from: number; to: number } {
+  const size = Math.min(total, Math.max(1, maxRows));
+  const active = Math.max(0, Math.min(selected, total - 1));
+  const from = Math.max(0, Math.min(active - size + 1, total - size));
+  return { from, to: from + size };
+}
+
 export function SelectList<T>({
   items,
   onSelect,
   isActive = true,
   initialIndex = 0,
   columns,
+  maxRows,
 }: SelectListProps<T>) {
   const [index, setIndex] = useState(Math.min(initialIndex, Math.max(items.length - 1, 0)));
   // `index` 只在挂载时算一次，而 `items` 可能变短（异步列表回填 / 过滤）—— 越界时
@@ -117,15 +147,29 @@ export function SelectList<T>({
     { isActive },
   );
 
+  const { from, to } = listViewport(items.length, safeIndex, maxRows ?? items.length);
   return (
     <Box flexDirection="column">
-      {items.map((raw, i) => {
+      {items.slice(from, to).map((raw, offset) => {
+        const i = from + offset;
         const item = fitItem(raw, columns);
         const selected = i === safeIndex;
+        /**
+         * 首/末行左侧那两格：选中标记优先（`❯ `）；否则若这一行之外还有候选，用 `↑ ` / `↓ `
+         * 说明「上面/下面还有」。**不额外占行** —— 覆盖层的高度是按候选条数算死的，
+         * 多画一行提示就会把输入框顶出一行。
+         */
+        const marker = selected
+          ? "❯ "
+          : i === from && from > 0
+            ? "↑ "
+            : i === to - 1 && to < items.length
+              ? "↓ "
+              : "  ";
         return (
           <Box key={`${i}-${raw.label}`}>
             <Text color={selected ? theme.brand[0] : theme.faint} wrap="truncate">
-              {selected ? "❯ " : "  "}
+              {marker}
             </Text>
             <Text
               bold={selected}

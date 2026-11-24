@@ -128,13 +128,13 @@ export interface ChatCommandHost {
   /** 清屏（保留上下文）：把转录显示起点推到最新 */
   clearTranscript: () => void;
   /**
-   * 选择器**能放几条**候选。
+   * **没有**「选择器能放几条」这一格了：候选再多也是列表**自己滚动**（`SelectList` 的视窗）。
    *
-   * 为什么不是「终端原始行数」：那样命令层就得用布局公式（`usableFrameRows` / `pickerLines` /
-   * `STATUS_BAR_LINES`）自己换算 —— 那是把一个渲染概念拖进命令层，也是 ink 进的另一条门。
-   * 换算在渲染层（`tui/screens/layout.ts` 的 `pickerCapacity`），命令层只拿结果。
+   * 曾经这里有一个 `rows`（终端行数换算出来的候选条数），代价是每条命令各自 `slice(0, rows)` ——
+   * 超出屏幕的那部分**直接消失**（`/model` 那种不进这个截断的，会把整帧顶高、状态栏挤出屏幕）。
+   * 滚动归渲染层之后，命令层只管「有哪些候选、按什么顺序」，一个候选都不许丢。
    */
-  rows: number;
+
   /** 结束这一屏并把去向交给上层（`restart` 重挂载 / `load` 换一段会话） */
   exit: (value?: CommandExitValue) => void;
   suspendTerminal: (fn: () => void | Promise<void>) => Promise<void>;
@@ -527,7 +527,7 @@ export async function moveAfterGone(host: GoneHost, after: AfterGone): Promise<v
  * 直接印在 hint 上（显示名字要另一次 `workspace.list`，换来的只是一个更好看的标签；id 也是
  * 用户自己在 `/ws` 里见过的东西）。
  */
-const cmdLoad: CommandHandler = async ({ session, api, push, args, rows, exit, pick }) => {
+const cmdLoad: CommandHandler = async ({ session, api, push, args, exit, pick }) => {
   // 只认这两个写法：其余参数一直是被忽略的（`/load` 从来没有按名字过滤）
   const allWorkspaces = args.some((arg) => arg === "--all" || arg === "-a");
   const sessions = allWorkspaces
@@ -544,13 +544,9 @@ const cmdLoad: CommandHandler = async ({ session, api, push, args, rows, exit, p
       ? t("cmd.load.hintAll", { workspace: item.workspaceId, id: item.id })
       : item.id,
   }));
-  // 覆盖层不能高于终端：仅展示宿主排好的前几条
-  const maxItems = Math.max(1, rows);
-  const tooMany = allItems.length > maxItems;
-  const title = allWorkspaces
-    ? t(tooMany ? "cmd.load.tooManyAll" : "cmd.load.titleAll", { n: maxItems })
-    : t(tooMany ? "cmd.load.tooMany" : "cmd.load.titleReplacing", { n: maxItems });
-  const choice = await pick(title, allItems.slice(0, maxItems));
+  // 全量交给选择器：候选比屏幕高时它自己滚动（顺序仍是宿主排好的那个）
+  const title = allWorkspaces ? t("cmd.load.titleAll") : t("cmd.load.titleReplacing");
+  const choice = await pick(title, allItems);
   if (choice == null) {
     push(t("cmd.load.cancelled"));
     return;
@@ -602,7 +598,6 @@ const cmdSessions: CommandHandler = async ({
   api,
   liveSessions,
   push,
-  rows,
   pick,
   exit,
   args,
@@ -639,11 +634,8 @@ const cmdSessions: CommandHandler = async ({
     value: row.session.id,
     hint: sessionHint(row),
   }));
-  // 覆盖层不能高于终端：只摆前几条（顺序是上面那一条算的，不在这里重排）
-  const maxItems = Math.max(1, rows);
-  const title =
-    items.length > maxItems ? t("cmd.sessions.tooMany", { n: maxItems }) : t("cmd.sessions.title");
-  const choice = await pick(title, items.slice(0, maxItems));
+  // 全量交给选择器（顺序是上面那一条算的，不在这里重排）：候选比屏幕高时它自己滚动
+  const choice = await pick(t("cmd.sessions.title"), items);
   if (choice == null) {
     // Esc / 覆盖层被关掉：一条会话的生死都不动，这一屏也不换
     push(t("cmd.sessions.cancelled"));
@@ -866,7 +858,6 @@ const cmdWs: CommandHandler = async ({
   workspaceHost,
   args,
   push,
-  rows,
   pick,
   logger,
   api,
@@ -924,15 +915,13 @@ const cmdWs: CommandHandler = async ({
     push(t(workspaceHost.local ? "cmd.ws.newHintLocal" : "cmd.ws.newHintRemote"));
     return;
   }
-  // 覆盖层不能高于终端：只摆前几条（顺序是宿主的，不在这里重排）
-  const maxItems = Math.max(1, rows);
-  const items: SelectItem<string>[] = workspaces.slice(0, maxItems).map((workspace) => ({
+  // 全量交给选择器（顺序是宿主的，不在这里重排）：候选比屏幕高时它自己滚动
+  const items: SelectItem<string>[] = workspaces.map((workspace) => ({
     label: `${workspace.name}${workspace.id === session.currentWorkspaceId ? t("common.current") : ""}`,
     value: workspace.id,
     hint: workspaceHint(workspace),
   }));
-  const title =
-    workspaces.length > maxItems ? t("cmd.ws.tooMany", { n: maxItems }) : t("cmd.ws.title");
+  const title = t("cmd.ws.title");
   const choice = await pick(title, items);
   if (choice == null) {
     push(t("cmd.ws.cancelled"));
@@ -985,7 +974,7 @@ const cmdPin: CommandHandler = async ({ session, api, push, args }) => {
  * 旧实现只有「删完重挂载」——用户看到的只是消息忽然变短，删了几条、话去哪儿了都靠猜。
  * 条数是撤前撤后两次长度之差（不是数选中的那条后面有几条：宿主删的是哪一段，得它删完才算数）。
  */
-const cmdBack: CommandHandler = async ({ session, push, rows, exit, pick }) => {
+const cmdBack: CommandHandler = async ({ session, push, exit, pick }) => {
   const users = session.messages.filter((message) => message.role === AgentNS.Role.User);
   if (users.length === 0) {
     push(t("cmd.back.empty"), "error");
@@ -998,10 +987,8 @@ const cmdBack: CommandHandler = async ({ session, push, rows, exit, pick }) => {
       value: message.id,
     }))
     .reverse();
-  const maxItems = Math.max(1, rows);
-  const title =
-    allItems.length > maxItems ? t("cmd.back.tooMany", { n: maxItems }) : t("cmd.back.title");
-  const choice = await pick(title, allItems.slice(0, maxItems));
+  // 全量交给选择器：候选比屏幕高时它自己滚动
+  const choice = await pick(t("cmd.back.title"), allItems);
   if (choice == null) {
     push(t("cmd.back.cancelled"));
     return;

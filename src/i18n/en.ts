@@ -214,7 +214,6 @@ export const en: Record<string, string> = {
   "cmd.load.hintAll": "workspace {workspace} · {id}",
   "cmd.load.cancelled": "Open cancelled",
   "cmd.sessions.title": "Sessions (pick one; whatever is running keeps running)",
-  "cmd.sessions.tooMany": "Sessions (showing the first {n})",
   "cmd.sessions.onlyOne": "This workspace has only this session — nothing else to switch to",
   "cmd.sessions.cancelled": "Switch cancelled",
   "cmd.sessions.already": "Already on this session",
@@ -230,7 +229,6 @@ export const en: Record<string, string> = {
   "cmd.sessions.none": "No sessions in this workspace yet — start one with /new",
   "cmd.sessions.noneAll": "This host has no sessions yet — start one with /new",
   "cmd.ws.title": "Switch workspace (new sessions open there)",
-  "cmd.ws.tooMany": "Too many workspaces: showing the first {n}",
   "cmd.ws.cancelled": "Workspace switch cancelled",
   "cmd.ws.switched":
     'Switched to workspace "{name}" ({path}) · this session stays put; new sessions open there',
@@ -331,8 +329,6 @@ export const en: Record<string, string> = {
   "cmd.think.titleAgent":
     "Reasoning effort · this agent, affects sessions started later (current: {level})",
   "cmd.think.failed": "Reasoning effort change failed: {error}",
-  "cmd.load.tooMany": "Pick a session to open (showing the latest {n})",
-  "cmd.load.tooManyAll": "Pick a session to open · all workspaces (showing the latest {n})",
   // The one confirmation before switching while busy: the host only allows it when idle (PLAN.md §5.5), so say what it costs
   "cmd.busySwitch.title":
     "This session still has work in hand: switching now gets rejected (the host only allows it while idle). Try anyway?",
@@ -346,7 +342,6 @@ export const en: Record<string, string> = {
   "cmd.migrate.started":
     "Handoff started: when the document is written this session's memory is swapped and the old memory becomes an archived session (same id, same screen)",
   "cmd.migrate.failed": "Migration failed: {error}",
-  "cmd.back.tooMany": "Pick the message to retract (showing the latest {n})",
   "cmd.editor.failed": "Could not open the editor: {error}",
   "cmd.unknown": "Unknown command: {cmd} (type /help to see them all)",
 

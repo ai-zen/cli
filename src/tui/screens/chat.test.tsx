@@ -138,6 +138,8 @@ const { created, createFakeSession } = vi.hoisted(() => {
         },
       ),
       abort: vi.fn(),
+      // `/model` 的会话级那一档（`session.updateModel`）：写的是会话行，这里只记「写没写、写了什么」
+      updateModel: vi.fn(async () => undefined),
       // 复活 / 暂停 / 继续：三个动作各管一件事（PLAN §5.1），「按发送」那三步由屏幕编排
       start: vi.fn(async () => undefined),
       pauseOutput: vi.fn(async () => undefined),
@@ -873,6 +875,62 @@ describe("Chat 集成（拆分前的护栏）", () => {
     expect(methods).toContain("config.get");
     expect(methods).toContain("config.agents.list");
     expect(methods).toContain("config.mcp.list");
+    unmount();
+  }, 20_000);
+
+  /**
+   * 候选比屏幕多时选择器**自己滚动**，不再截断、也不把画面顶高。
+   *
+   * 这条走的是真键盘：`/model` → 选端点 → 在 30 条模型里一路按到底 → 回车。旧行为下
+   * 二级那份清单会被 `pickerCapacity` 之外的部分直接丢掉（或整帧溢出把状态栏挤出屏幕），
+   * 于是「最后一个模型」永远选不到；现在它必须选得到，且状态栏一直在。
+   */
+  it("`/model` 二级清单比窗高：能一路滚到最后一条，状态栏不被顶出屏幕", async () => {
+    const models = Array.from({ length: 30 }, (_v, index) => ({
+      id: `m-${index + 1}`,
+      name: `模型 ${index + 1}`,
+      endpointId: "ep-1",
+      tokenThresholds: { handoff: 1000, guard: 2000 },
+      defaultParams: {},
+    }));
+    const connection = fakeConnection({
+      config: {
+        endpoints: [
+          { id: "ep-1", name: "端点一", baseUrl: "https://example.test/v1", apiKey: "sk-x" },
+        ],
+        models,
+        imageModels: [],
+        defaultAgent: "default",
+      },
+    });
+    const { stdin, lastFrame, unmount } = mount({ connection });
+    await flush();
+
+    stdin.write("/model");
+    await flush();
+    stdin.write("\r");
+    // 第一级：端点（帧画出来 ≠ 按键有人接，见 `waitFor` 的文件头）
+    await waitFor(() => (lastFrame() ?? "").includes("端点一"));
+    await flush(20);
+    stdin.write("\r");
+    // 第二级：30 条模型 —— 只画得下窗口那几条，但每一条都按得到
+    await waitFor(() => (lastFrame() ?? "").includes("模型 1"));
+    await flush(20);
+    for (let i = 0; i < 29; i += 1) {
+      stdin.write("\u001b[B");
+    }
+    await flush(20);
+
+    // 窗口里出现的是尾段（首行说「上面还有」），而且最后一条被高亮
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("❯ 模型 30");
+    expect(frame).toContain("↑");
+    // 状态栏还在（覆盖层没有把画面顶高）
+    expect(frame).toContain("◆");
+
+    stdin.write("\r");
+    await waitFor(() => (created.session.updateModel as any).mock.calls.length > 0);
+    expect(created.session.updateModel).toHaveBeenCalledWith("m-30");
     unmount();
   }, 20_000);
 

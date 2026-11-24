@@ -331,7 +331,6 @@ function createHost(
     logger: QUIET_LOG,
     notice: (text, tone) => notices.push({ text, tone }),
     clearTranscript: vi.fn(),
-    rows: 24,
     exit: vi.fn(),
     suspendTerminal: async (fn: () => void | Promise<void>) => {
       await fn();
@@ -754,7 +753,7 @@ describe("/back：按消息 id 撤回，内容回填输入框", () => {
     expect(texts(notices)).toBe(t("cmd.back.empty"));
   });
 
-  it("条数不超过宿主给的容量", async () => {
+  it("候选一条不丢：怎么滚动是渲染层的事，命令层把全部消息都交上去", async () => {
     const messages = Array.from({ length: 20 }, (_v, index) => ({
       id: `u-${index}`,
       createdAt: index,
@@ -762,12 +761,11 @@ describe("/back：按消息 id 撤回，内容回填输入框", () => {
       content: `第 ${index} 条`,
     }));
     const { host } = createHost({ session: { messages } });
-    host.rows = 7;
     const seen = capturePick(host, null);
 
     await runCommand("back", "/back", host);
 
-    expect(seen.labels).toHaveLength(7);
+    expect(seen.labels).toHaveLength(20);
   });
 
   /**
@@ -911,21 +909,24 @@ describe("/load：列表来自 session.list，选中后换会话", () => {
     expect(texts(notices)).toBe(t("cmd.load.none"));
   });
 
-  it("条数不超过宿主给的容量，标题说明只显示最近几条", async () => {
+  /**
+   * 候选一条不丢：装不下由选择器自己滚动（视窗在 `SelectList`），命令层不再截断、也不再
+   * 在标题里报「只显示最近 N 条」。
+   */
+  it("会话很多也全部交给选择器（不截断，标题不再说「只显示前几条」）", async () => {
     const many = Array.from({ length: 20 }, (_v, index) =>
       sessionView({ id: `sess-${index}`, name: `会话 ${index}` }),
     );
     const { host } = createHost({ routes: { "session.list": () => many } });
-    host.rows = 7;
     const seen = capturePick(host, null);
 
     await runCommand("load", "/load", host);
 
-    expect(seen.labels).toHaveLength(7);
-    expect(seen.title).toBe(t("cmd.load.tooMany", { n: 7 }));
+    expect(seen.labels).toHaveLength(20);
+    expect(seen.title).toBe(t("cmd.load.titleReplacing"));
   });
 
-  it("`--all` 且条数超容量：标题同时说清「所有工作区」与「只显示最近几条」", async () => {
+  it("`--all` 一样全量交上去，标题说清「所有工作区」", async () => {
     const many = Array.from({ length: 20 }, (_v, index) =>
       sessionView({ id: `sess-${index}`, name: `会话 ${index}` }),
     );
@@ -935,12 +936,12 @@ describe("/load：列表来自 session.list，选中后换会话", () => {
         "session.list": () => many,
       },
     });
-    host.rows = 7;
     const seen = capturePick(host, null);
 
     await runCommand("load", "/load --all", host);
 
-    expect(seen.title).toBe(t("cmd.load.tooManyAll", { n: 7 }));
+    expect(seen.labels).toHaveLength(20);
+    expect(seen.title).toBe(t("cmd.load.titleAll"));
   });
 });
 

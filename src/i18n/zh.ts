@@ -221,7 +221,6 @@ export const zh: Record<string, string> = {
   "cmd.load.hintAll": "工作区 {workspace} · {id}",
   "cmd.load.cancelled": "已取消打开",
   "cmd.sessions.title": "会话（选中即切，正在跑的都继续跑）",
-  "cmd.sessions.tooMany": "会话（只显示前 {n} 条）",
   "cmd.sessions.onlyOne": "这个项目里只有这一段会话，没有别的可切",
   "cmd.sessions.cancelled": "已取消切换会话",
   "cmd.sessions.already": "已经在这一段会话上",
@@ -237,7 +236,6 @@ export const zh: Record<string, string> = {
   "cmd.sessions.none": "这个项目里还没有会话，用 /new 开一段",
   "cmd.sessions.noneAll": "这台宿主上还没有任何会话，用 /new 开一段",
   "cmd.ws.title": "切换工作区（之后新开的会话放在这里）",
-  "cmd.ws.tooMany": "工作区太多，只列出前 {n} 个",
   "cmd.ws.cancelled": "已取消切换工作区",
   "cmd.ws.switched": "已切换到工作区「{name}」（{path}）· 当前会话不变，之后新开的会话放在这里",
   "cmd.ws.none": "宿主上还没有任何工作区",
@@ -331,8 +329,6 @@ export const zh: Record<string, string> = {
   "cmd.think.titleSession": "思考强度 · 这一段（当前：{level}）",
   "cmd.think.titleAgent": "思考强度 · 这个助手定义（影响以后新开的会话；当前：{level}）",
   "cmd.think.failed": "切换思考强度失败：{error}",
-  "cmd.load.tooMany": "选择要打开的会话（只显示最近 {n} 条）",
-  "cmd.load.tooManyAll": "选择要打开的会话 · 所有工作区（只显示最近 {n} 条）",
   // 忙时换模型 / 换思考的那一次确认：宿主只在空闲时放行（PLAN.md §5.5），这一问把代价说清
   "cmd.busySwitch.title": "这一段手上还有活：现在换会被宿主拒掉（它只允许空闲时换）。要现在试吗？",
   "cmd.busySwitch.confirm": "现在试",
@@ -345,7 +341,6 @@ export const zh: Record<string, string> = {
   "cmd.migrate.started":
     "交接已开始：写完之后这段会话的记忆换成新版，旧记忆成为一段已存档会话（id 不变、屏幕不换）",
   "cmd.migrate.failed": "任务迁移失败：{error}",
-  "cmd.back.tooMany": "选择要撤回到的消息（只显示最近 {n} 条）",
   "cmd.editor.failed": "编辑器打开失败：{error}",
   "cmd.unknown": "未知命令：{cmd}（输入 /help 查看可用命令）",
 
