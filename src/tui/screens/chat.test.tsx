@@ -1159,7 +1159,9 @@ describe("Chat 集成（拆分前的护栏）", () => {
     created.session.subAgents[0].state = "ended";
     await repaint();
     const said = t("notice.subAgentDone", { name: "reviewer" });
-    expect(lastFrame() ?? "").toContain(said);
+    // 结局是**下一帧**才进栏位：那条通知在渲染后的 effect 里 push，push 又要一次重渲染才画出来。
+    // 所以等它出现，不赌「一次 flush 刚好盖住两帧」（`waitFor` 的注释里写着同一个理由）。
+    await waitFor(() => (lastFrame() ?? "").includes(said));
 
     // 再画一帧：同一格、同一条结局消息，不重说
     await repaint();
@@ -1182,10 +1184,11 @@ describe("Chat 集成（拆分前的护栏）", () => {
     created.session.subAgents[0].state = "ended";
     await repaint();
 
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain(
-      t("notice.subAgentFailedWhy", { name: "reviewer", error: "ECONNREFUSED 127.0.0.1:443" }),
-    );
+    const expected = t("notice.subAgentFailedWhy", {
+      name: "reviewer",
+      error: "ECONNREFUSED 127.0.0.1:443",
+    });
+    await waitFor(() => (lastFrame() ?? "").includes(expected));
     unmount();
   });
 
@@ -1202,8 +1205,10 @@ describe("Chat 集成（拆分前的护栏）", () => {
     created.session.subAgents[0].state = "ended";
     await repaint();
 
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain(t("notice.subAgentFailed", { name: "reviewer" }));
+    const said = t("notice.subAgentFailed", { name: "reviewer" });
+    await waitFor(() => (lastFrame() ?? "").includes(said));
+    // 没原因就不编：那一句里没有冒号后面的内容
+    expect(lastFrame() ?? "").not.toContain("失败：");
     unmount();
   });
 
@@ -1220,9 +1225,9 @@ describe("Chat 集成（拆分前的护栏）", () => {
     created.session.subAgents[0].state = "ended";
     await repaint();
 
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain(t("notice.subAgentAborted", { name: "reviewer" }));
-    expect(frame).not.toContain(t("notice.subAgentFailed", { name: "reviewer" }));
+    const said = t("notice.subAgentAborted", { name: "reviewer" });
+    await waitFor(() => (lastFrame() ?? "").includes(said));
+    expect(lastFrame() ?? "").not.toContain(t("notice.subAgentFailed", { name: "reviewer" }));
     unmount();
   });
 
