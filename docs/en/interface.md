@@ -28,6 +28,8 @@ The layout is bottom-anchored. From the bottom up:
 
 Everything above the divider appears only while it has something to say, and the transcript takes whatever height is left. Each band is accounted for by its own line count: the phase line and the attachment line are always one line, the queue band at most three, the notice bar at most eight plus one line for its clear hints.
 
+Text in the transcript is always colored as **markdown source** — what you say and what the AI says are treated the same: the markers of headings, bold, inline code, lists and quotes stay verbatim and only get colored; fenced code blocks are syntax-highlighted in the annotated language. Paste a snippet or a table into the input line and its structure is still readable once it is sent.
+
 Scroll back through history with the mouse wheel or `PgUp` / `PgDn`; some terminals keep those keys for their own scrollback, and `Ctrl+B` / `Ctrl+F` are the fallback for one page up or down.
 
 ## The status bar

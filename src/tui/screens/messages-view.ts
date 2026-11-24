@@ -5,15 +5,7 @@
 // 也不需要把流式 delta 翻译成中间事件 —— 流式中 SDK 会实时更新「当前那条 message」，
 // 直接读它即可。
 import { AgentNS } from "@ai-zen/agents-core";
-import {
-  RLine,
-  contentLines,
-  indentLines,
-  clipSpans,
-  toolSpans,
-  spanLine,
-  innerWidth,
-} from "./lines.js";
+import { RLine, contentLines, clipSpans, toolSpans, spanLine, innerWidth } from "./lines.js";
 import { stripCwdNote } from "../text.js";
 import { t } from "../../i18n/index.js";
 import { imagePlaceholderLines, type ImageSection } from "./message-images.js";
@@ -110,7 +102,9 @@ function renderMessageLines(message: AgentNS.Message, columns: number): RLine[] 
     return [
       { key: `${key}-gap`, kind: "gap", text: " " },
       { key: `${key}-h`, kind: "user-header", text: t("msg.userHeader") },
-      ...indentLines("user-text", key, text, width),
+      // 用户的话也走 markdown 着色（围栏代码按语言高亮）：粘贴进来的一段代码、一个表格、一段
+      // `**强调**` 现在与 AI 回答一样看得清结构。只是**着色**，标记符原样留着，不做语义渲染
+      ...contentLines("user-text", `${key}-u`, text, width),
     ];
   }
 

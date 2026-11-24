@@ -687,6 +687,33 @@ describe("messageToLines（直接按 messages 渲染）", () => {
     expect(lines[2].text).toBe("  你好");
   });
 
+  it("user 消息也走 markdown 着色：标记符原样留着，只染色", () => {
+    const lines = messageToLines(
+      msg({ role: AgentNS.Role.User, content: "**粗体** 与 `代码`" }),
+      80,
+    );
+    const body = lines[2]!;
+    // 文本一个字都不少（着色不做语义渲染，用户原话必须原样留在屏上）
+    expect(body.text).toBe("  **粗体** 与 `代码`");
+    expect(body.spans?.length ?? 0).toBeGreaterThan(1);
+    // 粗体那一段加粗（`strong` 只给 bold、不写死颜色），行内代码那一段有颜色
+    expect(body.spans?.some((span) => span.bold === true)).toBe(true);
+    expect(body.spans?.some((span) => span.color !== undefined)).toBe(true);
+  });
+
+  it("user 消息里的围栏代码按语言高亮，围栏行保留", () => {
+    const lines = messageToLines(
+      msg({ role: AgentNS.Role.User, content: "看这段：\n```js\nconst a = 1;\n```" }),
+      80,
+    );
+    const texts = lines.map((line) => line.text);
+    expect(texts).toContain("  ```js");
+    expect(texts).toContain("  ```");
+    expect(texts).toContain("  const a = 1;");
+    // 代码段按 js 词法上色（关键字那一段带颜色）
+    expect(lines.some((line) => line.spans?.some((span) => span.color !== undefined))).toBe(true);
+  });
+
   it("assistant 按「思考 → 工具 → 正文」自然顺序", () => {
     const lines = messageToLines(
       msg({
