@@ -945,6 +945,86 @@ describe("/load：列表来自 session.list，选中后换会话", () => {
   });
 });
 
+// ==================== 忙时禁用（`needsIdle`） ====================
+
+/**
+ * 「这一段正在跑」时哪几条命令不可用，以及**为什么**其余照旧可用。
+ *
+ * 判据表在 `registry.ts`（`CommandMeta.needsIdle`），门在 `runCommand` 入口。这一组钉两件事：
+ *
+ *   1. 那五条**一个字节都不写**（不弹选择器、不发 procedure、也不问「要不要现在试」）——
+ *      `/back` `/handoff` `/migrate` 宿主本来就会拒，`/model` `/think` 则是**一批内部换家**
+ *      （写会话行当场生效，下一轮请求就换模型与思考参数）；
+ *   2. 会话的**新建与切换**不受影响：它们不动运行中的那一段，这正是「忙也能干的事」。
+ */
+describe("忙时禁用", () => {
+  it("`/back` 忙时不可用：不弹选择器，一个 procedure 都不发", async () => {
+    const { host, calls, notices } = createHost({
+      session: {
+        status: "working",
+        messages: [{ id: "u-1", createdAt: 1, role: AgentNS.Role.User, content: "第一句" }],
+      },
+    });
+
+    await runCommand("back", "/back", host);
+
+    expect(host.pick).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+    expect(texts(notices)).toBe(t("cmd.needsIdle", { name: "/back" }));
+  });
+
+  it("`/handoff` 与 `/migrate` 忙时不可用：宿主本来就会拒，别让人先走完选择器", async () => {
+    for (const [name, raw] of [
+      ["handoff", "/handoff"],
+      ["migrate", "/migrate"],
+    ] as const) {
+      const { host, calls, notices } = createHost({
+        session: {
+          status: "working",
+          messages: [{ id: "u-1", createdAt: 1, role: AgentNS.Role.User, content: "第一句" }],
+        },
+      });
+
+      await runCommand(name, raw, host);
+
+      expect(calls).toEqual([]);
+      expect(texts(notices)).toBe(t("cmd.needsIdle", { name: `/${name}` }));
+    }
+  });
+
+  it("`/new` 忙时照旧可用（新开一段不动运行中的那一段）", async () => {
+    const { host, calls } = createHost({ session: { status: "working" } });
+
+    await runCommand("new", "/new", host);
+
+    expect(host.newSession).toHaveBeenCalledTimes(1);
+    expect(host.exit).toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it("`/clear` 忙时照旧可用（只清屏，上下文一个字不动）", async () => {
+    const { host } = createHost({ session: { status: "working" } });
+
+    await runCommand("clear", "/clear", host);
+
+    expect(host.clearTranscript).toHaveBeenCalledTimes(1);
+  });
+
+  it("`/ws` 忙时照旧可用（换的是「下一个新会话开在哪」）", async () => {
+    const { host, notices } = createHost({
+      session: { status: "working" },
+      routes: { "workspace.list": () => [workspaceRow("ws-1", "/p1")] },
+    });
+    const seen = capturePick(host, "ws-1");
+
+    await runCommand("ws", "/ws", host);
+
+    // 没被那道门拦住：选择器真弹了，也确实切了
+    expect(seen.values).toEqual(["ws-1"]);
+    expect(texts(notices)).toContain(t("cmd.ws.switched", { name: "ws-1", path: "/p1" }));
+  });
+});
+
 // ==================== /pin ====================
 
 /**
@@ -1233,49 +1313,32 @@ describe("/model：三档作用级别各写各的那一层", () => {
     expect(host.pick).not.toHaveBeenCalled();
   });
 
-  // 忙时那一问（PRD 4.7 的「确认」那一列 + PLAN.md §5.5 的「只允许空闲时换」）
-  it("这一段在忙：发请求之前先问一次，选「等它闲下来」就一个字节都不写", async () => {
+  /**
+   * 忙时**整条命令不可用**（`CommandMeta.needsIdle`）：不弹选择器、不写会话行、也不问「要不要现在试」。
+   *
+   * 为什么从「问一句」改成「禁用」：宿主对 `session.updateModel` / `updateThinkingLevel` **不设**
+   * 忙闲守卫，写下去当场生效，下一轮请求立刻换家 —— 一批内部换模型，工具调用格式与思考参数都可能
+   * 对不上（另一处注释自己写着「旧模型的参数发给新模型 → 端点 400」）。问一句只会把这件事变成
+   * 「用户点了确认，然后拿到一个错位的结果」。
+   */
+  it("这一段在忙：整条 `/model` 不可用，一个字节都不写、也不弹选择器", async () => {
     const { host, session, calls, notices } = createHost({ session: { status: "working" } });
-    const seen = capturePick(host, "no");
 
     await runCommand("model", "/model m2", host);
 
-    expect(seen.title).toBe(t("cmd.busySwitch.title"));
+    expect(host.pick).not.toHaveBeenCalled();
     expect(session.updateModel).not.toHaveBeenCalled();
-    // 确认之前只读了模型表：写请求根本没发出去
-    expect(methods(calls)).toEqual(["config.get"]);
-    expect(texts(notices)).toBe(t("cmd.busySwitch.cancelled"));
+    // 连模型表都不读：门在入口，命令体根本没进去
+    expect(calls).toEqual([]);
+    expect(texts(notices)).toBe(t("cmd.needsIdle", { name: "/model" }));
   });
 
-  it("这一段在忙、用户选「现在试」：照旧发，宿主拒了就如实报（不假装换成功）", async () => {
-    const { host, session, notices } = createHost({
-      session: {
-        status: "working",
-        // 宿主的 `assertNoWorkInHand`：手上还有活就拒
-        updateModel: vi.fn(async () => {
-          throw new Error("session is working");
-        }),
-      },
-    });
-    capturePick(host, "yes");
+  it("闲下来之后同一条 `/model` 照旧能用（门只看忙闲那一格）", async () => {
+    const { host, session } = createHost();
 
     await runCommand("model", "/model m2", host);
 
     expect(session.updateModel).toHaveBeenCalledWith("m2");
-    expect(texts(notices)).toBe(t("cmd.model.failed", { error: "session is working" }));
-  });
-
-  it("写助手定义不会被宿主拒（忙着的那段变闲之后才换 agent）：忙时不多问一句", async () => {
-    const { host, session, calls } = createHost({ session: { status: "working" } });
-
-    await runCommand("model", "/model -a m2", host);
-
-    expect(host.pick).not.toHaveBeenCalled();
-    expect(calls).toContainEqual({
-      method: "config.agents.update",
-      params: { agentId: "default", change: { modelId: "m2" } },
-    });
-    expect(session.reload).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1559,49 +1622,26 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     expect(texts(notices)).not.toContain(t("cmd.think.unchanged"));
   });
 
-  // 忙时那一问：与 `/model` 同一套（PRD 4.7 的「确认」+ PLAN.md §5.5 的「只允许空闲时换」）
-  it("这一段在忙：发请求之前先问一次，选「等它闲下来」就一个字节都不写", async () => {
-    const { host, session, notices } = createHost({ session: { status: "working" } });
-    const seen = capturePick(host, "no");
+  /** 与 `/model` 同一道门（`needsIdle`）：忙时整条不可用，命令体一个字节都不写 */
+  it("这一段在忙：整条 `/think` 不可用，不弹选择器、不写会话行", async () => {
+    const { host, session, calls, notices } = createHost({ session: { status: "working" } });
 
     await runCommand("think", "/think high", host);
 
-    expect(seen.title).toBe(t("cmd.busySwitch.title"));
+    expect(host.pick).not.toHaveBeenCalled();
     expect(session.updateThinkingLevel).not.toHaveBeenCalled();
     expect(host.setEffortView).not.toHaveBeenCalled();
-    expect(texts(notices)).toBe(t("cmd.busySwitch.cancelled"));
+    expect(calls).toEqual([]);
+    expect(texts(notices)).toBe(t("cmd.needsIdle", { name: "/think" }));
   });
 
-  it("选「现在试」：照旧发，宿主拒了如实报（不假装换成功）", async () => {
-    const { host, session, notices } = createHost({
-      session: {
-        status: "working",
-        updateThinkingLevel: vi.fn(async () => {
-          throw new Error("session is working");
-        }),
-      },
-    });
-    capturePick(host, "yes");
+  it("闲下来之后照旧能用：写会话行并刷新状态栏那一格", async () => {
+    const { host, session } = createHost();
 
     await runCommand("think", "/think high", host);
 
     expect(session.updateThinkingLevel).toHaveBeenCalledWith("high");
-    expect(texts(notices)).toBe(t("cmd.think.failed", { error: "session is working" }));
-  });
-
-  it("-a 写的是助手定义，不被忙拦截：忙时不多问一句", async () => {
-    const { host, calls } = createHost({
-      session: { status: "working" },
-      routes: effortRoutes(agentView({ modelId: "m1", modelParams: {} })),
-    });
-
-    await runCommand("think", "/think -a high", host);
-
-    expect(host.pick).not.toHaveBeenCalled();
-    expect(calls).toContainEqual({
-      method: "config.agents.update",
-      params: { agentId: "default", change: { modelParams: { reasoning_effort: "high" } } },
-    });
+    expect(host.setEffortView).toHaveBeenCalled();
   });
 });
 

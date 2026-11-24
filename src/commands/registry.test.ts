@@ -3,6 +3,7 @@ import {
   COMMAND_REGISTRY,
   canonicalCommandName,
   commandBlocksInput,
+  commandNeedsIdle,
   findCommand,
   getCommandHints,
   matchCommandHints,
@@ -23,6 +24,41 @@ describe("会话命令元数据", () => {
       names: ["exit", "quit"],
       label: "/exit /quit",
       // 说明只说它**真的**做的事：`cmdExit` 直接退出，没有任何「要不要保存」的确认
+      description: "退出程序（不关宿主）",
+    });
+  });
+
+  /**
+   * 「忙时不可用」的那几条：写会话级状态、或宿主会直接拒。
+   *
+   * 这张清单是**有意的**（见 `CommandMeta.needsIdle`），所以钉在这里：谁不小心把 `/new`
+   * `/load` 之类加进去，或者把 `/back` 漏掉，这条会红 —— 而这两种错的后果分别是「白白禁掉
+   * 无害的命令」与「用户走完选择器才吃一个错」。
+   */
+  it("忙时禁用的恰好是那五条，会话的新建与切换一个都不禁", () => {
+    expect(COMMAND_REGISTRY.filter((command) => command.needsIdle).map((c) => c.name)).toEqual([
+      "back",
+      "model",
+      "think",
+      "handoff",
+      "migrate",
+    ]);
+    for (const name of ["new", "load", "sessions", "ws", "clear", "free", "agent", "config"]) {
+      expect(commandNeedsIdle(name), `${name} 不该被忙闲拦住`).toBe(false);
+    }
+    // 别名走同一张表
+    expect(commandNeedsIdle("revert")).toBe(true);
+    expect(commandNeedsIdle("effort")).toBe(true);
+  });
+
+  it("菜单提示带着「忙时不可用」这一位（与入口那道门同一个判据）", () => {
+    const byName = new Map(getCommandHints().map((hint) => [hint.names[0]!, hint]));
+    expect(byName.get("back")?.needsIdle).toBe(true);
+    expect(byName.get("new")?.needsIdle).toBeUndefined();
+    // 其余条目一个字段都不多（与 `toEqual` 的老断言兼容）
+    expect(byName.get("exit")).toEqual({
+      names: ["exit", "quit"],
+      label: "/exit /quit",
       description: "退出程序（不关宿主）",
     });
   });
@@ -109,9 +145,14 @@ describe("会话命令元数据", () => {
    * 把命令再到回去映射成契约方法 —— 那是宿主的事，命令名归命令名（从前多一个 `method`
    * 字段专为 `/help` 去宿主取句子，现在 `/help` 用本地词条，那个字段跟着删了）。
    */
-  it("展示条目只带名字、别名与说明", () => {
+  it("展示条目只带名字、别名、说明，外加「忙时不可用」那一格（只在需要时才出现）", () => {
     for (const hint of getCommandHints()) {
-      expect(Object.keys(hint).sort()).toEqual(["description", "label", "names"]);
+      // `needsIdle` 是可选的一位：有它的条目才多这一格，其余仍是老三样
+      expect(Object.keys(hint).sort()).toEqual(
+        hint.needsIdle === true
+          ? ["description", "label", "names", "needsIdle"]
+          : ["description", "label", "names"],
+      );
     }
   });
 
@@ -171,6 +212,8 @@ describe("命令前缀匹配", () => {
         names: ["back", "revert"],
         label: "/back /revert",
         description: "撤回上次发言，改完重发",
+        // `/back` 忙时不可用（`needsIdle`）：菜单据此标一句
+        needsIdle: true,
       },
     ]);
     // 别名同样能被前缀命中，且折回主名那一条

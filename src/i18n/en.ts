@@ -131,6 +131,9 @@ export const en: Record<string, string> = {
   "cmd.free.desc": "Drop queued messages not sent yet",
   "cmd.free.inboxCleared": "Dropped {n} queued message(s)",
   "cmd.config.desc": "Open the configuration center: endpoints, models",
+  "cmd.menuNeedsIdle": "unavailable while busy",
+  "cmd.needsIdle":
+    "{name} needs this session idle: it is still running (switching model or effort mid-batch mixes two providers in one request; revert and handoff are refused by the host)",
   "cmd.model.desc": "Switch model: this session / agent / global",
   "cmd.agent.desc": "Set the default agent (new sessions only)",
   "cmd.reload.desc": "Rediscover tools, skills and MCP servers",
@@ -329,12 +332,6 @@ export const en: Record<string, string> = {
   "cmd.think.titleAgent":
     "Reasoning effort · this agent, affects sessions started later (current: {level})",
   "cmd.think.failed": "Reasoning effort change failed: {error}",
-  // The one confirmation before switching while busy: the host only allows it when idle (PLAN.md §5.5), so say what it costs
-  "cmd.busySwitch.title":
-    "This session still has work in hand: switching now gets rejected (the host only allows it while idle). Try anyway?",
-  "cmd.busySwitch.confirm": "Try now",
-  "cmd.busySwitch.cancel": "Wait until it is idle",
-  "cmd.busySwitch.cancelled": "Cancelled: switch once this session is idle",
   "cmd.handoff.unknownMode": "Unknown handoff mode: {who} (use self / summary)",
   "cmd.handoff.started":
     "Writing the document: the host will tell you where it landed; this session's memory and agent stay as they are",

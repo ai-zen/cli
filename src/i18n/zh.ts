@@ -142,6 +142,9 @@ export const zh: Record<string, string> = {
   "cmd.free.desc": "清空排队区：还没送出去的话",
   "cmd.free.inboxCleared": "已清掉排队区里 {n} 条还没送出的话",
   "cmd.config.desc": "打开配置中心：端点、模型、助手定义",
+  "cmd.menuNeedsIdle": "忙时不可用",
+  "cmd.needsIdle":
+    "{name} 要等这一段闲下来：它现在还在跑（跑着换模型/思考档会让这一批内部换家，撤回与交接宿主会直接拒）",
   "cmd.model.desc": "切换模型：本次会话 / 助手定义 / 全局",
   "cmd.agent.desc": "设默认助手定义，只影响新会话",
   "cmd.reload.desc": "重新发现工具、技能与 MCP 服务器",
@@ -329,11 +332,6 @@ export const zh: Record<string, string> = {
   "cmd.think.titleSession": "思考强度 · 这一段（当前：{level}）",
   "cmd.think.titleAgent": "思考强度 · 这个助手定义（影响以后新开的会话；当前：{level}）",
   "cmd.think.failed": "切换思考强度失败：{error}",
-  // 忙时换模型 / 换思考的那一次确认：宿主只在空闲时放行（PLAN.md §5.5），这一问把代价说清
-  "cmd.busySwitch.title": "这一段手上还有活：现在换会被宿主拒掉（它只允许空闲时换）。要现在试吗？",
-  "cmd.busySwitch.confirm": "现在试",
-  "cmd.busySwitch.cancel": "等它闲下来再换",
-  "cmd.busySwitch.cancelled": "已取消：等这一段闲下来再换",
   "cmd.handoff.unknownMode": "未知的交接方式：{who}（可选 self / summary）",
   "cmd.handoff.started":
     "写文档已开始：写完之后宿主会告诉你文档在哪；这段会话的记忆与 Agent 都不动",

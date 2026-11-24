@@ -44,6 +44,20 @@ export interface CommandMeta {
    * 这是命令的属性而不是宿主的白名单 —— 新增命令只改本文件，宿主自动跟上。
    */
   blocksInput?: boolean;
+  /**
+   * **这一段正在跑时不能执行**（写会话级状态、或宿主会直接拒的那几条）。
+   *
+   * 判据在 `handlers.ts` 的 `runCommand` 入口统一查一次，提示也由那里给 —— 命令自己不必各写一遍。
+   *
+   * 为什么它们是「禁用」而不是「问一句」：这几条一旦落在运行中的这一段上，要么宿主立刻拒
+   * （`session.revert` 的 `busy`、`handoff.start` 的 `conflict`），要么就是**一批内部换家**
+   * （`session.updateModel` / `updateThinkingLevel` 宿主不拦，下一轮请求立刻换模型与思考参数，
+   * 工具调用格式与参数都可能对不上）。前者让用户白走一遍选择器/确认才吃一个错，后者是实打实的
+   * 错位 —— 两种都该在按下去那一刻就说清。
+   *
+   * 会话的**新建与切换**（`/new` `/load` `/sessions` `/ws`）不在此列：它们不动运行中的那一段。
+   */
+  needsIdle?: boolean;
 }
 
 /**
@@ -98,7 +112,8 @@ const REGISTRY_ENTRIES = [
    * 给 —— 命令名与别名是客户端的事，能力在宿主（PRD F-E1）。
    */
   { name: "pin", descriptionKey: "cmd.pin.desc" },
-  { name: "back", aliases: ["revert"], descriptionKey: "cmd.back.desc" },
+  // 撤回要删消息（`session.revert`）：宿主在跑的时候直接拒 —— 见 `needsIdle`
+  { name: "back", aliases: ["revert"], descriptionKey: "cmd.back.desc", needsIdle: true },
   /**
    * 改名字：写的是会话行上那一格（`session.rename`），id 与其余 10 格不动（PRD 1.5）。
    *
@@ -117,8 +132,9 @@ const REGISTRY_ENTRIES = [
   /** `/free` 只清排队区（`agent.clearInbox`）：跑中排着的话、交接期间别人投进来的话 */
   { name: "free", descriptionKey: "cmd.free.desc" },
   { name: "config", descriptionKey: "cmd.config.desc" },
-  { name: "model", descriptionKey: "cmd.model.desc" },
-  { name: "think", aliases: ["effort"], descriptionKey: "cmd.think.desc" },
+  // 换模型 / 换思考档写的是会话行：下一轮请求立刻换家（宿主不拦），一批内部换模型最容易出事
+  { name: "model", descriptionKey: "cmd.model.desc", needsIdle: true },
+  { name: "think", aliases: ["effort"], descriptionKey: "cmd.think.desc", needsIdle: true },
   { name: "agent", descriptionKey: "cmd.agent.desc" },
   { name: "mcp", descriptionKey: "cmd.mcp.desc" },
   { name: "key", descriptionKey: "cmd.key.desc" },
@@ -134,8 +150,9 @@ const REGISTRY_ENTRIES = [
    * 都不动），`/migrate` 写完就换手（`kind: "swap"`，旧记忆成为一段已存档会话）。两句说明也就得
    * 各说各的，菜单上才分得开。
    */
-  { name: "handoff", descriptionKey: "cmd.handoff.desc", blocksInput: true },
-  { name: "migrate", descriptionKey: "cmd.migrate.desc", blocksInput: true },
+  // 交接要换记忆 / 写文档：宿主在跑的时候拒（「等它答完再交接」），客户端提前拦
+  { name: "handoff", descriptionKey: "cmd.handoff.desc", blocksInput: true, needsIdle: true },
+  { name: "migrate", descriptionKey: "cmd.migrate.desc", blocksInput: true, needsIdle: true },
   { name: "help", descriptionKey: "cmd.help.desc" },
   /**
    * `/kill` 杀死一段会话的**Agent**（`agent.kill`）：PRD 1.2 里「能让一段会话死的三条路」
@@ -196,6 +213,16 @@ export function commandBlocksInput(name: string): boolean {
 }
 
 /**
+ * 该命令是否**只在空闲时**能执行（见 {@link CommandMeta.needsIdle}）。
+ *
+ * 拦的地方只有一处（`runCommand` 入口），菜单标灰读的是同一个函数 —— 两处都从这里问，
+ * 于是「菜单说不可用」与「按下去真不可用」不会分叉。
+ */
+export function commandNeedsIdle(name: string): boolean {
+  return findCommand(name)?.needsIdle ?? false;
+}
+
+/**
  * 把原始斜杠输入切成「命令名 + 参数」。
  *
  * 两种返回形状共用同一个切分规则（`/migrate  self ` → `migrate` + `["self"]`）：
@@ -237,6 +264,8 @@ export function parseCommandInput(text: string): { name: string; args: string[] 
 export interface CommandHint {
   /** 全部等价写法（不含 `/` 前缀），首个为主命令名 */
   names: string[];
+  /** 忙时不可用（`needsIdle`）：菜单据此标一句「忙时不可用」，按下去也会被入口那道门拦住 */
+  needsIdle?: boolean;
   /** 展示用命令串，如 `/exit /quit` */
   label: string;
   /** 一句话说明（本地词条：斜杠菜单与 `/help` 用的是这一句） */
@@ -249,6 +278,7 @@ export function getCommandHints(): CommandHint[] {
     const names = [command.name, ...(command.aliases ?? [])];
     return {
       names,
+      ...(command.needsIdle === true ? { needsIdle: true } : {}),
       label: names.map((name) => `/${name}`).join(" "),
       description: t(command.descriptionKey),
     };

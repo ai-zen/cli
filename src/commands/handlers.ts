@@ -79,6 +79,7 @@ import {
 } from "../workspace.js";
 import {
   canonicalCommandName,
+  commandNeedsIdle,
   getCommandHints,
   parseCommandArgs,
   type CommandName,
@@ -1131,38 +1132,6 @@ function modelSourceOf(ctx: Pick<CommandContext, "session">): ModelScope {
   return ctx.session.model.source === "session" ? "session" : "agent";
 }
 
-/**
- * 忙时改「这一段」的模型 / 思考档位之前的**那一次确认**（PRD 4.7 表格的「确认」那一列）。
- *
- * ## 这一问不改结论
- *
- * 判词是「**只允许空闲时候换**」（`PLAN.md` §5.5）：宿主的 `session.updateModel` /
- * `session.setThinking` 开头就是 `assertNoWorkInHand`，手上有活就回 `busy`（`reason: "working"`），
- * **一个字节都不写库**；忙时打标记、变闲再兑现那一套宿主里没有。客户端这边能做、也只能做的是
- * 把这件事**发请求之前**说清 —— 让用户自己决定要不要现在试，而不是等他扑上一条
- * 「切换模型失败：…」才明白为什么（那正是这条命令以前的表现）。
- *
- * 选「现在试」就照旧发：宿主照旧拒，`catch` 里把它的原话如实报上去 —— **绝不假装成功**，也
- * 不绕开它的拒绝（客户端自己写库 / 先杀掉 agent 再换，都是拿运气换那一句「已切换」）。
- *
- * ## 为什么只在会话级问
- *
- * 会被拒的只有写会话行那两扇门。写 AgentDefinition（`agentDefinition.update`）与全局兜底不会被拒：它们的生效路是 `host.reload` 的「刷 Scope + invalidate」，忙着的那段由宿主在
- * 它变闲之后才换掉 agent（`app.ts` 的 `refreshScopesFor`）—— 手里那批不会被抽掉，也没人会拒。
- * 拿「这次请求会被拒」去吓那里的人一遍，就是纯误报。
- *
- * @returns `false` = 用户选了「等它闲下来」，调用方就此打住
- */
-async function allowBusySwitch(ctx: Pick<CommandContext, "session" | "pick">): Promise<boolean> {
-  // `null` = 读数还没回来：不知道忙不忙就照着不忙走（不拿「还没读到」当「在忙」吓人一跳）
-  if (ctx.session.status !== "working") return true;
-  const choice = await ctx.pick(t("cmd.busySwitch.title"), [
-    { label: t("cmd.busySwitch.confirm"), value: "yes" },
-    { label: t("cmd.busySwitch.cancel"), value: "no" },
-  ]);
-  return choice === "yes";
-}
-
 const cmdModel: CommandHandler = async ({ session, api, push, args, pick, ensureKey }) => {
   // 模型表就是配置里的那一格（新契约没有单独的 `model.list`：`config.get` 一次给全）
   const { config } = await api.config.get.query();
@@ -1291,11 +1260,6 @@ const cmdModel: CommandHandler = async ({ session, api, push, args, pick, ensure
       );
       return;
     }
-  }
-  // 会话级那一扇门忙的时候会被宿主拒（`assertNoWorkInHand`）：发之前先问一次（见 `allowBusySwitch`）
-  if (selection.scope === "session" && !(await allowBusySwitch({ session, pick }))) {
-    push(t("cmd.busySwitch.cancelled"));
-    return;
   }
   try {
     // 三条写路径各写各的那一档，参数与校验都在宿主：
@@ -1462,12 +1426,6 @@ const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEff
   // 「清掉」那一档不能跟 `current` 比：`custom` 时 `current` 也是 `null`，可定义上确实带着参数
   if (next === null ? cleared : current === next) {
     push(t("cmd.think.unchanged"));
-    return;
-  }
-
-  // 会话那一格忙时会被宿主拒（`assertNoWorkInHand`）：发之前先问一次（见 `allowBusySwitch`）
-  if (scope === "session" && !(await allowBusySwitch({ session, pick }))) {
-    push(t("cmd.busySwitch.cancelled"));
     return;
   }
 
@@ -2257,6 +2215,19 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
   const canonical = canonicalCommandName(name);
   if (!canonical) {
     host.notice(t("cmd.unknown", { cmd: raw }), "error");
+    return;
+  }
+  /**
+   * 「忙时不能执行」的统一一道门（判据见 `CommandMeta.needsIdle`）。
+   *
+   * 拦在这里而不是每条命令自己写：`/back` `/model` `/think` `/handoff` `/migrate` 的**理由**
+   * 各不一样（宿主会拒 / 一批内部换家），但**判据**是同一个 —— 这一段此刻在不在跑。写成一张表
+   * 加一道门，新增命令只改表；散在五处则迟早有一条忘写，而忘写的后果是用户走完选择器才吃一个错。
+   *
+   * `status === null`（读数还没回来）按**不忙**处理：不拿「还没读到」当「在忙」拦人。
+   */
+  if (commandNeedsIdle(canonical) && host.session.status === "working") {
+    host.notice(t("cmd.needsIdle", { name: `/${canonical}` }), "error");
     return;
   }
   const context: CommandContext = {

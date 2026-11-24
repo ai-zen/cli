@@ -10,6 +10,22 @@ Commands are typed into the input line starting with `/`. Names, aliases and des
 
 Arguments follow the command name, split on whitespace: `/handoff self` is a command name plus one argument. Names and aliases are case-insensitive.
 
+## Commands that need an idle session
+
+While this session is running (the host reports `working`) the five below are refused up front, with a line saying so:
+
+| Command     | Why                                                                                     |
+| ----------- | --------------------------------------------------------------------------------------- |
+| `/model`    | writes the session row; the next request already switches model — mixing two providers inside one batch, where tool-call shape and reasoning params can disagree |
+| `/think`    | same (the effort preset is a model parameter)                                            |
+| `/back`     | revert deletes messages; the host refuses while it is running ("wait until it stops")   |
+| `/handoff`  | handoff reads this session's whole memory; the host refuses while it is answering        |
+| `/migrate`  | same, and it swaps the memory too                                                        |
+
+The `/` menu prefixes those entries with "unavailable while busy"; the gate and the menu read the same flag (`CommandMeta.needsIdle`).
+
+**Starting and switching sessions is not affected**: `/new` `/load` `/sessions` `/ws` only change which session you are looking at or where the next one starts, and the running one keeps running in the registry. `/clear` (screen only), `/free` (the queue), `/pin` `/rename` `/agent` and the configuration commands stay available.
+
 ## Sessions
 
 | Command     | Alias     | Arguments                           | What it does                                                                                                                                                                             |

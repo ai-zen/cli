@@ -734,6 +734,29 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
+  /**
+   * 忙时那几条（`needsIdle`）在菜单里明说不可用 —— 与入口那道门同一个判据。
+   *
+   * 只是**标一句**，不是把候选藏起来：菜单是「有哪些命令」的清单，藏起来会让人以为命令没了；
+   * 标出来则说得清「现在按不了、为什么」。
+   */
+  it("忙时斜杠菜单给那几条标「忙时不可用」，其余照旧", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    created.session.status = "working";
+    created.notifier.onChange(true);
+    await flush();
+
+    stdin.write("/bac");
+    await waitFor(() => (lastFrame() ?? "").includes("/back"));
+
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain(t("cmd.menuNeedsIdle"));
+    // `/back` 的说明还在（只是在前面多了一句标）
+    expect(frame).toContain(t("cmd.back.desc"));
+    unmount();
+  });
+
   it("手上的活在跑时 `/` 仍能唤出命令菜单（运行中允许执行命令）", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();

@@ -678,9 +678,22 @@ export function Chat(props: ChatScreenProps) {
    * `layout.hintRows`，三处同源。
    */
   const menuWant = slash ? hints.length : fileMatches.length + (scanningFiles ? 1 : 0);
-  /** 菜单 InboxEntry：斜杠命令带说明，`@` 路径目录带尾斜杠（提示「选中后继续下钻」） */
+  /**
+   * 菜单项：斜杠命令带说明，`@` 路径目录带尾斜杠（提示「选中后继续下钻」）。
+   *
+   * 忙时那几条（`needsIdle`）在说明前面标一句「忙时不可用」：判据与入口那道门同一个
+   * （`CommandMeta.needsIdle`），所以菜单说不可用的，按下去真会被拦。
+   */
   const menuItems: MenuItem[] = slash
-    ? hints.map((hint) => ({ key: hint.names[0]!, label: hint.label, hint: hint.description }))
+    ? hints.map((hint) => ({
+        key: hint.names[0]!,
+        label: hint.label,
+        // 忙闲那一格在 `activity` 上（`working` 那个合成值在此处还没定义：它要算上阻塞命令）
+        hint:
+          hint.needsIdle === true && activity === "working"
+            ? `${t("cmd.menuNeedsIdle")} · ${hint.description}`
+            : hint.description,
+      }))
     : fileMatches.map((entry) => ({
         key: entry.path,
         // 目录带尾斜杠（提示「选中后继续下钻」）；判据是宿主给的 `kind`
