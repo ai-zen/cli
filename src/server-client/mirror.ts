@@ -310,6 +310,8 @@ function inboxItemOf(entry: AgentNS.InboxEntry): InboxItem[] {
       messageId: id,
       source: entry.source ?? { kind: "system", label: "" },
       createdAt: entry.createdAt,
+      // 优先级原样带出去：界面上要说清「它为什么还没被取走」（`high` 在工具边界就取、`low` 等这一批跑完）
+      priority: entry.priority,
       preview: previewOf(entry.content),
     },
   ];

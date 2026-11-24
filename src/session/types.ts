@@ -105,6 +105,12 @@ export interface InboxItem {
   messageId: string;
   source: AgentNS.MessageSource;
   createdAt: string;
+  /**
+   * 这一条进来的优先级（core 的 `InboxEntry.priority`，原样上屏）：`high` 在内循环的工具边界就会
+   * 被取走，`low` 要等手上这一批跑完。界面上据此说清「为什么它还没被取走」—— 两个值都是协议用词，
+   * 不进翻译表。
+   */
+  priority: AgentNS.InboxEntry["priority"];
   /** 一行摘要（客户端现拼，见 `server-client/mirror.ts`） */
   preview: string;
 }

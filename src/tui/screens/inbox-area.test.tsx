@@ -22,6 +22,7 @@ function item(preview: string, overrides: Partial<InboxItem> = {}): InboxItem {
     messageId: `m-${preview}`,
     source: { kind: "user" },
     createdAt: "2026-01-01T00:00:00.000Z",
+    priority: "high",
     preview,
     ...overrides,
   };
@@ -52,6 +53,25 @@ describe("InboxArea：显示规则", () => {
     expect(frame).toContain(t("inbox.pending"));
     expect(frame).toContain("先跑一遍测例再说");
     expect(lines(frame)).toHaveLength(1);
+    unmount();
+  });
+
+  it("②-b 优先级写在每条最前面：high / low 原样上屏", () => {
+    setLocale("zh");
+    const { lastFrame, unmount } = render(
+      <Box flexDirection="column" width={60}>
+        <InboxArea
+          items={[
+            item("高优先级那句", { priority: "high" }),
+            item("低优先级那句", { priority: "low" }),
+          ]}
+        />
+      </Box>,
+    );
+    const rendered = lines(lastFrame() ?? "");
+    // 行首就是优先级：截掉前导空白后必须以协议用词开头
+    expect(rendered[0]?.trimStart().startsWith("high")).toBe(true);
+    expect(rendered[1]?.trimStart().startsWith("low")).toBe(true);
     unmount();
   });
 

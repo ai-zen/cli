@@ -556,7 +556,10 @@ export function inboxPrefix(source: AgentNS.MessageSource): string {
  *
  * 显示规则（刻意只有这些，不加标题、不加边框）：
  *   · 最多 `INBOX_MAX_ROWS` 行；0 条时整块不渲染、不占行；
- *   · 每条一行：` 前缀 + preview`，`truncate`（折行会把输入框顶出屏幕）；
+ *   · 每条一行：`优先级 前缀 preview`，`truncate`（折行会把输入框顶出屏幕）；
+ *   · 优先级是 core 那两个协议用词（`high` / `low`），原样上屏、不进翻译表 —— 它说的是「为什么这一条
+ *     还没被取走」（`high` 在内循环的工具边界就取、`low` 要等手上这一批跑完），不是给终端用户看的
+ *     产品词；
  *   · InboxEntry 数 > `INBOX_MAX_ROWS` 时，最后一行说「还有 N 条」（N = 没显示出来的条数）。
  */
 export function InboxArea({ items }: { items: readonly InboxItem[] }) {
@@ -572,7 +575,8 @@ export function InboxArea({ items }: { items: readonly InboxItem[] }) {
           {/* 整行是**一个** Text：并列的 Text 会被 flex 按内容比例分宽度，preview 一长
               就把前缀挤成一截；外层 `truncate` 保证恒为一行 */}
           <Text wrap="truncate">
-            <Text color={theme.dim}>{inboxPrefix(item.source)}</Text>
+            <Text color={theme.dim}>{item.priority}</Text>
+            <Text color={theme.dim}>{` ${inboxPrefix(item.source)}`}</Text>
             <Text color={theme.faint}>{` ${item.preview}`}</Text>
           </Text>
         </Box>
