@@ -25,7 +25,7 @@
  *
  * ## 五块，顺序即摆放顺序
  *
- *   1. **身份**：模型 · AgentDefinition · 思考强度；
+ *   1. **身份**：模型 · 思考强度；
  *   2. **四件事**：闲 / 忙、输入开关、输出开关、死活（`PRD 4.4`「这四件事用户都要看得见」）；
  *   3. **用量**：本次 tok / 累计 tok（算不出来就整段不占位，见 `tui/components.tsx`）；
  *   4. **速率**：生成中显示实时估算、结束后显示这一批的平均（`session-rate.ts`，CLI 自己的
@@ -36,7 +36,7 @@
  * 已经有了，同一件事在两个地方各说一遍只是占宽度。
  */
 
-import type { AgentState, ModelState, SessionActivity, ThinkingState } from "./session/types.js";
+import type { ModelState, SessionActivity, ThinkingState } from "./session/types.js";
 import type { RateSample } from "./session-rate.js";
 
 /**
@@ -45,10 +45,10 @@ import type { RateSample } from "./session-rate.js";
  * 块名不在这里：块里写什么字是界面的词汇（`tui/components.tsx`）。这里只有事实。
  */
 export type StatusBlock =
-  /** 身份块：模型 · AgentDefinition · 思考强度（块内用 ` · ` 并排，见 `tui/components.tsx`） */
+  /** 身份块：模型 · 思考强度（块内用 ` · ` 并排，见 `tui/components.tsx`） */
   | {
       id: "identity";
-      facts: { model: ModelState; agent: AgentState; thinking: ThinkingState };
+      facts: { model: ModelState; thinking: ThinkingState };
     }
   /**
    * 用量块：**本次**用掉的 tok 与**累计**用掉的 tok。
@@ -86,7 +86,6 @@ export type StatusBlock =
 
 /** 拼块要的输入：全部来自会话层的活事实（用量那两个数由会话层从消息上算） */
 export interface StatusBlockFacts {
-  agent: AgentState;
   model: ModelState;
   thinking: ThinkingState;
   /** 本次用掉的 tok（最后一条带 `usage` 的 assistant 消息；还没答过 = `null`） */
@@ -109,7 +108,7 @@ export function statusBlocksOf(facts: StatusBlockFacts): StatusBlock[] {
   return [
     {
       id: "identity",
-      facts: { model: facts.model, agent: facts.agent, thinking: facts.thinking },
+      facts: { model: facts.model, thinking: facts.thinking },
     },
     {
       id: "gates",

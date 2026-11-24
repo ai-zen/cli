@@ -98,7 +98,6 @@ const { created, createFakeSession } = vi.hoisted(() => {
       // 否则契约一改、拼法一改，这里都会变成「看起来还在用的死数据」
       get blocks() {
         return statusBlocksOf({
-          agent: { agentId: "default", name: "default", available: true },
           model: { modelId: "gpt-6-astra", name: "gpt-6-astra", vision: false, source: "agent" },
           thinking: fakeThinking(),
           // 用量那两个数在真会话里由会话层从消息的 `usage` 上算（`session.ts`）：

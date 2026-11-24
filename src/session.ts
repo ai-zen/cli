@@ -48,7 +48,6 @@ import { noticeText, noticeTone } from "./session-notice.js";
 import { TokenRateMeter, type RateSample } from "./session-rate.js";
 import { buildMessageInput, contentOfInput } from "./user-content.js";
 import type {
-  AgentState,
   ChatSessionLike,
   ChatSessionNotifier,
   ChatSessionOptions,
@@ -104,10 +103,6 @@ export class RemoteChatSession implements ChatSessionLike {
   private configValue: { config: AppConfig; presets: ReasoningPresets } | null = null;
   /** AgentDefinition 上绑的模型 id（`source` 那一格与 `/think` 的回落都看它）；`undefined` = 还没读到 */
   private definitionModelId: string | null | undefined = undefined;
-  /** AgentDefinition 的可用性（读不出来 = `false`，还没读 = `null`） */
-  private definitionAvailable: boolean | null = null;
-  /** AgentDefinition 的名字（定义没了就是 `null`：说「不知道」，不编一个像真的名字） */
-  private definitionName: string | null = null;
   /** 这段会话所在工作区的 cwd（宿主这一版只在 `workspace.list` 里给） */
   private workspaceCwdValue: string | null = null;
   /** 挂着的题（`question.list` 一次 + `question.asked` 事件；题不落库，只活在内存里） */
@@ -152,8 +147,6 @@ export class RemoteChatSession implements ChatSessionLike {
     this.sessionIdValue = opened.mirror.session.id;
     this.configValue = opened.config;
     this.definitionModelId = opened.definitionModelId;
-    this.definitionAvailable = opened.definitionAvailable;
-    this.definitionName = opened.definitionName;
     this.workspaceCwdValue = opened.workspaceCwd;
     this.handoffSinceValue = opened.mirror.snapshot().handingOff ? new Date().toISOString() : null;
 
@@ -230,15 +223,6 @@ export class RemoteChatSession implements ChatSessionLike {
     return this.mirror.roster;
   }
 
-  /** 这段会话的 AgentDefinition（id 是身份；名字与可用性来自定义） */
-  get agentState(): AgentState {
-    return {
-      agentId: this.mirror.session.agentId,
-      name: this.definitionName,
-      available: this.definitionAvailable,
-    };
-  }
-
   get status(): SessionActivity | null {
     return this.mirror.snapshot().status;
   }
@@ -264,7 +248,6 @@ export class RemoteChatSession implements ChatSessionLike {
   get blocks(): StatusBlock[] {
     const snapshot = this.mirror.snapshot();
     return statusBlocksOf({
-      agent: this.agentState,
       model: this.model,
       thinking: this.thinking,
       // 速率是客户端自己的采样（`session-rate.ts`）：生成中读实时、手上没活时读这一批的平均
@@ -943,13 +926,9 @@ export class RemoteChatSession implements ChatSessionLike {
         agentId: this.mirror.session.agentId,
       });
       this.definitionModelId = definition.modelId ?? null;
-      this.definitionName = definition.name;
-      this.definitionAvailable = true;
     } catch {
-      // 定义没了（AgentDefinition 被删）：`available: false`，名字与模型都如实回空
+      // 定义没了（AgentDefinition 被删）：模型那一格回空，`source` 那一格跟着落到 `session`
       this.definitionModelId = null;
-      this.definitionName = null;
-      this.definitionAvailable = false;
     }
   }
 
@@ -1056,8 +1035,6 @@ interface OpenedSession {
   mirror: Awaited<ReturnType<HostConnection["open"]>>;
   config: { config: AppConfig; presets: ReasoningPresets } | null;
   definitionModelId: string | null;
-  definitionAvailable: boolean | null;
-  definitionName: string | null;
   /** 这段会话所在工作区的 cwd（目录事实那一格用） */
   workspaceCwd: string | null;
 }
@@ -1110,20 +1087,16 @@ async function loadSession(connection: HostConnection, sessionId: string): Promi
   const mirror = await connection.open(sessionId);
   const config = await readConfig(connection);
   let definitionModelId: string | null = null;
-  let definitionAvailable: boolean | null = null;
-  let definitionName: string | null = null;
   try {
     const { definition } = await connection.api.config.agents.get.query({
       agentId: mirror.session.agentId,
     });
     definitionModelId = definition.modelId ?? null;
-    definitionName = definition.name;
-    definitionAvailable = true;
   } catch {
-    definitionAvailable = false;
+    // 定义没了（AgentDefinition 被删）：模型那一格回空，下游按「这一段的模型来自会话」处理
   }
   const workspaceCwd = await readWorkspaceCwd(connection, mirror.session.workspaceId);
-  return { mirror, config, definitionModelId, definitionAvailable, definitionName, workspaceCwd };
+  return { mirror, config, definitionModelId, workspaceCwd };
 }
 
 /** 这段会话所在工作区的 cwd（`workspace.list` + find：宿主这一版没有 `workspace.get`） */

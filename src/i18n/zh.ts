@@ -36,7 +36,6 @@ export const zh: Record<string, string> = {
   // 于是中英文各自只有一处定义（英文是 ` · agent ` / ` · thinking `）。
   // 用量那两个数由客户端从消息的 `usage` 上算（宿主不算、不存、不报），单位用不换行空格绑定，
   // 窄屏折行时不会被拆成「1284」/「tok」。
-  "status.agent": " · agent ",
   "status.busy": "忙",
   "status.idle": "闲",
   "status.inputPaused": "不收话",

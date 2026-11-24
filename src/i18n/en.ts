@@ -22,7 +22,6 @@ export const en: Record<string, string> = {
   // The two usage numbers are summed by the client from each message's `usage`
   // (the host neither counts nor stores nor reports them); NBSP keeps the number
   // and its unit on one line when the bar wraps.
-  "status.agent": " · agent ",
   "status.busy": "busy",
   "status.idle": "idle",
   "status.inputPaused": "intake off",

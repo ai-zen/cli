@@ -194,21 +194,18 @@ const INNER_SEPARATOR = " · ";
 function statusBlockSegments(block: StatusBlock, hint: string | undefined): StatusSegment[] {
   switch (block.id) {
     case "identity": {
-      const { model, agent, thinking } = block.facts;
-      // 身份块：品牌标记 + 模型 · AgentDefinition · 思考强度，一段紧接一段（分隔符在词条里，旧版如此）。
+      const { model, thinking } = block.facts;
+      // 身份块：品牌标记 + 模型 · 思考强度，一段紧接一段（分隔符在词条里，旧版如此）。
       //
       // 模型那一格**只写 id**：宿主这一版不再把「模型名字」当一条事实发下来（配置里的显示名
-      // 是另一处的事），而状态栏要说的是一个能拿去 `/model` 用的标识 —— 见口径⑥。
+      // 是另一处的事），而状态要说的是一个能拿去 `/model` 用的标识 —— 见口径⑥。
+      //
+      // 「当前助手」那一格**不在状态栏**：它一整个会话不变，每一帧占着宽度而零信息；
+      // 要换助手是 `/agent` 的事，换完之后这条会话的模型/思考档会自己变。
       const view = thinkingView(thinking);
       return [
         { text: "◆ ", color: theme.brand[0] },
         { text: model.modelId ?? t("status.noModel"), color: theme.accent },
-        { text: t("status.agent"), color: theme.dim },
-        // 定义没了（AgentDefinition 被删）时宿主给 `available: false`：说「不知道」显示 id，并标成警告色
-        {
-          text: agent.name ?? agent.agentId,
-          color: agent.available === false ? theme.warn : theme.assistant,
-        },
         { text: t("status.effort"), color: theme.dim },
         { text: view.text, color: view.dimmed ? theme.faint : theme.reasoning },
       ];

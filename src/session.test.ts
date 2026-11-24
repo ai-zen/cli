@@ -844,7 +844,6 @@ describe("RemoteChatSession：速率与状态栏块", () => {
     if (identity?.id === "identity") {
       // 只显示 id（口径⑥）：模型名字那一格已经不画了
       expect(identity.facts.model.modelId).toBe("test-model");
-      expect(identity.facts.agent.agentId).toBe("default");
     }
 
     const usageBlock = blocks.find((block) => block.id === "usage");

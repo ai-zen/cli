@@ -168,7 +168,7 @@ The status bar is made of five blocks, each read from the session at frame time:
 
 | Block    | Content                                                                                               |
 | -------- | ----------------------------------------------------------------------------------------------------- |
-| Identity | model id, agent name, reasoning effort                                                                |
+| Identity | model id, reasoning effort                                                                            |
 | Gates    | busy or idle, plus `stopped`, `output off`, `intake off` when any of them is not in its normal state  |
 | Usage    | tokens of the last answer and tokens of all answers, summed by the client from each message's `usage` |
 | Rate     | a live estimate while generating, the average of the last answer afterwards                           |

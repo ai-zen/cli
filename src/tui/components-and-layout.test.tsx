@@ -97,7 +97,7 @@ describe("StatusBar", () => {
   beforeEach(() => setLocale("zh"));
 
   /**
-   * 四块的事实：身份（模型 / AgentDefinition / 思考档）、用量（本次 / 累计 tok，会话层从消息的 `usage` 上算）、
+   * 四块的事实：身份（模型 / 思考档）、用量（本次 / 累计 tok，会话层从消息的 `usage` 上算）、
    * 速率（客户端采样）、快捷键（无事实）。
    *
    * 这里**不直接写块数组**：块由 `statusBlocksOf` 现拼 —— 谁把已撤的块（上下文 / 目录 / 在跑的工具 /
@@ -106,7 +106,6 @@ describe("StatusBar", () => {
   const factsOf = (
     overrides: {
       model?: string;
-      agent?: string;
       lastTokens?: number | null;
       totalTokens?: number | null;
       rate?: { live: number | null; average: number | null; running: boolean } | null;
@@ -123,7 +122,6 @@ describe("StatusBar", () => {
       vision: false,
       source: "agent" as const,
     },
-    agent: { agentId: "default", name: overrides.agent ?? "default", available: true },
     thinking: {
       preset: "reasoning",
       levels: ["off", "high"],
@@ -148,10 +146,14 @@ describe("StatusBar", () => {
   const plainRows = (props: Parameters<typeof statusBarRows>[0], columns: number) =>
     statusBarRows(props, columns).map((row) => normalize(row.map((s) => s.text).join("")));
 
-  it("身份块照旧版的写法：◆ 模型 · agent 助手 · 思考 档位（块内一段紧接一段）", () => {
+  it("身份块只有两段：◆ 模型 · 思考 档位（「当前助手」那一格已经从状态栏拿掉）", () => {
     // 内容断言走纯函数：`ink-testing-library` 的终端只有 100 列，超宽的行会被裁掉
     const rows = plainRows({ blocks: blocksOf() }, 400);
-    expect(rows.join("\n")).toContain("◆ deepseek-v4-flash · agent default · 思考 高");
+    const identity = rows.join("\n");
+    expect(identity).toContain("◆ deepseek-v4-flash · 思考 高");
+    // 助手那一格整段不存在（连标签带名字都没有）
+    expect(identity).not.toContain("agent");
+    expect(identity).not.toContain("default");
   });
 
   it("四件事上屏：忙 / 闲各一个字，闸关与死只在非默认时出现（PRD 4.4）", () => {
@@ -175,18 +177,6 @@ describe("StatusBar", () => {
     // 死了：说「已停止」并标红（别让它看着像「闲」）
     const dead = plainRows({ blocks: blocksOf({ alive: false }) }, 400).join("\n");
     expect(dead).toContain("已停止");
-  });
-
-  it("助手定义没了时身份块显示 id 并转成警告色（宿主给的 available 是事实）", () => {
-    const blocks = blocksOf();
-    const unavailable = blocks.map((block) =>
-      block.id === "identity"
-        ? { ...block, facts: { ...block.facts, agent: { ...block.facts.agent, available: false } } }
-        : block,
-    );
-    const plain = plainRows({ blocks: unavailable }, 400).join("\n");
-    // 名字还在（宿主给的是 id），只是不再假装它可用
-    expect(plain).toContain("agent default");
   });
 
   it("用量块：本次 / 累计 tok 各自一段（数字是会话层从消息的 `usage` 上算的）", () => {
@@ -232,8 +222,7 @@ describe("StatusBar", () => {
       .replace(/\s+/g, " ");
     const at = (needle: string) => flat.indexOf(needle);
     expect(at("◆ deepseek-v4-flash")).toBeGreaterThan(-1);
-    expect(at("agent default")).toBeGreaterThan(at("◆ deepseek-v4-flash"));
-    expect(at("思考 高")).toBeGreaterThan(at("agent default"));
+    expect(at("思考 高")).toBeGreaterThan(at("◆ deepseek-v4-flash"));
     expect(at("本次 1284 tok")).toBeGreaterThan(at("思考 高"));
     expect(at("累计 20345 tok")).toBeGreaterThan(at("本次 1284 tok"));
     expect(at("⚡ 42 tok/s")).toBeGreaterThan(at("累计 20345 tok"));
@@ -290,7 +279,6 @@ describe("StatusBar", () => {
     const props = {
       blocks: blocksOf({
         model: "m1",
-        agent: "助手一",
         rate: { live: 42.4, average: null, running: true },
         working: true,
       }),
@@ -303,7 +291,7 @@ describe("StatusBar", () => {
     for (const row of rows) expect(displayWidth(row)).toBeLessThanOrEqual(40);
     // 块是原子的：40 列放不下两块并排 → 一块一整行，块内不被劈开
     expect(rows).toHaveLength(4);
-    expect(rows[0]).toContain("助手一");
+    expect(rows[0]).toContain("◆ m1");
     expect(rows[0]).toContain("思考 高");
     expect(rows[1]).toContain("本次 1284 tok");
     expect(rows[1]).toContain("累计 20345 tok");

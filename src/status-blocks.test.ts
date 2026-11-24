@@ -17,7 +17,6 @@ const IDLE: RateSample = { live: null, average: null, running: false };
 
 function facts(overrides: Partial<StatusBlockFacts> = {}): StatusBlockFacts {
   return {
-    agent: { agentId: "a1", name: "助手一", available: true },
     model: { modelId: "m1", name: "模型一", vision: false, source: "agent" },
     thinking: { preset: null, levels: [], selected: null, source: "not_adjustable", params: {} },
     lastTokens: 1284,
@@ -69,13 +68,14 @@ describe("statusBlocksOf", () => {
     });
   });
 
-  it("身份块带着三处活事实：模型 / 助手 / 思考档", () => {
+  it("身份块只有两处活事实：模型 / 思考档（助手那一格已经从状态栏拿掉）", () => {
     const [identity] = statusBlocksOf(facts());
     expect(identity?.id).toBe("identity");
     if (identity?.id !== "identity") throw new Error("身份块不见了");
     expect(identity.facts.model.modelId).toBe("m1");
-    expect(identity.facts.agent.agentId).toBe("a1");
     expect(identity.facts.thinking.source).toBe("not_adjustable");
+    // 助手那件事不再是状态栏的事实：整块只有模型与思考档两格
+    expect(Object.keys(identity.facts).sort()).toEqual(["model", "thinking"]);
   });
 
   it("块里的值是同一份对象（不是抄一份值）—— 改一处事实，下一帧就看见", () => {
