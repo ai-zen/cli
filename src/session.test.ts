@@ -430,6 +430,29 @@ describe("RemoteChatSession：四件事各一格（不压成一个状态）", ()
     expect(session.status).toBe("idle");
   });
 
+  /**
+   * 两种刷新的分界（`onEvent` 那个 `contentOnly`）：流式内容进合帧缓冲（`false`），
+   * 「发生了一件事」立即上屏（`true`）。
+   *
+   * 这条曾经掉过：`onEvent` 末尾无条件 `notifyChange(true)`，而流式期间宿主**每一小段**都推一条
+   * `message.changed` —— 于是 `FrameBuffer` 的 60ms 合帧在唯一那条路上等于没开，一次回答几十
+   * 上百次全量重渲染。改回来之后用这条用例钉住两边：内容变化 `false`，瞌闲 / 收尾 `true`。
+   */
+  it("内容变化走合帧（`onChange(false)`），其余事件立即上屏（`onChange(true)`）", async () => {
+    const host = hostLike();
+    const { notifier } = await open(host);
+    notifier.changes.length = 0;
+
+    // 流式：宿主每吐一片推一条 —— 这几条进合帧缓冲，不立即重渲染
+    emit(host, { type: "message.added", sessionId: SESSION, message: assistantMessage("a-1") });
+    emit(host, { type: "message.changed", sessionId: SESSION, message: assistantMessage("a-1") });
+    expect(notifier.changes).toEqual([false, false]);
+
+    // 「发生了一件事」：立即上屏（用户在等的那一下不能等 60ms）
+    emit(host, { type: "agent.status", sessionId: SESSION, status: "working" });
+    expect(notifier.changes).toEqual([false, false, true]);
+  });
+
   it("别的会话的事件一律不认", async () => {
     const host = hostLike();
     const { session, notifier } = await open(host);

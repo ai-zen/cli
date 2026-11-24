@@ -11,6 +11,10 @@
  * 约 16fps）批量吐出；`user` / `done` / `error` 这类需要即时反馈或收尾的事件则
  * 立即上屏（flush），避免「按下回车半天不显示」或「回答完了还在转圈」。
  *
+ * **谁决定走哪条**：`session.ts` 的 `onEvent` —— 内容变化（`message.added` /
+ * `message.changed`）`push(…, false)`，其余 `push(…, true)`。这一处曾经无条件走 `true`，
+ * 于是「每个 delta 一次重渲染」，本模块等于没开；改回来时顺手在 `session.test.ts` 钉住了两边。
+ *
  * 纯逻辑、不依赖 React，可独立单测。
  */
 

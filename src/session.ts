@@ -658,7 +658,20 @@ export class RemoteChatSession implements ChatSessionLike {
 
   // ==================== 事件 ====================
 
-  /** 每一条事件都从这里过；镜像已经折过一遍（连接层那一侧），这里只做界面那几件事 */
+  /**
+   * 每一条事件都从这里过；镜像已经折过一遍（连接层那一侧），这里只做界面那几件事。
+   *
+   * ## 两类事件的两种刷新：合帧与立即
+   *
+   * 流式期间宿主**每吐一小段就推一条 `message.changed`**（一次回答可以几十上百条），而每一条
+   * 都触发一次 React 重渲染就等价于「每个 delta 一次全量布局重算 + 整帧重建」—— SSH 弱网下会
+   * 把 pty 缓冲填满、把界面拖死（`tui/screens/frame-buffer.ts` 的文件头就是这件事）。
+   *
+   * 所以：**内容变化进合帧缓冲**（`immediate: false`，由屏幕按 `STREAM_FRAME_MS` 批量上屏），
+   * 而**其余事件立即上屏** —— 用户按了发、回答结束了、出错了、通知到了，这几类让人等 60ms 就是
+   * 「按了回车半天不显示」。流尾不会丢：最后那条 `agent.status` / `done` 走立即那条路，
+   * 而 `FrameBuffer.push(immediate)` 会先把积压的一起吐出来。
+   */
   private onEvent(event: HostEvent): void {
     if (this.disposed) return;
     if (event.type === "notice") {
@@ -686,6 +699,8 @@ export class RemoteChatSession implements ChatSessionLike {
     }
     if (sessionIdOf(event) !== this.sessionIdValue) return;
 
+    /** 这一条是不是「只是内容长了一点」（进合帧）而不是「发生了一件事」（立即上屏） */
+    let contentOnly = false;
     switch (event.type) {
       case "agent.status":
         // 落回 `idle` 就是「可以收尾看一眼了」：补拉一次读数 + 定格速率
@@ -695,6 +710,7 @@ export class RemoteChatSession implements ChatSessionLike {
       case "message.changed":
         this.reportProblem(event.message);
         if (event.type === "message.changed") this.sampleRate(event.message);
+        contentOnly = true;
         break;
       case "session.handoff":
         this.handoffSinceValue = event.handingOff ? new Date().toISOString() : null;
@@ -704,7 +720,7 @@ export class RemoteChatSession implements ChatSessionLike {
     }
 
     this.signal();
-    this.notifyChange(true);
+    this.notifyChange(!contentOnly);
   }
 
   /**
