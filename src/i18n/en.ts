@@ -93,7 +93,7 @@ export const en: Record<string, string> = {
   "notice.resumeFailed": "Could not resume this session: {error}",
   "notice.pressCtrlDAgain": "Press Ctrl+D again to exit",
   "notice.languageChanged": "Interface language switched to English",
-  "notice.deleteAllHint": "Alt+X clears this session's notices; Alt+Shift+X clears all",
+  "notice.deleteAllHint": "Ctrl+X clears this session's notices; Ctrl+G clears all",
   "notice.cleared": "Notices for this session cleared",
   "notice.deleteAllFailed": "Could not clear the notices: {error}",
   "notice.deleteAllAllTitle":

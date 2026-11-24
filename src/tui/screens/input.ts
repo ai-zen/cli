@@ -119,7 +119,7 @@ export function moveCursorRow(
   return layout.rowStarts[target]! + col;
 }
 
-// ==================== 跨词移动（Ctrl/Alt + ← →）====================
+// ==================== 跨词移动（Ctrl + ← →）====================
 
 /** 是否为「单词字符」：ASCII 下为字母/数字/下划线，非 ASCII（CJK 等）一律算单词字符 */
 export function isWordChar(ch: string): boolean {
@@ -147,7 +147,7 @@ export function wordRight(text: string, cursor: number): number {
   return i;
 }
 
-// ==================== 按词删除（Ctrl+W / Alt+Backspace、Alt+D / Ctrl+Delete）====================
+// ==================== 按词删除（Ctrl+W、Ctrl+Backspace / Ctrl+Delete）====================
 
 /** 光标钳制到 [0, len]（按 code point 计） */
 function clampCursor(chars: string[], cursor: number): number {
@@ -155,7 +155,7 @@ function clampCursor(chars: string[], cursor: number): number {
 }
 
 /**
- * 向左删一个词（Ctrl+W / Alt+Backspace）：删掉光标前的分隔符与单词。
+ * 向左删一个词（Ctrl+W / Ctrl+Backspace）：删掉光标前的分隔符与单词。
  * 返回删除后的文本与光标位置 —— 光标原地不动，只是前面的内容被吃掉。
  */
 export function deleteWordLeft(text: string, cursor: number): { text: string; cursor: number } {
@@ -169,7 +169,7 @@ export function deleteWordLeft(text: string, cursor: number): { text: string; cu
 }
 
 /**
- * 向右删一个词（Alt+D / Ctrl+Delete）：删掉光标后的分隔符与单词。
+ * 向右删一个词（Ctrl+Delete）：删掉光标后的分隔符与单词。
  * 光标不动，后面的内容被吃掉。
  */
 export function deleteWordRight(text: string, cursor: number): { text: string; cursor: number } {

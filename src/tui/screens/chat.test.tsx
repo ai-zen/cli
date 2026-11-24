@@ -2173,7 +2173,7 @@ describe("交接期间：不发、说清楚、只留中断", () => {
 
 /**
  * 「清」有三档（`prd/08-client.md` 的通知那一节）：清一条（补看那条路）、清一段会话的
- * （`Alt+X`）、清全部（`Alt+Shift+X`）。这一组钉的是第三档：**它自己不清任何东西，先问一次**，
+ * （`Ctrl+X`）、清全部（`Ctrl+G`）。这一组钉的是第三档：**它自己不清任何东西，先问一次**，
  * 而那一问必须把「连全局、连别的会话一起没」说出来。
  */
 describe("通知栏的清全部：先问一次，问完才动整个库", () => {
@@ -2216,7 +2216,7 @@ describe("通知栏的清全部：先问一次，问完才动整个库", () => {
     stdin: { write: (data: string) => void },
     frame: () => string | undefined,
   ) => {
-    stdin.write("\u001bX"); // Alt+Shift+X
+    stdin.write("\u0007"); // Ctrl+G（清全部）
     await waitFor(() => (frame() ?? "").includes(t("notice.deleteAllAllConfirm")));
     await flush(40);
   };

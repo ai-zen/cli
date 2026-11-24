@@ -80,11 +80,15 @@ describe("handleScrollKey", () => {
     expect(calls).toEqual(["page:-1", "page:1"]);
   });
 
-  it("Alt+V 兜底翻页；Ctrl+V 不被消费（预留给图片粘贴）", () => {
+  it("Ctrl+B / Ctrl+F 兜底翻页；Ctrl+V 不被消费（预留给图片粘贴）", () => {
     const { calls, ctx } = scrollCtx();
-    expect(handleScrollKey("v", noKey({ meta: true }), ctx)).toBe(true);
+    expect(handleScrollKey("b", noKey({ ctrl: true }), ctx)).toBe(true);
+    expect(handleScrollKey("f", noKey({ ctrl: true }), ctx)).toBe(true);
     expect(handleScrollKey("v", noKey({ ctrl: true }), ctx)).toBe(false);
-    expect(calls).toEqual(["page:-1"]);
+    // Alt 一概不当快捷键：Alt+V / Alt+B 不翻页
+    expect(handleScrollKey("v", noKey({ meta: true }), ctx)).toBe(false);
+    expect(handleScrollKey("b", noKey({ meta: true }), ctx)).toBe(false);
+    expect(calls).toEqual(["page:-1", "page:1"]);
   });
 
   it("⌘[ / ⌘] 翻页、⌘; / ⌘' 按行滚动", () => {
@@ -164,22 +168,22 @@ describe("handleClearAllNoticesKey（通知栏的清全部键）", () => {
     return { state, deps: { ask: () => void (state.asked += 1) } };
   };
 
-  it("Alt+Shift+X 只开那一问（它自己不清任何东西），并消费该键", () => {
+  it("Ctrl+G 只开那一问（它自己不清任何东西），并消费该键", () => {
     const { state, deps } = counter();
-    expect(handleClearAllNoticesKey("X", noKey({ meta: true, shift: true }), deps)).toBe(true);
+    expect(handleClearAllNoticesKey("g", noKey({ ctrl: true }), deps)).toBe(true);
     expect(state.asked).toBe(1);
   });
 
-  it("与 Alt+X（清本会话）分得开：小写不归它", () => {
+  it("与 Ctrl+X（清本会话）分得开：X 不归它", () => {
     const { state, deps } = counter();
-    expect(handleClearAllNoticesKey("x", noKey({ meta: true }), deps)).toBe(false);
+    expect(handleClearAllNoticesKey("x", noKey({ ctrl: true }), deps)).toBe(false);
     expect(state.asked).toBe(0);
   });
 
-  it("光秃的 `X` 与 Ctrl+X 都不算：那是往输入框里打字", () => {
+  it("光秃的 `g` 与 `Ctrl+Shift+G` 都不算：前者是打字，后者不带 kitty 协议分不出来", () => {
     const { state, deps } = counter();
-    expect(handleClearAllNoticesKey("X", noKey({ shift: true }), deps)).toBe(false);
-    expect(handleClearAllNoticesKey("x", noKey({ ctrl: true }), deps)).toBe(false);
+    expect(handleClearAllNoticesKey("g", noKey(), deps)).toBe(false);
+    expect(handleClearAllNoticesKey("G", noKey({ ctrl: true, shift: true }), deps)).toBe(false);
     expect(state.asked).toBe(0);
   });
 });
@@ -190,23 +194,24 @@ describe("handleClearNoticesKey（通知栏的清本会话键）", () => {
     return { state, deps: { clear: () => void (state.cleared += 1) } };
   };
 
-  it("Alt+X 触发一次清空，并消费该键", () => {
+  it("Ctrl+X 触发一次清空，并消费该键", () => {
     const { state, deps } = counter();
-    expect(handleClearNoticesKey("x", noKey({ meta: true }), deps)).toBe(true);
+    expect(handleClearNoticesKey("x", noKey({ ctrl: true }), deps)).toBe(true);
     expect(state.cleared).toBe(1);
   });
 
-  it("只有光秃秃的 `x`（或 Ctrl+X）不算：那是往输入框里打字", () => {
+  it("只有光秃秃的 `x` 不算：那是往输入框里打字", () => {
     const { state, deps } = counter();
     expect(handleClearNoticesKey("x", noKey(), deps)).toBe(false);
-    expect(handleClearNoticesKey("x", noKey({ ctrl: true }), deps)).toBe(false);
-    expect(handleClearNoticesKey("X", noKey({ meta: true, shift: true }), deps)).toBe(false);
+    expect(handleClearNoticesKey("x", noKey({ shift: true }), deps)).toBe(false);
     expect(state.cleared).toBe(0);
   });
 
-  it("别的 Alt 键不误触发（Alt+B / Alt+D 等各有各的语义）", () => {
+  it("别的 Ctrl 键不误触发（Ctrl+B / Ctrl+D 等各有各的语义）", () => {
     const { state, deps } = counter();
-    expect(handleClearNoticesKey("b", noKey({ meta: true, ctrl: false }), deps)).toBe(false);
+    expect(handleClearNoticesKey("b", noKey({ ctrl: true }), deps)).toBe(false);
+    // Alt+X 也不再算（Alt 一概不当快捷键）
+    expect(handleClearNoticesKey("x", noKey({ meta: true }), deps)).toBe(false);
     expect(state.cleared).toBe(0);
   });
 });

@@ -79,9 +79,7 @@ function Probe({
       case "K":
         return e.deleteToStartOfLine();
       case "y":
-        return e.yank(false);
-      case "Y":
-        return e.yank(true);
+        return e.yank();
       case "u":
         return e.undoEdit();
       case "s":
@@ -192,15 +190,15 @@ describe("useInputEditing", () => {
     p.unmount();
   });
 
-  it("Alt+Y 在 kill ring 里往前循环", async () => {
+  it("Ctrl+Y 在 kill ring 里只取最近一段（更早的没有键位去取）", async () => {
     const p = await probe("one two three");
     await p.press("w"); // 删掉 "three"，环里 [three]
     await p.press("K"); // 删到行首 → 环里 ["one two ", three]，草稿空
     expect(p.frame()).toBe("[]@0");
     await p.press("y"); // 取最近一段
     expect(p.frame()).toBe("[one two ]@8");
-    await p.press("Y"); // 往前循环到上一段
-    expect(p.frame()).toBe("[one two three]@13");
+    await p.press("y"); // 再按还是那一段（不再往前循环）
+    expect(p.frame()).toBe("[one two one two ]@16");
     p.unmount();
   });
 

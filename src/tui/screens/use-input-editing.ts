@@ -80,8 +80,14 @@ export interface InputEditing {
   deleteToEndOfLine: () => void;
   /** Ctrl+W：删到前一空白（标点不切分） */
   deletePrevWhitespace: () => void;
-  /** Ctrl+Y / Alt+Y：取回 kill ring 里的一段；`advance` 为真时循环到更早的一段 */
-  yank: (advance: boolean) => void;
+  /**
+   * Ctrl+Y：取回 kill ring 里**最近**删掉的那一段。
+   *
+   * 环里更早的那几段没有键位去取了：循环取回曾经是 `Alt+Y`，而 Alt 系在本产品里一概不当
+   * 快捷键（`tui/screens/common-keys.ts` 的文件头）。环本身留着 —— 它也是 `Ctrl+W/U/K`
+   * 之间「刚刚删了什么」的唯一记录。
+   */
+  yank: () => void;
   /** Ctrl+_：撤销上一次编辑 */
   undoEdit: () => void;
   /** Ctrl+S：暂存草稿 / 取回草稿 */
@@ -116,9 +122,8 @@ export function useInputEditing({
   const [cursor, setCursor] = useState(graphemes(initialText ?? "").length);
   /** 历史游标：-1 = 不在浏览历史（当前是草稿）；具体内容每次现取 `historySource()` */
   const historyIndex = useRef(-1);
-  /** kill ring：Ctrl+W/U/K 删掉的文本，Ctrl+Y 取回、Alt+Y 循环 */
+  /** kill ring：Ctrl+W/U/K 删掉的文本，Ctrl+Y 取回最近一段 */
   const killRingRef = useRef<string[]>([]);
-  const yankIndexRef = useRef(-1);
   /** 编辑撤销栈（Ctrl+_） */
   const undoStackRef = useRef<EditState[]>([]);
   /** 暂存区（Ctrl+S） */
@@ -189,18 +194,13 @@ export function useInputEditing({
   const applyKill = (r: EditState) => {
     if (r.text === input && r.cursor === cursor) return;
     killRingRef.current = pushKill(killRingRef.current, killedText(input, r.text));
-    yankIndexRef.current = -1;
     applyEdit(r);
   };
 
-  const yank = (advance: boolean) => {
-    const ring = killRingRef.current;
-    if (ring.length === 0) return;
-    const next = advance ? yankIndexRef.current + 1 : 0;
-    // 只用 `killAt` 的 undefined 做越界守卫（环已到头），不再先判一遍 `next >= ring.length`
-    const text = killAt(ring, next);
+  const yank = () => {
+    // 只用 `killAt` 的 undefined 做空环守卫（环里一段都没有时它回 undefined）
+    const text = killAt(killRingRef.current, 0);
     if (text === undefined) return;
-    yankIndexRef.current = next;
     insertAtCursor(text);
   };
 

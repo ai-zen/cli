@@ -28,7 +28,7 @@ The layout is bottom-anchored. From the bottom up:
 
 Everything above the divider appears only while it has something to say, and the transcript takes whatever height is left. Each band is accounted for by its own line count: the phase line and the attachment line are always one line, the queue band at most three, the notice bar at most eight plus one line for its clear hints.
 
-Scroll back through history with the mouse wheel or `PgUp` / `PgDn`; some terminals keep those keys for their own scrollback, and `Alt+V` is the fallback for one page up.
+Scroll back through history with the mouse wheel or `PgUp` / `PgDn`; some terminals keep those keys for their own scrollback, and `Ctrl+B` / `Ctrl+F` are the fallback for one page up or down.
 
 ## The status bar
 
@@ -85,12 +85,12 @@ Two entries clear it:
 
 | Key           | What it clears                                                                       |
 | ------------- | ------------------------------------------------------------------------------------ |
-| `Alt+X`       | this session's notices: the local queue plus `notice.deleteAll` with this session id |
-| `Alt+Shift+X` | asks once, then clears everything — global notices and other sessions' included      |
+| `Ctrl+X` | this session's notices: the local queue plus `notice.deleteAll` with this session id |
+| `Ctrl+G` | asks once, then clears everything — global notices and other sessions' included      |
 
 ## The input line
 
-The input line is multi-line and takes at most eight rows; longer drafts scroll a window that follows the cursor instead of squeezing the transcript out. `Enter` sends; `Ctrl+J` (or `Ctrl+Enter`, `Alt+Enter`) inserts a newline; `↑` `↓` move the cursor inside a multi-line draft first, and only step into history from the first and last line.
+The input line is multi-line and takes at most eight rows; longer drafts scroll a window that follows the cursor instead of squeezing the transcript out. `Enter` sends; `Ctrl+J` (or `Ctrl+Enter`) inserts a newline; `↑` `↓` move the cursor inside a multi-line draft first, and only step into history from the first and last line.
 
 Typing keeps working while a request is in flight: that message is handed to the host, which puts it in the inbox, and the queue band shows what is still waiting while the phase line says so too.
 

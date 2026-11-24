@@ -105,7 +105,7 @@ export const zh: Record<string, string> = {
   "notice.pressCtrlDAgain": "再按一次 Ctrl+D 退出",
   "notice.languageChanged": "界面语言已切换为中文",
   // 两个清空入口写在同一行提示里（分隔用「；」而不加装饰：栏位上的句子不加任何前缀）
-  "notice.deleteAllHint": "Alt+X 清本会话的通知；Alt+Shift+X 清全部",
+  "notice.deleteAllHint": "Ctrl+X 清本会话的通知；Ctrl+G 清全部",
   "notice.cleared": "已清空这一段的通知",
   "notice.deleteAllFailed": "清空通知失败：{error}",
   // 三档粒度里的第三档（清全部）：它会把**全局**通知与**别的会话**的通知一起清掉，

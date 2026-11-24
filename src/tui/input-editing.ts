@@ -9,7 +9,8 @@
  *
  * 键位语义依据 Claude Code 官方文档（interactive-mode.md）：
  * - `Ctrl+W` 删到**前一空白**（标点不切分：`src/utils/foo.ts` 一次删掉整条路径）
- * - `Alt+B/F/D` 按「词」处理（标点算分隔符：停在 `ts` / `foo` / `utils` / `src`）
+ * - `Ctrl+←/→` 按「词」处理（标点算分隔符：停在 `ts` / `foo` / `utils` / `src`）；
+ *   读线那一套 `Alt+B/F/D` 已经不接了（Alt 一概不当快捷键，见 `screens/common-keys.ts`）
  */
 
 import { graphemes } from "./text.js";
@@ -59,16 +60,16 @@ export function killedText(before: string, after: string): string {
   return a.slice(prefix, a.length - suffix).join("");
 }
 
-// ==================== kill ring（Ctrl+Y / Alt+Y）====================
+// ==================== kill ring（Ctrl+Y 取回）====================
 
-/** kill ring 最大长度（够 Alt+Y 循环几次即可，不做无限历史） */
+/** kill ring 最大长度（逐次删除最多留这么多段，`Ctrl+Y` 只取最近一段） */
 export const KILL_RING_SIZE = 5;
 
 /**
  * 记录一段被删除的文本。
  *
- * 空串不入环；与栈顶相同的连续删除（如连按 `Ctrl+W` 删同一个词）不重复入栈，
- * 否则 `Alt+Y` 会在同一段文本上空转。
+ * 空串不入环；与栈顶相同的连续删除（如连按 `Ctrl+W` 删同一个词）不重复入栈 ——
+ * 那样 `Ctrl+Y` 取回的就是同一段文本，按下去像没反应。
  */
 export function pushKill(ring: string[], killed: string, limit = KILL_RING_SIZE): string[] {
   if (!killed) return ring;

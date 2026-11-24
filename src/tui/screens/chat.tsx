@@ -1085,7 +1085,7 @@ export function Chat(props: ChatScreenProps) {
   };
 
   /**
-   * 通知栏的「清这一段」（`Alt+X`，提示就写在栏位最后一行）。
+   * 通知栏的「清这一段」（`Ctrl+X`，提示就写在栏位最后一行）。
    *
    * 两件事分开做：本地队列先清（用户按下就得看到反应），宿主那边清的是**这一段会话**的
    * 通知（`clearSessionNotices` 的按会话口径）—— 清多少条是宿主回的 `cleared`，
@@ -1276,9 +1276,11 @@ export function Chat(props: ChatScreenProps) {
         if (key.return || key.escape) exit("done");
         return;
       }
-      // 回看历史类按键（滚轮 / PgUp/PgDn / ⌘[ ⌘] / ⌘; ⌘' / Alt+V）与忙碌态共用
+      // 回看历史类按键（滚轮 / PgUp/PgDn / Ctrl+B · Ctrl+F / ⌘[ ⌘] / ⌘; ⌘'）与忙碌态共用
       if (handleScrollKey(char, key, scrollKeys)) return;
-      if (key.return && (key.ctrl || key.meta || key.shift)) {
+      // 换行：Ctrl+Enter（部分终端把它报成 Ctrl+J，两处都收）与 Shift+Enter。
+      // 不用 Alt：Alt 系在本产品里一概不当快捷键（它被终端与 shell 抢得太多）
+      if (key.return && (key.ctrl || key.shift)) {
         typeIntoDraft("\n");
         return;
       }
@@ -1322,11 +1324,7 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if (char === "y" && key.ctrl) {
-        yank(false);
-        return;
-      }
-      if (char === "y" && key.meta) {
-        yank(true);
+        yank();
         return;
       }
       // Ctrl+_ / Ctrl+Shift+-：撤销上一次输入编辑
@@ -1356,7 +1354,7 @@ export function Chat(props: ChatScreenProps) {
         typeIntoDraft("\n");
         return;
       }
-      // Ctrl+P / Ctrl+N：历史上下（Claude Code 语义；换行改用 Ctrl+J / Alt+Enter）
+      // Ctrl+P / Ctrl+N：历史上下（Claude Code 语义；换行用 Ctrl+J）
       if ((char === "p" && key.ctrl) || (char === "n" && key.ctrl)) {
         const up = char === "p";
         if (menuCount > 0) {
@@ -1368,17 +1366,14 @@ export function Chat(props: ChatScreenProps) {
         else historyNext();
         return;
       }
-      // 按词删除：Alt+Backspace / Ctrl+Backspace 删前一个词；Alt+D / Ctrl+Delete 删后一个词。
+      // 按词删除：Ctrl+Backspace 删前一个词、Ctrl+Delete 删后一个词（⌘ 一并收：macOS 的
+      // ⌘⌫ 有的终端会带 super 位）。
       // 必须在下面「单字符 Backspace/Delete」之前判定，否则带修饰键的删除只掉一个字符。
-      if (key.backspace && (key.ctrl || key.meta || key.super)) {
+      if (key.backspace && (key.ctrl || key.super)) {
         deleteWordBeforeCursor();
         return;
       }
-      if (key.delete && (key.ctrl || key.meta || key.super)) {
-        deleteWordAfterCursor();
-        return;
-      }
-      if (char === "d" && key.meta) {
+      if (key.delete && (key.ctrl || key.super)) {
         deleteWordAfterCursor();
         return;
       }
@@ -1401,7 +1396,7 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if (key.upArrow || key.downArrow) {
-        if (key.shift || key.meta) {
+        if (key.shift) {
           scrollByLine(key.upArrow ? -1 : 1);
           return;
         }
@@ -1427,26 +1422,17 @@ export function Chat(props: ChatScreenProps) {
         return;
       }
       if (key.leftArrow) {
-        if (key.ctrl || key.meta || key.super) moveCursorByWord(-1);
+        if (key.ctrl || key.super) moveCursorByWord(-1);
         else moveCursor(-1);
         return;
       }
       if (key.rightArrow) {
-        if (key.ctrl || key.meta || key.super) moveCursorByWord(1);
+        if (key.ctrl || key.super) moveCursorByWord(1);
         else moveCursor(1);
         return;
       }
-      // 跨词移动的「兜底键」：macOS 上 Option+←/→ 往往发的是 ESC b / ESC f
-      // （readline 的 backward-word / forward-word），并不带 leftArrow 标记；
-      // 而 Ctrl+←/→ 常被系统「Mission Control → 左右切换空间」截走，应用根本收不到。
-      if (char === "b" && key.meta) {
-        moveCursorByWord(-1);
-        return;
-      }
-      if (char === "f" && key.meta) {
-        moveCursorByWord(1);
-        return;
-      }
+      // 跨词移动只剩 Ctrl+←/→ 与 Ctrl+A / Ctrl+E（A/E 管行首行尾）。
+      // 不用 Alt：Option+←/→ 与 Esc b / Esc f 那两条都是 Alt 系键位，本产品一概不收。
       if (key.home) {
         moveCursorToLineStart();
         return;

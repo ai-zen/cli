@@ -3,6 +3,21 @@
 // 会话屏有两个 `useInput`：一个是空闲态（编辑输入框），一个是忙碌态（生成 / 迁移中，
 // 只放行中止与回看）。两者对**同一批键**的处理必须一致 —— 否则「生成时能滚、空闲时
 // 不能滚」这类不一致迟早会出现。所以这一段只写一次：纯函数，不碰 React，键盘回归可以直接断言。
+//
+// ## 这里没有一个 Alt 键位
+//
+// Alt（终端里的 `meta`）在本产品里一概不当快捷键：它被终端模拟器、shell、tmux 与系统输入法
+// 抢得太多（Option 在某些终端根本不发 meta、macOS 的 Option+←/→ 变成 `ESC b`），同一个组合在
+// 两台机器上可能完全不同的两件事。于是：
+//
+//   · 应用级动作全落在 **Ctrl** 上（`Ctrl+X` 清本会话通知、`Ctrl+G` 清全部、`Ctrl+B`/`Ctrl+F` 翻页、
+//     `Ctrl+O` 开图片）；
+//   · 读线编辑那一套 Alt 键位（`Alt+B/F/D/Y`、`Alt+Backspace`、`Alt+Enter`）**全部退场** ——
+//     它们各自都有 Ctrl 侧的等价物（`Ctrl+←/→`、`Ctrl+Delete`、`Ctrl+Backspace`、`Ctrl+J`），
+//     重复的一套只会多出「两边行为不一致」的隐患。
+//
+// 于是这个文件里剩下的 `meta` 只剩**判断输入要不要落进输入框**那一处（`isMetaChar` 之类），
+// 不再有任何「按键执行动作」的 Alt 分支。
 import type { Key } from "ink";
 import { parseWheel } from "../mouse.js";
 import { isTerminalReply } from "../text.js";
@@ -15,7 +30,7 @@ export interface ScrollKeyDeps {
 }
 
 /**
- * 处理「回看历史」类按键：鼠标滚轮、PgUp/PgDn、⌘[ / ⌘]、⌘; / ⌘'、Alt+V。
+ * 处理「回看历史」类按键：鼠标滚轮、PgUp/PgDn、Ctrl+B / Ctrl+F、⌘[ / ⌘]、⌘; / ⌘'。
  *
  * @returns 是否已消费该键（`true` 时调用方应立即 return）
  */
@@ -38,13 +53,19 @@ export function handleScrollKey(char: string, key: Key, deps: ScrollKeyDeps): bo
     return true;
   }
   // 翻页的兜底键：部分终端把 PgUp/PgDn 留给自己滚 scrollback，应用收不到。
-  // 注意 `Ctrl+V` 预留给图片粘贴，不兼任 page-down。
-  if (char === "v" && key.meta) {
+  // 落在 Ctrl+B / Ctrl+F 上（B = backward、F = forward），`Ctrl+V` 预留给图片粘贴、
+  // `Ctrl+Y` 给了 kill-ring，都不兼职。
+  if (char === "b" && key.ctrl) {
     deps.scrollByPage(-1);
     return true;
   }
+  if (char === "f" && key.ctrl) {
+    deps.scrollByPage(1);
+    return true;
+  }
   // macOS 习惯键。Cmd 只在 kitty 键盘协议下才会带 super 位；终端把 ⌘ 组合映射成
-  // 带 8 号修饰位的转义序列时，会落到上面的 meta 分支里，同样生效。
+  // 带 8 号修饰位的转义序列时，会落到 meta 分支里 —— 而 meta 已不再作为快捷键，
+  // 那几条组合于是不再生效（与「Alt 一概不当快捷键」同一条规矩）。
   if (key.super && (char === "[" || char === "]")) {
     deps.scrollByPage(char === "[" ? -1 : 1);
     return true;
@@ -62,11 +83,14 @@ export interface ClearNoticesDeps {
 }
 
 /**
- * 通知栏的「清空本会话」键（`Alt+X`）。
+ * 通知栏的「清空本会话」键（`Ctrl+X`）。
  *
  * 只认这一个组合：通知栏没有焦点、也不接管方向键，所以入口只能是一个全局键 —— 而它必须
- * 不与输入编辑（Ctrl 系）和滚动（PgUp/PgDn、⌘ 系）撞车。提示文字就在通知栏最后一行
+ * 不与输入编辑（Ctrl 系）和滚动（PgUp/PgDn、Ctrl+B/F、⌘ 系）撞车。提示文字就在通知栏最后一行
  * （`notice.ts` 的 `noticeLines`），改这里要同步改词条。
+ *
+ * 为什么是 `Ctrl+X`：`Ctrl` 的空格子里，X 念作「去掉」，且不与 `Ctrl+C`（中断 / 清草稿）、
+ * `Ctrl+L`（清屏）、`Ctrl+G`（下面那一档）混淆。不用 Alt —— Alt 系在本产品里一概不当快捷键。
  *
  * 「清」有三档粒度（`prd/08-client.md` 的通知那一节）：清一条（补看那条路，`pending-notices.ts`）、
  * 清一段会话的（这一支）、清全部（{@link handleClearAllNoticesKey}）。
@@ -76,7 +100,7 @@ export interface ClearNoticesDeps {
  * @returns 是否已消费该键
  */
 export function handleClearNoticesKey(char: string, key: Key, deps: ClearNoticesDeps): boolean {
-  if (!(char === "x" && key.meta)) return false;
+  if (!(char === "x" && key.ctrl)) return false;
   deps.clear();
   return true;
 }
@@ -91,12 +115,13 @@ export interface ClearAllNoticesDeps {
 }
 
 /**
- * 通知栏的「清全部」键（`Alt+Shift+X`）。
+ * 通知栏的「清全部」键（`Ctrl+G`）。
  *
- * 为什么是这一组：三档粒度要在栏位这一处排得开，于是与「清本会话」（`Alt+X`）同一族 ——
- * 小写清这一段、大写连同别处一起清。它必须落在**别的键都没占**的格子上：`Alt+X` 与它只差
- * 一个 shift（`handleClearNoticesKey` 明文不认 `X`），Ctrl 系全给了输入编辑与退出，
- * ⌘ / PgUp / PgDn 给了滚动。
+ * 为什么是这一组：三档粒度要在栏位这一处排得开，而 `Ctrl` 的空格子只剩几个 ——
+ * `Ctrl+X` 已经给了「清本会话」，与它成对的 `Ctrl+Shift+X` **不可用**：`kittyKeyboard` 是
+ * 刻意关掉的（`tui/index.tsx` 的 `RENDER_OPTIONS`），不带 kitty 协议时终端把 `Ctrl+Shift+X`
+ * 与 `Ctrl+X` 报成同一个字节，两档就变成了一档。所以第二档换字母：`G`（= 「全局」那一档的
+ * 首字母）。
  *
  * 这里**不做**任何清除动作：清全部会连全局通知、连别的会话的通知一起抹掉，所以它只开那一问
  * （`chat.tsx` 的 `clearAllNotices`），用户点头之后才发 `notice.deleteAll`。
@@ -108,7 +133,7 @@ export function handleClearAllNoticesKey(
   key: Key,
   deps: ClearAllNoticesDeps,
 ): boolean {
-  if (!(char === "X" && key.meta)) return false;
+  if (!(char === "g" && key.ctrl)) return false;
   deps.ask();
   return true;
 }
@@ -122,9 +147,9 @@ export interface OpenImageDeps {
  * 打开消息里图片的键（`Ctrl+O`）。
  *
  * 为什么是 Ctrl+O：转录里的图一律折成占位（终端不可能内联渲染），需要一个动作把它交给
- * 本机看图器。`o` = open，而 Ctrl 系里剩下的空格子已经不多了：`Ctrl+C/D/L/U/K/W/Y/S/V/A/E/J/P/N`
+ * 本机看图器。`o` = open，而 Ctrl 系里剩下的空格子已经不多了：`Ctrl+C/D/L/U/K/W/Y/S/V/A/E/J/P/N/X/G/B/F`
  * 都有主，`Ctrl+O` 是空的（它不相邻任何一个已有语义，不会被人当成“顺手多按一个”）。
- * 不用 Alt 系：那几个位子是回看历史（`Alt+V`、`Alt+B/F/D/Y`）与通知栏（`Alt+X` 两档）的。
+ * 不用 Alt 系：本产品里 Alt 一概不当快捷键（见文件头）。
  *
  * 它**只**开那一问：一张图都不在这一段里时也要说一句（不能一声不响，否则用户以为键坏了）。
  *

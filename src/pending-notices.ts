@@ -28,7 +28,7 @@
  *
  * ## 「手动全部清空」是另一条路
  *
- * 通知栏上那个「全部清空」（Alt+X）清的是**这一段会话**，走 {@link clearSessionNotices}
+ * 通知栏上那个「全部清空」（Ctrl+X）清的是**这一段会话**，走 {@link clearSessionNotices}
  * （`notice.deleteAll({ sessionId })`）—— 那是三档里的第二种，与补看的逐条清不是一件事。
  */
 
@@ -89,7 +89,7 @@ async function deleteOneByOne(connection: HostConnection, ids: readonly string[]
 /**
  * 清掉**这一段会话**在宿主那边的通知（`notice.deleteAll` 的「按会话」口径）。
  *
- * 这是通知栏「全部清空」（Alt+X）那一条：它清的是**这一段**，不是整个库。
+ * 这是通知栏「全部清空」（Ctrl+X）那一条：它清的是**这一段**，不是整个库。
  *
  * ## 为什么必须带 `sessionId`
  *
