@@ -247,11 +247,18 @@ cli.once("exit", async (code) => {
   await shutdown("cli", code ?? 0);
 });
 
-host.once("exit", async (code) => {
+host.once("exit", (code) => {
   if (stopping) return;
-  say(`宿主退了（code ${code}），CLI 也一起收掉`);
-  cli.kill("SIGTERM");
-  await shutdown("host", code ?? 1);
+  /**
+   * 宿主没了 ≠ CLI 该没了。
+   *
+   * `/shutdown` 关掉宿主之后，CLI 会摆出连接屏让用户决定「再起一台 / 改连别处 / 退出」——
+   * 这里把 CLI 一起杀掉，用户看到的就是「连接屏闪一下就没了」（真实终端里不会这样，只有
+   * `pnpm dev` 会：宿主是这个脚本的子进程，它一退脚本就收尾）。
+   *
+   * 所以只报一句，CLI 留给用户自己退（或 Ctrl+C —— 那个走下面的 `shutdown`）。
+   */
+  say(`宿主退了（code ${code}）：CLI 还停在连接屏上，可以在那里再起一台，或 Ctrl+C 退出`);
 });
 
 /** 那一行「为什么收工了」的话 */
