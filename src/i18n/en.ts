@@ -315,6 +315,8 @@ export const en: Record<string, string> = {
   "cmd.model.already": 'Already on the "{scope}" model: {id}',
   "cmd.model.done": 'Switched the "{scope}" model to {name} ({id})',
   "cmd.model.failed": "Model switch failed: {error}",
+  "cmd.model.keyMissing": "{endpoint} has no API key yet — set it before switching",
+  "cmd.model.keyCancelled": "Did not switch to {model}: {endpoint} has no API key",
   "cmd.agent.unknown": "Unknown agent: {id} (available: {options})",
   "cmd.agent.unavailableReason": 'Agent "{name}" is unavailable: {reason}',
   "cmd.agent.alreadyOn": "{summary} (this session already uses that agent)",
@@ -403,6 +405,7 @@ export const en: Record<string, string> = {
   "app.noAgents": "No usable agent — create one in the configuration center first",
   "app.bootFailed": "✖ Cannot start the session: {error}",
   "app.unexpected": "✖ Unexpected error: {error}",
+  "app.modelSwitchFailed": "✖ This session could not switch to the chosen model: {error}",
 
   // ---------- Connection screen (first run / unreachable) ----------
   "connect.title": "Connect to a host",

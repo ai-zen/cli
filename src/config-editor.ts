@@ -56,6 +56,30 @@ export function modelsUsingEndpoint(config: AppConfig, endpointId: string): Mode
 }
 
 /**
+ * 某个端点的**首要模型**（`ModelDefinition.primary`），没有就是 `undefined`。
+ *
+ * 它是「首启只选服务商时，该把这个端点的哪个模型设成默认」这个问题的答案：标记由 SDK 带着走
+ * （出厂清单每个端点一条），客户端只读、不猜。同端点多条 `primary` 的收敛在 SDK 的
+ * `normalizePrimaryModels` 里（一处实现）—— 所以这里按清单顺序取第一条就与那一处一致。
+ *
+ * 没有首要模型是**合法状态**（用户自建端点常常如此）：那时调用方应当退化为让用户自己选
+ * （CLI 是 `/model`），而不是替他从清单里挑一条。
+ */
+export function primaryModelOf(config: AppConfig, endpointId: string): ModelDefinition | undefined {
+  return config.models.find((model) => model.endpointId === endpointId && model.primary === true);
+}
+
+/**
+ * 这个端点现在能不能真的发请求 —— 唯一的判据是「密钥这一格非空」。
+ *
+ * 为什么单独成一个函数：这条判据在不止一处被问（首启预检、`/model` 切换前的拦一道），
+ * 而两处各自写一遍 `endpoint.apiKey !== ""` 就是两个会漂的判据。
+ */
+export function endpointHasKey(config: AppConfig, endpointId: string): boolean {
+  return (findEndpoint(config, endpointId)?.apiKey ?? "") !== "";
+}
+
+/**
  * 一串密钥的**掩码**：只留头三尾四，中间一个省略号（`sk-…9f3a`）。
  *
  * `config.get` 回的是**明文** `apiKey`（宿主不再掩码），于是「显示时掩码」这件事落在客户端：

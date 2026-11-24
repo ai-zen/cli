@@ -93,6 +93,15 @@ export type DefaultTarget =
 /** 向导步骤（判别联合，逐步收敛） */
 export type WizardStep =
   | { kind: "menu" }
+  /**
+   * 首启引导的第一步：**选服务商**。
+   *
+   * 为什么不直接跳「填密钥」：一上来就要求某个厂商的密钥，等于替用户挑了他只能改的那一家
+   * （旧版就是拿默认模型反推端点）。这一屏把「哪一家」先交给用户，选完才问密钥。
+   */
+  | { kind: "onboarding" }
+  /** 首启引导的第二步：那一家服务商的密钥（保存后定首要模型并关闭） */
+  | { kind: "onboarding-key"; endpointId: string }
   | { kind: "defaults" }
   | { kind: "pick-default"; target: DefaultTarget }
   | { kind: "endpoints" }
@@ -152,6 +161,17 @@ export interface NewEndpointDraft {
 export interface WizardCloseResult {
   dirty: boolean;
   summary: string[];
+  /**
+   * 首启引导选定并**已经写进配置**的那个模型（那家服务商的首要模型）。
+   *
+   * 为什么不在向导里直接落到会话上：向导只拿得到 `api`（配置那一面），碰不到会话。而首启那一段
+   * 会话的模型在建行那一刻就写定了（`session.create` 把三级解析的结果落进会话行），全局兜底的
+   * `defaultModel` 盖不住它 —— 于是「用户改了服务商」这件事必须由持有会话的调用方补一手，
+   * 这里只回答「该落到哪个模型上」。
+   *
+   * `undefined` = 没选（用户没走完引导，或那家端点没有标记首要模型）。
+   */
+  onboardedModelId?: string;
 }
 
 // ==================== 组件入参 ====================

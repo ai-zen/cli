@@ -11,7 +11,7 @@ import {
   type WizardHost,
   type WizardStep,
 } from "./config-wizard/index.js";
-import { setLocale } from "../i18n/index.js";
+import { setLocale, t } from "../i18n/index.js";
 
 // 配置中心文案已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
 setLocale("zh");
@@ -1788,6 +1788,162 @@ describe("首启引导 / `/key`", () => {
     await until(() => onClose.mock.calls.length > 0, "写成功后自动关闭");
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onClose.mock.calls[0]![0].dirty).toBe(true);
+    unmount();
+  });
+});
+
+/**
+ * 首启那一条链：**先选服务商，再填密钥，最后把它的首要模型落成默认项**。
+ *
+ * 旧版是拿默认模型反推出一个端点、一上屏就要求那家的密钥 —— 服务商是它替用户挑的。这一组钉
+ * 的就是「选」这一步真的在，以及选完之后的落点（`defaultModel` + 关闭时带回的
+ * `onboardedModelId`，后者由 `tui/index.tsx` 落到这一段会话上）。
+ */
+describe("首启引导：选服务商 → 填密钥 → 定首要模型", () => {
+  /** deepseek 已配钥匙、openai 缺钥匙；openai 那条模型标着 `primary` */
+  const bootConfig = (): AppConfig => ({
+    ...makeConfig(),
+    models: [
+      ...makeConfig().models,
+      {
+        id: "gpt-primary",
+        name: "GPT-6.1 Sol",
+        endpointId: "openai",
+        primary: true,
+        tokenThresholds: { handoff: 250_000, guard: 375_000 },
+      },
+    ],
+  });
+
+  it("列出的服务商带模型数与密钥状态，首要模型也先说出来", async () => {
+    const { lastFrame, unmount } = mount({
+      config: bootConfig(),
+      initialStep: { kind: "onboarding" },
+      closeOnSave: true,
+    });
+    await tick();
+
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain(t("wiz.onboard.title"));
+    // 两家（各自至少一条对话模型）
+    expect(frame).toContain("DeepSeek");
+    expect(frame).toContain("OpenAI");
+    expect(frame).toContain(t("wiz.onboard.keyReady"));
+    expect(frame).toContain("GPT-6.1 Sol");
+    unmount();
+  });
+
+  it("选一家缺钥匙的：先进密钥屏，保存后写密钥 + 默认项，并把首要模型带回", async () => {
+    const { stdin, lastFrame, calls, onClose, unmount } = mount({
+      config: bootConfig(),
+      initialStep: { kind: "onboarding" },
+      closeOnSave: true,
+      handlers: {
+        "config.endpoints.update": () => ({ config: bootConfig() }),
+        "config.defaults.update": () => ({ config: bootConfig() }),
+      },
+    });
+    await tick();
+
+    // 第二项是 OpenAI（清单顺序 = 配置里端点的顺序）
+    stdin.write(DOWN);
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame() ?? "").toContain(t("wiz.onboard.keyTitle", { name: "OpenAI" }));
+
+    stdin.write("sk-openai");
+    await tick();
+    stdin.write(ENTER);
+    await until(() => onClose.mock.calls.length > 0, "填完密钥自动关闭");
+
+    expect(calls).toEqual([
+      {
+        method: "config.endpoints.update",
+        params: { id: "openai", change: { apiKey: "sk-openai" } },
+      },
+      // 首要模型：登记在模型上的那一位，不再问用户一遍
+      { method: "config.defaults.update", params: { defaultModel: "gpt-primary" } },
+    ]);
+    const closed = onClose.mock.calls[0]![0];
+    expect(closed.dirty).toBe(true);
+    expect(closed.onboardedModelId).toBe("gpt-primary");
+    unmount();
+  });
+
+  it("选一家已经配好钥匙的：不再问密钥，只把首要模型落成默认项", async () => {
+    const config = bootConfig();
+    config.models = config.models.map((model) =>
+      model.endpointId === "deepseek" && model.id === "deepseek-v4-flash"
+        ? { ...model, primary: true }
+        : model,
+    );
+    const { stdin, calls, onClose, unmount } = mount({
+      config,
+      initialStep: { kind: "onboarding" },
+      closeOnSave: true,
+      handlers: {
+        "config.defaults.update": () => ({ config }),
+      },
+    });
+    await tick();
+
+    stdin.write(ENTER); // 第一项：DeepSeek（已有密钥）
+    await until(() => onClose.mock.calls.length > 0, "定完首要模型自动关闭");
+
+    // 一个字节都不回写密钥（用户那把还是原来那把）
+    expect(calls).toEqual([
+      { method: "config.defaults.update", params: { defaultModel: "deepseek-v4-flash" } },
+    ]);
+    expect(onClose.mock.calls[0]![0].onboardedModelId).toBe("deepseek-v4-flash");
+    unmount();
+  });
+
+  it("那家端点没有标记首要模型：密钥照存，但不动默认项、也不带回模型", async () => {
+    // OpenAI 有一条对话模型但**没有** `primary`：这样它会出现在清单里，且落不到任何模型上
+    const config = bootConfig();
+    config.models = config.models.map((model) =>
+      model.id === "gpt-primary" ? { ...model, primary: false } : model,
+    );
+    const { stdin, calls, onClose, unmount } = mount({
+      config,
+      initialStep: { kind: "onboarding" },
+      closeOnSave: true,
+      handlers: {
+        "config.endpoints.update": () => ({ config }),
+      },
+    });
+    await tick();
+
+    stdin.write(DOWN); // OpenAI（缺钥匙）
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("sk-only");
+    await tick();
+    stdin.write(ENTER);
+    await until(() => onClose.mock.calls.length > 0, "保存后关闭");
+
+    expect(calls.map((call) => call.method)).toEqual(["config.endpoints.update"]);
+    const closed = onClose.mock.calls[0]![0];
+    expect(closed.dirty).toBe(true);
+    expect(closed.onboardedModelId).toBeUndefined();
+    unmount();
+  });
+
+  it("按 Esc：放弃并关闭，一个方法都不调", async () => {
+    const { stdin, calls, onClose, unmount } = mount({
+      config: bootConfig(),
+      initialStep: { kind: "onboarding" },
+      closeOnSave: true,
+    });
+    await tick();
+
+    stdin.write(ESC);
+    await until(() => onClose.mock.calls.length > 0, "Esc 放弃并退出");
+
+    expect(calls).toEqual([]);
+    expect(onClose.mock.calls[0]![0].dirty).toBe(false);
     unmount();
   });
 });

@@ -10,6 +10,7 @@ import { renderMcpStep } from "./step-mcp.js";
 import { renderAgentsStep } from "./step-agents.js";
 import { renderSimpleStep } from "./step-simple.js";
 import { renderNewEndpointStep } from "./step-new-endpoint.js";
+import { renderOnboardingStep } from "./step-onboarding.js";
 
 /**
  * 配置向导主体 —— 装配引擎（`useWizardEngine`）后，把当前步骤分发给各 `step-*` 模块渲染。
@@ -27,6 +28,7 @@ export function ConfigWizard(props: ConfigWizardProps) {
   const ctx: WizardContext = { ...engine, cols, rows, props };
 
   return (
+    renderOnboardingStep(ctx) ??
     renderMenuStep(ctx) ??
     renderDefaultsStep(ctx) ??
     renderEndpointsStep(ctx) ??

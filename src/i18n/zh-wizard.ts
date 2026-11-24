@@ -199,6 +199,19 @@ export const zh: Record<string, string> = {
   "wiz.apiKey.onboardingNote": "保存后直接进入会话（Esc 放弃并退出）。",
   "wiz.apiKey.saveAndEnter": "保存并进入会话",
   "ui.discard": "放弃",
+
+  // ---------- 首启引导（选服务商 → 填密钥 → 定首要模型）----------
+  "wiz.onboard.title": "首次配置 · 选择服务商",
+  "wiz.onboard.desc":
+    "先选一家服务商，再填它的 API Key；填完会把它标记的首要模型设为默认模型（以后在 /config 里改）",
+  "wiz.onboard.endpointHint": "{model} · {n} 个模型 · {key}",
+  "wiz.onboard.keyReady": "已配密钥",
+  "wiz.onboard.noPrimaryShort": "无首要模型",
+  "wiz.onboard.keyTitle": "首次配置 · 设置 {name} 的 API Key",
+  "wiz.onboard.primaryLine": "填完就把「{model}」设为默认模型",
+  "wiz.onboard.noPrimary": "{name} 没有标记首要模型，之后用 /model 选一个",
+  "wiz.onboard.primarySet": "默认模型 → {model}",
+  "wiz.onboard.escapeNote": "Esc 放弃并退出。",
   "wiz.baseUrl.title": "设置 Base URL · {name}",
   "wiz.baseUrl.hint": "必须以 http:// 或 https:// 开头（OpenAI 兼容端点）",
 

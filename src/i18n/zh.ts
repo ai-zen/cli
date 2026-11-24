@@ -316,6 +316,8 @@ export const zh: Record<string, string> = {
   "cmd.model.already": "已经是「{scope}」模型：{id}",
   "cmd.model.done": "已切换「{scope}」模型：{name}（{id}）",
   "cmd.model.failed": "切换模型失败：{error}",
+  "cmd.model.keyMissing": "{endpoint} 还没配 API Key，先配它再切",
+  "cmd.model.keyCancelled": "未切换到「{model}」：{endpoint} 没有 API Key",
   "cmd.agent.unknown": "未知助手定义：{id}（可选：{options}）",
   "cmd.agent.unavailableReason": "助手定义「{name}」不可用：{reason}",
   "cmd.agent.alreadyOn": "{summary}（当前会话已经在这个助手上）",
@@ -401,6 +403,7 @@ export const zh: Record<string, string> = {
   "app.noAgents": "没有可用的助手定义，请先在配置中心新建一个",
   "app.bootFailed": "✖ 无法启动会话：{error}",
   "app.unexpected": "✖ 意外错误：{error}",
+  "app.modelSwitchFailed": "✖ 这一段会话没能换成所选的模型：{error}",
 
   // ---------- 连接屏（首启 / 连不上） ----------
   "connect.title": "连接宿主",

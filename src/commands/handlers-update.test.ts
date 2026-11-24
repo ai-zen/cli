@@ -136,6 +136,7 @@ function createHost(scenario: Scenario = {}) {
     },
     openWizard: vi.fn(async () => {}),
     openKeyEditor: vi.fn(async () => {}),
+    ensureKey: vi.fn(async () => true),
     doExit: vi.fn(async () => {}),
     // 缺省「问就答是」：没有单独安排的用例走的是「确认之后交给宿主」那一路。
     // 要验「否」与「问什么」的用例自己换一个（`capturePick`）。

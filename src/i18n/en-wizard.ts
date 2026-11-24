@@ -196,6 +196,19 @@ export const en: Record<string, string> = {
   "wiz.apiKey.onboardingNote": "Saving goes straight into the session (Esc discards and exits).",
   "wiz.apiKey.saveAndEnter": "Save & enter",
   "ui.discard": "Discard",
+
+  // ---------- 首启引导（选服务商 → 填密钥 → 定首要模型）----------
+  "wiz.onboard.title": "First-time setup · pick a provider",
+  "wiz.onboard.desc":
+    "Pick a provider and enter its API key; its primary model is then set as the default model (change it later in /config)",
+  "wiz.onboard.endpointHint": "{model} · {n} models · {key}",
+  "wiz.onboard.keyReady": "key set",
+  "wiz.onboard.noPrimaryShort": "no primary model",
+  "wiz.onboard.keyTitle": "First-time setup · set the API key for {name}",
+  "wiz.onboard.primaryLine": 'Saving sets "{model}" as the default model',
+  "wiz.onboard.noPrimary": "{name} has no primary model marked; pick one later with /model",
+  "wiz.onboard.primarySet": "Default model → {model}",
+  "wiz.onboard.escapeNote": "Esc discards and exits.",
   "wiz.baseUrl.title": "Set the base URL · {name}",
   "wiz.baseUrl.hint": "Must start with http:// or https:// (OpenAI-compatible endpoint)",
 

@@ -42,4 +42,13 @@ export interface SelectItem<T> {
  * 它与渲染层的 `WizardStep` 是子集关系，所以宿主那个 `(step: WizardStep) => Promise<void>`
  * 可以直接当 `(step: WizardEntryStep) => Promise<void>` 用（参数逆变）。
  */
-export type WizardEntryStep = { kind: "menu" } | { kind: "mcp"; scope: McpEditableScope }; // 只有 user / workspace 两个作用域可写（`mcp.save`）
+export type WizardEntryStep =
+  | { kind: "menu" }
+  | { kind: "mcp"; scope: McpEditableScope }
+  /**
+   * 直达某个端点的密钥屏（`field` 收窄成 `apiKey`：命令层只打这一个目标）。
+   *
+   * 它存在的原因：`/model` 选中的模型若属于一家还没配密钥的服务商，切换前得先把钥匙补上
+   * —— 与首启引导、`/key` 是同一屏，不是第三条路。
+   */
+  | { kind: "edit"; field: "apiKey"; endpointId: string };

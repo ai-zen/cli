@@ -158,12 +158,14 @@ async function openConnection(env: CliEnv, settings: ConnectionSettings): Promis
 // ==================== 端点凭据预检 ====================
 
 /**
- * 首启凭据门 —— 所选模型绑定的端点缺 API Key 时，先弹出 Ink 原生输入屏。
- *
- * 输入完成（或放弃）后退出该屏，把结果回传给 `mount()` 的返回值。
+ * 首启凭据门 —— 还没有可用密钥时，先摆「选服务商 → 填密钥 → 定首要模型」那一条链。
  *
  * 它就是**同一个配置向导**（`ConfigWizard`）的首启形态：读写都走那一条连接（`api`），
  * 所以「这个屏上写进去的密钥」与「宿主真正拿去发请求的那一份」是同一份。
+ *
+ * 为什么入口是 `onboarding` 而不是直接跳「填密钥」：旧版拿默认模型反推出一个端点，一上屏就
+ * 要求那个厂商的密钥 —— 服务商是它替用户挑的。现在第一家由用户选（清单带 ✓/✗），
+ * 与 `/model` 切换前的那道检查共用同一套判据（`resolveCredential`）。
  */
 function CredentialGate({
   host,
@@ -172,7 +174,6 @@ function CredentialGate({
   presets,
   agents,
   servers,
-  endpointId,
 }: {
   host: HostConnection;
   workspaceId: string;
@@ -180,7 +181,6 @@ function CredentialGate({
   presets: ReasoningPresets;
   agents: AgentDefinition[];
   servers: McpEntry[];
-  endpointId: string;
 }) {
   const { exit } = useApp();
   return (
@@ -193,7 +193,7 @@ function CredentialGate({
       servers={servers}
       onboarding
       closeOnSave
-      initialStep={{ kind: "edit", field: "apiKey", endpointId }}
+      initialStep={{ kind: "onboarding" }}
       onClose={(result) => exit(result)}
     />
   );
@@ -206,15 +206,22 @@ function CredentialGate({
  * 那里可按 `k` 打开配置中心自行修配置。
  *
  * 三份快照（配置 / AgentDefinition 清单 / 发现视图）只在真要开屏时才读：向导整屏接管要用它们。
+ *
+ * ## 用户换了服务商，那一段会话的模型也得跟着换
+ *
+ * 会话行上的 `modelId` 在建行那一刻就写定了（`session.create` 把三级解析的结果落进去），
+ * 因此「把所选服务商的首要模型设成默认项」并不能改变这一段会话实际用哪个模型 —— 三级解析里
+ * 会话级先赢。所以向导回来的 `onboardedModelId` 要在这里落到会话上，否则屏幕上会用着一段
+ * 「模型属于 A 家、密钥属于 B 家」的会话。
  */
 async function ensureCredential(
   connection: HostConnection,
   workspaceId: string,
-  modelId: string,
+  session: ChatSessionLike,
 ): Promise<boolean> {
   // 凭据要从**实际会用它的那一份配置**里取：在宿主，不是本机磁盘
   const { config, presets } = await connection.api.config.get.query();
-  const credential = resolveCredential(config, modelId);
+  const credential = resolveCredential(config, session.modelId ?? undefined);
   if (!credential || credential.configured) return true;
 
   const [agents, { servers }] = await Promise.all([
@@ -230,9 +237,19 @@ async function ensureCredential(
       presets={presets}
       agents={agents.map(toDefinition)}
       servers={servers}
-      endpointId={credential.endpointId}
     />,
   )) as WizardCloseResult | undefined;
+
+  const onboarded = result?.onboardedModelId;
+  if (onboarded && onboarded !== session.modelId) {
+    try {
+      // 这一段还是草稿（第一条消息之前不落库），换模型只是一次会话行写入
+      await session.updateModel(onboarded);
+    } catch (error: any) {
+      // 换不成就降到「只把默认项设对了」：下一段会话会是那个模型，这一屏仍能进去发话
+      process.stderr.write(`\n${t("app.modelSwitchFailed", { error: error?.message ?? error })}\n`);
+    }
+  }
   return Boolean(result?.dirty);
 }
 
@@ -645,11 +662,10 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
           // 配置残缺（模型不可解析 / 指向的模型被删）：不在启动期退出，落到会话屏的失败分支
           bootError = opened.bootError;
         } else {
-          // 端点凭据预检：未配置 API Key 时先弹出输入屏，而不是「报错即退出」
-          // 入参就是会话回答的那个模型 —— 与实发请求用的是同一个值
-          // 生效模型为 `null`（这一段现在指不到模型）时没有「实发哪个」可说，跳过预检
-          const modelId = opened.session.modelId;
-          if (modelId !== null && !(await ensureCredential(connection, workspace.id, modelId))) {
+          // 端点凭据预检：还没有可用密钥时先摆首启引导（选服务商 → 填密钥 → 定首要模型），
+          // 而不是「报错即退出」。判据就是这一段会话实际在用的模型（`resolveCredential`）——
+          // 与实发请求用的是同一个值。
+          if (!(await ensureCredential(connection, workspace.id, opened.session))) {
             farewell();
             return;
           }

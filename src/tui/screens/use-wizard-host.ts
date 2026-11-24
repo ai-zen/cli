@@ -9,7 +9,7 @@
 //
 // 读快照只有三处 procedure（`api.config.get` / `api.config.agents.list` / `api.config.mcp.list`），
 // 写全在向导屏里 —— 它拿的是**同一条** `api`，所以这里不必再有一份「保存」的接口。
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { AppConfig, McpEntry, ReasoningPresets } from "../../config.js";
 import { agentListOf, type AgentList } from "../../agents-store.js";
 import { resolveCredential } from "../../config-editor.js";
@@ -58,10 +58,18 @@ export interface WizardHostState {
    * `null` = 数不出来（读失败 / 还没读）：那时代价只说影响面，不给数字 —— 编一个数比不说更糟。
    */
   wizardSessionsByAgent: Record<string, number> | null;
-  /** 打开向导：先读齐快照再接管整屏（读失败则只报错、不进向导） */
-  openWizard: (step: WizardStep) => Promise<void>;
-  /** `/key`：直达当前模型所用端点的 API Key 编辑步骤 */
-  openKeyEditor: () => Promise<void>;
+  /**
+   * 打开向导：先读齐快照再接管整屏（读失败则只报错、不进向导）。
+   *
+   * **回来的是它关闭时的事实**（`null` = 没打开 / 用户什么都没做成）：让命令层能写
+   * `const r = await openWizard(...)`，与 `pick()` 同一个形状 —— 需要等价「打开、等它关掉、
+   * 再按结果决定下一步」的动作（`/model` 切模型前的密钥检查）才写得成一句话。
+   *
+   * 里面那个 Promise 在前一个还没关闭时又开一次：前一个按「没结果」兑现，不把它永远挂着。
+   */
+  openWizard: (step: WizardStep) => Promise<WizardCloseResult | null>;
+  /** `/key`：直达当前模型所用端点的 API Key 编辑步骤（与首启 / `/model` 共用同一个入口） */
+  openKeyEditor: () => Promise<WizardCloseResult | null>;
   /** 向导关闭：渲染变更摘要，并按本地事实决定重启还是重载 */
   closeWizard: (result: WizardCloseResult) => void;
 }
@@ -83,6 +91,20 @@ export function useWizardHost({
   const [wizardSessionsByAgent, setWizardSessionsByAgent] = useState<Record<string, number> | null>(
     null,
   );
+  /**
+   * 正在等这块屏关闭的那个人（`openWizard` 的 Promise）。
+   *
+   * 向导是**整屏接管**的：命令层把「打开它」交出去之后，唯一能推进下一步的时刻是它关闭。
+   * 所以兑现点只有一个（`closeWizard`）—— 与 `useChatOverlays` 的选择器同一个套路。
+   */
+  const wizardResolver = useRef<((result: WizardCloseResult | null) => void) | null>(null);
+
+  /** 兑现（并清空）等这一次关闭的人；没有人在等就是空操作 */
+  const settleWizard = (result: WizardCloseResult | null) => {
+    const resolve = wizardResolver.current;
+    wizardResolver.current = null;
+    resolve?.(result);
+  };
 
   /**
    * 读齐那三份快照（配置 + 档位表 / AgentDefinition / MCP 清单）。
@@ -128,39 +150,65 @@ export function useWizardHost({
     }
   };
 
-  const openWizard = async (step: WizardStep) => {
+  /**
+   * 把那几份快照上屏、把步骤机推到 `step`，并返回一个「它关闭时才兑现」的 Promise。
+   *
+   * 两条入口（`openWizard` / `openKeyEditor`）共用这一处：它们差的是「读齐快照之后定哪一步」，
+   * 而「整屏接管 + 谁在等它关闭」必须只有一份 —— 两份就会出现一条路兑现、另一条把 Promise 永远挂着。
+   */
+  const takeover = (
+    step: WizardStep,
+    snapshots: {
+      config: AppConfig;
+      presets: ReasoningPresets;
+      agents: AgentList;
+      servers: McpEntry[];
+    },
+    sessionsByAgent: Record<string, number> | null = null,
+  ): Promise<WizardCloseResult | null> => {
+    setWizardConfig(snapshots.config);
+    setWizardPresets(snapshots.presets);
+    setWizardAgents(snapshots.agents);
+    setWizardServers(snapshots.servers);
+    setWizardSessionsByAgent(sessionsByAgent);
+    // 上一位还在等（几乎不可能：向导整屏接管时命令层发不出第二条命令）：按「没结果」兑现
+    settleWizard(null);
+    const closed = new Promise<WizardCloseResult | null>((resolve) => {
+      wizardResolver.current = resolve;
+    });
+    setWizardStep(step);
+    return closed;
+  };
+
+  const openWizard = async (step: WizardStep): Promise<WizardCloseResult | null> => {
     try {
       // 会话计数与三份快照并行：它只是给「删 AgentDefinition」多一格事实，不该把整屏拖慢一拍
-      const [{ config, presets, agents, servers }, sessionsByAgent] = await Promise.all([
+      const [snapshots, sessionsByAgent] = await Promise.all([
         readSnapshots(),
         countSessionsByAgent(),
       ]);
-      setWizardConfig(config);
-      setWizardPresets(presets);
-      setWizardAgents(agents);
-      setWizardServers(servers);
-      setWizardSessionsByAgent(sessionsByAgent);
-      setWizardStep(step);
+      return await takeover(step, snapshots, sessionsByAgent);
     } catch (error) {
       notify(t("chat.configReadFailed", { error: messageOf(error) }), "error");
+      return null;
     }
   };
 
-  const openKeyEditor = async () => {
+  const openKeyEditor = async (): Promise<WizardCloseResult | null> => {
     try {
-      const { config, presets, agents, servers } = await readSnapshots();
-      const credential = resolveCredential(config, modelId);
+      const snapshots = await readSnapshots();
+      const credential = resolveCredential(snapshots.config, modelId);
       if (!credential) {
         notify(t("chat.modelNoEndpoint", { id: modelId }), "error");
-        return;
+        return null;
       }
-      setWizardConfig(config);
-      setWizardPresets(presets);
-      setWizardAgents(agents);
-      setWizardServers(servers);
-      setWizardStep({ kind: "edit", field: "apiKey", endpointId: credential.endpointId });
+      return await takeover(
+        { kind: "edit", field: "apiKey", endpointId: credential.endpointId },
+        snapshots,
+      );
     } catch (error) {
       notify(t("chat.configReadFailed", { error: messageOf(error) }), "error");
+      return null;
     }
   };
 
@@ -180,6 +228,9 @@ export function useWizardHost({
     setWizardAgents(null);
     setWizardServers(null);
     setWizardSessionsByAgent(null);
+    // 先兑现再让改动生效：等在 `await openWizard(...)` 那一侧的人（`/model` 的密钥检查）
+    // 读到的是自己的结论，而不是一件可能把屏幕重挂载掉的事
+    settleWizard(result);
     // 同一批摘要合成**一条**（多行）：既能全部显示，又只占通知队列的一个槽位。
     // 逐条 push 会挤掉更早的进度提示（队列只留最近 MAX_NOTICE_HISTORY 条）。
     const { summary } = result;

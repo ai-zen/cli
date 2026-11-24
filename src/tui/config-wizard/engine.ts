@@ -39,6 +39,8 @@ import type {
   WizardStep,
 } from "./types.js";
 import { createFieldBuilders, type FieldBuilders, type FieldWriters } from "./fields.js";
+import { primaryModelOf } from "../../config-editor.js";
+import { t } from "../../i18n/index.js";
 
 /**
  * 一次写的统一出口：返回 `null` 表示成功，否则是给屏上看的一句话。
@@ -71,6 +73,19 @@ export interface WizardWriters extends FieldWriters {
   ) => Promise<string | null>;
   /** 删一条 MCP（`mcp.remove`） */
   deleteMcp: (scope: McpEditableScope, name: string, message: string) => Promise<string | null>;
+  /**
+   * 首启引导的那一次写：密钥落盘 → 那家端点的首要模型落成默认项 → 把模型记进关闭结果。
+   *
+   * 它把两件事写成一条路：`config.endpoints.update`（密钥）与 `config.defaults.update`
+   * （首要模型）。分两屏做的话，用户填完密钥还得再选一次模型 —— 而那选择在配置里已经是
+   * 事实（`ModelDefinition.primary`），把他再问一遍没有意义。
+   *
+   * 返回 `null` = 写成了（关闭由 `runWrite` 按 `closeOnSave` 完成）；否则是屏上那句话。
+   *
+   * `apiKey` 省略 = 「这家已经有钥匙了，只走定首要模型那一半」（用户选了已经配好的服务商）：
+   * 那时一个字节都不回写，密钥还是他原来那把。
+   */
+  saveOnboardingKey: (endpointId: string, apiKey?: string) => Promise<string | null>;
 }
 
 export interface WizardEngine extends WizardWriters, FieldBuilders {
@@ -153,6 +168,10 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   const snapshot = (): WizardCloseResult => ({
     dirty: acc.current.dirty,
     summary: [...acc.current.summary],
+    // 首启引导选定的模型也要跟着出去：它是「该落到哪一段会话上」的唯一答案
+    ...(acc.current.onboardedModelId === undefined
+      ? {}
+      : { onboardedModelId: acc.current.onboardedModelId }),
   });
 
   const go = (next: WizardStep) => {
@@ -374,6 +393,46 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     return null;
   };
 
+  // ---------- 首启引导 ----------
+  /**
+   * 密钥 + 首要模型，一次写完。
+   *
+   * 首要模型从**当前这份快照**里取（不是写完再读一次）：写密钥不会动模型表，所以快照里那份就是
+   * 写完之后的那份。而它必须在 `updateEndpoint` 之后取 —— 那一步可能是失败的那个（失败就不该
+   * 继续往下写默认项，否则用户改了一个不存在的端点的密钥）。
+   *
+   * 默认项写失败时**不吞**：密钥已经落盘了（它在 `summary` 里），但「首要模型没设成」是用户要
+   * 知道的一件事，所以把原因回给屏上；按 Esc 退出时 `dirty` 仍然是 true，密钥不丢。
+   */
+  const saveOnboardingKey: WizardWriters["saveOnboardingKey"] = async (endpointId, apiKey) => {
+    const endpoint = config.endpoints.find((item) => item.id === endpointId);
+    const name = endpoint?.name || endpointId;
+    const failure =
+      apiKey === undefined
+        ? null
+        : await updateEndpoint(
+            endpointId,
+            { apiKey },
+            t("wiz.endpointUpdated", { name, label: "API Key" }),
+          );
+    if (failure) return failure;
+
+    const primary = primaryModelOf(config, endpointId);
+    if (!primary) {
+      // 合法状态：那家端点没标记首要模型（用户自建端点常见）。不替他挑一条。
+      record(t("wiz.onboard.noPrimary", { name }));
+      return null;
+    }
+    const modelName = primary.name || primary.id;
+    const defaultsFailure = await setDefaults(
+      { defaultModel: primary.id },
+      t("wiz.onboard.primarySet", { model: modelName }),
+    );
+    if (defaultsFailure) return defaultsFailure;
+    acc.current.onboardedModelId = primary.id;
+    return null;
+  };
+
   // ---------- 跳转 / 关闭 ----------
   const runWrite = async (
     write: () => Promise<string | null>,
@@ -453,6 +512,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     setAgentThinking,
     saveMcp,
     deleteMcp,
+    saveOnboardingKey,
   };
 
   const fields = createFieldBuilders({ config, presets, writers, go });

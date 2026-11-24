@@ -338,6 +338,8 @@ function createHost(
     },
     openWizard: vi.fn(async () => {}),
     openKeyEditor: vi.fn(async () => {}),
+    // 「让这个端点的密钥就位」：缺省「配不上」（`/model` 那组用例按需覆写成 `true`）
+    ensureKey: vi.fn(async () => false),
     doExit: vi.fn(async () => {}),
     // 覆盖层入口是一个**异步口**（命令层拿不到 React setter）：默认「没人作答」，
     // 需要作答的用例自己替换它。
@@ -1273,6 +1275,60 @@ describe("/model：三档作用级别各写各的那一层", () => {
       params: { agentId: "default", change: { modelId: "m2" } },
     });
     expect(session.reload).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * `/model` 切到「供应商还没配密钥」的模型。
+ *
+ * 判据与首启引导、`/key` 是同一个（`resolveCredential` 看那端点密钥空不空），修复入口
+ * 是同一屏（`ensureKey`）。这里钉两件事：**没配成就不切**，配成了才照常切。
+ */
+describe("/model：供应商没配密钥时先配，配不成就不切", () => {
+  /** 一个「模型在它上面、密钥还空着」的端点 */
+  const bareConfig = () =>
+    configView({
+      endpoints: [ENDPOINT, { ...ENDPOINT, id: "ep-bare", name: "裸端点", apiKey: "" }],
+      models: [modelView("m1", "模型一"), modelView("m2", "模型二", { endpointId: "ep-bare" })],
+    });
+
+  const routes = () => ({
+    "config.get": () => ({ config: bareConfig(), presets: presetsView() }),
+  });
+
+  it("用户放弃配密钥：一个字节都不写，并说清是没钥匙", async () => {
+    const { host, session, calls, notices } = createHost({ routes: routes() });
+
+    await runCommand("model", "/model m2", host);
+
+    expect(host.ensureKey).toHaveBeenCalledWith("ep-bare");
+    expect(session.updateModel).not.toHaveBeenCalled();
+    expect(methods(calls)).toEqual(["config.get"]);
+    expect(texts(notices)).toBe(
+      [
+        t("cmd.model.keyMissing", { endpoint: "裸端点" }),
+        t("cmd.model.keyCancelled", { model: "模型二", endpoint: "裸端点" }),
+      ].join("\n"),
+    );
+  });
+
+  it("配好了钥匙：照常切（密钥那一步不吞掉原本的动作）", async () => {
+    const { host, session } = createHost({ routes: routes() });
+    host.ensureKey = vi.fn(async () => true);
+
+    await runCommand("model", "/model m2", host);
+
+    expect(host.ensureKey).toHaveBeenCalledWith("ep-bare");
+    expect(session.updateModel).toHaveBeenCalledWith("m2");
+  });
+
+  it("密钥本来就配好了：不问那一屏，直接切", async () => {
+    const { host, session } = createHost();
+
+    await runCommand("model", "/model m2", host);
+
+    expect(host.ensureKey).not.toHaveBeenCalled();
+    expect(session.updateModel).toHaveBeenCalledWith("m2");
   });
 });
 

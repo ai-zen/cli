@@ -40,6 +40,7 @@ import { readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentListOf, toDefinition } from "../agents-store.js";
+import { resolveCredential } from "../config-editor.js";
 import { checkAgentSwitch, listAgentChoices } from "../agent-switch.js";
 import { STAGE_TEXT } from "../host-stage.js";
 import { SUPPORTED_LOCALES, getLocale, normalizeLocale, t } from "../i18n/index.js";
@@ -138,7 +139,18 @@ export interface ChatCommandHost {
   exit: (value?: CommandExitValue) => void;
   suspendTerminal: (fn: () => void | Promise<void>) => Promise<void>;
   openWizard: (step: WizardEntryStep) => Promise<void>;
-  openKeyEditor: () => Promise<void>;
+  /** `/key`：当前模型所用端点的密钥屏（与首启 / `/model` 共用的那一个入口） */
+  openKeyEditor: () => Promise<unknown>;
+  /**
+   * 让某个端点的密钥就位：开密钥屏、等它关闭、再读一次配置看那一格到底填没填。
+   *
+   * 返回 `true` = 现在有钥匙了，调用方可以继续它原本要做的事（`/model` 就靠这一个答案决定
+   * 「切 / 不切」）；`false` = 用户放弃或没填成 —— 那时**不该**继续：切过去也发不出请求。
+   *
+   * 为什么首启 / `/model` 都是它：判据（`resolveCredential`）与屏幕（`edit` 那一步）各只有
+   * 一处，这里只是把那两步串起来。
+   */
+  ensureKey: (endpointId: string) => Promise<boolean>;
   doExit: () => void;
   /** 弹选择器并等用户作答（取消 / Esc 为 `null`）；覆盖层怎么画由宿主决定 */
   pick: (title: string, items: SelectItem<string>[]) => Promise<string | null>;
@@ -1164,7 +1176,7 @@ async function allowBusySwitch(ctx: Pick<CommandContext, "session" | "pick">): P
   return choice === "yes";
 }
 
-const cmdModel: CommandHandler = async ({ session, api, push, args, pick }) => {
+const cmdModel: CommandHandler = async ({ session, api, push, args, pick, ensureKey }) => {
   // 模型表就是配置里的那一格（新契约没有单独的 `model.list`：`config.get` 一次给全）
   const { config } = await api.config.get.query();
   const models = config.models;
@@ -1269,6 +1281,30 @@ const cmdModel: CommandHandler = async ({ session, api, push, args, pick }) => {
   }
 
   const target = models.find((model) => model.id === chosen)!;
+  /**
+   * 供应商还没配密钥 → 先让它配，配不成就不切。
+   *
+   * 不加这一道的话，切是“成功”的（写会话行不会报错），要等到发请求才炸 —— 用户看到的是
+   * 「切过去了」，然后第一句话报一个 401。所以判据（端口有没有密钥）在读模型表那一瞬就问，
+   * 而修复入口就是首启引导 / `/key` 用的那同一屏（`ensureKey`）。
+   *
+   * 三个作用级都拦：会话级、AgentDefinition、全局兜底——改哪一级都是「以后要发这个模型的请求」。
+   */
+  const credential = resolveCredential(config, target.id);
+  if (credential && !credential.configured) {
+    push(t("cmd.model.keyMissing", { endpoint: credential.endpointName }));
+    const ready = await ensureKey(credential.endpointId);
+    if (!ready) {
+      push(
+        t("cmd.model.keyCancelled", {
+          model: target.name || target.id,
+          endpoint: credential.endpointName,
+        }),
+        "error",
+      );
+      return;
+    }
+  }
   // 会话级那一扇门忙的时候会被宿主拒（`assertNoWorkInHand`）：发之前先问一次（见 `allowBusySwitch`）
   if (selection.scope === "session" && !(await allowBusySwitch({ session, pick }))) {
     push(t("cmd.busySwitch.cancelled"));

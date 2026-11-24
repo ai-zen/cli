@@ -49,6 +49,7 @@ import { CursorInputRow, type CursorPosition } from "./input-row.js";
 import { chooseQuestionAnswer } from "./question-choice.js";
 import { runCommand, moveAfterGone } from "../../commands/index.js";
 import { t } from "../../i18n/index.js";
+import { endpointHasKey } from "../../config-editor.js";
 import { clearSessionNotices } from "../../pending-notices.js";
 import { NoticeChannel, noticeBarContent, type Notice } from "./notice.js";
 import { NoticeBar } from "./notice-bar.js";
@@ -858,8 +859,21 @@ export function Chat(props: ChatScreenProps) {
           rows: pickerCapacity(rows ?? 24),
           exit,
           suspendTerminal,
-          openWizard,
+          // 命令层不需要关闭结果（要「等它关掉、并知道成没成」的是下面那个 `ensureKey`）：
+          // 这里把它拍回 `void`，免得命令层多一个它不该关心的类型。
+          openWizard: async (step) => {
+            await openWizard(step);
+          },
           openKeyEditor,
+          // 「让这个端点的密钥就位」：与首启引导用的是同一屏（`edit` 的 apiKey 那一步），
+          // 差别只在开完之后要**等它关闭**，再读一次配置回答「现在到底有没有钥匙」——
+          // `/model` 拿这个答案决定切不切，而不是在没钥匙的情况下把会话行先改了。
+          ensureKey: async (endpointId: string) => {
+            const closed = await openWizard({ kind: "edit", field: "apiKey", endpointId });
+            if (!closed?.dirty) return false;
+            const { config } = await deps.connection.api.config.get.query();
+            return endpointHasKey(config, endpointId);
+          },
           doExit,
           // 覆盖层入口：命令层拿到的是 Promise，不是 React setter（见 `ChatCommandHost`）
           pick: (title, items) =>
