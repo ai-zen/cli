@@ -844,7 +844,7 @@ describe("模型", () => {
           id: "my-gpt",
           name: "My GPT",
           endpointId: "deepseek",
-          tokenThresholds: { handoff: 128_000, guard: 192_000 },
+          tokenThresholds: { handoff: 128_000, guard: 256_000 },
         },
       },
     });

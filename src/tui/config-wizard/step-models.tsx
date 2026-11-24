@@ -23,11 +23,11 @@ import { t } from "../../i18n/index.js";
  * 那句话不成立，客户端得给出一个起点；新建完立刻进详情屏，这两个数就在第一屏能改的地方。
  *
  * 取值照 SDK 给新模型定的兜底：`normalize.ts` 的 `DEFAULT_HANDOFF_THRESHOLD = 128_000`（那句
- * 注释写明「与 CLI 新建模型的默认值一致」），`guard` 按同一处的 1.5 倍口径算成 192_000 ——
- * 旧产品的 `addModel` 用的也是这两个数。模型真实窗口客户端不知道（那不是配置里的一格），
- * 所以这是一个**能就地改的起点**，不是对窗口的判断。
+ * 注释写明「与 CLI 新建模型的默认值一致」），`guard` 按同一处的 **2 倍**口径算成 256_000 ——
+ * 与出厂模型的比例同源（交接 40% / 阻断 80%，硬线恒在软线的 2 倍处）。模型真实窗口客户端
+ * 不知道（那不是配置里的一格），所以这是一个**能就地改的起点**，不是对窗口的判断。
  */
-const NEW_MODEL_THRESHOLDS: TokenThresholds = { handoff: 128_000, guard: 192_000 };
+const NEW_MODEL_THRESHOLDS: TokenThresholds = { handoff: 128_000, guard: 256_000 };
 
 /** 来源标签：出厂托管 / 自定义（宿主在写的时候会把编辑过的转成自定义，PRD F-F3） */
 function kindLabel(custom: boolean | undefined): string {
