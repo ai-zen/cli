@@ -36,6 +36,7 @@
 
 import { describe, it, expect, afterAll, afterEach, beforeEach } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
+import { createServer } from "node:net";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -269,6 +270,45 @@ interface SetupOptions {
 }
 
 /**
+ * 一个此刻空着的本地端口（向系统要：绑 0，读回拿到的那个，再放开）。
+ *
+ * 为什么要它：宿主默认听 **8790**，而开发者机器上常常已经有一台在听（`pnpm dev`、或上一次
+ * 手工起的宿主）。那时这一组每一条都会红在 `EADDRINUSE` 上 —— 看着像代码坏了，其实只是端口被
+ * 别人占着。每个用例自带一个空端口之后，这一组就不再取决于「本机现在有没有在跑宿主」。
+ *
+ * 「绑了再放开」有一个窗口期（这几十毫秒里别人可能抢走），但对手只有本机的其它进程，而它们
+ * 不会专门来抢一个刚放开的高位端口。
+ */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address !== null ? address.port : 0;
+      server.close(() => (port === 0 ? reject(new Error("拿不到空闲端口")) : resolve(port)));
+    });
+  });
+}
+
+/**
+ * 建一个**带自己的端口**的用例数据根 —— 凡是会让 `ai` 拉起宿主的用例都用它。
+ *
+ * 端口写进 `<数据根>/host.json`（宿主的设置文件，优先级「启动参数 > 这个文件 > 出厂 8790」；
+ * 客户端拉起时不带 `--port`，所以这一格就是最终答案），与本机有没有别的宿主无关。
+ */
+async function setupHostDir(options: SetupOptions = {}): Promise<string> {
+  const dir = makeTestDir();
+  setupConfigDir(dir, options);
+  writeFileSync(
+    join(dir, "host.json"),
+    `${JSON.stringify({ port: await freePort() }, null, 2)}\n`,
+    "utf-8",
+  );
+  return dir;
+}
+
+/**
  * 在测试目录里备好「这台机器已经配过」（连接设置 + 一份配置 + 一个默认 AgentDefinition）。
  *
  * 不写 `cli/connection.json` 的话，`ai "…"` 会按「没配过」**直接失败**（那是「没配过」那条
@@ -391,9 +431,8 @@ describe("E2E: 显式宿主地址（--server / AI_ZEN_SERVER_URL）", () => {
   it("--server-status 给了显式地址：问的是那个地址，不是本机的发现文件", async () => {
     // 宿主跑在 A（发现文件与凭证都在 A），而客户端那侧是**另一个**空目录 B —— 这就是
     // 远程 / 隧道的形状：B 里既没有 `run/host.json`，也没有 `run/token`
-    const serverDir = makeTestDir();
+    const serverDir = await setupHostDir();
     const clientDir = makeTestDir();
-    setupConfigDir(serverDir);
 
     // 宿主在 A 里**自己**起来并一直活着：一次性调用结束后它就会判空退出，
     // 而本用例要的是一台能被第二个客户端问到的宿主
@@ -543,8 +582,7 @@ describe("E2E: 真跑一轮（假 LLM 端点，不需要 key）", () => {
 
   it("ai <消息>：答案写 stdout、退出码 0", async () => {
     llm = await startFakeLlm({ reply: CLI_REPLY });
-    const aizDir = makeTestDir();
-    setupConfigDir(aizDir, { baseUrl: llm.baseUrl, apiKey: "sk-fake" });
+    const aizDir = await setupHostDir({ baseUrl: llm.baseUrl, apiKey: "sk-fake" });
 
     const result = await runCli(["你好"], undefined, localEnv(aizDir));
 
@@ -556,8 +594,7 @@ describe("E2E: 真跑一轮（假 LLM 端点，不需要 key）", () => {
 
   it("管道内容 + 指令：合并后的 prompt 真的发给了模型", async () => {
     llm = await startFakeLlm({ reply: CLI_REPLY });
-    const aizDir = makeTestDir();
-    setupConfigDir(aizDir, { baseUrl: llm.baseUrl, apiKey: "sk-fake" });
+    const aizDir = await setupHostDir({ baseUrl: llm.baseUrl, apiKey: "sk-fake" });
 
     const result = await runCli(["用一句话总结"], "苹果是一种水果。\n", localEnv(aizDir));
 
@@ -571,8 +608,7 @@ describe("E2E: 真跑一轮（假 LLM 端点，不需要 key）", () => {
 
   it("--save：建一段真会话并把 id 写到 stderr（一次性调用不落这段）", async () => {
     llm = await startFakeLlm({ reply: CLI_REPLY });
-    const aizDir = makeTestDir();
-    setupConfigDir(aizDir, { baseUrl: llm.baseUrl, apiKey: "sk-fake" });
+    const aizDir = await setupHostDir({ baseUrl: llm.baseUrl, apiKey: "sk-fake" });
 
     const result = await runCli(["--save", "留一份"], undefined, localEnv(aizDir));
 
@@ -584,8 +620,7 @@ describe("E2E: 真跑一轮（假 LLM 端点，不需要 key）", () => {
 
   it("连跑两次：第二次的请求里没有上一轮的会话（一次性会话不带历史）", async () => {
     llm = await startFakeLlm({ reply: CLI_REPLY });
-    const aizDir = makeTestDir();
-    setupConfigDir(aizDir, { baseUrl: llm.baseUrl, apiKey: "sk-fake" });
+    const aizDir = await setupHostDir({ baseUrl: llm.baseUrl, apiKey: "sk-fake" });
 
     await runCli(["第一句"], undefined, localEnv(aizDir));
     const second = await runCli(["第二句"], undefined, localEnv(aizDir));
@@ -598,8 +633,7 @@ describe("E2E: 真跑一轮（假 LLM 端点，不需要 key）", () => {
 
   it("宿主报错：stdout 为空、错误走 stderr、退出码非 0", async () => {
     llm = await startFakeLlm({ failWith: { status: 500, message: "fake upstream exploded" } });
-    const aizDir = makeTestDir();
-    setupConfigDir(aizDir, { baseUrl: llm.baseUrl, apiKey: "sk-fake" });
+    const aizDir = await setupHostDir({ baseUrl: llm.baseUrl, apiKey: "sk-fake" });
 
     const result = await runCli(["你好"], undefined, localEnv(aizDir));
 
