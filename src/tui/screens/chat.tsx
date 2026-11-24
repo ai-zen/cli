@@ -1133,8 +1133,16 @@ export function Chat(props: ChatScreenProps) {
    * 通知栏的「清这一段」（`Ctrl+X`，提示就写在栏位最后一行）。
    *
    * 两件事分开做：本地队列先清（用户按下就得看到反应），宿主那边清的是**这一段会话**的
-   * 通知（`clearSessionNotices` 的按会话口径）—— 清多少条是宿主回的 `cleared`，
-   * 不在客户端猜。清不掉也不静默：它只影响「下次重连要不要再播一遍」，不该让按键无声失败。
+   * 通知（`clearSessionNotices` 的按会话口径）。
+   *
+   * ## 清成功之后**不吭声**
+   *
+   * 栏位空的时候连提示那一行都不画（`noticeBarContent`），所以「队列空了」这件事本身
+   * 就是屏幕上看得见的回执 —— 再 push 一句「已清空本会话的通知」，等于把刚清掉的栏位又
+   * 撑起一行：用户按一次冒一条，栏位永远不是空的，那条通知唯一的功能就是让「清空」白做一次。
+   *
+   * 失败必须说：按下的就是「清」这个动作，而它只影响「下次重连要不要再播一遍」，闷掉
+   * 会让用户以为清干净了。
    *
    * 整个库那一档（清全部）是另一个键、另一条路：见下面的 `clearAllNotices`。
    */
@@ -1142,17 +1150,14 @@ export function Chat(props: ChatScreenProps) {
     noticeChannel.clear();
     const sessionId = sessionRef.current?.sessionId;
     if (!sessionId) return;
-    // `notice.deleteAll` 的回执没有条数（宿主这一版不回那一格），所以说「已清空」而不报数
-    void clearSessionNotices(deps.connection, sessionId).then(
-      () => noticeChannel.push(t("notice.cleared")),
-      (error: unknown) =>
-        noticeChannel.push(
-          t("notice.deleteAllFailed", {
-            error: error instanceof Error ? error.message : String(error),
-          }),
-          "error",
-        ),
-    );
+    void clearSessionNotices(deps.connection, sessionId).catch((error: unknown) => {
+      noticeChannel.push(
+        t("notice.deleteAllFailed", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        "error",
+      );
+    });
   };
   const clearNoticesKeys = { clear: clearNotices };
 

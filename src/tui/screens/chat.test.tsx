@@ -318,6 +318,8 @@ const fakeConnection = (
     assetGet?: (assetId: string) => { mime: string; base64: string };
     /** `session.list` 回什么（这一段被别处删掉之后「换到哪一段」看它） */
     sessionList?: Array<{ id: string; name: string }>;
+    /** `notice.deleteAll` 会不会被宿主拒（`Ctrl+X` 那条路报失败用） */
+    noticeDeleteAllError?: Error;
   } = {},
 ) => {
   const apiCalls: { method: string; params: any }[] = [];
@@ -345,6 +347,7 @@ const fakeConnection = (
                 return options.sessionList ?? [];
               case "notice.deleteAll":
                 // 宿主这一档没有回执（`notice.deleteAll` 的 out 是空）
+                if (options.noticeDeleteAllError) throw options.noticeDeleteAllError;
                 return undefined;
               case "asset.get":
                 // 图片那条路：取回来的就是字节（尺寸不在这条口的出参里）
@@ -1863,6 +1866,65 @@ describe("发送那一刻：清掉日志转发来的通知", () => {
     // 宿主上**这一段会话**的那一份也清：不带 sessionId 的清全部是另一档（Ctrl+G）
     const cleared = connection.apiCalls.filter((call) => call.method === "notice.deleteAll");
     expect(cleared).toEqual([{ method: "notice.deleteAll", params: { sessionId: "chat_test" } }]);
+    unmount();
+  });
+});
+
+/**
+ * `Ctrl+X`（清本会话的通知）：清成之后**不吭声**。
+ *
+ * 曾经成功那一路还要 push 一句「已清空本会话的通知」—— 栏位刚清空就立刻又长出一行，按一次
+ * 冒一条，用户永远看不到空栏位（而那句通知唯一的作用就是让这次清白白做一次）。
+ *
+ * 栏位空时连入口提示那一行都不画（`noticeBarContent` 的 `hint` 为 null），所以「提示行没了」
+ * 就是「栏位真的空了」的判据 —— 用一句话去断言「没有话」，反而会把这句文案锁进用例。
+ */
+describe("Ctrl+X：清本会话的通知", () => {
+  beforeEach(() => {
+    setLocale("zh");
+    created.notifier = null;
+    created.session = null;
+    created.options = null;
+  });
+
+  it("清成功之后栏位整条消失：不再冒一条「已清空」，宿主那边也只清这一段", async () => {
+    const connection = fakeConnection();
+    const { stdin, lastFrame, unmount } = mount({ connection });
+    await flush();
+
+    created.notifier.onNotice("宿主说的话", "info");
+    await flush();
+    // 正面：栏位非空时提示行在（不然下面的「没了」什么都证明不了）
+    expect(lastFrame() ?? "").toContain("宿主说的话");
+    expect(lastFrame() ?? "").toContain(t("notice.deleteAllHint"));
+
+    connection.apiCalls.length = 0;
+    stdin.write("\u0018"); // Ctrl+X
+    await waitFor(() => connection.apiCalls.some((call) => call.method === "notice.deleteAll"));
+    await flush();
+
+    // 只清宿主上**这一段会话**那一份（不带 sessionId 的清全部是另一个键）
+    expect(connection.apiCalls).toEqual([
+      { method: "notice.deleteAll", params: { sessionId: "chat_test" } },
+    ]);
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toContain("宿主说的话");
+    // 栏位空了：连提示那一行都不画 —— 清成功不推任何一句话（推了就又有一行）
+    expect(frame).not.toContain(t("notice.deleteAllHint"));
+    unmount();
+  });
+
+  it("宿主拒了要说：失败那句上屏（清不掉不等于清掉了）", async () => {
+    const connection = fakeConnection({
+      noticeDeleteAllError: new Error("宿主不认这个方法"),
+    });
+    const { stdin, lastFrame, unmount } = mount({ connection });
+    await flush();
+
+    stdin.write("\u0018"); // Ctrl+X
+    await waitFor(() => (lastFrame() ?? "").includes("宿主不认这个方法"));
+
+    expect(lastFrame() ?? "").toContain(t("notice.deleteAllFailed", { error: "宿主不认这个方法" }));
     unmount();
   });
 });

@@ -92,7 +92,6 @@ export const en: Record<string, string> = {
   "notice.pressCtrlDAgain": "Press Ctrl+D again to exit",
   "notice.languageChanged": "Interface language switched to English",
   "notice.deleteAllHint": "Ctrl+X clears this session's notices; Ctrl+G clears all",
-  "notice.cleared": "Notices for this session cleared",
   "notice.deleteAllFailed": "Could not clear the notices: {error}",
   "notice.questionsReadFailed": "Could not read pending questions: {error}",
   "notice.noticesCatchupFailed": "Could not read the notices: {error}",

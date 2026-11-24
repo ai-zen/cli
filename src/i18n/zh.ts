@@ -105,7 +105,6 @@ export const zh: Record<string, string> = {
   "notice.languageChanged": "界面语言已切换为中文",
   // 两个清空入口写在同一行提示里（分隔用「；」而不加装饰：栏位上的句子不加任何前缀）
   "notice.deleteAllHint": "Ctrl+X 清除本会话的通知；Ctrl+G 清除全部",
-  "notice.cleared": "已清空本会话的通知",
   "notice.deleteAllFailed": "通知清空失败：{error}",
   "notice.questionsReadFailed": "待答问题读取失败：{error}",
   "notice.noticesCatchupFailed": "通知读取失败：{error}",
