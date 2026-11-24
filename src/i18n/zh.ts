@@ -171,7 +171,9 @@ export const zh: Record<string, string> = {
   "common.listSeparator": "、",
   "cmd.model.noModels": "配置里还没有任何模型，请用 /config 添加端点与模型",
   // 三档共用同一个选择器：标题说「这次改哪一档」+「当前生效的是哪一档」
-  "cmd.model.title": "切换模型 · {scope}（当前生效：{level}）",
+  "cmd.model.title": "切换模型 · {scope} · {endpoint}（当前生效：{level}）",
+  "cmd.model.endpointTitle": "选择供应商 · {scope}（当前生效：{level}）",
+  "cmd.model.endpointHint": "{count} 个模型",
   "cmd.model.scope.session": "本次会话",
   "cmd.model.scope.agent": "助手定义",
   "cmd.model.scope.global": "全局",

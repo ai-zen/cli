@@ -376,6 +376,27 @@ function capturePick(host: ChatCommandHost, answer: string | null) {
   return seen;
 }
 
+/** 多级选择器：按顺序把答案交回去，并把每一级看到的东西记下来 */
+function capturePicks(host: ChatCommandHost, answers: Array<string | null>) {
+  const seen: Array<{
+    title: string;
+    labels: string[];
+    hints: (string | undefined)[];
+    values: string[];
+  }> = [];
+  let index = 0;
+  host.pick = async (title, items) => {
+    seen.push({
+      title,
+      labels: items.map((item) => item.label),
+      hints: items.map((item) => item.hint),
+      values: items.map((item) => item.value),
+    });
+    return answers[index++] ?? null;
+  };
+  return seen;
+}
+
 const texts = (notices: Array<{ text: string }>) => notices.map((n) => n.text).join("\n");
 const methods = (calls: CallRecord[]) => calls.map((call) => call.method);
 
@@ -1130,22 +1151,72 @@ describe("/model：三档作用级别各写各的那一层", () => {
     );
   });
 
-  it("选择器：标题说清「改哪一档 / 生效哪一档」，每条的提示是它的 id", async () => {
+  it("选择器两级：先选供应商（带模型数），再选那一家底下的模型", async () => {
     const { host } = createHost();
-    const seen = capturePick(host, null);
+    const seen = capturePicks(host, ["ep-main", "m2"]);
 
     await runCommand("model", "/model", host);
 
-    expect(seen.title).toBe(
-      t("cmd.model.title", {
+    expect(seen).toHaveLength(2);
+
+    // 第一级：只列有模型的端点，当前生效模型所在那家标「当前」，提示是这一家的模型数
+    expect(seen[0]!.title).toBe(
+      t("cmd.model.endpointTitle", {
         scope: t("cmd.model.scope.session"),
         level: t("cmd.model.scope.agent"),
       }),
     );
-    expect(seen.labels).toEqual(["模型一（当前）", "模型二"]);
+    expect(seen[0]!.labels).toEqual([`主端点${t("common.current")}`]);
+    expect(seen[0]!.hints).toEqual([t("cmd.model.endpointHint", { count: 2 })]);
+
+    // 第二级：这一家的模型；标题带上供应商名，进去之后也知道自己在哪一家
+    expect(seen[1]!.title).toBe(
+      t("cmd.model.title", {
+        scope: t("cmd.model.scope.session"),
+        level: t("cmd.model.scope.agent"),
+        endpoint: "主端点",
+      }),
+    );
+    expect(seen[1]!.labels).toEqual([`模型一${t("common.current")}`, "模型二"]);
     // 新契约里没有 `available` / `unavailableReason` 这一格：提示不编「不可用」，
     // 只说它是哪个 id（要判能不能跑得问宿主）
-    expect(seen.hints).toEqual(["m1", "m2"]);
+    expect(seen[1]!.hints).toEqual(["m1", "m2"]);
+  });
+
+  it("供应商那一级取消：整体取消，一个字节都不写", async () => {
+    const { host, session, notices } = createHost();
+    capturePicks(host, [null]);
+
+    await runCommand("model", "/model", host);
+
+    expect(texts(notices)).toBe(t("cmd.model.cancelled"));
+    expect(session.updateModel).not.toHaveBeenCalled();
+  });
+
+  it("端点顺序跟配置走，只列有模型的那几家", async () => {
+    const second: EndpointDefinition = { ...ENDPOINT, id: "ep-other", name: "另一家" };
+    const empty: EndpointDefinition = { ...ENDPOINT, id: "ep-empty", name: "空端点" };
+    const { host } = createHost({
+      routes: {
+        "config.get": () => ({
+          config: configView({
+            endpoints: [second, empty, ENDPOINT],
+            models: [
+              modelView("m1", "模型一"),
+              modelView("m3", "模型三", { endpointId: "ep-other" }),
+            ],
+          }),
+          presets: presetsView(),
+        }),
+      },
+    });
+    const seen = capturePicks(host, [null]);
+
+    await runCommand("model", "/model", host);
+
+    // 配置里的顺序是「另一家、空端点、主端点」；空端点没有模型，不该出现在一级里。
+    // 「当前」跟着生效模型（m1 在主端点）走
+    expect(seen[0]!.labels).toEqual(["另一家", `主端点${t("common.current")}`]);
   });
 
   it("配置里没有模型：报错并指路 /config", async () => {

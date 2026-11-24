@@ -160,7 +160,9 @@ export const en: Record<string, string> = {
   "common.listSeparator": ", ",
   "cmd.model.noModels": "No models configured yet — use /config to add endpoints and models",
   // One picker for all three levels: title says which level you edit **and** which one is in effect
-  "cmd.model.title": "Switch model · {scope} (in effect: {level})",
+  "cmd.model.title": "Switch model · {scope} · {endpoint} (in effect: {level})",
+  "cmd.model.endpointTitle": "Choose a provider · {scope} (in effect: {level})",
+  "cmd.model.endpointHint": "{count} models",
   "cmd.model.scope.session": "this session",
   "cmd.model.scope.agent": "agent",
   "cmd.model.scope.global": "global",

@@ -1186,15 +1186,57 @@ const cmdModel: CommandHandler = async ({ session, api, push, args, pick }) => {
   if (chosen === undefined) {
     // 只有要弹选择器时才多读一次「生效的是哪一档」：那一个数只用在标题上
     const level = t(`cmd.model.scope.${modelSourceOf({ session })}`);
-    // 三档共用这一个选择器，标题必须说清「这次改哪一档」与「当前生效的是哪一档」
-    const items: SelectItem<string>[] = models.map((model) => ({
+
+    // 两级：先选供应商（端点），再选那一家底下的模型。
+    // 为什么不是平铺：一家订阅式端点就能带进来三四十个模型，平铺之后既难找也看不出「这是哪家的」。
+    const current = models.find((model) => model.id === session.modelId);
+    const byEndpoint = new Map<string, typeof models>();
+    for (const model of models) {
+      const bucket = byEndpoint.get(model.endpointId);
+      if (bucket === undefined) byEndpoint.set(model.endpointId, [model]);
+      else bucket.push(model);
+    }
+    // 端点顺序按配置里的端点表（用户在 /config 里排的顺序就是他期望的顺序）；
+    // 只出现在模型表里的端点（配置被手改过）接在后面，不吞掉
+    const endpointIds = [
+      ...config.endpoints.map((endpoint) => endpoint.id).filter((id) => byEndpoint.has(id)),
+      ...[...byEndpoint.keys()].filter((id) => !config.endpoints.some((e) => e.id === id)),
+    ];
+    const endpointName = new Map(config.endpoints.map((endpoint) => [endpoint.id, endpoint.name]));
+
+    const endpointItems: SelectItem<string>[] = endpointIds.map((id) => ({
+      label:
+        id === current?.endpointId
+          ? `${endpointName.get(id) ?? id}${t("common.current")}`
+          : (endpointName.get(id) ?? id),
+      value: id,
+      hint: t("cmd.model.endpointHint", { count: byEndpoint.get(id)?.length ?? 0 }),
+    }));
+    const pickedEndpoint = await pick(
+      t("cmd.model.endpointTitle", { scope: scopeName, level }),
+      endpointItems,
+    );
+    if (pickedEndpoint == null) {
+      push(t("cmd.model.cancelled"));
+      return;
+    }
+
+    // 第二级：这一家底下的模型，标题带上端点名（进到里面也得知道自己在哪一家）
+    const items: SelectItem<string>[] = (byEndpoint.get(pickedEndpoint) ?? []).map((model) => ({
       label: model.id === session.modelId ? `${model.name}${t("common.current")}` : model.name,
       value: model.id,
       // 恒列出全部模型：新契约里没有 `available` 这一格（能不能跑要解析端点密钥，那是宿主的判断），
       // 所以提示就是它的 id，不编一条「不可用」
       hint: model.id,
     }));
-    const picked = await pick(t("cmd.model.title", { scope: scopeName, level }), items);
+    const picked = await pick(
+      t("cmd.model.title", {
+        scope: scopeName,
+        level,
+        endpoint: endpointName.get(pickedEndpoint) ?? pickedEndpoint,
+      }),
+      items,
+    );
     if (picked == null) {
       push(t("cmd.model.cancelled"));
       return;
