@@ -43,6 +43,7 @@ import type { HostDownloadScreenResult } from "./screens/host-download.js";
 import { settleConnection, type ConnectScreenResult } from "./connection-gate.js";
 import { keyDebugStart } from "./key-debug.js";
 import { disableMouseTracking, enableMouseTracking } from "./mouse.js";
+import { quietCursor } from "./cursor-quiet.js";
 import { disableBracketedPaste, enableBracketedPaste } from "./paste.js";
 import { initLocale } from "../i18n/preferences.js";
 import { t } from "../i18n/index.js";
@@ -142,7 +143,9 @@ function mount(
   enableMouseTracking();
   // 括号粘贴一起来：粘贴进来的整段由 `[200~ … [201~` 包住，屏上才认得出「这是一段文本」
   enableBracketedPaste();
-  const instance = render(node, RENDER_OPTIONS);
+  // 流一条「不显示光标」的流给 Ink：位置照旧逐帧上报（输入法候选框要靠它），但 `?25h` 被拦掉
+  // —— 否则流式期间每秒十几对「藏/显」，光标会一直闪（`cursor-quiet.ts` 里写了为什么）。
+  const instance = render(node, { ...RENDER_OPTIONS, stdout: quietCursor(process.stdout) });
   activeInstance = instance;
   return instance.waitUntilExit().finally(() => {
     disableMouseTracking();
@@ -740,6 +743,13 @@ function installSignalSafety(): () => void {
     // 括号粘贴也一样（理由见 `farewell`）
     try {
       disableBracketedPaste();
+    } catch {
+      /* 忽略 */
+    }
+    // 光标：`quietCursor` 把「显示光标」那一半拦掉了，这条路（异常 / 信号）没有 `farewell`
+    // 兜着，得自己还回去 —— 不然回到 shell 里没有光标
+    try {
+      process.stdout.write("\x1b[?25h");
     } catch {
       /* 忽略 */
     }

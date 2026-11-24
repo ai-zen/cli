@@ -17,7 +17,7 @@ The layout is bottom-anchored. From the bottom up:
 | Position        | What it is                                              |
 | --------------- | ------------------------------------------------------- |
 | Status bar      | five blocks of facts plus the key hint                  |
-| Input line      | the draft and the hardware cursor                       |
+| Input line      | the draft and the cursor block (drawn; the hardware cursor is only positioned for the IME, never painted) |
 | Divider         | the boundary between the bottom area and the transcript |
 | Queue band      | the messages still sitting in the inbox, not yet taken  |
 | Phase line      | what is happening right now, one line                   |
@@ -92,6 +92,8 @@ Two entries clear it:
 The input line is multi-line and takes at most eight rows; longer drafts scroll a window that follows the cursor instead of squeezing the transcript out. `Enter` sends; `Ctrl+J` (or `Ctrl+Enter`) inserts a newline; `↑` `↓` move the cursor inside a multi-line draft first, and only step into history from the first and last line.
 
 Typing keeps working while a request is in flight: that message is handed to the host, which puts it in the inbox, and the queue band shows what is still waiting (each line carrying its own "waiting" prefix); the phase line only says what this run is doing right now.
+
+The cursor block on screen is drawn by the app (the character under the cursor is shown in reverse video). The terminal's own hardware cursor keeps being moved to the editing position but is **never painted**: it exists only so the input method's candidate window follows along. The reason is that a streaming answer repaints a frame every 60ms, and Ink has to hide and re-show the hardware cursor on every frame — a dozen or so toggles per second, which reads as a cursor that will not stop blinking. With an empty input (placeholder only) there is no cursor on screen; once there is a draft, the reverse-video block is the cursor.
 
 `@` completes file paths:
 
