@@ -50,7 +50,7 @@
     "@ai-zen/agents-host": "link:../agents/packages/host",
     "@ai-zen/agents-logger": "link:../agents/packages/logger",
     "@ai-zen/agents-sdk": "link:../agents/packages/sdk",
-    "@ai-zen/agents-testing": "link:../agents/packages/testing",
+    "@ai-zen/fake-llm": "link:../agents/packages/fake-llm",
     "@types/hast": "^3.0.5",
     "@types/node": "^24.12.2",
     "@types/react": "^19.3.0",

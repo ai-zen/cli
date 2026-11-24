@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentNS } from "@ai-zen/agents-core";
 import { DEFAULT_LOCALE, setLocale } from "../../i18n/index.js";
 import { forgetAssetFacts, rememberAssetFacts } from "../../user-content.js";
-import type { Asset } from "../../server-client/index.js";
+import type { AssetRecord } from "../../server-client/index.js";
 import {
   imagePlaceholderLines,
   openableImageHint,
@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 /** 宿主上传时回来的 Asset 行（`asset.upload` 的出参，带量过的宽高与文件名） */
-const uploaded = (id: string, name: string, width: number, height: number): Asset => ({
+const uploaded = (id: string, name: string, width: number, height: number): AssetRecord => ({
   id,
   sha256: `sha-${id}`,
   mime: "image/png",

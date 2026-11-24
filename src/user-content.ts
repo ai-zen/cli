@@ -23,7 +23,7 @@
 
 import type { AgentNS } from "@ai-zen/agents-core";
 import type {
-  Asset,
+  AssetRecord,
   AssetSource,
   AssetFailure,
   UploadAssetsResult,
@@ -134,7 +134,7 @@ export interface LocalAssetFacts {
 const localAssetFacts = new Map<string, LocalAssetFacts>();
 
 /** 上传成功那一刻记下这几行里的事实 */
-export function rememberAssetFacts(assets: readonly Asset[]): void {
+export function rememberAssetFacts(assets: readonly AssetRecord[]): void {
   for (const asset of assets) {
     localAssetFacts.set(asset.id, {
       width: asset.width,

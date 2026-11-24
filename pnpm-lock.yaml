@@ -39,9 +39,9 @@ importers:
       '@ai-zen/agents-sdk':
         specifier: link:../agents/packages/sdk
         version: link:../agents/packages/sdk
-      '@ai-zen/agents-testing':
-        specifier: link:../agents/packages/testing
-        version: link:../agents/packages/testing
+      '@ai-zen/fake-llm':
+        specifier: link:../agents/packages/fake-llm
+        version: link:../agents/packages/fake-llm
       '@types/hast':
         specifier: ^3.0.5
         version: 3.0.5

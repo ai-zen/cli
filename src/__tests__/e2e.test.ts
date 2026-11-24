@@ -39,7 +39,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { startFakeLlm, type FakeLlm } from "@ai-zen/agents-testing";
+import { startFakeLlm, type FakeLlm } from "@ai-zen/fake-llm";
 
 // ==================== Helpers ====================
 
@@ -529,7 +529,7 @@ describe("E2E: 纯 stdio 模式", () => {
 describe("E2E: 真跑一轮（假 LLM 端点，不需要 key）", () => {
   /**
    * 这一组是「进程级」的冒烟：真 `node dist/index.js` → 真宿主进程 → 真 SDK → 真 HTTP 流
-   * → 真 stdout/退出码。模型换成一个本地的 OpenAI 兼容端点（`@ai-zen/agents-testing` 的
+   * → 真 stdout/退出码。模型换成一个本地的 OpenAI 兼容端点（`@ai-zen/fake-llm` 的
    * `startFakeLlm`），于是答复、分片、用量都确定，断言能写等号，CI 里也跑得起来。
    *
    * 真正连外网的用例留在下一组，有 key 才跑。
