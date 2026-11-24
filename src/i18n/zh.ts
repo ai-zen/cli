@@ -265,12 +265,7 @@ export const zh: Record<string, string> = {
   "cmd.ws.deleteFailed": "工作区删除失败：{error}",
   "cmd.ws.deleteNoSessionLeft": "宿主上已无其他会话，请用 /new 新建",
   "cmd.handoff.empty": "当前会话暂无可交接内容",
-  // 三选一那一屏：标题说清「这一次问的是谁去写」，不是「要不要交接」
-  "cmd.handoff.title": "生成交接文档 · 选择执行方式",
-  "cmd.handoff.cancelled": "已取消交接",
-  "cmd.handoff.skipped": "本次不交接",
   "cmd.migrate.empty": "当前会话暂无可迁移内容",
-  "cmd.migrate.cancelled": "已取消交接",
   "cmd.back.empty": "暂无可撤回的消息",
   "cmd.back.title": "选择撤回点（其后的消息将被删除）",
   "cmd.back.cancelled": "已取消撤回",
@@ -342,15 +337,9 @@ export const zh: Record<string, string> = {
   "cmd.editor.failed": "编辑器打开失败：{error}",
   "cmd.unknown": "未知命令：{cmd}（输入 /help 查看可用命令）",
 
-  // ---------- 交接选择器 / 子任务通知 / 启动屏 / 消息占位 ----------
-  // 执行者三选一：label 贴近用户措辞，hint 交代取舍。`summary` 那一句必须说清「另起一个
-  // 一次性 Agent」—— 两个选项的差别不在写得好不好，而在谁去写。
-  "handoff.modeSelf": "由本会话的 Agent 生成交接文档",
-  "handoff.modeSelfHint": "准确 · 会核实真实状态",
-  "handoff.modeSummary": "另起一次性 Agent 生成交接文档",
-  "handoff.modeSummaryHint": "快且省 · 不核实文件",
-  "handoff.modeSkip": "不交接",
-  "handoff.modeSkipHint": "跳过本次",
+  // ---------- 子任务通知 / 启动屏 / 消息占位 ----------
+  // 交接那三个选项的文案不在这里了：题由宿主出（`HandoffService.startAsked`），措辞在
+  // `agents/packages/host/src/modules/handoff/service.ts` 那一处，与阈值撞线共用同一份。
   "agentTabs.main": "主助手",
   "chat.configReadFailed": "配置读取失败：{error}",
   "chat.modelNoEndpoint": "模型 {id} 未绑定可用端点，请用 /config 检查",

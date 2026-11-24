@@ -1858,87 +1858,33 @@ describe("/lang：语言是用户的属性，不是连接的属性", () => {
 
 // ==================== /handoff / /migrate ====================
 
-describe("/handoff 与 /migrate：同一个方法，两种后续", () => {
+describe("/handoff 与 /migrate：同一个方法，两种后续，执行者都由宿主问", () => {
   /**
-   * 接管选择器并**按顺序**作答（`self` / `summary` / 第三项）。
-   *
-   * 第三项是「跳过本次」，它的值由命令层自己定（哨兵），用例不把它再写一遍：从
-   * `pick` 收到的候选里取回来 —— 顺带钉住「候选就是这三项、顺序照旧版那一屏」。
+   * 这一组钉住的是「命令层一道题都不出」：没指定执行者时它只发 `kind`，题由宿主出
+   * （`HandoffService.startAsked`）—— 手动与阈值撞线共用同一份题，客户端自己再拼一份就是两副面孔。
    */
-  function answerByKey(host: ChatCommandHost, key: "self" | "summary" | "skip") {
-    const seen = { title: "", labels: [] as string[], values: [] as string[] };
-    host.pick = async (title, items) => {
-      seen.title = title;
-      seen.labels = items.map((item) => item.label);
-      seen.values = items.map((item) => item.value);
-      if (key === "skip") return seen.values[2] ?? null;
-      return key;
-    };
-    return seen;
-  }
-
-  it('/handoff 先问「谁去写」：三选一，选 self 就按 `mode: "self"` 发', async () => {
+  it("/handoff 不写 mode：只发 kind，不问本地选择器、也不替用户说「开始了」", async () => {
     const { host, session, notices } = createHost();
-    const seen = answerByKey(host, "self");
 
     await runCommand("handoff", "/handoff", host);
 
-    // 三选一那一屏：自交接 / 独立摘要 / 跳过本次（顺序照旧版）
-    expect(seen.title).toBe(t("cmd.handoff.title"));
-    expect(seen.labels).toEqual([
-      t("handoff.modeSelf"),
-      t("handoff.modeSummary"),
-      t("handoff.modeSkip"),
-    ]);
-    // 「独立摘要」那一句要说清它会另起一个一次性 Agent 来写
-    expect(seen.labels[1]).toContain("一次性 Agent");
-    // 挑定的执行者与「仅生成文档」这一档一起交出去（宿主 `handoff.start` 的 `mode` / `kind`）
-    expect(session.handoff).toHaveBeenCalledWith({ kind: "document", mode: "self" });
+    // 题在宿主那一边：命令层连 `pick` 都不该碰
+    expect(host.pick).not.toHaveBeenCalled();
+    expect(session.handoff).toHaveBeenCalledWith({ kind: "document" });
+    // 题一出来就是回执：用户还没选，先报一句「开始了」等于替他宣告了
+    expect(texts(notices)).toBe("");
     expect(host.clearTranscript).not.toHaveBeenCalled();
-    // 回执只有「开始了」：文档路径由宿主那条通知说（它才知道写到哪）
-    expect(texts(notices)).toBe(t("cmd.handoff.started"));
   });
 
-  it('/handoff 选「独立摘要」：按 `mode: "summary"` 发', async () => {
-    const { host, session, notices } = createHost();
-    answerByKey(host, "summary");
-
-    await runCommand("handoff", "/handoff", host);
-
-    expect(session.handoff).toHaveBeenCalledWith({ kind: "document", mode: "summary" });
-    expect(texts(notices)).toBe(t("cmd.handoff.started"));
-  });
-
-  it("/handoff 选「跳过本次」：一次 procedure 都不调，只说一句", async () => {
-    const { host, session, notices } = createHost();
-    const seen = answerByKey(host, "skip");
-
-    await runCommand("handoff", "/handoff", host);
-
-    // 前两项是执行者，第三项是「跳过本次」
-    expect(seen.values.slice(0, 2)).toEqual(["self", "summary"]);
-    expect(session.handoff).not.toHaveBeenCalled();
-    expect(texts(notices)).toBe(t("cmd.handoff.skipped"));
-  });
-
-  it("/handoff 的选择器被 Esc 关掉：也一次不调，说成取消", async () => {
-    const { host, session, notices } = createHost();
-    host.pick = async () => null;
-
-    await runCommand("handoff", "/handoff", host);
-
-    expect(session.handoff).not.toHaveBeenCalled();
-    expect(texts(notices)).toBe(t("cmd.handoff.cancelled"));
-  });
-
-  it("显式写 `/handoff self` 就不再问（非交互那一路的落点）", async () => {
+  it("/handoff 选好执行者（`self` / `summary`）：显式发 mode，回执「开始了」", async () => {
     const { host, session, notices } = createHost();
 
-    await runCommand("handoff", "/handoff self", host);
+    await runCommand("handoff", "/handoff summary", host);
 
     expect(host.pick).not.toHaveBeenCalled();
-    expect(session.handoff).toHaveBeenCalledWith({ kind: "document", mode: "self" });
-    expect(host.clearTranscript).not.toHaveBeenCalled();
+    // 挑定的执行者与「仅生成文档」这一档一起交出去（宿主 `handoff.start` 的 `mode` / `kind`）
+    expect(session.handoff).toHaveBeenCalledWith({ kind: "document", mode: "summary" });
+    // 回执只有「开始了」：文档路径由宿主那条通知说（它才知道写到哪）
     expect(texts(notices)).toBe(t("cmd.handoff.started"));
   });
 
@@ -1954,27 +1900,14 @@ describe("/handoff 与 /migrate：同一个方法，两种后续", () => {
     expect(texts(notices)).toBe(t("cmd.migrate.started"));
   });
 
-  it("/migrate 不写 mode 时也只发 kind：执行者交给宿主的缺省", async () => {
-    const { host, session } = createHost();
+  it("/migrate 不写 mode 时也只发 kind：执行者交给宿主去问", async () => {
+    const { host, session, notices } = createHost();
 
     await runCommand("migrate", "/migrate", host);
 
+    expect(host.pick).not.toHaveBeenCalled();
     expect(session.handoff).toHaveBeenCalledWith({ kind: "swap" });
-  });
-
-  it("用户选了「不交接」（handoff_declined）：说成取消，不是失败", async () => {
-    const declined = Object.assign(new Error("handoff declined"), { code: "handoff_declined" });
-    const { host, notices } = createHost({
-      session: {
-        handoff: vi.fn(async () => {
-          throw declined;
-        }),
-      },
-    });
-
-    await runCommand("handoff", "/handoff self", host);
-
-    expect(notices.at(-1)).toEqual({ text: t("cmd.handoff.cancelled"), tone: "info" });
+    expect(texts(notices)).toBe("");
   });
 
   it("真失败：报失败原因，且不重置显示起点", async () => {
@@ -2004,8 +1937,8 @@ describe("/handoff 与 /migrate：同一个方法，两种后续", () => {
     expect(texts(notices)).toBe(t("cmd.handoff.unknownMode", { who: "nobody" }));
   });
 
-  it("没有可交接的内容：不弹三选一", async () => {
-    const { host, notices } = createHost({
+  it("没有可交接的内容：一次 procedure 都不调", async () => {
+    const { host, session, notices } = createHost({
       session: {
         messages: [{ id: "a-1", createdAt: 1, role: AgentNS.Role.Assistant, content: "yo" }],
       },
@@ -2013,7 +1946,7 @@ describe("/handoff 与 /migrate：同一个方法，两种后续", () => {
 
     await runCommand("handoff", "/handoff", host);
 
-    expect(host.pick).not.toHaveBeenCalled();
+    expect(session.handoff).not.toHaveBeenCalled();
     expect(texts(notices)).toBe(t("cmd.handoff.empty"));
   });
 });

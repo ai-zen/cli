@@ -294,45 +294,16 @@ function parseHandoffSelection(args: readonly string[]): HandoffSelection {
   return { mode, invalid: raw !== undefined && mode === undefined ? raw : undefined };
 }
 
-/** 「跳过本次」的哨兵值（区别于 `self` / `summary` 两个执行者） */
-const HANDOFF_SKIP = "__skip__";
-
 /**
- * 交接执行者三选一（`/handoff` 那一屏）。
+ * 交接执行者三选一的那三个零件（`HANDOFF_SKIP` / `handoffModeItems` / `toHandoffMode`）曾经住在这里。
  *
- * `label` 贴近用户措辞，`hint` 交代取舍：保真 vs 省算力。`summary` 那一句必须说清「另起一个
- * **一次性 Agent**」—— 两个选项的差别不在写得好不好，而在**谁去写**（这段会话自己的 agent
- * 接着写，还是起一个只干这一件事、干完就散的 Agent）。
+ * 现在**一道题都不在命令层**：`/handoff` `/migrate` 只说「哪一档」，没指定执行者时由宿主出题
+ * （`HandoffService.startAsked`）—— 与阈值撞线那一道是同一份题（同一份文案、同一个渲染）。两个
+ * 入口各写一套题，用户看到的就是两回事：一个写着「由本会话的 Agent 生成交接文档」，一个写着
+ * 「自交接：在这段会话里接着写交接文档」。
  *
- * 只有 `/handoff` 一处用它，所以它就住在这一层；渲染层不认这几条（`pick()` 只收标签与值）。
+ * 选项、措辞、取舍说明全不归这一层：`pick()` 只收标签与值，题长什么样由产生它的那一侧说。
  */
-function handoffModeItems(): SelectItem<string>[] {
-  return [
-    { label: t("handoff.modeSelf"), value: "self", hint: t("handoff.modeSelfHint") },
-    { label: t("handoff.modeSummary"), value: "summary", hint: t("handoff.modeSummaryHint") },
-    { label: t("handoff.modeSkip"), value: HANDOFF_SKIP, hint: t("handoff.modeSkipHint") },
-  ];
-}
-
-/**
- * 选择器答案 → 交接执行者。
- *
- * `null`（Esc / 覆盖层被关掉）、`HANDOFF_SKIP`（选了「跳过本次」）与任何意外值都归到 `null`：
- * 调用方只需分辨「交接 / 不交接」两件事，而 `handoff.start` 只有 `self` / `summary` 两个合法值。
- */
-function toHandoffMode(value: string | null): HandoffMode | null {
-  return value === "self" || value === "summary" ? value : null;
-}
-
-/**
- * 这条失败是不是「用户选择了不交接」。
- *
- * 认业务码而不是 `instanceof`：跨进程没有类的同一性，宿主发的是 `handoff_declined`
- * （PRD F-D7：取消不等于失败，不重试、不留半个文档），客户端按码分支。
- */
-function isHandoffDeclined(error: unknown): boolean {
-  return (error as { code?: unknown } | null)?.code === "handoff_declined";
-}
 
 /**
  * 一段消息内容里的文字（撤回列表的标签、回填输入框都用它）。
@@ -1751,23 +1722,27 @@ const cmdKey: CommandHandler = async ({ openKeyEditor }) => {
  * 两条命令走的是同一条 `handoff.start`，靠入参 `kind` 分档（`document` / `swap`）：命令名字是
  * 两个动作、两个后果，混成一档它们就是同一条命令的两个名字。
  *
- * ## 谁去写：`/handoff` 问一次，`/migrate` 不问
+ * ## 谁去写：两条命令都不问，由宿主出题
  *
  * 旧版（`cli@1.0.2` 的 `auto-migrate-confirm.ts`）两条命令都先问「自交接 / 独立摘要 / 跳过本次」。
- * 这一版把三选一补回到 `/handoff`：执行者是 `handoff.start` 的 `mode`（宿主的可选入参）。
- * `/migrate` 只答应显式写出来的 `mode`，不再多问一遍 —— 换手那一档要的是「现在就把班交出去」，
- * 多一道选择只多一次确认。
+ * 那一屏先被搬到命令层（只有 `/handoff` 问，`/migrate` 不问），又被整个搬回宿主：手动敲命令与
+ * 阈值撞线是两件事，但「用哪种方式交接」只有一个答案 —— 两处各写一份题，用户看到的就是两副面孔。
+ * 于是现在**题只有一份**（`HandoffService.startAsked` 与 `automaticMode` 共用），命令层只说
+ * 「哪一档」；显式写了 `/handoff self` `/migrate summary` 就不问 —— 选择题只是「没指定时」的那一问。
  *
  * ## 回执只有「开始了」
  *
  * 交接是要跑一阵的事，而 `handoff.start` 是一个 RPC：它只回「开始了」。文档路径不在回执里
  * —— 它要等写完才有；写到哪、成没成，走宿主的通知，界面不必自己猜。
  *
+ * **没指定执行者时连这句「开始了」也不说**：题一出来就是回执，用户答完才真正开跑，这时候报一句
+ * 「开始了」反而是在他还沒选之前就替他宣告了。
+ *
  * 两条都不换屏、不换会话：换手是原地换记忆，id 不变、侧栏位置不变，旧记忆变成另一段
  * ` 已存档_<原名>` 会话出现在列表里；只写文档那一档连记忆都不动。所以这里既不迁移屏、也不改显示
  * 起点。
  */
-const cmdHandoff: CommandHandler = async ({ session, push, args, pick }) => {
+const cmdHandoff: CommandHandler = async ({ session, push, args }) => {
   const handoff = parseHandoffSelection(args);
   if (handoff.invalid !== undefined) {
     push(t("cmd.handoff.unknownMode", { who: handoff.invalid }), "error");
@@ -1777,42 +1752,14 @@ const cmdHandoff: CommandHandler = async ({ session, push, args, pick }) => {
     push(t("cmd.handoff.empty"), "error");
     return;
   }
-  /*
-   * 执行者三选一（旧版 `auto-migrate-confirm.ts` 那一屏，这一版补回）：`self` 这段会话自己写、
-   * `summary` 另起一个一次性 Agent 写、`HANDOFF_SKIP` 什么都不做。
-   *
-   * 显式写了 `/handoff self|summary` 就不再问 —— 选择器只是「没指定时」的那一问。
-   *
-   * ## 非交互那一路为什么不问
-   *
-   * `runCommand` 的**唯一**调用方是 TUI 的 `chat.tsx`（`--no-tui` / stdio 那条路只发一句话，
-   * 不解析斜杠命令），所以这一屏一定有人在那儿按。真要让 stdio 也能触发 `/handoff`，就让它说
-   * `/handoff self` —— 那就是「不问、直接按 `self` 发」的落点：**不替用户挑执行者**，因为
-   * `summary` 会另起一个 Agent 去写，那不是「没人可问」能替人决定的事。
-   */
-  const answer = handoff.mode ?? (await pick(t("cmd.handoff.title"), handoffModeItems()));
-  // 跳过本次：一次 procedure 都不调，只说一句
-  if (answer === HANDOFF_SKIP) {
-    push(t("cmd.handoff.skipped"));
-    return;
-  }
-  const mode = toHandoffMode(answer);
-  if (mode === null) {
-    // Esc / 覆盖层被关掉：当作取消（宿主那边什么都没发生）
-    push(t("cmd.handoff.cancelled"));
-    return;
-  }
   try {
-    // 只写文档那一档：执行者随入参交给宿主，`kind` 说清“不要换手”
-    await session.handoff({ kind: "document", mode });
-    // 文档路径由宿主那一条通知给（它才知道写到哪），这里只说「开始了」
-    push(t("cmd.handoff.started"));
+    // 只写文档那一档：`kind` 说清“不要换手”；没指定执行者时，宿主会先出那道三选题
+    await session.handoff(
+      handoff.mode === undefined ? { kind: "document" } : { kind: "document", mode: handoff.mode },
+    );
+    // 显式挑了执行者才有「开始了」这一句：没指定时题就是回执（见上面那段注释）
+    if (handoff.mode !== undefined) push(t("cmd.handoff.started"));
   } catch (error: unknown) {
-    // 用户选了「不交接」：不是失败，也不该报错堆栈（宿主没有留下任何东西）
-    if (isHandoffDeclined(error)) {
-      push(t("cmd.handoff.cancelled"));
-      return;
-    }
     push(t("cmd.handoff.failed", { error: messageOf(error) }), "error");
   }
 };
@@ -1828,8 +1775,8 @@ const cmdMigrate: CommandHandler = async ({ session, push, args }) => {
     return;
   }
   /*
-   * 与 `/handoff` 同一条 procedure，但走的是换手那一档，且不问执行者：三选一那一屏只有 `/handoff`
-   * 那一处。显式写了 `/migrate self|summary` 就照它发，没写就交给宿主的缺省。
+   * 与 `/handoff` 同一条 procedure，但走的是换手那一档，执行者同样不问：没指定就交给宿主出那道
+   * 三选题（与阈值撞线是同一份题）。显式写了 `/migrate self|summary` 就照它发。
    */
   try {
     // 换手那一档：写完文档，这段会话的记忆换成新的一份、旧记忆成为一段已存档会话
@@ -1837,12 +1784,9 @@ const cmdMigrate: CommandHandler = async ({ session, push, args }) => {
       handoff.mode === undefined ? { kind: "swap" } : { kind: "swap", mode: handoff.mode },
     );
     // 原地换手：会话 id 不变、屏幕不换。旧记忆变成的那一段在列表里按创建时间排着
-    push(t("cmd.migrate.started"));
+    // （没指定执行者时题就是回执，不多说这一句）
+    if (handoff.mode !== undefined) push(t("cmd.migrate.started"));
   } catch (error: unknown) {
-    if (isHandoffDeclined(error)) {
-      push(t("cmd.migrate.cancelled"));
-      return;
-    }
     push(t("cmd.migrate.failed", { error: messageOf(error) }), "error");
   }
 };

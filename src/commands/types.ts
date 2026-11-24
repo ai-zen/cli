@@ -7,8 +7,8 @@
  *
  *   · `SelectItem` —— 命令层**产出**选项（`/model`、`/load`、`/back`、`/think` 各拼一份），
  *     覆盖层**渲染**它。它是这条边界的形状，不是某一侧的私有类型；
- *   · （曾经还有）交接方式三选一 —— 现在住在命令层了：只有 `/handoff` 一处在问，选项与文案
- *     就跟着它（`commands/handlers.ts` 的 `handoffModeItems`），渲染层不再需要这一套；
+ *   · 交接方式三选一 —— **两边都不在了**：题由宿主出（`HandoffService.startAsked`），命令层只说
+ *     哪一档、覆盖层只渲染宿主发来的 `QuestionView`（`tui/screens/question-choice.ts`）；
  *   · `WizardEntryStep` —— 命令层能打开的向导入口步（`/config` 的菜单、`/mcp` 的那一屏）。
  *
  * 放在这里之后，「命令层 import 渲染层」这条越界在**类型层**就不存在了：`SelectItem` 与

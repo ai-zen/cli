@@ -262,12 +262,7 @@ export const en: Record<string, string> = {
   "cmd.ws.deleteFailed": "Could not delete the workspace: {error}",
   "cmd.ws.deleteNoSessionLeft": "No other session on this host — start one with /new",
   "cmd.handoff.empty": "This session has nothing to hand off",
-  // The three-way picker: the title says what is being asked (who writes it), not whether to hand off
-  "cmd.handoff.title": "Handoff · pick who writes the document",
-  "cmd.handoff.cancelled": "Handoff cancelled",
-  "cmd.handoff.skipped": "Skipped this handoff",
   "cmd.migrate.empty": "This session has nothing to migrate",
-  "cmd.migrate.cancelled": "Migration cancelled",
   "cmd.back.empty": "No messages to retract",
   "cmd.back.title": "Pick the message to retract (everything after it is deleted)",
   "cmd.back.cancelled": "Retract cancelled",
@@ -344,15 +339,9 @@ export const en: Record<string, string> = {
   "cmd.editor.failed": "Could not open the editor: {error}",
   "cmd.unknown": "Unknown command: {cmd} (type /help to see them all)",
 
-  // ---------- Handoff picker / sub-task notices / welcome block / message placeholders ----------
-  // The executor picker: the summary option has to say that it spins up a throwaway executor —
-  // the difference between the two is who writes it, not how well it is written
-  "handoff.modeSelf": "This session writes its own handoff",
-  "handoff.modeSelfHint": "Accurate · checks the real state",
-  "handoff.modeSummary": "A throwaway executor writes the handoff",
-  "handoff.modeSummaryHint": "Fast and cheap · skips checking files",
-  "handoff.modeSkip": "No handoff",
-  "handoff.modeSkipHint": "Skip this one",
+  // ---------- Sub-task notices / welcome block / message placeholders ----------
+  // The three handoff options are not here any more: the host asks (`HandoffService.startAsked`)
+  // and owns the wording, so the threshold path and the manual path show the same question.
   "agentTabs.main": "MAIN",
   "chat.configReadFailed": "Could not read the config: {error}",
   "chat.modelNoEndpoint": "Model {id} has no usable endpoint bound — check the config with /config",
