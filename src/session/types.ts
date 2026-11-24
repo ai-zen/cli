@@ -412,6 +412,12 @@ export interface QuestionView {
   /** 题干（宿主已按当前语言渲染好的那句） */
   message: string;
   choices: readonly { value: string; label: string }[];
+  /**
+   * 「面板被关掉」等于给哪个值（Esc / Ctrl+C）：**宿主声明的那一个**，不是客户端按位置猜的。
+   *
+   * 没这一格就是「关掉 = 不作答」（题继续挂着，宿主随后以 `question_pending` 拒后续发送）。
+   */
+  cancelValue?: string;
   blocking: boolean;
   createdAt: number;
 }
