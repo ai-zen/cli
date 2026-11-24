@@ -351,8 +351,6 @@ export class SessionRegistry implements SessionHub {
       phaseText: phaseLine({
         status: entry.session.status,
         messages: entry.session.messages,
-        // 排队那一段只能从队里现读（宿主不报「在排队」这个阶段）
-        inboxPending: entry.session.inboxPending,
         // `/sessions` 那一行也要说得出「这段在交接」，否则它看起来只是闲着
         handingOff: entry.session.handoffSince !== null,
       }),

@@ -618,7 +618,13 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
-  it("排队那一段也在屏上：队里还有货、这一批还没开口 → 「排队中…」", async () => {
+  /**
+   * 队里的话**只由排队区回显**：阶段行说的是「这一任此刻在干什么」，它不再兼说一句「排队中」。
+   *
+   * 两件事分开看才知道各自说对了没有：那一条「排队中」出现在**队列那两句自己的行首**
+   * （`inbox.pending` 前缀），而不是出现在阶段行上。
+   */
+  it("队里的话由排队区自己回显，阶段行不喊「排队」", async () => {
     const { lastFrame, unmount } = mount();
     await flush();
     created.session.status = "working";
@@ -631,11 +637,18 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await flush();
 
     const frame = lastFrame() ?? "";
-    // 阶段行说「排队中」，排队区把那两句摆出来 —— 两处说的是同一件事的两个面
+    const rows = frame.split("\n");
     const divider = rowOf(frame, "───");
-    expect(rowOf(frame, "排队中")).toBeGreaterThanOrEqual(0);
-    expect(rowOf(frame, "排队中")).toBeLessThan(divider);
+    // 排队区：那两句连同它们自己的「排队中」前缀都在分割线之上
     expect(rowOf(frame, "还有一句")).toBeLessThan(divider);
+    expect(rowOf(frame, "再一句")).toBeLessThan(divider);
+    // 阶段行说的是手上在干什么（这里：这一批还没落下来 → 连接中），不是「排队中」
+    const phaseRow = rows.findIndex((row) => row.includes(t("phase.connecting")));
+    expect(phaseRow).toBeGreaterThanOrEqual(0);
+    expect(phaseRow).toBeLessThan(divider);
+    // 「排队」只出现在队列那两句自己的行首（`inbox.pending` 前缀），一行一句
+    const queueRows = rows.filter((row) => row.includes("排队"));
+    expect(queueRows).toHaveLength(2);
     unmount();
   });
 

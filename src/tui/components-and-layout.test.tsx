@@ -1203,7 +1203,6 @@ describe("workingSpinnerLabel（忙碌期 spinner 文案）", () => {
         {
           status: "working",
           messages: [userTurn({ reasoning_content: "x" })],
-          inboxPending: 0,
           handingOff: false,
         },
         null,
@@ -1214,7 +1213,6 @@ describe("workingSpinnerLabel（忙碌期 spinner 文案）", () => {
         {
           status: "working",
           messages: [userTurn({ content: "答案" })],
-          inboxPending: 0,
           handingOff: false,
         },
         "upgrade",
@@ -1231,7 +1229,6 @@ describe("workingSpinnerLabel（忙碌期 spinner 文案）", () => {
               finish_reason: AgentNS.FinishReason.ToolCalls,
             }),
           ],
-          inboxPending: 0,
           handingOff: false,
         },
         null,
@@ -1241,7 +1238,7 @@ describe("workingSpinnerLabel（忙碌期 spinner 文案）", () => {
 
   it("阻塞命令执行中（没有「在忙」那一格）：显示命令名，不是笼统的「处理中」", () => {
     const label = workingSpinnerLabel(
-      { status: "idle", messages: [], inboxPending: 0, handingOff: false },
+      { status: "idle", messages: [], handingOff: false },
       "update",
     );
     expect(label).toBe(t("cmd.running", { name: "update" }));

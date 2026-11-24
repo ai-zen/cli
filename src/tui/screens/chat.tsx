@@ -1584,15 +1584,14 @@ export function Chat(props: ChatScreenProps) {
   const generating = activity === "working";
   const working = generating || blockingCommand !== null;
   /**
-   * 阶段行要的现读事实（忙闲 + 消息 + 队里还有几条）：`phaseLine` 是一支纯函数，不存任何状态。
+   * 阶段行要的现读事实（忙闲 + 消息）：`phaseLine` 是一支纯函数，不存任何状态。
    *
-   * 排队那一段就是 `inbox` 里有货（宿主不报「在排队」这个阶段）：条数取会话层派生的
-   * `inboxPending`（= `inbox.length`），屏幕下方那块排队区读的是同一个数组，不会有两份数。
+   * **队里那几句不进来**：排队区（`InboxArea`）已经把它们的原话逐条摆出来了，阶段行只回答
+   * 「这一任此刻在干什么」—— 见 `session-phase.ts` 的文件头。
    */
   const phaseFacts: PhaseFacts = {
     status: activity,
     messages,
-    inboxPending: session?.inboxPending ?? 0,
     handingOff,
   };
   /** 当前查看的子 Agent；不在列表里（换了一次之后过期）时回落到主 Agent */

@@ -64,7 +64,6 @@ export const zh: Record<string, string> = {
   // 「排队」= 话还在 inbox 里没被取走；「等待首字」= 请求已发出、一条字都还没回来。
   "phase.working": "处理中…",
   "phase.connecting": "连接中…",
-  "phase.inboxWaiting": "排队中…",
   "phase.waitingFirstToken": "等待首字…",
   "phase.thinking": "思考中…",
   "phase.toolCalling": "调用工具…",

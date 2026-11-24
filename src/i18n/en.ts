@@ -51,7 +51,6 @@ export const en: Record<string, string> = {
   // and not a single character has come back yet.
   "phase.working": "Working…",
   "phase.connecting": "Connecting…",
-  "phase.inboxWaiting": "Waiting in queue…",
   "phase.waitingFirstToken": "Awaiting first token…",
   "phase.thinking": "Thinking…",
   "phase.toolCalling": "Calling tool…",

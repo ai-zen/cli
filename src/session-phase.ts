@@ -6,25 +6,28 @@
  * 新契约里**没有** `generation` 那样的阶段值：宿主只报忙闲那一格（`working` / `idle`），更细的
  * 「排队 / 在想 / 在拼工具 / 在等工具 / 在出字」由客户端按到达的事件自己推（`PRD 4.4`、`3.9`）。
  * 所以这一层既没有状态机、也没有可以存下来的 `phase` 字段：它是一次**纯函数调用**，入参是
- * 「忙闲 + 此刻那条消息长什么样 + 队里还压着几句」，出参是一句话。同一份事实读两次，得到的
- * 永远是同一句。
+ * 「忙闲 + 此刻那条消息长什么样」，出参是一句话。同一份事实读两次，得到的永远是同一句。
  *
  * ## 推的依据只有这几样（全在契约里）
  *
  *   1. 忙闲那一格（`SessionState.status`）：`idle` 就没在动，没什么可说的；
- *   2. 队里还压着几条（`SessionState.inbox` 的条数）：话还没被取走 —— 那就是**排队**；
- *   3. 最后一条消息的 `role` 与 `status`：AgentDefinition 那条还在 `pending` / `writing` 就是「还没开口」；
- *   4. 那条 AgentDefinition 消息的 `reasoning_content` / `content` / `tool_calls` / `finish_reason`：
+ *   2. 最后一条消息的 `role` 与 `status`：AgentDefinition 那条还在 `pending` / `writing` 就是「还没开口」；
+ *   3. 那条 AgentDefinition 消息的 `reasoning_content` / `content` / `tool_calls` / `finish_reason`：
  *      思考在前、正文在后、工具调用在中间（core 的一条消息内部顺序恒定）。
  *
  * 外加一个只有工具那一段才需要的事实：工具结果消息（`role: tool`）回来了几条 —— 还有几条没回来
  * 就说明还在等它们。
  *
- * ## 「排队」是 inbox 里有货，不是某个阶段字段
+ * ## 「排队」不在这条线上
  *
- * 宿主从来不报「在排队」：那是**别人的话还在 inbox 里、这一任还没取走**（`PRD 4.1`）。
- * 所以排队只能从 `inbox` 现读，与「已经开口了没有」合起来判：那条 AgentDefinition 消息一旦吐出任何东西
- *（思考 / 正文 / 工具调用），屏上就不再是排队了。
+ * 宿主从来不报「在排队」：那是**用户的话还在 inbox 里、这一任还没取走**（`PRD 4.1`）。但这句话不该
+ * 由阶段行来说 —— 屏上那块**排队区**（`tui/components.tsx` 的 `InboxArea`）已经把队里那几句**逐条
+ * 回显**出来了（「排队中 <原话预览>」，最多三行 + 「还有 N 条」）。同一件事在两处各说一遍，只是在
+ * 每一帧多占一行宽度。
+ *
+ * 于是阶段行只回答「这一任此刻在干什么」：手上没活就不说，有活就说连接 / 思考 / 工具 / 输出。
+ * 队里的话还没被取走时，这一行说的是**上一批**的状态（它确实还在跑），排队区说的是**还压着的那几句**
+ * —— 两者并读没有歧义。
  *
  * 文案仍然是客户端的事（`i18n`）：事实来自宿主，句子来自这里，与命令表同一条规矩。
  */
@@ -39,8 +42,6 @@ export interface PhaseFacts {
   status: SessionActivity | null;
   /** 这段会话的消息（`session.messages`，主线；subagent 的话不在里面） */
   messages: readonly AgentNS.Message[];
-  /** 队里还压着几条（`session.inbox` 的条数）：> 0 = 用户说的话还没被取走 */
-  inboxPending: number;
   /**
    * 正在交接（`session.handoffSince`）—— `true` 时这句话盖过下面所有阶段。
    *
@@ -53,7 +54,7 @@ export interface PhaseFacts {
 /**
  * 阶段行的文案；`null` = 手上没活（不占行）。
  *
- * 与 PRD 3.9 的六句话一一对得上（连上了 / 排队 / 在想 / 调工具 / 等工具回来 / 在输出），另加
+ * 与 PRD 3.9 的几句话一一对得上（连上了 / 在想 / 调工具 / 等工具回来 / 在输出），另加
  * 一句更细的「等待首字」（请求已发出、一条字都还没回来 —— 旧版把这两件事压在同一句里，屏上
  * 分不开「话还在队里」与「话已送到、服务端还没吐字」）。它们只是**这一帧的读数**，不是被记住的一格。
  */
@@ -64,9 +65,6 @@ export function phaseLine(facts: PhaseFacts): string | null {
   if (facts.status !== "working") return null;
   const messages = facts.messages;
   const last = messages[messages.length - 1];
-
-  // ① 排队：话还在队里，而这一批还没吐出任何东西（AgentDefinition 那条还没冒头，或冒头了还空着）
-  if (facts.inboxPending > 0 && !started(last)) return t("phase.inboxWaiting");
 
   // 手上已经有活（忙），但这一批的消息还没落下来：还在装配 / 还没取到件
   if (!last) return t("phase.connecting");
@@ -102,19 +100,6 @@ export function phaseLine(facts: PhaseFacts): string | null {
   if ((last.reasoning_content ?? "").length > 0) return t("phase.thinking");
   // 请求已发出、首字未到（服务端排队 / 冷启动都算这一段）
   return t("phase.waitingFirstToken");
-}
-
-/**
- * 这一批「开口了没有」：最后那条 AgentDefinition 消息已经吐出了思考 / 正文 / 工具调用中的任何一样。
- *
- * 判据只看**消息本身**（不看时间、不看次序）：队里的话与「屏幕上有没有字」是两件事，分开问
- * 才知道该说「排队」还是「在想」。
- */
-function started(last: AgentNS.Message | undefined): boolean {
-  if (!last || last.role !== AgentNS.Role.Assistant) return false;
-  if ((last.tool_calls ?? []).length > 0) return true;
-  if ((last.reasoning_content ?? "").length > 0) return true;
-  return hasText(last.content);
 }
 
 /** 一条消息的内容段里有没有正文（字符串或段数组两种形状） */

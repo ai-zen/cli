@@ -34,7 +34,7 @@ export function Spinner({ label }: { label?: string }) {
     return () => clearInterval(timer);
   }, []);
   return (
-    // `truncate`：转圈标签（如「排队中…（等待首 token）」）一旦折行，
+    // `truncate`：转圈标签（如「等待首 token…」）一旦折行，
     // 那一行就会变成两行、把输入框顶出屏幕（`phaseLines` 恒为 1）。
     <Text wrap="truncate">
       <Text color={theme.brand[0]}>{SPINNER_FRAMES[frame]}</Text>

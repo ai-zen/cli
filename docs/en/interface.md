@@ -46,12 +46,11 @@ Blocks are the unit of wrapping: a block that does not fit moves to the next lin
 
 ## The phase line
 
-The phase line sits above the divider and appears while the agent has work in hand. It says the phase the client can read out of the facts it has:
+The phase line sits above the divider and appears while the agent has work in hand. It says the phase the client can read out of the facts it has — it answers "what is this run doing right now"; **queued messages are not announced here**, the queue area echoes them one by one ("waiting · <text>"):
 
 | Phase                        | When                                                                                          |
 | ---------------------------- | --------------------------------------------------------------------------------------------- |
 | handing off                  | this session is writing the document or waiting for it to finish; it covers every phase below |
-| waiting in the queue         | the inbox still holds messages and this batch has produced nothing yet                        |
 | connecting                   | work is in hand but this batch's message has not landed                                       |
 | awaiting the first token     | the request is out and nothing has come back                                                  |
 | thinking                     | reasoning has arrived, the answer has not                                                     |
@@ -92,7 +91,7 @@ Two entries clear it:
 
 The input line is multi-line and takes at most eight rows; longer drafts scroll a window that follows the cursor instead of squeezing the transcript out. `Enter` sends; `Ctrl+J` (or `Ctrl+Enter`) inserts a newline; `↑` `↓` move the cursor inside a multi-line draft first, and only step into history from the first and last line.
 
-Typing keeps working while a request is in flight: that message is handed to the host, which puts it in the inbox, and the queue band shows what is still waiting while the phase line says so too.
+Typing keeps working while a request is in flight: that message is handed to the host, which puts it in the inbox, and the queue band shows what is still waiting (each line carrying its own "waiting" prefix); the phase line only says what this run is doing right now.
 
 `@` completes file paths:
 

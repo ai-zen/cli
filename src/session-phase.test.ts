@@ -1,10 +1,11 @@
 /**
  * 阶段文案用例：**几样契约事实 → 一句话**。
  *
- * 新契约里没有阶段值（没有六态、没有 `generation`）：宿主只报忙闲，更细的「排队 / 在想 / 在拼
- * 工具 / 在等工具 / 在出字」由客户端按「那条消息的 `status` / `reasoning_content` / `content` /
- * `tool_calls`」与「inbox 里还压着几句」自己推。所以这里断言的是「事实 → 人话」这一层，
- * 一句话都不许变成可以存下来的一格。
+ * 新契约里没有阶段值（没有六态、没有 `generation`）：宿主只报忙闲，更细的「在想 / 在拼工具 /
+ * 在等工具 / 在出字」由客户端按那条消息的 `status` / `reasoning_content` / `content` /
+ * `tool_calls` 自己推。所以这里断言的是「事实 → 人话」这一层，一句话都不许变成可以存下来的一格。
+ *
+ * 「排队」不在这一层：队里那几句由屏上那块排队区逐条回显（见 `tui/components.tsx` 的 `InboxArea`）。
  */
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -47,11 +48,10 @@ const toolResult = (callId: string): AgentNS.Message => ({
   content: "ok",
 });
 
-/** 一条「没排队」的现读事实：用例只关心消息那几格时就写这个 */
+/** 只关心消息那几格的现读事实 */
 const inline = (messages: AgentNS.Message[]) => ({
   status: "working" as const,
   messages,
-  inboxPending: 0,
 });
 
 /**
@@ -66,41 +66,33 @@ const line = (facts: Omit<PhaseFacts, "handingOff"> & { handingOff?: boolean }) 
 describe("phaseLine（契约事实 → 阶段那一句话）", () => {
   it("手上没活 → `null`（不占行）", () => {
     setLocale("zh");
-    expect(line({ status: "idle", messages: [], inboxPending: 0 })).toBeNull();
+    expect(line({ status: "idle", messages: [] })).toBeNull();
     // 读数还没到也不许说「在忙什么」
-    expect(line({ status: null, messages: [assistant()], inboxPending: 0 })).toBeNull();
+    expect(line({ status: null, messages: [assistant()] })).toBeNull();
   });
 
   it("忙、但这一批的消息还没落下来 → 连接中…", () => {
     setLocale("zh");
-    expect(line({ status: "working", messages: [], inboxPending: 0 })).toBe("连接中…");
+    expect(line({ status: "working", messages: [] })).toBe("连接中…");
     // 用户那句刚落、AgentDefinition 那条还没冒出来：同样还在等
-    expect(line({ status: "working", messages: [user()], inboxPending: 0 })).toBe("连接中…");
+    expect(line({ status: "working", messages: [user()] })).toBe("连接中…");
   });
 
-  it("**排队 = inbox 里有货**：话还没被取走、屏上还没有它一个字", () => {
+  /**
+   * 「排队」不在这条线上：屏上那块排队区已经把队里那几句**逐条回显**了（「排队中 <原话>」），
+   * 阶段行再喊一句只是同一件事说两遍。这一行只回答「这一任此刻在干什么」。
+   */
+  it("阶段行从不喊「排队」：那件事归排队区，这里按手上实际在干什么说", () => {
     setLocale("zh");
-    // 一条消息都还没有，队里压着一句 → 排队
-    expect(line({ status: "working", messages: [], inboxPending: 1 })).toBe("排队中…");
-    // 用户那句刚落（AgentDefinition 那条还没冒头）、后面还压着一句 → 排队
-    expect(line({ status: "working", messages: [user()], inboxPending: 2 })).toBe("排队中…");
-    // AgentDefinition 那条冒头了但还空着、队里还有货 → 还是排队（一个字都没吐出来）
-    expect(line({ status: "working", messages: [user(), assistant()], inboxPending: 1 })).toBe(
-      "排队中…",
-    );
-  });
-
-  it("一旦这一批吐出东西就不再是排队（队里那几句由排队区自己回显）", () => {
-    setLocale("zh");
-    for (const message of [
-      assistant({ reasoning_content: "想一想" }),
-      assistant({ content: "答案是" }),
-      assistant({ tool_calls: [toolCall("read_file")] }),
-    ]) {
-      expect(line({ status: "working", messages: [user(), message], inboxPending: 3 })).not.toBe(
-        "排队中…",
-      );
-    }
+    const said = [
+      line({ status: "working", messages: [] }), // 这一批还没落下来 → 连接中
+      line({ status: "working", messages: [user()] }), // 用户那句刚落 → 连接中
+      line({ status: "working", messages: [user(), assistant()] }), // 那条还空着 → 等待首字
+      line(inline([user(), assistant({ reasoning_content: "想一想" })])), // 在想
+      line(inline([user(), assistant({ content: "答案" })])), // 在输出
+    ];
+    for (const phase of said) expect(phase).not.toContain("排队");
+    expect(said).toEqual(["连接中…", "连接中…", "等待首字…", "思考中…", "输出中…"]);
   });
 
   it("没排队、助手那条还空着 → 等待首字…（请求已发出，服务端还没吐字）", () => {
@@ -161,11 +153,10 @@ describe("phaseLine（契约事实 → 阶段那一句话）", () => {
     expect(line(inline([user(), call, toolResult("t1"), toolResult("t2")]))).toBe("等待工具返回…");
   });
 
-  it("六句话都在，且彼此可分辨（都说「处理中…」的话用户分不清在排队、思考还是出字）", () => {
+  it("五句话都在，且彼此可分辨（都说「处理中…」的话用户分不清在思考、出字还是等工具）", () => {
     setLocale("zh");
     const lines = [
-      line({ status: "working", messages: [], inboxPending: 0 }), // 连上了
-      line({ status: "working", messages: [], inboxPending: 1 }), // 排队
+      line({ status: "working", messages: [] }), // 连上了
       line(inline([user(), assistant({ reasoning_content: "x" })])), // 在想
       line(inline([user(), assistant({ content: "x" })])), // 在输出
       line(inline([user(), assistant({ tool_calls: [toolCall()] })])), // 调工具
@@ -176,13 +167,12 @@ describe("phaseLine（契约事实 → 阶段那一句话）", () => {
         ]),
       ), // 等工具回来
     ];
-    expect(new Set(lines).size).toBe(6);
+    expect(new Set(lines).size).toBe(5);
   });
 
   it("英文界面同一套事实换一种说法", () => {
     setLocale("en");
     expect(line(inline([user(), assistant({ reasoning_content: "x" })]))).toBe("Thinking…");
-    expect(line({ status: "working", messages: [], inboxPending: 1 })).toBe("Waiting in queue…");
     expect(
       line(
         inline([
@@ -199,25 +189,18 @@ describe("phaseLine（契约事实 → 阶段那一句话）", () => {
   it("**正在交接**盖过其余一切：闲也在说、忙也在说（PRD 4.5）", () => {
     setLocale("zh");
     // 独立交接那一路没有流可看，这一格会是 idle —— 仍然要说「正在交接」
-    expect(line({ status: "idle", messages: [], inboxPending: 0, handingOff: true })).toBe(
-      "正在交接…",
-    );
+    expect(line({ status: "idle", messages: [], handingOff: true })).toBe("正在交接…");
     // 自交接在写文档（忙）：不报「思考中 / 输出中」，只说正在交接
     expect(
       line({
         status: "working",
         messages: [assistant({ content: "x" })],
-        inboxPending: 0,
         handingOff: true,
       }),
     ).toBe("正在交接…");
     // 读数还没回来也一样（交接是宿主挂牌的事实，不靠忙闲判）
-    expect(line({ status: null, messages: [], inboxPending: 2, handingOff: true })).toBe(
-      "正在交接…",
-    );
+    expect(line({ status: null, messages: [], handingOff: true })).toBe("正在交接…");
     setLocale("en");
-    expect(line({ status: "idle", messages: [], inboxPending: 0, handingOff: true })).toBe(
-      "Handing off…",
-    );
+    expect(line({ status: "idle", messages: [], handingOff: true })).toBe("Handing off…");
   });
 });
