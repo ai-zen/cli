@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LogSink } from "@ai-zen/agents-logger";
 import { DEFAULT_LOCALE, getLocale, setLocale } from "./index.js";
-import { initLocale, persistLocale, readPreferences, writePreferences } from "./preferences.js";
+import {
+  initLocale,
+  persistLocale,
+  readPreferences,
+  syncLocaleToHost,
+  writePreferences,
+} from "./preferences.js";
 
 /** 本文件创建过的临时目录，`afterAll` 统一删除（否则每跑一次测试就在 /tmp 留一堆） */
 const tempDirs: string[] = [];
@@ -125,5 +131,81 @@ describe("偏好文件读不出来 / 写不进去", () => {
     await persistLocale("zh", logger, join(blocker, "preferences.json"));
 
     expect(warnings.join("\n")).toContain("preferences.json");
+  });
+});
+
+describe("syncLocaleToHost（连上之后，把本机语言同步给宿主）", () => {
+  /** 宿主那一格：读给什么、写到哪里由用例定 */
+  function hostOf(language: string | undefined) {
+    const written: string[] = [];
+    return {
+      written,
+      source: {
+        read: async () => language,
+        write: async (locale: string) => void written.push(locale),
+      },
+    };
+  }
+
+  it("宿主与界面不同：把本机语言写过去（方向只有客户端 → 宿主）", async () => {
+    setLocale("zh");
+    const host = hostOf("en");
+
+    await syncLocaleToHost(host.source, logger);
+
+    expect(host.written).toEqual(["zh"]);
+    // 本机一个字没动：宿主的语言不回头覆盖界面
+    expect(getLocale()).toBe("zh");
+  });
+
+  it("宿主没有这一格：也写过去（老配置里没有 language 的正常路径）", async () => {
+    setLocale("zh");
+    const host = hostOf(undefined);
+
+    await syncLocaleToHost(host.source, logger);
+
+    expect(host.written).toEqual(["zh"]);
+  });
+
+  it("已经一致：一次写都不发", async () => {
+    setLocale("en");
+    const host = hostOf("en");
+
+    await syncLocaleToHost(host.source, logger);
+
+    expect(host.written).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
+  it("读不到宿主那一格：报一句，什么都不写，界面照旧", async () => {
+    setLocale("zh");
+    await syncLocaleToHost(
+      {
+        read: async () => {
+          throw new Error("连不上");
+        },
+        write: async () => {},
+      },
+      logger,
+    );
+
+    expect(getLocale()).toBe("zh");
+    expect(warnings.join("\n")).toContain("连不上");
+  });
+
+  it("写不进去：报一句；界面语言不受影响", async () => {
+    setLocale("zh");
+    await syncLocaleToHost(
+      {
+        read: async () => "en",
+        write: async () => {
+          throw new Error("写不进去");
+        },
+      },
+      logger,
+    );
+
+    expect(getLocale()).toBe("zh");
+    expect(warnings.join("\n")).toContain("写不进去");
   });
 });

@@ -19,7 +19,7 @@ import { dirname, join } from "node:path";
 import type { LogSink } from "@ai-zen/agents-logger";
 import { cliEnv } from "../env.js";
 import { readMemoryFile, type MemoryRead } from "../local-memory.js";
-import { detectLocale, setLocale, normalizeLocale, type Locale } from "./index.js";
+import { detectLocale, setLocale, getLocale, normalizeLocale, type Locale } from "./index.js";
 
 /**
  * 偏好文件路径；`AIZ_PREFERENCES_FILE` 可覆盖（调试与特殊部署用）。
@@ -115,4 +115,53 @@ export async function persistLocale(
 ): Promise<void> {
   setLocale(locale);
   await writePreferences({ language: locale }, logger, file);
+}
+
+/**
+ * 宿主那份语言的读写口。
+ *
+ * 形状给得这么窄，是为了让本模块只认「读一格 / 写一格」：拼 `config.get` / `config.update`
+ * 是调用方的事，这一层不 import 连接层。
+ */
+export interface HostLocaleSource {
+  /** 宿主配置里的 `language`（没有这一格就是 `undefined`） */
+  read(): Promise<string | undefined>;
+  /** 写宿主配置里的 `language` */
+  write(locale: Locale): Promise<void>;
+}
+
+/**
+ * 连上之后把**本机语言同步给宿主**：语言只有一个方向，客户端 → 宿主。
+ *
+ * 语言存在两处：本机偏好（`preferences.json`）管界面文案，宿主配置的 `language` 管宿主自己渲染的
+ * 句子（题、通知、错误）。出场时两处都是出厂值（`en`），而界面那一份在首次启动时按系统语言识别过
+ * —— 不对齐就会看到「界面是中文、交接那道题与宿主通知是英文」。
+ *
+ * **反方向永远不做**：宿主的语言不会覆盖本机偏好。界面语言是本机用户的选择（`/lang`），
+ * 它不该被另一台机器上、或被出厂值抹掉。`/lang` 本来就会两边一起写，所以这一次之后不会再漂。
+ *
+ * 读不到 / 写不进去都只报一句、保持现状：界面已经能用，语言不是拦路的事。
+ */
+export async function syncLocaleToHost(host: HostLocaleSource, logger: LogSink): Promise<void> {
+  let hostLanguage: Locale | null;
+  try {
+    hostLanguage = normalizeLocale(await host.read());
+  } catch (error) {
+    logger.warn(`读不到宿主的语言设置：${reasonOf(error)}（宿主那侧保持原样）`);
+    return;
+  }
+
+  const locale = getLocale();
+  if (hostLanguage === locale) return;
+
+  try {
+    await host.write(locale);
+  } catch (error) {
+    logger.warn(`写不进宿主的语言设置：${reasonOf(error)}（宿主那侧仍是原样）`);
+  }
+}
+
+/** 错误对象 → 一句能放进日志的话 */
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
