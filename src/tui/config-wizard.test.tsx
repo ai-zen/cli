@@ -659,6 +659,72 @@ describe("端点", () => {
 // ==================== 模型 / 图片模型 ====================
 
 describe("模型", () => {
+  /**
+   * 模型管理是**两级**：先选供应商，再选那一家底下的模型（与 `/model` 同一套读法）。
+   *
+   * 平铺那两个毛病都在这条用例里钉住：清单只列这一家的（别家的一条都不出现），
+   * 「新建模型」在第二级（建出来就绑这家，不再默认绑第一个端点）。
+   */
+  it("先选供应商再选模型：第二级只列这一家的，且「新建模型」建在这家下面", async () => {
+    const config: AppConfig = {
+      ...makeConfig(),
+      models: [
+        ...makeConfig().models,
+        {
+          id: "gpt-sol",
+          name: "GPT-6.1 Sol",
+          endpointId: "openai",
+          tokenThresholds: { handoff: 400_000, guard: 800_000 },
+        },
+      ],
+    };
+    const { stdin, lastFrame, calls, unmount } = mount({
+      config,
+      initialStep: { kind: "models" },
+      handlers: {
+        "config.models.create": () => ({ config }),
+      },
+    });
+    await tick();
+
+    // 第一级：供应商（两家都在，DeepSeek 有 1 条、OpenAI 有 1 条）
+    expect(lastFrame() ?? "").toContain("DeepSeek");
+    expect(lastFrame() ?? "").toContain("OpenAI");
+    expect(lastFrame() ?? "").not.toContain("DeepSeek-V4-Flash");
+
+    stdin.write(DOWN); // 第二项 = OpenAI（顺序 = 配置里端点的顺序）
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+
+    // 第二级：只有 OpenAI 那一条
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("GPT-6.1 Sol");
+    expect(frame).not.toContain("DeepSeek-V4-Flash");
+    expect(frame).toContain(t("wiz.models.newItem"));
+
+    // 「新建模型」在这家下面建：第一项就是它
+    stdin.write(ENTER);
+    await tick();
+    stdin.write("My Model");
+    await tick();
+    stdin.write(ENTER);
+    await until(() => calls.length > 0, "新建模型的那次写入落地");
+    expect(calls[0]).toEqual({
+      method: "config.models.create",
+      params: {
+        model: {
+          id: "my-model",
+          name: "My Model",
+          // 建在**选中的那一家**下面（旧版固定绑第一个端点）
+          endpointId: "openai",
+          tokenThresholds: { handoff: 128_000, guard: 256_000 },
+        },
+      },
+    });
+    unmount();
+  });
+
   it("改交接阈值：一次 config.models.update，两条阈值一起给", async () => {
     const { stdin, calls, unmount } = mount({
       initialStep: { kind: "model", modelId: "deepseek-v4-flash" },
@@ -825,7 +891,7 @@ describe("模型", () => {
 
   it("新建模型：两条阈值按出厂推荐值给（宿主不再替我们补）", async () => {
     const { stdin, calls, unmount } = mount({
-      initialStep: { kind: "new-model" },
+      initialStep: { kind: "new-model", endpointId: "deepseek" },
       handlers: {
         "config.models.create": () => ({ config: makeConfig() }),
       },
@@ -855,7 +921,7 @@ describe("模型", () => {
     const empty: AppConfig = { ...makeConfig(), models: [] };
     const { stdin, calls, unmount } = mount({
       config: empty,
-      initialStep: { kind: "new-model" },
+      initialStep: { kind: "new-model", endpointId: "deepseek" },
       handlers: {
         "config.models.create": () => ({ config: makeConfig() }),
       },

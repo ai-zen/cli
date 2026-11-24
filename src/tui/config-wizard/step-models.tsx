@@ -54,22 +54,31 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
   } = ctx;
   const imageModels = config.imageModels ?? [];
 
-  // ---------- 模型管理 ----------
+  /**
+   * 模型管理是**两级**：先选供应商（端点），再看那一家底下的模型。
+   *
+   * 为什么不平铺：一家订阅式端点就带十几二十条模型，平铺之后既难找、也看不出「这是哪家的」；
+   * 顺序也不用再靠 hint 里那个端点名去认。与 `/model` 的两级同一套读法。
+   *
+   * 没有模型的端点在第二级里什么都不显示，所以这里把它们列出来（它们是「你还没给这家具模型」的
+   * 事实，也是新建模型该去的地方）；端点顺序就是配置里的顺序。
+   */
   if (activeStep.kind === "models") {
     const noKey = config.models.filter((model) => !endpointKeyState(config, model).ready).length;
-    const items: SelectItem<string>[] = [
-      { label: t("wiz.models.newItem"), value: NEW_MODEL, hint: t("wiz.models.newItemHint") },
-      ...config.models.map((model) => ({
-        label: model.name || model.id,
-        value: model.id,
-        hint: t("wiz.modelItem.hint", {
-          endpoint: findEndpoint(config, model.endpointId)?.name ?? model.endpointId,
-          kind: kindLabel(model.custom),
-          vision: model.vision ? t("wiz.modelKind.visionSuffix") : "",
-          state: endpointKeyState(config, model).ready ? "" : ` · ${t("wiz.defaults.missingKey")}`,
-        }),
-      })),
-    ];
+    const items: SelectItem<string>[] = config.endpoints.map((endpoint) => {
+      const models = config.models.filter((model) => model.endpointId === endpoint.id);
+      return {
+        label: endpoint.name || endpoint.id,
+        value: endpoint.id,
+        hint:
+          models.length === 0
+            ? t("wiz.models.endpointEmpty")
+            : t("wiz.models.endpointHint", {
+                n: models.length,
+                state: endpoint.apiKey ? "" : ` · ${t("wiz.defaults.missingKey")}`,
+              }),
+      };
+    });
     return (
       <ListStep
         columns={cols}
@@ -81,10 +90,52 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
             : t("wiz.models.subtitle", { n: config.models.length })
         }
         items={items}
-        onPick={(value) =>
-          value === NEW_MODEL ? go({ kind: "new-model" }) : go({ kind: "model", modelId: value })
-        }
+        onPick={(endpointId) => go({ kind: "models-of-endpoint", endpointId })}
         onCancel={() => go({ kind: "menu" })}
+      />
+    );
+  }
+
+  // ---------- 模型管理的第二级：这一家的模型（＋新建）----------
+  if (activeStep.kind === "models-of-endpoint") {
+    const endpoint = config.endpoints.find((item) => item.id === activeStep.endpointId);
+    // 端点在这期间被删了（另一个客户端）：退回第一级，不留一块空屏
+    if (!endpoint) {
+      go({ kind: "models" });
+      return null;
+    }
+    const name = endpoint.name || endpoint.id;
+    const models = config.models.filter((model) => model.endpointId === endpoint.id);
+    const items: SelectItem<string>[] = [
+      { label: t("wiz.models.newItem"), value: NEW_MODEL, hint: t("wiz.models.newItemHint") },
+      ...models.map((model) => ({
+        label: model.name || model.id,
+        value: model.id,
+        hint: t("wiz.modelItem.hint", {
+          endpoint: name,
+          kind: kindLabel(model.custom),
+          vision: model.vision ? t("wiz.modelKind.visionSuffix") : "",
+          state: endpointKeyState(config, model).ready ? "" : ` · ${t("wiz.defaults.missingKey")}`,
+        }),
+      })),
+    ];
+    return (
+      <ListStep
+        columns={cols}
+        rows={rows}
+        title={t("wiz.models.ofEndpoint", { endpoint: name })}
+        subtitle={
+          models.length === 0
+            ? t("wiz.models.ofEndpointEmpty")
+            : t("wiz.models.ofEndpointSubtitle", { n: models.length })
+        }
+        items={items}
+        onPick={(value) =>
+          value === NEW_MODEL
+            ? go({ kind: "new-model", endpointId: endpoint.id })
+            : go({ kind: "model", modelId: value })
+        }
+        onCancel={() => go({ kind: "models" })}
       />
     );
   }
@@ -133,7 +184,8 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         // 被 AgentDefinition 引用时宿主照删（它只改指默认项），这里不做额外拦截
         run: async () => {
           const failure = await deleteModel(model.id, t("wiz.models.deleted", { name }));
-          if (!failure) go({ kind: "models" });
+          // 删完回到它所属那一家（这一屏的原位置），而不是退回第一级
+          if (!failure) go({ kind: "models-of-endpoint", endpointId: model.endpointId });
           return failure;
         },
       },
@@ -157,7 +209,7 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
         fields={modelFields(model)}
         notice={notice}
         actions={actions}
-        onBack={() => go({ kind: "models" })}
+        onBack={() => go({ kind: "models-of-endpoint", endpointId: model.endpointId })}
       />
     );
   }
@@ -249,7 +301,8 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
 
   // ---------- 新建模型（名称 → 创建并进入详情）----------
   if (activeStep.kind === "new-model") {
-    const endpoint = config.endpoints[0];
+    // 在哪一家下面建的，就绑哪一家（不再默认绑第一个端点）
+    const endpoint = config.endpoints.find((item) => item.id === activeStep.endpointId);
     return (
       <PromptScreen
         key="new:model"
@@ -299,7 +352,7 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
             go({ kind: "model", modelId: id });
           })();
         }}
-        onCancel={() => go({ kind: "models" })}
+        onCancel={() => go({ kind: "models-of-endpoint", endpointId: activeStep.endpointId })}
       />
     );
   }

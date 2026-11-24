@@ -107,12 +107,20 @@ export type WizardStep =
   | { kind: "endpoints" }
   | { kind: "endpoint"; endpointId: string }
   | { kind: "models" }
+  /**
+   * 某一家的模型清单（模型管理的第二级）。
+   *
+   * 一层平铺的问题是「一长串、同名的只靠 id 分」—— 订阅式端点一家就带进来十几条。所以先选
+   * 供应商、再看那一家底下的模型；新建模型也在这一层（建出来就属于这家，不再默认绑第一个端点）。
+   */
+  | { kind: "models-of-endpoint"; endpointId: string }
   | { kind: "model"; modelId: string }
   | { kind: "image-models" }
   | { kind: "image-model"; modelId: string }
   | { kind: "max-tool-output" }
   | { kind: "new-endpoint"; field: "name" | "baseUrl" | "apiKey"; draft: NewEndpointDraft }
-  | { kind: "new-model" }
+  /** 新建模型：`endpointId` 是「在哪一家下面建的」（从第二级进来） */
+  | { kind: "new-model"; endpointId: string }
   | { kind: "new-image-model" }
   | { kind: "mcp"; scope: McpEditableScope }
   | { kind: "mcp-server"; scope: McpEditableScope; serverName: string }
