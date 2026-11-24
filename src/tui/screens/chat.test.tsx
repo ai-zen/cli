@@ -1844,6 +1844,47 @@ describe("发送那一刻：清掉日志转发来的通知", () => {
   });
 });
 
+/**
+ * 终端里的粘贴（**括号粘贴**）：`CSI 200~ … CSI 201~` 之间是一段文本，不是按键。
+ *
+ * 老行为下多行粘贴的每个 `\r` 都被当成回车 —— 第一行发出去、剩下的按按键处理（`/` 还会去开
+ * 命令菜单），Windows 剪贴板带来的 `\r\n` 则把回显挤歪。这条用例钉三件事：整段进草稿、
+ * 一个字节都没发、`\r\n` 已经收成 `\n`。
+ */
+describe("粘贴：终端括号粘贴整段进草稿，不逐字当按键", () => {
+  beforeEach(() => setLocale("zh"));
+
+  it("多行粘贴：整段进草稿（CRLF 收成 LF），不发消息、不弹命令菜单", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+
+    stdin.write("\u001b[200~第一行\r\n第二行\u001b[201~");
+    await waitFor(() => (lastFrame() ?? "").includes("第二行"));
+
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("第一行");
+    // 没发出去：草稿还在输入框里
+    expect(created.session.send).not.toHaveBeenCalled();
+    // 没有把 `/` 之类当命令：草稿是纯文本
+    expect(created.session.send).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it("被拆成两块到达也拼得回去", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+
+    stdin.write("\u001b[200~前半段");
+    await flush();
+    stdin.write("，后半段\u001b[201~");
+    await waitFor(() => (lastFrame() ?? "").includes("后半段"));
+
+    expect(lastFrame() ?? "").toContain("前半段，后半段");
+    expect(created.session.send).not.toHaveBeenCalled();
+    unmount();
+  });
+});
+
 describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
   beforeEach(() => {
     setLocale("zh");

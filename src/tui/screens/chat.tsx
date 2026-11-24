@@ -51,6 +51,7 @@ import { runCommand, moveAfterGone } from "../../commands/index.js";
 import { t } from "../../i18n/index.js";
 import { endpointHasKey } from "../../config-editor.js";
 import { clearSessionNotices } from "../../pending-notices.js";
+import { normalizePastedText, PasteAssembler } from "../paste.js";
 import { NoticeChannel, noticeBarContent, type Notice } from "./notice.js";
 import { NoticeBar } from "./notice-bar.js";
 import { AgentTabs, type AgentTab } from "./agent-tabs.js";
@@ -355,6 +356,14 @@ export function Chat(props: ChatScreenProps) {
    * 不改上下文、不影响发送目标：发出的消息永远属于主 Agent。
    */
   const [activeAgentId, setActiveAgentId] = useState("main");
+
+  /**
+   * 括号粘贴的拼装器：一段粘贴可能被终端拆成几块写进来，这里把它们拼回整段再插一次。
+   *
+   * 认不出来时会退化成「每块当打字插入」—— 那也是老行为，不会比从前更糟。
+   */
+  const pasteRef = useRef<PasteAssembler | null>(null);
+  if (pasteRef.current == null) pasteRef.current = new PasteAssembler();
 
   /** Ctrl+D 双击退出计时 */
   const ctrlDAtRef = useRef(0);
@@ -792,8 +801,8 @@ export function Chat(props: ChatScreenProps) {
       noticeChannel.push(t("notice.clipboardEmpty"));
       return;
     }
-    // 去掉末尾单个换行：剪贴板文本几乎总带一个尾换行，粘完光标原地跳行很莫妙
-    typeIntoDraft(pasted.text.replace(/\n$/, ""));
+    // 与终端粘贴走**同一份**归一（`paste.ts`）：`\r\n` 收成 `\n`、去掉其余控制字符与尾换行
+    typeIntoDraft(normalizePastedText(pasted.text));
   };
 
   /**
@@ -1291,6 +1300,18 @@ export function Chat(props: ChatScreenProps) {
     (char, key) => {
       // 按键诊断（AIZ_DEBUG_KEYS=1）：必须在任何 return 之前记录，否则被吞掉的键不会留痕
       keyDebug(char, key);
+      /**
+       * 粘贴优先于一切按键语义：`CSI 200~ … CSI 201~` 之间是**一段文本**，里面的 `\r` 不是回车、
+       * `\t` 不是 Tab、`/` 不是命令 —— 整段一次插进草稿（见 `tui/paste.ts`）。
+       *
+       * 必须排在所有分支之前：排在后面的话，多行粘贴的第一行会被当成回车发出去。
+       */
+      const paste = pasteRef.current!.feed(char);
+      if (paste.kind === "pending") return;
+      if (paste.kind === "text") {
+        if (paste.text.length > 0) typeIntoDraft(paste.text);
+        return;
+      }
       if (bootError) {
         if (char === "k" || char === "K") {
           void openWizard({ kind: "menu" });

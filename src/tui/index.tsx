@@ -43,6 +43,7 @@ import type { HostDownloadScreenResult } from "./screens/host-download.js";
 import { settleConnection, type ConnectScreenResult } from "./connection-gate.js";
 import { keyDebugStart } from "./key-debug.js";
 import { disableMouseTracking, enableMouseTracking } from "./mouse.js";
+import { disableBracketedPaste, enableBracketedPaste } from "./paste.js";
 import { initLocale } from "../i18n/preferences.js";
 import { t } from "../i18n/index.js";
 import { SessionRegistry } from "../sessions-registry.js";
@@ -77,6 +78,12 @@ function farewell(): void {
   // 先关鼠标上报：不关的话，回到 shell 后每次滚轮都会在提示符前吐一串 `^[[<64;…M`
   try {
     disableMouseTracking();
+  } catch {
+    /* ignore */
+  }
+  // 括号粘贴同理：不关的话，shell 里的粘贴会被终端一直包在 `CSI 200~ … CSI 201~` 里
+  try {
+    disableBracketedPaste();
   } catch {
     /* ignore */
   }
@@ -133,10 +140,13 @@ function mount(
   // 鼠标上报随实例生命周期开关：本 TUI 会反复挂载（启动屏 → 会话屏 → 配置向导），
   // 每个实例结束时都关掉，避免「已卸载却仍在收鼠标事件」。
   enableMouseTracking();
+  // 括号粘贴一起来：粘贴进来的整段由 `[200~ … [201~` 包住，屏上才认得出「这是一段文本」
+  enableBracketedPaste();
   const instance = render(node, RENDER_OPTIONS);
   activeInstance = instance;
   return instance.waitUntilExit().finally(() => {
     disableMouseTracking();
+    disableBracketedPaste();
     if (activeInstance === instance) activeInstance = null;
   });
 }
@@ -724,6 +734,12 @@ function installSignalSafety(): () => void {
     // 任何异常退出路径都要把终端鼠标上报关掉，否则终端会持续把滚轮写成转义序列
     try {
       disableMouseTracking();
+    } catch {
+      /* 忽略 */
+    }
+    // 括号粘贴也一样（理由见 `farewell`）
+    try {
+      disableBracketedPaste();
     } catch {
       /* 忽略 */
     }
