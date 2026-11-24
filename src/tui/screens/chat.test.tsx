@@ -486,7 +486,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     const { lastFrame, unmount } = mount();
     await flush();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("终端里的 AI 协作台");
+    expect(frame).toContain("终端 AI 协作台");
     // 品牌 logo（宽终端出 6 行宽版，窄终端退化成单行）
     expect(frame).toMatch(/█████╗|AI · ZEN/);
     // 底部输入框与状态栏照常在
@@ -501,7 +501,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await flush();
     stdin.write("\r");
     await flush();
-    expect(lastFrame() ?? "").not.toContain("终端里的 AI 协作台");
+    expect(lastFrame() ?? "").not.toContain("终端 AI 协作台");
     unmount();
   });
 
@@ -592,7 +592,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await flush();
 
     await submit(stdin, "发不出去的话");
-    await waitFor(() => (lastFrame() ?? "").includes("继续失败"));
+    await waitFor(() => (lastFrame() ?? "").includes("恢复失败"));
 
     expect(lastFrame() ?? "").toContain("正在交接");
     expect(created.session.send).not.toHaveBeenCalled();
@@ -740,7 +740,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
    * 只是**标一句**，不是把候选藏起来：菜单是「有哪些命令」的清单，藏起来会让人以为命令没了；
    * 标出来则说得清「现在按不了、为什么」。
    */
-  it("忙时斜杠菜单给那几条标「忙时不可用」，其余照旧", async () => {
+  it("忙时斜杠菜单给那几条标「处理中不可用」，其余照旧", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
     created.session.status = "working";
@@ -983,7 +983,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     expect(lastFrame() ?? "").toContain("Enter 发送");
     stdin.write("\u001b[5~");
     await flush();
-    expect(lastFrame() ?? "").toContain("正在翻看历史");
+    expect(lastFrame() ?? "").toContain("正在查看历史");
     unmount();
   });
 
@@ -1362,7 +1362,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await repaint();
 
     stdin.write("\u001b[C");
-    await waitFor(() => (lastFrame() ?? "").includes("读那个子 Agent 的消息失败"));
+    await waitFor(() => (lastFrame() ?? "").includes("读取子 Agent 消息失败"));
     const frame = lastFrame() ?? "";
     expect(frame).toContain("宿主拒了 message.list");
     unmount();
@@ -1538,7 +1538,7 @@ describe("Esc 的优先级：忙 > 闸关 > 清草稿", () => {
     await flush();
 
     stdin.write("\u001b");
-    await waitFor(() => (lastFrame() ?? "").includes("继续失败"));
+    await waitFor(() => (lastFrame() ?? "").includes("恢复失败"));
 
     expect(lastFrame() ?? "").toContain("正在交接");
     // 只按了一次就只试一次：重试是用户再按一下
@@ -2049,7 +2049,7 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
     await paste(stdin);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("超过");
-    expect(frame).toContain("没有粘贴");
+    expect(frame).toContain("未粘贴");
     unmount();
   });
 
@@ -2058,7 +2058,7 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
     await paste(stdin);
-    expect(lastFrame() ?? "").toContain("剪贴板里没有内容");
+    expect(lastFrame() ?? "").toContain("剪贴板为空");
     unmount();
   });
 });
@@ -2318,10 +2318,10 @@ describe("交接期间：不发、说清楚、只留中断", () => {
 /**
  * 「清」有三档（`prd/08-client.md` 的通知那一节）：清一条（补看那条路）、清一段会话的
  * （`Ctrl+X`）、清全部（`Ctrl+G`）。这一组钉的是第三档：**它自己不清任何东西，先问一次**，
- * 而那一问必须把「连全局、连别的会话一起没」说出来。
+ * 而那一问必须把「连全局、连其他会话一起没」说出来。
  */
 describe("通知栏的清全部：先问一次，问完才动整个库", () => {
-  // 这一组断言的是中文文案（那一问必须把「全局通知 / 别的会话」说出来）：显式锁语言
+  // 这一组断言的是中文文案（那一问必须把「全局通知 / 其他会话」说出来）：显式锁语言
   beforeEach(() => setLocale("zh"));
 
   /** 宿主库里的全部通知：两条全局（`sessionId: null`）+ 这一条会话的一条 */
@@ -2365,7 +2365,7 @@ describe("通知栏的清全部：先问一次，问完才动整个库", () => {
     await flush(40);
   };
 
-  it("确认之前一次写都没有，而且那一问点名了全局通知与别的会话", async () => {
+  it("确认之前一次写都没有，而且那一问点名了全局通知与其他会话", async () => {
     const connection = fakeConnection({ notices: noticeRows });
     const { stdin, lastFrame, unmount } = mount({ connection });
     await flush();
@@ -2376,7 +2376,7 @@ describe("通知栏的清全部：先问一次，问完才动整个库", () => {
     const frame = lastFrame() ?? "";
     // 问题里必须写出那两件事（不给人事后才发现别处也没了的机会）
     expect(frame).toContain("全局通知");
-    expect(frame).toContain("别的会话");
+    expect(frame).toContain("其他会话");
     // 条数从清之前那次 `notice.list` 数：整个库 3 条
     expect(frame).toContain("清空全部 3 条通知");
     // 只数了一遍，一次写都没有
@@ -2410,7 +2410,7 @@ describe("通知栏的清全部：先问一次，问完才动整个库", () => {
     await waitFor(() => connection.apiCalls.some((call) => call.method === "notice.deleteAll"));
 
     const cleared = connection.apiCalls.find((call) => call.method === "notice.deleteAll");
-    // 不给 `sessionId` = 整个库（含全局与别的会话的）
+    // 不给 `sessionId` = 整个库（含全局与其他会话的）
     expect(cleared?.params).toEqual({});
     await waitFor(() => (lastFrame() ?? "").includes(t("notice.deleteAllAllDone", { n: 3 })));
     unmount();
@@ -2447,7 +2447,7 @@ describe("图片：占位说事实，Ctrl+O 用本机默认程序打开", () => 
     created.notifier.onChange(true);
   };
 
-  it("占位行带上了尺寸与文件名（有就给，没有就写不知道多大）", async () => {
+  it("占位行带上了尺寸与文件名（有就给，没有就写未知）", async () => {
     const { lastFrame, unmount } = mount();
     await flush();
     // 一张手里有尺寸与文件名的（段上带着这两样）与一张只有 Asset id 的
@@ -2464,8 +2464,8 @@ describe("图片：占位说事实，Ctrl+O 用本机默认程序打开", () => 
     // 每条事实各自一行（不塞成一句话）
     expect(frame).toContain("尺寸：800 × 600");
     expect(frame).toContain("文件名：shot.png");
-    // 只有 id 的那一张：说不知道多大，而不是编一个
-    expect(frame).toContain("尺寸：不知道多大");
+    // 只有 id 的那一张：说未知，而不是编一个
+    expect(frame).toContain("尺寸：未知");
     unmount();
   });
 

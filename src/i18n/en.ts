@@ -22,11 +22,11 @@ export const en: Record<string, string> = {
   // The two usage numbers are summed by the client from each message's `usage`
   // (the host neither counts nor stores nor reports them); NBSP keeps the number
   // and its unit on one line when the bar wraps.
-  "status.busy": "busy",
+  "status.busy": "working",
   "status.idle": "idle",
-  "status.inputPaused": "intake off",
-  "status.outputPaused": "output off",
-  "status.dead": "stopped",
+  "status.inputPaused": "input paused",
+  "status.outputPaused": "output paused",
+  "status.dead": "terminated",
   "status.noModel": "—",
   "status.effort": " · thinking ",
   "status.lastTokens": "this answer\u00a0{n}\u00a0tok",
@@ -64,7 +64,7 @@ export const en: Record<string, string> = {
   // Prefix for lines the user posted themselves; other sources (`session` …) show their name as-is
   "inbox.pending": "pending",
   // When only the first two lines fit, the last line says how many are left (the hidden count)
-  "inbox.more": "{n} more",
+  "inbox.more": "{n} more waiting",
 
   // ---------- Notices ----------
   "notice.reloaded": "Session rebuilt with the new config (messages and context kept)",
@@ -94,6 +94,9 @@ export const en: Record<string, string> = {
   "notice.deleteAllHint": "Ctrl+X clears this session's notices; Ctrl+G clears all",
   "notice.cleared": "Notices for this session cleared",
   "notice.deleteAllFailed": "Could not clear the notices: {error}",
+  "notice.questionsReadFailed": "Could not read pending questions: {error}",
+  "notice.noticesCatchupFailed": "Could not read the notices: {error}",
+  "notice.mentionNoWorkspace": "No workspace entered yet: @ completion is unavailable",
   "notice.deleteAllAllTitle":
     "Clear all {n} notices? Global notices belong to no session, so they go too; notices for other sessions that nobody has seen yet go too. This cannot be undone.",
   "notice.deleteAllAllConfirm": "Clear all",
@@ -391,7 +394,7 @@ export const en: Record<string, string> = {
   "agentSwitch.summary": "Switched the primary agent: {name} ({id}) · model {model} ({modelId})",
 
   // ---------- Entry / exit ----------
-  "app.goodbye": "\nBye 👋\n",
+  "app.goodbye": "\nSession closed.\n",
   "app.noAgents": "No usable agent — create one in the configuration center first",
   "app.bootFailed": "✖ Cannot start the session: {error}",
   "app.unexpected": "✖ Unexpected error: {error}",

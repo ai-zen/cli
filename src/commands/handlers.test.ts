@@ -958,7 +958,7 @@ describe("/load：列表来自 session.list，选中后换会话", () => {
  *   2. 会话的**新建与切换**不受影响：它们不动运行中的那一段，这正是「忙也能干的事」。
  */
 describe("忙时禁用", () => {
-  it("`/back` 忙时不可用：不弹选择器，一个 procedure 都不发", async () => {
+  it("`/back` 处理中不可用：不弹选择器，一个 procedure 都不发", async () => {
     const { host, calls, notices } = createHost({
       session: {
         status: "working",
@@ -973,7 +973,7 @@ describe("忙时禁用", () => {
     expect(texts(notices)).toBe(t("cmd.needsIdle", { name: "/back" }));
   });
 
-  it("`/handoff` 与 `/migrate` 忙时不可用：宿主本来就会拒，别让人先走完选择器", async () => {
+  it("`/handoff` 与 `/migrate` 处理中不可用：宿主本来就会拒，别让人先走完选择器", async () => {
     for (const [name, raw] of [
       ["handoff", "/handoff"],
       ["migrate", "/migrate"],
@@ -1034,7 +1034,7 @@ describe("忙时禁用", () => {
  * 读写两条都在 procedure 面上：现状读 `session.open`（那一条同时给出会话行），写入是
  * `session.pin`，它回**改完之后**的那一行。
  */
-describe("/pin：只写 pinned 一个字段，顺序归宿主", () => {
+describe("/pin：仅生成 pinned 一个字段，顺序归宿主", () => {
   it("无参：先从 `session.open` 读现状，再按相反值写（入参与宿主 procedure 逐字一致）", async () => {
     const { host, calls, notices } = createHost({
       routes: {
@@ -1192,7 +1192,7 @@ describe("/model：三档作用级别各写各的那一层", () => {
     );
   });
 
-  it("--global / -g：只写全局兜底（`defaultModel`），同样要重建会话", async () => {
+  it("--global / -g：仅生成全局兜底（`defaultModel`），同样要重建会话", async () => {
     const { host, session, calls, notices } = createHost();
 
     await runCommand("model", "/model --global m2", host);
@@ -1519,7 +1519,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
   });
 
   // 两档选择器的 InboxEntry 几乎一样，标题是唯一说清「改的是哪一层」的地方（PRD 4.7）
-  it("标题印出作用级别：会话级是「这一段」、助手定义级是「这个助手定义（影响以后新开的会话）」", async () => {
+  it("标题印出作用级别：会话级是「这一段」、助手定义级是「这个助手定义（影响之后新建的会话）」", async () => {
     const { host } = createHost();
     const sessionSeen = capturePick(host, null);
     await runCommand("think", "/think", host);
@@ -1535,7 +1535,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     expect(agentSeen.title).toBe(t("cmd.think.titleAgent", { level: t("effort.high") }));
     // 两句话必须不一样，而且 AgentDefinition 级要说清它管的是以后（不只是这一段）
     expect(sessionSeen.title).not.toBe(agentSeen.title);
-    expect(agentSeen.title).toContain("影响以后新开的会话");
+    expect(agentSeen.title).toContain("影响之后新建的会话");
   });
 
   it("-a 的选择器里有一项「清掉助手定义上的思考参数」", async () => {
@@ -1648,7 +1648,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
 // ==================== /agent ====================
 
 describe("/agent：选「以后的会话用哪个助手定义」（写默认助手定义）", () => {
-  it("选中之后只写 defaultAgent 这一个字段", async () => {
+  it("选中之后仅生成 defaultAgent 这一个字段", async () => {
     const { host, calls, notices } = createHost({
       routes: {
         // `agentDefinition.list` 回的是**定义数组**（默认 AgentDefinition 是配置里的那一格，见 `agentListOf`）
@@ -1676,12 +1676,12 @@ describe("/agent：选「以后的会话用哪个助手定义」（写默认助�
     );
   });
 
-  it("当前会话已经在这个助手上：补一句「已在该助手」，不重挂载", async () => {
+  it("当前会话已使用该助手：补一句「已在该助手」，不重挂载", async () => {
     const { host, notices } = createHost();
 
     await runCommand("agent", "/agent default", host);
 
-    expect(texts(notices)).toContain("当前会话已经在这个助手上");
+    expect(texts(notices)).toContain("当前会话已使用该助手");
     expect(host.exit).not.toHaveBeenCalled();
   });
 
@@ -1892,7 +1892,7 @@ describe("/handoff 与 /migrate：同一个方法，两种后续", () => {
     ]);
     // 「独立摘要」那一句要说清它会另起一个一次性 Agent 来写
     expect(seen.labels[1]).toContain("一次性 Agent");
-    // 挑定的执行者与「只写文档」这一档一起交出去（宿主 `handoff.start` 的 `mode` / `kind`）
+    // 挑定的执行者与「仅生成文档」这一档一起交出去（宿主 `handoff.start` 的 `mode` / `kind`）
     expect(session.handoff).toHaveBeenCalledWith({ kind: "document", mode: "self" });
     expect(host.clearTranscript).not.toHaveBeenCalled();
     // 回执只有「开始了」：文档路径由宿主那条通知说（它才知道写到哪）
@@ -2344,7 +2344,7 @@ describe("/ws delete：先摆代价、再一次确认、连带删会话", () => 
     expect(texts(notices)).toBe(t("cmd.ws.deleteCancelled"));
   });
 
-  it("代价里带着名下会话的段数，并点到那个目录一个字都不动", async () => {
+  it("代价里带着名下会话的段数，并点到那个目录不受影响", async () => {
     const { host } = createHost({
       routes: deleteRoutes({
         "ws-1": [
@@ -2362,7 +2362,7 @@ describe("/ws delete：先摆代价、再一次确认、连带删会话", () => 
     expect(seen.title).toBe(t("cmd.ws.deleteTitle", { name: "甲", path: "/work/a", sessions: 3 }));
     expect(seen.title).toContain("3");
     expect(seen.title).toContain("/work/a");
-    expect(seen.title).toContain("一个字都不动");
+    expect(seen.title).toContain("不受影响");
     expect(seen.labels).toEqual([t("cmd.ws.deleteConfirm"), t("cmd.ws.deleteCancel")]);
   });
 
@@ -2399,7 +2399,7 @@ describe("/ws delete：先摆代价、再一次确认、连带删会话", () => 
     expect(notices.at(-1)).toEqual({ text: t("cmd.ws.deleteUsage"), tone: "error" });
   });
 
-  it("删的是别的项目：登记里那几段照样摘掉，这一屏一个字都不动", async () => {
+  it("删的是别的项目：登记里那几段照样摘掉，这一屏不受影响", async () => {
     const { host, notices } = createHost({
       // 当前这一段在 ws-1（`sessionStub` 的 workspaceId），删的是乙（ws-2）
       routes: deleteRoutes({ "ws-2": [sessionView({ id: "sess-9" })] }, [
@@ -2557,7 +2557,7 @@ describe("moveAfterGone：一段会话没了之后往哪儿去", () => {
     });
   });
 
-  it("同项目里没有别的会话了：回连接屏，并说清可以用 /new 开一段", async () => {
+  it("同项目里没有其他会话了：回连接屏，并说清可以用 /new 开一段", async () => {
     const { host } = createHost({
       routes: { "session.list": () => [sessionView({ id: "sess-1" })] },
     });
@@ -2878,7 +2878,7 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
     const { host, calls } = createHost({
       // 回执与自己数的不一样：Asset 按引用归零才算删掉，可能少于这一段引用过的份数
       routes: deleteRoutes({ messages: 2, assets: 1 }),
-      // 这个项目里还有别的会话（`baseRoutes` 的 `session.list` 给了两段）：两句话跟着 `load` 一起带到新屏去
+      // 这个项目里还有其他会话（`baseRoutes` 的 `session.list` 给了两段）：两句话跟着 `load` 一起带到新屏去
     });
     capturePick(host, "yes");
 

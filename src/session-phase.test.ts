@@ -16,7 +16,7 @@ import { AgentNS } from "@ai-zen/agents-core";
 
 afterEach(() => setLocale(DEFAULT_LOCALE));
 
-/** 一条 AgentDefinition 消息（只写用例关心的那几格） */
+/** 一条 AgentDefinition 消息（仅生成用例关心的那几格） */
 function assistant(overrides: Partial<AgentNS.Message> = {}): AgentNS.Message {
   return {
     id: "m1",

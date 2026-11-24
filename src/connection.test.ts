@@ -158,7 +158,7 @@ describe("readConnectPlan：三种情形分得开", () => {
   });
 });
 
-describe("saveConnectPlan：只写这一处", () => {
+describe("saveConnectPlan：仅生成这一处", () => {
   it("写下去的那一份能读回来（roundtrip）", async () => {
     await saveConnectPlan(env, { mode: "remote", url: REMOTE_URL, token: "tok" });
     expect(await readConnectPlan(env)).toEqual({

@@ -31,7 +31,7 @@ describe("welcomeLines", () => {
     const text = welcomeLines({ columns: 100 })
       .map((line) => line.text)
       .join("\n");
-    expect(text).toContain("终端里的 AI 协作台");
+    expect(text).toContain("终端 AI 协作台");
     expect(text).toContain(`v${CLI_VERSION}`);
     expect(text).toContain(`sdk ${SDK_VERSION}`);
     expect(text).toContain(`core ${CORE_VERSION}`);
@@ -66,6 +66,6 @@ describe("welcomeLines（英文界面）", () => {
       .map((line) => line.text)
       .join("\n");
     expect(text).toContain("The AI collaboration desk in your terminal");
-    expect(text).not.toContain("终端里的 AI 协作台");
+    expect(text).not.toContain("终端 AI 协作台");
   });
 });

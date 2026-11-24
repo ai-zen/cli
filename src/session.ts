@@ -597,7 +597,7 @@ export class RemoteChatSession implements ChatSessionLike {
     const workspaceId = this.mirror.session.workspaceId;
     // 还没有项目上下文（会话行上没给 workspaceId）：报一句、回空清单，不抛
     if (!workspaceId) {
-      this.notifier.onNotice("还没有进入项目：`@` 补全这一路暂时列不出文件", "info");
+      this.notifier.onNotice(t("notice.mentionNoWorkspace"), "info");
       return { state: "unavailable", entries: [] };
     }
     try {
@@ -956,7 +956,7 @@ export class RemoteChatSession implements ChatSessionLike {
     } catch (error) {
       // 问不到要说一句：挂着的题不上屏，用户就没法作答 —— 而宿主会用 `question_pending`
       // 把所有后续发送都拒掉。开会话照旧不被打断（这里只报不改流程），但不许一声不吭。
-      this.notifier.onNotice(`读挂着的题失败：${messageOf(error)}`, "error");
+      this.notifier.onNotice(t("notice.questionsReadFailed", { error: messageOf(error) }), "error");
     }
   }
 
@@ -972,7 +972,10 @@ export class RemoteChatSession implements ChatSessionLike {
         onNotice: (notice) => this.showNotice(notice),
       });
     } catch (error) {
-      this.notifier.onNotice(`补看通知失败：${messageOf(error)}`, "error");
+      this.notifier.onNotice(
+        t("notice.noticesCatchupFailed", { error: messageOf(error) }),
+        "error",
+      );
     }
   }
 

@@ -27,6 +27,7 @@ import {
   type FakeConnection,
   type FakeOpen,
 } from "./test-support/fake-connection.js";
+import { t } from "./i18n/index.js";
 import { RemoteChatSession } from "./session.js";
 import type {
   ChatSessionNotifier,
@@ -453,7 +454,7 @@ describe("RemoteChatSession：四件事各一格（不压成一个状态）", ()
     expect(notifier.changes).toEqual([false, false, true]);
   });
 
-  it("别的会话的事件一律不认", async () => {
+  it("其他会话的事件一律不认", async () => {
     const host = hostLike();
     const { session, notifier } = await open(host);
     const before = notifier.changes.length;
@@ -991,10 +992,12 @@ describe("RemoteChatSession：通知", () => {
     const { notifier } = await open(host);
 
     expect(notifier.notices.at(-1)?.tone).toBe("error");
-    expect(notifier.notices.at(-1)?.text).toContain("补看通知失败");
+    expect(notifier.notices.at(-1)?.text).toContain(
+      t("notice.noticesCatchupFailed", { error: "" }).slice(0, 6),
+    );
   });
 
-  it("实时推来的：别的会话的那条不认，全局的那条认", async () => {
+  it("实时推来的：其他会话的那条不认，全局的那条认", async () => {
     const host = hostLike();
     const { notifier } = await open(host);
     const before = notifier.notices.length;
@@ -1072,7 +1075,9 @@ describe("RemoteChatSession：问题对象", () => {
     });
     const { notifier } = await open(host);
 
-    expect(notifier.notices.at(-1)?.text).toContain("读挂着的题失败");
+    expect(notifier.notices.at(-1)?.text).toContain(
+      t("notice.questionsReadFailed", { error: "" }).slice(0, 6),
+    );
   });
 
   it("有人作答：把候选里的 value 交回去，答完那道题就没了", async () => {
@@ -1379,7 +1384,7 @@ describe("RemoteChatSession：命令层要的那几个动作", () => {
     });
     // 一次 procedure 都不发（没有可问的项目），但也不许一声不吭
     expect(host.connection.methods()).not.toContain("workspace.files");
-    expect(notifier.notices.at(-1)?.text).toContain("列不出文件");
+    expect(notifier.notices.at(-1)?.text).toBe(t("notice.mentionNoWorkspace"));
   });
 
   it("清空排队区：走 `agent.clearInbox`，回宿主给的那个条数", async () => {

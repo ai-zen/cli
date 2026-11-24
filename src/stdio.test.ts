@@ -184,7 +184,7 @@ async function run(
 }
 
 describe("runStdio：一次性调用（默认走临时会话）", () => {
-  it("答案只写 stdout，退出码 0，stderr 干净；连会话都不建", async () => {
+  it("答案仅生成 stdout，退出码 0，stderr 干净；连会话都不建", async () => {
     const connection = fakeConnection({
       reply: (method) => {
         if (method === "config.get") {
@@ -321,7 +321,7 @@ describe("runStdio：--save 走真会话", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("答复\n");
     expect(result.stderr).toContain("Saved session: sess-1");
-    // 建行打的是 `session.create`（只写一行），建出来的那一段交给会话层跟读
+    // 建行打的是 `session.create`（仅生成一行），建出来的那一段交给会话层跟读
     const create = connection.calls.find((call) => call.method === "session.create");
     expect(create?.params).toEqual({ workspaceId: "ws-1", agentId: "default" });
     // 投的那一句是真的那一句（不是空正文），落在那一段上

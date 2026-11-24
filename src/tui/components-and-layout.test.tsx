@@ -156,27 +156,27 @@ describe("StatusBar", () => {
     expect(identity).not.toContain("default");
   });
 
-  it("四件事上屏：忙 / 闲各一个字，闸关与死只在非默认时出现（PRD 4.4）", () => {
-    // 正常：只说「闲」—— 两个开关开着、人活着，写出来是每帧三个词宽、零信息
+  it("四件事上屏：处理中 / 空闲各占一格，闸关与死只在非默认时出现（PRD 4.4）", () => {
+    // 正常：只说「空闲」—— 两个开关开着、人活着，写出来是零信息
     const idle = plainRows({ blocks: blocksOf() }, 400).join("\n");
-    expect(idle).toContain("闲");
-    expect(idle).not.toContain("不取件");
-    expect(idle).not.toContain("不收话");
-    expect(idle).not.toContain("已停止");
+    expect(idle).toContain(t("status.idle"));
+    expect(idle).not.toContain(t("status.outputPaused"));
+    expect(idle).not.toContain(t("status.inputPaused"));
+    expect(idle).not.toContain(t("status.dead"));
 
     // 中断之后（输出开关关）且正忙：两个事实各说各的，绝不压成一个「暂停」
     const paused = plainRows(
       { blocks: blocksOf({ status: "working", outputPaused: true }) },
       400,
     ).join("\n");
-    expect(paused).toContain("忙");
-    expect(paused).toContain("不取件");
-    // 「闲」与「输出开关关」分得开：忙的那一帧不该出现「闲」
-    expect(paused).not.toContain("闲");
+    expect(paused).toContain(t("status.busy"));
+    expect(paused).toContain(t("status.outputPaused"));
+    // 「空闲」与「输出开关关」分得开：忙的那一帧不该出现「空闲」
+    expect(paused).not.toContain(t("status.idle"));
 
-    // 死了：说「已停止」并标红（别让它看着像「闲」）
+    // 死了：说「已终止」并标红（别让它看着像「空闲」）
     const dead = plainRows({ blocks: blocksOf({ alive: false }) }, 400).join("\n");
-    expect(dead).toContain("已停止");
+    expect(dead).toContain(t("status.dead"));
   });
 
   it("用量块：本次 / 累计 tok 各自一段（数字是会话层从消息的 `usage` 上算的）", () => {
@@ -237,7 +237,7 @@ describe("StatusBar", () => {
       />,
     );
     const frame = normalize(lastFrame() ?? "");
-    expect(frame).toContain("⚡ 均 7.8 tok/s");
+    expect(frame).toContain("⚡ 均速 7.8 tok/s");
     unmount();
   });
 

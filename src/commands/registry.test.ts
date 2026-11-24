@@ -24,12 +24,12 @@ describe("会话命令元数据", () => {
       names: ["exit", "quit"],
       label: "/exit /quit",
       // 说明只说它**真的**做的事：`cmdExit` 直接退出，没有任何「要不要保存」的确认
-      description: "退出程序（不关宿主）",
+      description: "退出程序（不关闭宿主）",
     });
   });
 
   /**
-   * 「忙时不可用」的那几条：写会话级状态、或宿主会直接拒。
+   * 「处理中不可用」的那几条：写会话级状态、或宿主会直接拒。
    *
    * 这张清单是**有意的**（见 `CommandMeta.needsIdle`），所以钉在这里：谁不小心把 `/new`
    * `/load` 之类加进去，或者把 `/back` 漏掉，这条会红 —— 而这两种错的后果分别是「白白禁掉
@@ -51,7 +51,7 @@ describe("会话命令元数据", () => {
     expect(commandNeedsIdle("effort")).toBe(true);
   });
 
-  it("菜单提示带着「忙时不可用」这一位（与入口那道门同一个判据）", () => {
+  it("菜单提示带着「处理中不可用」这一位（与入口那道门同一个判据）", () => {
     const byName = new Map(getCommandHints().map((hint) => [hint.names[0]!, hint]));
     expect(byName.get("back")?.needsIdle).toBe(true);
     expect(byName.get("new")?.needsIdle).toBeUndefined();
@@ -59,7 +59,7 @@ describe("会话命令元数据", () => {
     expect(byName.get("exit")).toEqual({
       names: ["exit", "quit"],
       label: "/exit /quit",
-      description: "退出程序（不关宿主）",
+      description: "退出程序（不关闭宿主）",
     });
   });
 
@@ -90,16 +90,16 @@ describe("会话命令元数据", () => {
     const exitHint = getCommandHints().at(-1)!;
     expect(exitHint.description).toBe("Quit the CLI (the host keeps running)");
     setLocale("zh");
-    expect(getCommandHints().at(-1)!.description).toBe("退出程序（不关宿主）");
+    expect(getCommandHints().at(-1)!.description).toBe("退出程序（不关闭宿主）");
   });
 
   /**
-   * `/handoff` 与 `/migrate` 是两件事：前者只写一份文档，后者写完还换手（记忆换掉、旧记忆成为一段
+   * `/handoff` 与 `/migrate` 是两件事：前者仅生成一份文档，后者写完还换手（记忆换掉、旧记忆成为一段
    * 存档会话）。两句说明要一眼分得开 —— 两边都是「写交接文档」的话，菜单上这两条就只能靠背。
    */
-  it("`/handoff` 与 `/migrate` 的说明各说各的：一个只写，一个换手", () => {
+  it("`/handoff` 与 `/migrate` 的说明各说各的：一个仅生成，一个切换记忆", () => {
     for (const [locale, only, swap] of [
-      ["zh", "只写", "换手"],
+      ["zh", "仅生成", "切换记忆"],
       ["en", "only", "swap"],
     ] as const) {
       setLocale(locale);
@@ -145,7 +145,7 @@ describe("会话命令元数据", () => {
    * 把命令再到回去映射成契约方法 —— 那是宿主的事，命令名归命令名（从前多一个 `method`
    * 字段专为 `/help` 去宿主取句子，现在 `/help` 用本地词条，那个字段跟着删了）。
    */
-  it("展示条目只带名字、别名、说明，外加「忙时不可用」那一格（只在需要时才出现）", () => {
+  it("展示条目只带名字、别名、说明，外加「处理中不可用」那一格（只在需要时才出现）", () => {
     for (const hint of getCommandHints()) {
       // `needsIdle` 是可选的一位：有它的条目才多这一格，其余仍是老三样
       expect(Object.keys(hint).sort()).toEqual(
@@ -193,7 +193,7 @@ describe("会话命令元数据", () => {
     expect(canonicalCommandName("DELETE")).toBe("delete");
     expect(findCommand("delete")?.descriptionKey).toBe("cmd.delete.desc");
     expect(matchCommandHints("del")).toEqual([
-      { names: ["delete"], label: "/delete", description: "删掉当前会话：消息与素材一起没" },
+      { names: ["delete"], label: "/delete", description: "删除当前会话（消息与素材一并删除）" },
     ]);
     // 删会话只有一种写法：没有别名，也没有 `--force` 那种「省一次确认」的口子
     expect(findCommand("delete")?.aliases).toBeUndefined();
@@ -211,8 +211,8 @@ describe("命令前缀匹配", () => {
       {
         names: ["back", "revert"],
         label: "/back /revert",
-        description: "撤回上次发言，改完重发",
-        // `/back` 忙时不可用（`needsIdle`）：菜单据此标一句
+        description: "撤回上次发言以便修改重发",
+        // `/back` 处理中不可用（`needsIdle`）：菜单据此标一句
         needsIdle: true,
       },
     ]);
@@ -234,7 +234,7 @@ describe("命令前缀匹配", () => {
       {
         names: ["agent"],
         label: "/agent",
-        description: "设默认助手定义，只影响新会话",
+        description: "设置默认助手定义（仅影响新会话）",
       },
     ]);
     expect(canonicalCommandName("agent")).toBe("agent");
@@ -248,7 +248,7 @@ describe("命令前缀匹配", () => {
       {
         names: ["pin"],
         label: "/pin",
-        description: "置顶当前会话，或取消置顶",
+        description: "置顶或取消置顶当前会话",
       },
     ]);
     expect(canonicalCommandName("PIN")).toBe("pin");
@@ -257,7 +257,7 @@ describe("命令前缀匹配", () => {
   /** `/free` 与 `/clear` 各有各的说明：清队列那条不再搭在清屏那条上 */
   it("/clear 与 /free 各带各的说明（清屏 / 清排队区）", () => {
     expect(matchCommandHints("fre")).toEqual([
-      { names: ["free"], label: "/free", description: "清空排队区：还没送出去的话" },
+      { names: ["free"], label: "/free", description: "清空排队区（尚未发送的消息）" },
     ]);
     const clear = matchCommandHints("clear")[0]!;
     expect(clear.label).toBe("/clear");

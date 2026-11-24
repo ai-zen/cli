@@ -66,14 +66,14 @@ describe("t", () => {
 
   it("插值替换占位符", () => {
     setLocale("zh");
-    expect(t("cmd.sessions.inboxPending", { n: 1284 })).toBe("排队 1284 条待送出");
+    expect(t("cmd.sessions.inboxPending", { n: 1284 })).toBe("排队中 1284 条");
     setLocale("en");
     expect(t("cmd.sessions.inboxPending", { n: 1284 })).toBe("1284 pending");
   });
 
   it("缺参数时保留占位符原样（便于发现漏传）", () => {
     setLocale("zh");
-    expect(t("cmd.sessions.inboxPending")).toBe("排队 {n} 条待送出");
+    expect(t("cmd.sessions.inboxPending")).toBe("排队中 {n} 条");
   });
 
   it("词条缺失时返回 key 本身（不做跨语言静默回退）", () => {

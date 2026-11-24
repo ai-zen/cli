@@ -237,7 +237,7 @@ describe("Esc / Ctrl+C：折回连接屏，不退出程序", () => {
     await until(() => screen.results.length > 0, "Esc 被处理成「折回」");
 
     expect(aborted).toBe(true);
-    expect(screen.results).toEqual([{ kind: "fallback", reason: "已取消，本机宿主没有启动" }]);
+    expect(screen.results).toEqual([{ kind: "fallback", reason: "已取消，本机宿主未启动" }]);
     screen.unmount();
   });
 

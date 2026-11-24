@@ -34,7 +34,7 @@ import {
 // 假宿主
 // ==================================================================
 
-/** 一个工作区的样子（CLI 那一份：`id` / `name` / 目录事实，只写用例关心的那几个字段） */
+/** 一个工作区的样子（CLI 那一份：`id` / `name` / 目录事实，仅生成用例关心的那几个字段） */
 function view(id: string, cwd: string, exists: boolean | null = true): WorkspaceSnapshot {
   return { id, name: id, folder: { cwd, exists } };
 }

@@ -136,3 +136,84 @@ describe("词典守卫", () => {
     expect(orphans).toEqual([]);
   });
 });
+
+/**
+ * 文案口径的第二道机械守卫：**禁用词**与**绕过词典的硬编码**。
+ *
+ * ## 为什么
+ *
+ * 「用词专业」这条口径写在 `zh.ts` 文件头里，但它是人写的、靠人守的 —— 上一轮通读时发现
+ * `zh.ts` 里还留着「不收话」「不取件」「没能叫起来」「拿不回来」「死的」这类引擎侧行话，
+ * 用户读不懂，读懂了也不像产品。口径一旦只写在注释里，就一定会退回去。
+ *
+ * 于是把两件事变成用例：
+ *   1. **禁用词**：词典里不许出现那批内部行话（下面这张表就是黑名单原文）；
+ *   2. **硬编码**：会在界面上说一句话的那几个出口（`onNotice(` / `push(`）不许直接写中文字面量，
+ *      必须走 `t("…")` —— 上一轮就是这么漏掉两句的（`读挂着的题失败`、`补看通知失败`）。
+ */
+describe("文案口径：禁用词与硬编码", () => {
+  /**
+   * 内部行话黑名单。
+   *
+   * 每一条都是真的上过屏的：左边是禁用词，右边是它当初的落点（改成什么，便于下次有人想写回来
+   * 时知道该写什么）。
+   */
+  const BANNED: Array<[string, string]> = [
+    ["不收话", "已停止接收（`status.inputPaused`）"],
+    ["不取件", "已暂停处理（`status.outputPaused`）"],
+    ["叫起来", "启动（`notice.startFailed`：会话启动失败）"],
+    ["这一批", "本轮（`cmd.needsIdle`）"],
+    ["换家", "本轮请求的模型与思考档不一致（`cmd.needsIdle`）"],
+    ["拿不回来", "无法恢复（`cmd.delete.title` / `cmd.ws.deleteTitle`）"],
+    ["白跑", "无谓的往返（内部注释里说，不上屏）"],
+    ["顺手", "删除「顺手」，直接说这一步做什么"],
+    ["撑爆", "溢出（`wiz.maxToolOutput.desc`：避免上下文溢出）"],
+    ["撤不回来", "不可撤销（`wiz.irreversible`）"],
+    ["死的", "未运行 / 已终止（`cmd.kill.alreadyDead`）"],
+    ["没找到", "未找到（`notice.clipboardUnavailable`）"],
+    ["没有安装", "未安装（`hook.notInstalled`）"],
+    ["不知道多大", "未知（`msg.imageSizeUnknown`）"],
+    ["一个字都不动", "目录内容不受影响（`cmd.ws.deleteTitle`）"],
+  ];
+
+  it("中文词典里没有内部行话", async () => {
+    const { zh } = await import("./zh.js");
+    const { zh: zhWizard } = await import("./zh-wizard.js");
+    const merged: Record<string, string> = { ...zh, ...zhWizard };
+
+    const offenders: string[] = [];
+    for (const [word, replacement] of BANNED) {
+      for (const [key, value] of Object.entries(merged)) {
+        if (value.includes(word))
+          offenders.push(`「${word}」出现在 ${key}：${value}（改为：${replacement}）`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * 「这不是给用户看的中文」只该有两个去处：词典，或者代码注释。
+   *
+   * 检查面刻意很窄 —— 只看那几个**会直接把字符串说给用户听**的调用（`onNotice(` / `.push(`
+   * 的第一个参数）。注释、文档与测试夹具不在范围内（它们的读者是改代码的人）。
+   */
+  it('通知出口不许硬编码中文：一律走 t("…")', async () => {
+    const files = (await sourceFiles(SRC_ROOT)).filter(
+      (file) => !file.includes("/i18n/") && !/\.test\.tsx?$/.test(file),
+    );
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const text = (await readFile(file, "utf8")).split("\n");
+      text.forEach((line, index) => {
+        // 注释行不算（那里的读者是改代码的人）
+        if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+        // `onNotice(` / `push(` 后面紧跟中文（含模板串）就是硬编码
+        if (/(onNotice|\.push)\(\s*[`"'][^`"']*[\u4e00-\u9fff]/.test(line)) {
+          offenders.push(`${file.replace(SRC_ROOT, "src/")}:${index + 1}：${line.trim()}`);
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+});

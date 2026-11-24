@@ -11,7 +11,7 @@
  *      客户端做了「清一条」的决定，所以只上屏、不清。
  *
  * 另加「手动全部清空」的那一条（`clearSessionNotices`）：它走 `notice.deleteAll` 的**按会话**口径，
- * 不带 `sessionId` 的那一档会抹掉别的会话还没上屏的通知。
+ * 不带 `sessionId` 的那一档会抹掉其他会话还没上屏的通知。
  */
 
 import { describe, expect, it } from "vitest";
@@ -237,7 +237,7 @@ describe("clearSessionNotices：手动全部清空只清这一段会话", () => 
     return { connection: connection as unknown as HostConnection, calls };
   }
 
-  it("带 sessionId 调 notice.deleteAll（不带 = 清整个库，会连别的会话一起清）", async () => {
+  it("带 sessionId 调 notice.deleteAll（不带 = 清整个库，会连其他会话一起清）", async () => {
     const { connection, calls } = clearConnection();
 
     await expect(clearSessionNotices(connection, "conv-1")).resolves.toBeUndefined();

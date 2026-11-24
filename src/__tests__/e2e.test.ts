@@ -351,7 +351,7 @@ function setupConfigDir(aizDir: string, options: SetupOptions = {}): void {
         ],
         defaultModel: "deepseek-flash",
         // 缺省 AgentDefinition 由宿主从配置里答（`runtime.agent.runOnce` 不带 agentId 时就用它）：
-        // 只写 `agents/default.json` 是不够的 —— 那是「候选清单」，选谁在这条默认项里
+        // 仅生成 `agents/default.json` 是不够的 —— 那是「候选清单」，选谁在这条默认项里
         defaultAgent: "default",
         version: 4,
       },

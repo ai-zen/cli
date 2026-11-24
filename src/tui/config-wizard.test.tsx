@@ -105,7 +105,7 @@ function makeHost(handlers: Record<string, (params: unknown) => unknown>): FakeH
 const referencedError = () =>
   Object.assign(new Error("conflict"), {
     code: "conflict",
-    message: "端点 deepseek 上还挂着模型 DeepSeek-V4-Flash，先把它们换走或删掉",
+    message: "端点 deepseek 上还挂着模型 DeepSeek-V4-Flash，未先迁移或删除这些模型时",
   });
 
 // ==================== 夹具（全部是契约形状）====================
@@ -531,7 +531,7 @@ describe("端点", () => {
     stdin.write(ENTER); // 二次确认
     // 代价在**事前**摆出来（宿主那句拒绝是事后）：模型 id 就在这句话里
     await until(
-      () => (lastFrame() ?? "").includes("还有 1 个模型挂在它上面"),
+      () => (lastFrame() ?? "").includes("仍有 1 个模型挂在该端点上"),
       "「还有谁挂着」那句话上屏",
     );
     expect(lastFrame() ?? "").toContain("deepseek-v4-flash");
@@ -558,7 +558,7 @@ describe("端点", () => {
     }
     stdin.write(ENTER); // 二次确认
     await until(
-      () => (lastFrame() ?? "").includes("还有 1 个图片模型挂在它上面"),
+      () => (lastFrame() ?? "").includes("仍有 1 个图片模型挂在该端点上"),
       "图片模型也数进代价里",
     );
     const frame = lastFrame() ?? "";
@@ -583,13 +583,13 @@ describe("端点", () => {
       await tick();
     }
     stdin.write(ENTER); // 二次确认
-    await until(() => (lastFrame() ?? "").includes("还有 1 个模型挂在它上面"), "代价那一句上屏");
+    await until(() => (lastFrame() ?? "").includes("仍有 1 个模型挂在该端点上"), "代价那一句上屏");
     await tick();
     stdin.write(DOWN); // 从「确认删除端点」移到「取消」
     await tick();
     stdin.write(ENTER);
     // 回到详情屏（代价那一句消失）才是按键真的被处理过的证据
-    await until(() => !(lastFrame() ?? "").includes("还有 1 个模型挂在它上面"), "回到详情屏");
+    await until(() => !(lastFrame() ?? "").includes("仍有 1 个模型挂在该端点上"), "回到详情屏");
     expect(calls).toEqual([]);
     expect(lastFrame() ?? "").toContain("◆ 端点 · DeepSeek");
     unmount();
@@ -852,7 +852,7 @@ describe("模型", () => {
       await tick();
     }
     stdin.write(ENTER); // 二次确认
-    await until(() => (lastFrame() ?? "").includes("兜底模型会被改指到"), "代价里点出默认项");
+    await until(() => (lastFrame() ?? "").includes("兜底模型将被改为指向"), "代价里点出默认项");
     const frame = lastFrame() ?? "";
     expect(frame).toContain("「DeepSeek-V4-Pro」");
     // 三格默认项都指着它，三句都要摆出来
@@ -876,14 +876,14 @@ describe("模型", () => {
     }
     stdin.write(ENTER);
     await until(
-      () => (lastFrame() ?? "").includes("兜底模型会被清空"),
+      () => (lastFrame() ?? "").includes("兜底模型将被清空"),
       "代价里点出「改指不成会被清空」",
     );
     await tick();
     stdin.write(DOWN); // 移到「取消」
     await tick();
     stdin.write(ENTER);
-    await until(() => !(lastFrame() ?? "").includes("兜底模型会被清空"), "回到详情屏");
+    await until(() => !(lastFrame() ?? "").includes("兜底模型将被清空"), "回到详情屏");
     expect(calls).toEqual([]);
     expect(lastFrame() ?? "").toContain("◆ 模型 · DeepSeek-V4-Flash");
     unmount();
@@ -980,7 +980,7 @@ describe("图片模型", () => {
     stdin.write(ENTER);
     await tick();
     stdin.write(ENTER);
-    await until(() => (lastFrame() ?? "").includes("先把它们换走或删掉"), "宿主的拒绝上屏");
+    await until(() => (lastFrame() ?? "").includes("未先迁移或删除这些模型时"), "宿主的拒绝上屏");
     unmount();
   });
 });
@@ -1145,8 +1145,8 @@ describe("默认项", () => {
       },
     });
     await tick();
-    // 屏上写清它是什么：关掉只省下那一次起名请求，不影响手工改名
-    expect(lastFrame()).toContain("不影响手工改名");
+    // 屏上写清它是什么：关掉只省下那一次起名请求，不影响手动重命名
+    expect(lastFrame()).toContain("不影响手动重命名");
     stdin.write(DOWN); // → 「关」
     await tick();
     stdin.write(ENTER);
@@ -1177,7 +1177,7 @@ describe("默认项", () => {
       "宿主的拒绝原话上屏",
     );
     // 没写成就留在这一屏，不假装已经写进去
-    expect(lastFrame()).toContain("不影响手工改名");
+    expect(lastFrame()).toContain("不影响手动重命名");
     unmount();
   });
 });
@@ -1518,8 +1518,8 @@ describe("Agent", () => {
     await tick();
     stdin.write(ENTER); // 打开系统编辑器（假实现直接把新内容写进临时文件）
     // 改的是**定义**：写之前先出一次确认（PRD 1.6），文案说影响面不说字段名
-    await until(() => (lastFrame() ?? "").includes("确认改这份助手定义"), "改定义的二次确认上屏");
-    expect(lastFrame() ?? "").toContain("你正在看的那段回答会断");
+    await until(() => (lastFrame() ?? "").includes("确认修改该助手定义"), "改定义的二次确认上屏");
+    expect(lastFrame() ?? "").toContain("当前回答会中断");
     await tick(); // 让确认屏的按键订阅接上
     stdin.write(ENTER); // 确认
     await until(() => calls.length > 0, "改提示词的那次写入落地");
@@ -1553,7 +1553,7 @@ describe("Agent", () => {
     stdin.write(ENTER);
     await tick();
     stdin.write(ENTER);
-    await until(() => (lastFrame() ?? "").includes("确认改这份助手定义"), "改定义的二次确认上屏");
+    await until(() => (lastFrame() ?? "").includes("确认修改该助手定义"), "改定义的二次确认上屏");
     await tick();
     stdin.write(ENTER);
     await until(() => calls.length > 0, "改提示词的那次写入落地");
@@ -1581,7 +1581,7 @@ describe("Agent", () => {
     stdin.write(ENTER);
     await tick();
     stdin.write(ENTER);
-    await until(() => (lastFrame() ?? "").includes("确认改这份助手定义"), "改定义的二次确认上屏");
+    await until(() => (lastFrame() ?? "").includes("确认修改该助手定义"), "改定义的二次确认上屏");
     await tick();
     stdin.write(ENTER);
     await until(() => calls.length > 0, "改函数 schema 的那次写入落地");
@@ -1618,7 +1618,7 @@ describe("Agent", () => {
     await tick();
     stdin.write(ENTER);
     // 先确认、后校验：非法 JSON 是在确认之后才发现的（校验在写口那一侧）
-    await until(() => (lastFrame() ?? "").includes("确认改这份助手定义"), "改定义的二次确认上屏");
+    await until(() => (lastFrame() ?? "").includes("确认修改该助手定义"), "改定义的二次确认上屏");
     await tick();
     stdin.write(ENTER);
     // 「一次写都不发」是负向断言：先等「解析失败」上屏 —— 那是回车真的被处理过的证据
@@ -1715,7 +1715,7 @@ describe("Agent", () => {
     await tick();
     stdin.write(ENTER);
     // 权限也是定义的一部分：写之前先出一次确认（与提示词同一句口径）
-    await until(() => (lastFrame() ?? "").includes("确认改这份助手定义"), "改权限的二次确认上屏");
+    await until(() => (lastFrame() ?? "").includes("确认修改该助手定义"), "改权限的二次确认上屏");
     await tick();
     stdin.write(ENTER); // 确认
     await until(() => calls.length > 0, "改权限的那次写入落地");
@@ -1784,10 +1784,10 @@ describe("Agent", () => {
     }
     stdin.write(ENTER); // 二次确认
     await until(
-      () => (lastFrame() ?? "").includes("还有 3 段会话在用这个助手定义"),
+      () => (lastFrame() ?? "").includes("仍有 3 段会话在使用该助手定义"),
       "有几段会话在用它",
     );
-    expect(lastFrame() ?? "").toContain("你正在看的那段回答会断");
+    expect(lastFrame() ?? "").toContain("当前回答会中断");
     unmount();
   });
 
@@ -1804,7 +1804,7 @@ describe("Agent", () => {
     }
     stdin.write(ENTER);
     await until(
-      () => (lastFrame() ?? "").includes("所有用这个助手定义的会话都会受影响"),
+      () => (lastFrame() ?? "").includes("所有使用该助手定义的会话都会受影响"),
       "影响面那句人话",
     );
     expect(lastFrame() ?? "").not.toMatch(/\d+ 段会话/);
@@ -1823,7 +1823,7 @@ describe("Agent", () => {
       await tick();
     }
     stdin.write(ENTER);
-    await until(() => (lastFrame() ?? "").includes("它还是默认助手"), "默认项会被清空那一句上屏");
+    await until(() => (lastFrame() ?? "").includes("它仍是默认助手"), "默认项将被清空那一句上屏");
     unmount();
   });
 });

@@ -245,7 +245,7 @@ describe("useWizardHost", () => {
     // 等的是通知真的发出去（一次异步结果），不是「睡一下大概报过了」
     await until(() => calls.notify.length > 0, "读取失败的通知发出去了");
     expect(p.frame()).toBe(p.idle);
-    expect(calls.notify).toEqual([["读取配置失败：EACCES", "error"]]);
+    expect(calls.notify).toEqual([["配置读取失败：EACCES", "error"]]);
     p.unmount();
   });
 
@@ -270,7 +270,7 @@ describe("useWizardHost", () => {
     await until(() => calls.notify.length > 0, "「没绑端点」的提示发出去了");
     expect(p.frame()).toBe(p.idle);
     expect(calls.notify[0]?.[1]).toBe("error");
-    expect(calls.notify[0]?.[0]).toContain("没有绑定可用的端点");
+    expect(calls.notify[0]?.[0]).toContain("未绑定可用端点");
     p.unmount();
   });
 

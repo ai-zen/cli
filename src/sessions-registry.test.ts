@@ -328,7 +328,7 @@ describe("SessionRegistry：切走的那一段继续跑", () => {
     const newId = await registry.newSegment();
 
     expect(newId).toBe("sess-new");
-    // 建行只有 `session.create` 这一条路（只写库），项目认 `currentWorkspaceId`
+    // 建行只有 `session.create` 这一条路（仅生成库），项目认 `currentWorkspaceId`
     const created = connection.calls.filter((call) => call.method === "session.create").at(-1);
     expect(created?.params).toEqual({ workspaceId: "ws-other", agentId: "default" });
     // `/new` 之后一个字都没投出去：建行不顺带唤醒，也不顺带发消息

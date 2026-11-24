@@ -3,7 +3,7 @@
  *
  * 这一组钉的是**事实**：占位那块把手里已有的事实说出来（第几张、尺寸、文件名）。事实有两个
  * 来源：段上自带的（别的客户端写下来的那种）优先，段上没带的查本机上传那一刻记下的那一份；
- * 两处都没有（别的客户端传的、进程重启过）就写「不知道多大」，也不为了尺寸另开一次请求。
+ * 两处都没有（别的客户端传的、进程重启过）就写「未知」，也不为了尺寸另开一次请求。
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentNS } from "@ai-zen/agents-core";
@@ -73,9 +73,9 @@ describe("imagePlaceholderLines（占位那块说得出的事实）", () => {
     expect(lines).toContain("文件名：cat.png");
   });
 
-  it("只有 `__asset_id` 且本机也没记过（今天客户端写的就是这一种）：尺寸那行写「不知道多大」，没有文件名那行", () => {
+  it("只有 `__asset_id` 且本机也没记过（今天客户端写的就是这一种）：尺寸那行写「未知」，没有文件名那行", () => {
     const lines = imagePlaceholderLines(assetPart("a-1"), 1);
-    expect(lines).toContain("尺寸：不知道多大");
+    expect(lines).toContain("尺寸：未知");
     // 没有就是没有：不编一个文件名，也不为尺寸另开一次请求（这里根本不发请求）
     expect(lines.some((line) => line.includes("文件名"))).toBe(false);
   });
@@ -87,10 +87,10 @@ describe("imagePlaceholderLines（占位那块说得出的事实）", () => {
     expect(lines).toContain("文件名：shot.png");
   });
 
-  it("本机这一份是空的（进程重启过 / 别的客户端传的）：照旧说不知道多大", () => {
+  it("本机这一份是空的（进程重启过 / 别的客户端传的）：照旧说未知", () => {
     // `beforeEach` 刚清空过，就是重启之后的样子
     const lines = imagePlaceholderLines(assetPart("a-9"), 1);
-    expect(lines).toContain("尺寸：不知道多大");
+    expect(lines).toContain("尺寸：未知");
     expect(lines.some((line) => line.includes("文件名"))).toBe(false);
   });
 
@@ -104,16 +104,16 @@ describe("imagePlaceholderLines（占位那块说得出的事实）", () => {
     expect(lines).toContain("文件名：other.png");
   });
 
-  it("内联 base64：说的是「内联在消息里」，尺寸同样不知道", () => {
+  it("内联 base64：说的是「内联于消息内容」，尺寸同样不知道", () => {
     const lines = imagePlaceholderLines(inlinePart, 1);
-    expect(lines[0]).toContain("内联在消息里");
-    expect(lines).toContain("尺寸：不知道多大");
+    expect(lines[0]).toContain("内联于消息内容");
+    expect(lines).toContain("尺寸：未知");
   });
 
   it("远程图片：地址照旧带上（这一种没有素材，也没有尺寸）", () => {
     const lines = imagePlaceholderLines(urlPart, 1);
     expect(lines[0]).toBe("[图片：http://x/y.png]");
-    expect(lines).toContain("尺寸：不知道多大");
+    expect(lines).toContain("尺寸：未知");
   });
 });
 
@@ -142,7 +142,7 @@ describe("openableImages（哪几张打得开）", () => {
     expect(openableImageLabel(images[1]!)).toBe("第 1 条消息 · 第 3 张");
   });
 
-  it("选择器那一行的提示：有尺寸与文件名就给，没有就说不知道多大", () => {
+  it("选择器那一行的提示：有尺寸与文件名就给，没有就说未知", () => {
     const [withFacts, withoutFacts] = openableImages([
       userMessage("u-1", [
         assetPart("a-1", { width: 640, height: 480, name: "one.png" }),
@@ -150,7 +150,7 @@ describe("openableImages（哪几张打得开）", () => {
       ]),
     ]);
     expect(openableImageHint(withFacts!)).toBe("640 × 480 · one.png");
-    expect(openableImageHint(withoutFacts!)).toBe("不知道多大");
+    expect(openableImageHint(withoutFacts!)).toBe("未知");
   });
 
   it("选择器那一行的提示也用本机那份：上传过的那张说得真实尺寸与文件名", () => {
