@@ -6,11 +6,11 @@
  * 通知栏是唯一念通知的地方，所以清空它的入口也跟着它走（{@link noticeLines} 末尾那一行）。
  * 那一行写的是两个键（三档粒度里的后两档，`prd/08-client.md` 的通知那一节）：
  *
- *   · `Alt+X`（`common-keys.ts` 的 `handleClearNoticesKey`）：清掉本地队列
+ *   · `Ctrl+X`（`common-keys.ts` 的 `handleClearNoticesKey`）：清掉本地队列
  *     （{@link NoticeChannel.clear}），再让宿主把**这一段会话**的通知清掉（`notice.deleteAll` 的
  *     按会话那一档，见 `pending-notices.ts` 的 `clearSessionNotices`，入参是 `sessionId`）——
  *     不给 `sessionId` 就是「清整个宿主库」，会把别的会话还没上屏的通知一起抹掉。
- *   · `Alt+Shift+X`（`handleClearAllNoticesKey`）：「清全部」。它自己不发任何请求，只开一次
+ *   · `Ctrl+G`（`handleClearAllNoticesKey`）：「清全部」。它自己不发任何请求，只开一次
  *     确认，并在那一问里明说会连**全局通知、别的会话的通知**一起清掉 —— 清全部要明说，
  *     不能顺手全清。
  *
@@ -52,7 +52,8 @@ export interface Notice {
   text: string;
   tone: NoticeTone;
   /**
-   * 谁让它出现的。只决定**清除时机**：用户发送那一刻清掉 `log` 那几条，`app` 不动。
+   * 谁让它出现的。只作**事实**留着（日志上浮来的一批与业务提示分开看）：清除时机不再按它分档
+   * —— 用户发送那一刻两档一起清（见 {@link NoticeChannel.clear}）。
    */
   origin: NoticeOrigin;
   /** 递增序号：同一文本重复推送也能被 React 依赖感知为「新通知」，用于渲染 key */
@@ -93,7 +94,8 @@ export class NoticeChannel {
    * 推入一条通知；空文本直接忽略（调用方常把错误消息直接透传进来）。
    *
    * `origin` 缺省 `app`：业务提示（宿主发的、CLI 自己说的那句话）。日志上浮来的那一批由
-   * `tui/screens/chat.tsx` 的 sink 显式传 `"log"` —— 它跟着「发送那一刻清掉」走。
+   * `tui/screens/chat.tsx` 的 sink 显式传 `"log"` —— 它只用来分辨「这条是日志转的」，
+   * 清除时机不按它分档。
    */
   push(text: string, tone: NoticeTone = "info", origin: NoticeOrigin = "app"): void {
     if (!text) return;
@@ -102,24 +104,16 @@ export class NoticeChannel {
     this.broadcast();
   }
 
-  /** 清空（`/clear` / 会话重建时调用，避免上一次的提示一直挂着） */
+  /**
+   * 清空（`/clear` / 会话重建 / **用户发送那一刻**都调它，避免上一批提示挂着挡事）。
+   *
+   * 发送那一刻不分语言：`origin` 只记「这条从哪来」（日志还是业务提示），而「用户开口了」
+   * 对两档都是同一个意思 —— 上一批话已经说完。（曾经只清 `log` 那一档，结果是业务提示
+   * 一路顶着输入框陪下一轮对话。）
+   */
   clear(): void {
     if (this.queue.length === 0) return;
     this.queue = [];
-    this.broadcast();
-  }
-
-  /**
-   * 只清日志转发来的那几条（`origin === "log"`）。
-   *
-   * 用在**用户按下发送那一刻**：那几条是「刚才那一阵发生了什么」，用户已经看过了，留着只会挡事；
-   * `origin === "app"` 的（宿主发的、CLI 自己说的业务提示）**不动** —— 那是真要说的事，得等
-   * 用户自己处理（或手动清空）。后台那一段攒的通知也不在这里：它们还没上过这一屏。
-   */
-  clearLog(): void {
-    const kept = this.queue.filter((notice) => notice.origin !== "log");
-    if (kept.length === this.queue.length) return;
-    this.queue = kept;
     this.broadcast();
   }
 
@@ -181,7 +175,7 @@ export function noticeLines(notices: readonly Notice[], columns: number): Notice
 export interface NoticeBarContent {
   /** 正文行（每条通知的折行结果） */
   lines: NoticeLine[];
-  /** 入口提示（`Alt+X` 清本会话 · `Alt+Shift+X` 清全部）；栏位空时没有 */
+  /** 入口提示（`Ctrl+X` 清本会话 · `Ctrl+G` 清全部）；栏位空时没有 */
   hint: string | null;
   /** 栏位占几行：正文行 + 提示那一行（布局与硬件光标都按它预留） */
   height: number;

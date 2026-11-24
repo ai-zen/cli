@@ -67,27 +67,26 @@ describe("NoticeChannel（通知旁路通道）", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("clearLog 只清日志转发来的那几条（origin: log），业务提示留着", () => {
+  it("发送那一刻调的 clear 把两档都清掉（log 与 app 一条不留）", () => {
     const channel = new NoticeChannel();
     channel.push("记不住 last-session.json", "warn", "log");
     channel.push("宿主说的话", "info");
     channel.push("又一条日志", "error", "log");
 
-    channel.clearLog();
+    channel.clear();
 
-    expect(channel.notices.map((n) => n.text)).toEqual(["宿主说的话"]);
-    expect(channel.notices[0]!.origin).toBe("app");
+    expect(channel.notices).toEqual([]);
   });
 
-  it("clearLog 在一条 log 都没有时不广播（发送那一刻不该白重渲染一次）", () => {
+  it("队列里只有 app 档时，clear 也清（不再只认 log 那一档）", () => {
     const channel = new NoticeChannel();
     channel.push("宿主说的话");
     const spy = vi.fn();
     channel.subscribe(spy);
 
-    channel.clearLog();
+    channel.clear();
 
-    expect(spy).not.toHaveBeenCalled();
+    expect(spy).toHaveBeenCalledWith([]);
   });
 
   it("取消订阅后不再收到", () => {

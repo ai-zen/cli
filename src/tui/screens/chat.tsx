@@ -380,8 +380,8 @@ export function Chat(props: ChatScreenProps) {
    * 只能靠猜）。这里把屏上的通知栏注册成日志那一格的入口：任何一处 `logger.warn/error`，界面上
    * 自动就有，不必为新特性再传一个回调。
    *
-   * `origin: "log"` 是这条链的记号：用户按发送那一刻会被清掉（`clearLog()`），而业务提示
-   * （宿主转来的、CLI 自己说的那句话）不跟着走。
+   * `origin: "log"` 是这条链的记号：它跟着「发送那一刻清空」走（`clearNoticesOnSend`），
+   * 与业务提示（宿主转来的、CLI 自己说的那句话）同批退场 —— 两档都在用户开口时清掉。
    */
   useEffect(() => {
     deps.logNotices.setSink((level, message) => noticeChannel.push(message, level, "log"));
@@ -796,6 +796,31 @@ export function Chat(props: ChatScreenProps) {
     typeIntoDraft(pasted.text.replace(/\n$/, ""));
   };
 
+  /**
+   * 发送那一刻清空通知：本地队列一条不留，宿主上**这一段会话**的那一份也清。
+   *
+   * ## 为什么两档一起清
+   *
+   * `log` 档（日志上浮的）本来就是「刚才那阵发生了什么」，发送即过期；`app` 档（宿主说的、
+   * CLI 自己说的）以前留着等用户处理，代价是它们顶着输入框陪下一轮对话 —— 而用户一开口，就
+   * 已经开始讲新的一件事了。所以发送 = 这一批通知的生命周期结束。
+   *
+   * ## 为什么连宿主那一份也清
+   *
+   * 不清的话，下次重连补看（`flushPendingNotices`）会把同一批再上屏一遍 —— 用户明的已经
+   * “翻篇”了的东西又来一次。清的只是**这一段会话**：不带 `sessionId` 的清全部是另一档
+   * （`Ctrl+G`，要明说，PRD 那条规矩），这里绝不顺手做。
+   *
+   * 清不掉不报：这一刻用户要成的是「把这句话发出去」，拿清通知的失败挡在他面前说不通；
+   * 要报失败的是 `Ctrl+X` 那条路（它本身就是「清」这个动作）。
+   */
+  const clearNoticesOnSend = () => {
+    noticeChannel.clear();
+    const sessionId = sessionRef.current?.sessionId;
+    if (!sessionId) return;
+    void clearSessionNotices(deps.connection, sessionId).catch(() => {});
+  };
+
   const runSubmit = async (text: string, options: { asMessage?: boolean } = {}) => {
     const trimmed = text.trim();
     if (!trimmed || !sessionRef.current) return;
@@ -825,12 +850,13 @@ export function Chat(props: ChatScreenProps) {
     // 发出去的消息永远属于主 Agent：停在子 Agent 视图上会让用户看不到自己的提问
     setActiveAgentId("main");
     /**
-     * 发送那一刻清掉**日志转发来的**那几条（`origin === "log"`）—— 按下就清，不等发送结果。
+     * 发送那一刻清空通知（本地队列 + 宿主这一段），按下就清，不等发送结果。
      *
-     * 只清这一档：`origin === "app"` 的（宿主发的、CLI 自己说的业务提示）是真要说的事，等用户
-     * 自己处理；后台那段攒的通知不在这里（它们还没上过这一屏）。全清空另有入口（`/clear`）。
+     * 时机：恰好在这一句**被受理**之后、命令 / 消息分流之前 —— 那时草稿已经清掉、光标已经
+     * 回到底部，通知栏再留着上一批话就是纯噪声。（清什么、为什么连宿主那份也清，见
+     * `clearNoticesOnSend`。）
      */
-    noticeChannel.clearLog();
+    clearNoticesOnSend();
 
     // 斜杠命令：命令名怎么解析、哪些命令会调用模型（要拦输入框），都来自命令元数据
     const command = options.asMessage ? null : parseCommandInput(trimmed);

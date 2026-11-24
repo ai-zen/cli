@@ -1730,27 +1730,29 @@ describe("发送那一刻：清掉日志转发来的通知", () => {
     created.options = null;
   });
 
-  it("按下发送就清 `origin: log` 的那几条；业务提示与后台攒的不动", async () => {
+  it("按下发送就清空通知栏：日志上浮的与业务提示一起走", async () => {
     const logNotices = new LogNotices({ logFile: null });
-    const { stdin, lastFrame, unmount } = mount({ logNotices });
+    const connection = fakeConnection();
+    const { stdin, lastFrame, unmount } = mount({ logNotices, connection });
     await flush();
 
-    // 一条日志上浮来的（发送时该被清掉）
+    // 一条日志上浮来的
     logNotices.record({
       level: "warn",
       source: "cli",
       message: "记不住 last-session.json",
       at: "2026-01-01T00:00:00.000Z",
     });
-    // 宿主转来的日志（也带 `origin: "log"`，同样该被清掉）
+    // 宿主转来的日志（也带 `origin: "log"`）
     created.notifier.onNotice("宿主日志上浮的那条", "warn", "log");
-    // 一条宿主发来的业务提示（发送之后还该在）
+    // 一条宿主发来的业务提示
     created.notifier.onNotice("宿主说的话", "info");
     await flush();
     expect(lastFrame() ?? "").toContain("记不住 last-session.json");
     expect(lastFrame() ?? "").toContain("宿主日志上浮的那条");
     expect(lastFrame() ?? "").toContain("宿主说的话");
 
+    connection.apiCalls.length = 0;
     stdin.write("你好");
     await flush();
     stdin.write("\r");
@@ -1759,7 +1761,10 @@ describe("发送那一刻：清掉日志转发来的通知", () => {
     const frame = lastFrame() ?? "";
     expect(frame).not.toContain("记不住 last-session.json");
     expect(frame).not.toContain("宿主日志上浮的那条");
-    expect(frame).toContain("宿主说的话");
+    expect(frame).not.toContain("宿主说的话");
+    // 宿主上**这一段会话**的那一份也清：不带 sessionId 的清全部是另一档（Ctrl+G）
+    const cleared = connection.apiCalls.filter((call) => call.method === "notice.deleteAll");
+    expect(cleared).toEqual([{ method: "notice.deleteAll", params: { sessionId: "chat_test" } }]);
     unmount();
   });
 });
