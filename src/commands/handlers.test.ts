@@ -179,7 +179,7 @@ function sessionView(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot 
     id: "sess-1",
     workspaceId: "ws-1",
     name: "会话一",
-    nameIsAuto: false,
+    nameSource: "user",
     pinned: false,
     agentId: "default",
     modelId: "m1",
@@ -248,6 +248,8 @@ function sessionStub(overrides: Partial<SessionStub> = {}): SessionStub {
     agentId: "default",
     sessionId: "sess-1",
     name: "第一段",
+    // 会话行那一份（`sessionLabel` 读它：名字的来源与建行时刻都在这上面）
+    view: sessionView({ id: "sess-1", name: "第一段" }),
     workspaceId: "ws-1",
     currentWorkspaceId: "ws-1",
     selectWorkspace: vi.fn(),
@@ -446,6 +448,36 @@ function live(overrides: Partial<LiveSession> = {}): LiveSession {
 const at = (hour: number, minute: number) => new Date(2026, 9, 1, hour, minute).getTime();
 
 describe("/sessions：列会话与切换", () => {
+  /**
+   * 名字那一格按**来源**写：占位名（`default`）不该把库里的 ISO 时刻串直接上屏，存档（`handoff`）
+   * 要和它抄自的那一段区分得开 —— 两者的名字本来就一模一样。
+   */
+  it("名字按来源写：占位名说「新会话 + 时刻」，存档名标一句「存档」", async () => {
+    const { host } = createHost({
+      routes: {
+        "session.list": () => [
+          sessionView({
+            id: "sess-a",
+            name: "2026-11-25T08:44:30.609Z",
+            nameSource: "default",
+            createdAt: at(9, 30),
+          }),
+          sessionView({ id: "sess-b", name: "重构交接", nameSource: "handoff" }),
+          sessionView({ id: "sess-c", name: "自动起的名", nameSource: "auto" }),
+        ],
+      },
+    });
+    const seen = capturePick(host, null);
+
+    await runCommand("sessions", "/sessions", host);
+
+    expect(seen.labels).toEqual([
+      t("cmd.sessions.untitled", { time: "09:30" }),
+      t("cmd.sessions.archived", { name: "重构交接" }),
+      "自动起的名",
+    ]);
+  });
+
   it("行从 `session.list` 来（按当前项目）；状态那一格只说本进程订阅着的那一段，其余不猜", async () => {
     const { host, calls } = createHost({
       liveSessions: [live({ inboxPending: 2 })],

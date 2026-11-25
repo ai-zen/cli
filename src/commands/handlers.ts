@@ -475,7 +475,7 @@ export async function moveAfterGone(host: GoneHost, after: AfterGone): Promise<v
   }
   host.exit({
     load: { sessionId: next.id },
-    notice: `${after.notice}\n${t("cmd.delete.switched", { name: next.name })}`,
+    notice: `${after.notice}\n${t("cmd.delete.switched", { name: sessionLabel(next) })}`,
   });
 }
 
@@ -510,7 +510,7 @@ const cmdLoad: CommandHandler = async ({ session, api, push, args, exit, pick })
     return;
   }
   const allItems: SelectItem<string>[] = sessions.map((item) => ({
-    label: `${item.name}${item.id === session.sessionId ? t("common.current") : ""}`,
+    label: `${sessionLabel(item)}${item.id === session.sessionId ? t("common.current") : ""}`,
     value: item.id,
     hint: allWorkspaces
       ? t("cmd.load.hintAll", { workspace: item.workspaceId, id: item.id })
@@ -602,7 +602,7 @@ const cmdSessions: CommandHandler = async ({
   }
 
   const items: SelectItem<string>[] = listed.map((row) => ({
-    label: `${row.session.name}${row.session.id === currentId ? t("common.current") : ""}`,
+    label: `${sessionLabel(row.session)}${row.session.id === currentId ? t("common.current") : ""}`,
     value: row.session.id,
     hint: sessionHint(row),
   }));
@@ -660,6 +660,24 @@ function activityHint(live: LiveSession): string[] {
   else if (live.status === "idle") parts.push(t("cmd.sessions.idle"));
   if (live.inboxPending > 0) parts.push(t("cmd.sessions.inboxPending", { n: live.inboxPending }));
   return parts;
+}
+
+/**
+ * 会话那一行的名字怎么写。
+ *
+ * 三种来源说的是三件事：`default` 是建行时那个占位名（ISO 时刻串）—— 直接上屏等于给用户看一串
+ * 机器时间，所以换成「新会话 · 时刻」；`handoff` 的名字沿用原会话，在列表里会与它并排出现，
+ * 这里标一句「存档」；剩下的（`auto` / `user` / `legacy`）原样用那一格的名字 —— 它是人名，
+ * 不归我们改。
+ */
+function sessionLabel(session: Pick<SessionSnapshot, "name" | "nameSource" | "createdAt">): string {
+  if (session.nameSource === "default") {
+    return t("cmd.sessions.untitled", { time: clockOf(session.createdAt) });
+  }
+  if (session.nameSource === "handoff") {
+    return t("cmd.sessions.archived", { name: session.name });
+  }
+  return session.name;
 }
 
 /**
@@ -985,7 +1003,7 @@ const cmdBack: CommandHandler = async ({ session, push, exit, pick }) => {
  * `/rename`（别名 `/save`）—— 给这一段起一个自己认得出的名字（`session.rename`，PRD 1.5）。
  *
  * 名字是会话行上的独立一格：id 不动，别人手里的引用不用改，侧栏按它显示。改完之后它就不再
- * 被自动起名覆盖（宿主把 `nameIsAuto` 翻成 false）。
+ * 被自动起名覆盖（宿主把 `nameSource` 记成 `user`，自动起名只碰 `default` / `auto` 那两格）。
  *
  * 不给名字就把现在的名字说出来 —— 终端没有行内输入框，改名要一个字，走参数是唯一的路
  * （要写长文本是 `/editor` 那一类事，不是一个名字）。
@@ -993,7 +1011,7 @@ const cmdBack: CommandHandler = async ({ session, push, exit, pick }) => {
 const cmdRename: CommandHandler = async ({ session, args, push }) => {
   const name = args.join(" ").trim();
   if (!name) {
-    push(t("cmd.rename.usage", { name: session.name }));
+    push(t("cmd.rename.usage", { name: sessionLabel(session.view) }));
     return;
   }
   await session.rename(name);
@@ -1863,10 +1881,13 @@ const cmdDelete: CommandHandler = async ({
   const assets = referencedAssetCount(snapshot.messages);
 
   // ② 确认：两档（是 / 否），与 `/shutdown` 同一个交互形状；没有 `--force` 之类的旁路
-  const choice = await pick(t("cmd.delete.title", { name: session.name, messages, assets }), [
-    { label: t("cmd.delete.confirm"), value: "yes" },
-    { label: t("cmd.delete.cancel"), value: "no" },
-  ]);
+  const choice = await pick(
+    t("cmd.delete.title", { name: sessionLabel(session.view), messages, assets }),
+    [
+      { label: t("cmd.delete.confirm"), value: "yes" },
+      { label: t("cmd.delete.cancel"), value: "no" },
+    ],
+  );
   // 选了「否」（Esc / 覆盖层被关掉也是这一支）：一个方法都不调，这一段什么都没变
   if (choice !== "yes") {
     push(t("cmd.delete.cancelled"));
@@ -1943,7 +1964,7 @@ const cmdKill: CommandHandler = async ({ session, api, liveSessions, push, args,
   const typed = args.join(" ").trim();
   let target: KillCandidate;
   if (typed === "") {
-    target = { id: session.sessionId, name: session.name };
+    target = { id: session.sessionId, name: sessionLabel(session.view) };
   } else {
     const matched = matchSession(await killCandidates({ session, api, liveSessions }), typed);
     if ("problem" in matched) {

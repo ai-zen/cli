@@ -76,7 +76,8 @@ export interface MirrorSessionRow {
   id: string;
   workspaceId: string;
   name: string;
-  nameIsAuto: boolean;
+  /** 名字从哪儿来：`default` 是建行时的占位名（显示成「新会话 · 时刻」），`handoff` 是存档 */
+  nameSource: "default" | "auto" | "user" | "handoff" | "legacy";
   pinned: boolean;
   agentId: string;
   modelId: string | null;

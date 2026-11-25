@@ -104,7 +104,7 @@ const sessionRow: MirrorSessionRow = {
   id: "sess-1",
   workspaceId: "ws-1",
   name: "新会话",
-  nameIsAuto: true,
+  nameSource: "default",
   pinned: false,
   agentId: "default",
   modelId: "test-model",

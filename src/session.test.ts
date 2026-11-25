@@ -51,7 +51,7 @@ function sessionRow(overrides: Partial<MirrorSessionRow> = {}): MirrorSessionRow
     id: SESSION,
     workspaceId: WORKSPACE,
     name: "会话一",
-    nameIsAuto: true,
+    nameSource: "default",
     pinned: false,
     agentId: "default",
     modelId: "test-model",

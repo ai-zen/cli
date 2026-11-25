@@ -238,6 +238,8 @@ export const zh: Record<string, string> = {
   "cmd.sessions.model": "模型 {id}",
   "cmd.sessions.noModel": "无可用模型",
   "cmd.sessions.updated": "{time} 更新",
+  "cmd.sessions.untitled": "新会话 {time}",
+  "cmd.sessions.archived": "{name}（存档）",
   "cmd.sessions.workspace": "项目 {name}",
   "cmd.sessions.none": "当前工作区暂无会话，请用 /new 新建",
   "cmd.sessions.noneAll": "宿主上暂无任何会话，请用 /new 新建",

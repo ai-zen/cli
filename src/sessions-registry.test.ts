@@ -45,7 +45,7 @@ function sessionRow(id: string, overrides: Partial<MirrorSessionRow> = {}): Mirr
     id,
     workspaceId: WORKSPACE,
     name: id === "sess-1" ? "第一段" : id,
-    nameIsAuto: true,
+    nameSource: "default",
     pinned: false,
     agentId: "default",
     modelId: "test-model",

@@ -230,6 +230,8 @@ export const en: Record<string, string> = {
   "cmd.sessions.model": "model {id}",
   "cmd.sessions.noModel": "no usable model",
   "cmd.sessions.updated": "updated {time}",
+  "cmd.sessions.untitled": "New session {time}",
+  "cmd.sessions.archived": "{name} (archived)",
   "cmd.sessions.workspace": "project {name}",
   "cmd.sessions.none": "No sessions in this workspace yet — start one with /new",
   "cmd.sessions.noneAll": "This host has no sessions yet — start one with /new",
