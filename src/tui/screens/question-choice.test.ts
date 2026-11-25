@@ -1,15 +1,14 @@
 /**
- * 问题作答面板 —— 「宿主问一道题，用户在面板上答」这条路上客户端只做两件事：
- * 把 `QuestionView` 摆上面板、把选中的 `value` 交回去。
+ * 表单面板 —— 「宿主问一张表，用户在面板上填」这条路上，客户端只做两件事：把表里那一格**能画成
+ * 列表**的枚举摆上面板、把选中的值包成一次 `accept` 交回去。
  *
- * 所以这一组咬死四件事：
+ * 所以这一组咬死五件事：
  *   1. 标题与候选**照抄宿主**（顺序也不重排：三选一的先后是产品定的）；
- *   2. 候选只有「值 + 显示名」，不给 hint；
- *   3. **关掉面板（Esc / resolve(null)）答什么由宿主说**：题带 `cancelValue` 就交那个值；
- *   4. 没带 `cancelValue` 的题，关掉面板才是真·不作答（`null`，题继续挂着）。
- *
- * 第 3、4 条是分开的两件事：客户端不许按候选的**位置**去猜退路（`AGENTS.md` 的「禁止隐式兜底」），
- * 退路只有出题的人知道。
+ *   2. 选中 = `accept` + `{字段名: 值}`，字段名取自表，不是写死的 `mode`；
+ *   3. **关掉面板（Esc / resolve(null)）= `cancel`**：三态里「用户关掉没作答」那一格。哪个候选
+ *      等于退路不再由题声明 —— 那件事归消费者解释（交接那一道题拿到 cancel 就当「不交接」）；
+ *   4. 表里**没有**能画成列表的字段（自由文本 / 数字 / 布尔）→ 立刻回 `cancel`，不弹面板；
+ *   5. 能画的字段**不止一格** → 同样回 `cancel`：挑其中一格画出来就是替用户决定问什么。
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { setLocale } from "../../i18n/index.js";
@@ -19,24 +18,23 @@ import type { ChatOverlays } from "./use-overlays.js";
 
 beforeEach(() => setLocale("zh"));
 
-/**
- * 一个字面量问题对象（宿主 `question.list` 的一行：`message` + `choices` + `cancelValue` +
- * `blocking`）。
- *
- * 这一版没有 `prompt` / `options` / `kind` / `state` 那几格了：题干是成品句，候选是
- * 「值 + 显示名」，答完即消失（所以也没有状态可读）。
- */
+/** 交接那道题：一个单选枚举字段（宿主那一侧就是这么出题的） */
 const handoffQuestion = (): QuestionView => ({
   id: "q1",
   sessionId: "c1",
   message: "上下文已用 92%，要交接吗？",
-  choices: [
-    { value: "self", label: "原 agent 自交接" },
-    { value: "summary", label: "独立摘要" },
-    { value: "no", label: "不交接" },
-  ],
-  // 关掉面板 = 选「不交接」：这一题没有「不作答」这个去处，题一挂这一段就一直等在它上面
-  cancelValue: "no",
+  requestedSchema: {
+    type: "object",
+    properties: {
+      mode: {
+        type: "string",
+        title: "用哪种方式交接？",
+        enum: ["self", "summary", "no"],
+        enumNames: ["原 agent 自交接", "独立摘要", "不交接"],
+      },
+    },
+    required: ["mode"],
+  },
   blocking: true,
   // 时间一律 epoch 毫秒（宿主的口径）
   createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
@@ -65,8 +63,8 @@ function makePicker() {
   return { setPickerState, get: () => state! };
 }
 
-describe("chooseQuestionAnswer（问题对象 → 面板 → 选中的 value）", () => {
-  it("标题与候选照抄宿主，顺序不重排", async () => {
+describe("chooseQuestionAnswer（表单 → 面板 → 一次作答）", () => {
+  it("标题与候选照抄宿主，顺序不重排", () => {
     const { setPickerState, get } = makePicker();
     void chooseQuestionAnswer(setPickerState, handoffQuestion());
     const picker = get();
@@ -76,70 +74,84 @@ describe("chooseQuestionAnswer（问题对象 → 面板 → 选中的 value）"
     expect(picker.items[2]!.label).toBe("不交接");
   });
 
-  it("候选的补充说明：这一版没有 detail 这一层（候选只有值 + 显示名，不给 hint）", async () => {
+  it("候选只有值 + 显示名，不给 hint", () => {
     const { setPickerState, get } = makePicker();
     void chooseQuestionAnswer(setPickerState, handoffQuestion());
-    // 宿主这一版不再给每项的补充说明，于是面板也不该凭空写一条
     expect(get().items.map((item) => item.hint)).toEqual([undefined, undefined, undefined]);
   });
 
-  it("选中即返回那个 value（原样，不做映射）", async () => {
+  it("选中 = accept + 表里那一格的内容（字段名取自表）", async () => {
     for (const value of ["self", "summary", "no"]) {
       const { setPickerState, get } = makePicker();
       const answer = chooseQuestionAnswer(setPickerState, handoffQuestion());
       get().resolve(value);
-      await expect(answer).resolves.toBe(value);
+      await expect(answer).resolves.toEqual({ action: "accept", content: { mode: value } });
     }
   });
 
-  it("关掉面板（resolve(null)）：题声明了退路就交那个值（不是第一个、也不是最后一个）", async () => {
+  it("关掉面板（Esc / resolve(null)）= cancel，不是替用户选一个", async () => {
     const { setPickerState, get } = makePicker();
     const answer = chooseQuestionAnswer(setPickerState, handoffQuestion());
     get().resolve(null);
-    // 宿主说的是 `"no"`；候选里它恰好排在最后，但这里的依据是 `cancelValue` 这一格
-    await expect(answer).resolves.toBe("no");
+    await expect(answer).resolves.toEqual({ action: "cancel" });
   });
 
-  it("关掉面板：退路由宿主指明，排在第一位也照它来", async () => {
-    const cancelFirst: QuestionView = {
-      ...handoffQuestion(),
-      id: "q3",
-      choices: [
-        { value: "skip", label: "跳过本次" },
-        { value: "self", label: "原 agent 自交接" },
-      ],
-      cancelValue: "skip",
-    };
-    const { setPickerState, get } = makePicker();
-    const answer = chooseQuestionAnswer(setPickerState, cancelFirst);
-    get().resolve(null);
-    // 换成按位置猜（`choices[0]` / `at(-1)`）的写法，这条就会走到 `self` 上去
-    await expect(answer).resolves.toBe("skip");
-  });
-
-  it("没声明退路的题：关掉面板 = 不作答（null），题继续挂着", async () => {
-    const noCancel: QuestionView = { ...handoffQuestion(), id: "q4" };
-    delete noCancel.cancelValue;
-    const { setPickerState, get } = makePicker();
-    const answer = chooseQuestionAnswer(setPickerState, noCancel);
-    get().resolve(null);
-    await expect(answer).resolves.toBeNull();
-  });
-
-  it("确认类问题一样走这条路（题干与候选怎么来不影响面板）", () => {
+  it("确认类问题一样走这条路（题干与候选怎么来不影响面板）", async () => {
     const confirm: QuestionView = {
       ...handoffQuestion(),
       id: "q2",
       message: "删除这段会话？",
-      choices: [
-        { value: "yes", label: "删除" },
-        { value: "no", label: "取消" },
-      ],
-      cancelValue: "no",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          confirm: { type: "string", enum: ["yes", "no"], enumNames: ["删除", "取消"] },
+        },
+        required: ["confirm"],
+      },
     };
     const { setPickerState, get } = makePicker();
-    void chooseQuestionAnswer(setPickerState, confirm);
+    const answer = chooseQuestionAnswer(setPickerState, confirm);
     expect(get().title).toBe("删除这段会话？");
     expect(get().items.map((item) => item.value)).toEqual(["yes", "no"]);
+    get().resolve("yes");
+    await expect(answer).resolves.toEqual({ action: "accept", content: { confirm: "yes" } });
+  });
+
+  it("没有能画成列表的字段（自由文本）→ 立刻 cancel，不弹面板", async () => {
+    const freeText: QuestionView = {
+      ...handoffQuestion(),
+      requestedSchema: {
+        type: "object",
+        properties: { name: { type: "string", title: "叫什么名字？" } },
+        required: ["name"],
+      },
+    };
+    // 面板一次都不该被打开
+    let opened = 0;
+    const setPickerState = ((_value: unknown) => {
+      opened += 1;
+    }) as ChatOverlays["setPickerState"];
+
+    await expect(chooseQuestionAnswer(setPickerState, freeText)).resolves.toEqual({
+      action: "cancel",
+    });
+    expect(opened).toBe(0);
+  });
+
+  it("能画的字段不止一格 → 也回 cancel（挑一格画就是替用户决定问什么）", async () => {
+    const twoEnums: QuestionView = {
+      ...handoffQuestion(),
+      requestedSchema: {
+        type: "object",
+        properties: {
+          a: { type: "string", enum: ["x", "y"] },
+          b: { type: "string", enum: ["1", "2"] },
+        },
+      },
+    };
+    const { setPickerState } = makePicker();
+    await expect(chooseQuestionAnswer(setPickerState, twoEnums)).resolves.toEqual({
+      action: "cancel",
+    });
   });
 });

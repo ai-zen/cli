@@ -1,55 +1,93 @@
 /**
- * 问题对象的作答面板 —— 宿主问过来一道题（到交接线 / 不可撤销的动作前确认），用户在面板上答。
+ * 题的表单面板 —— 宿主问过来一张表单（到交接线、不可撤销的动作前确认、将来还有外部服务器发来的
+ * elicitation），用户在面板上填。
  *
- * ## 选项与文案都来自宿主
+ * ## 画法只有一种：「一句问话 + 候选」
  *
- * 三选一（自交接 / 独立摘要 / 不交接）在过去是客户端自己编的一份词表（`commands/handlers.ts` 的
- * `handoffModeItems`，已删）。新契约把**问题**变成了一等对象（`QuestionView`：`message` /
- * `choices[]` / `blocking` / `cancelValue`），于是这里只剩下「怎么上屏」：标题是 `question.message`，
- * 候选是 `choices[].label`，提交回去的是 `choices[].value`。宿主换个说法、加一个候选，这一屏跟着变，
- * 客户端不必改一行。
+ * 形状照抄 MCP elicitation 的 `requestedSchema`，而这一版面板只做**单选枚举那一格**：题的表里只要
+ * 有一个 `type: "string"` 且带 `enum` 的字段，就把它的候选画成一份列表。交接三选一就是这种，
+ * 也是目前唯一的出题方。
  *
- * ## 「关掉面板」等于什么，由宿主说
+ * 别的形状（自由文本、数字、布尔、多选）**暂时不画**：面板给不出一个诚实的输入面（终端里没有
+ * 表单控件），硬拿列表去顶等于骗用户「只能从这几个里选」。真碰上就按 `cancel` 回给宿主 —— 那是
+ * 三态里唯一诚实的答案：「我这边没法答」。
  *
- * Esc / Ctrl+C 在覆盖层里是「关掉」（`overlays.tsx` 的 `onPick(null)`）。关掉之后算答了什么，
- * 这一层**不猜**：题上带 `cancelValue` 就按它作答（交接那道题带的是 `"no"`，即「不交接」——
- * 那一题没有「不作答」这个去处，题一挂这一段就一直等在它上面）；没带就返回 `null`，也就是
- * 真·不作答，题继续挂着等人答。
+ * ## 三态怎么落到面板上
  *
- * 不按「最后一个候选」之类的**位置**去推断，是因为位置是排版的偶然：顺序一变，语义就静默地变了，
- * 而这里不会红、也不会有一条用例会红（`AGENTS.md` 的「禁止隐式兜底」）。
+ * - 选中一项 → `accept`，内容就是 `{字段名: 选中的值}`；
+ * - Esc / Ctrl+C → `cancel`（spec 的「用户关掉没作答」）。**哪个候选等于退路不再由题声明** ——
+ *   那件事归消费者解释：交接那一道题拿到 `cancel` 就当「不交接」，外部服务器拿到 `cancel` 就照
+ *   spec 回它一个 cancel。以前那一格 `cancelValue` 存在的唯一理由，正是把这件事提前塞进题里。
  *
- * ## 这里是唯一的作答入口
- *
- * 返回 `Promise<string | null>`：选中（或题声明的退路）= 那个 `value`，真·不作答 = `null`。
- * `null` 时**不作答** —— 题会一直挂着，宿主随后以 `question_pending` 拒绝发送（PRD D23），那是
- * 实话；替用户选一个选项等于替他决定「要不要交接、交接去哪」。
- *
- * 覆盖层状态是渲染层的东西（`useChatOverlays` 的 picker），所以「弹出来并等一个答案」包成
- * Promise 的这几行留在这里，与命令层的 `pick` 同一套机制（关状态与结算在同一次函数式更新里
- * 完成，连按两下 Esc 不会重复 resolve）。
+ * 返回 `null` 是另一种事：**没人在答**（没有面板）。会话层据此把题干丢进通知栏、不作答，题继续
+ * 挂着等人。
  */
 
-import type { QuestionView } from "../../session/types.js";
+import type { FormAnswerView, FormFieldView, QuestionView } from "../../session/types.js";
 import type { ChatOverlays } from "./use-overlays.js";
 
+/** 面板能画出来的那张表的形状：字段名 + 候选（值/显示名） */
+interface PickableField {
+  name: string;
+  options: readonly { value: string; label: string }[];
+}
+
 /**
- * 弹出「这道题」并等用户作答；放弃时返回 `null`（= 不作答，题仍然挂着）。
+ * 在这张表里找那一格能画成列表的字段。
+ *
+ * 只要「字符串 + 带了 enum」那一种；带多个这种字段时不挑一个硬画（挑哪个都是替用户决定），
+ * 而是回 `undefined` —— 调用方据此按 `cancel` 作答。
+ */
+function pickableField(question: QuestionView): PickableField | undefined {
+  const entries = Object.entries(question.requestedSchema.properties).filter(
+    (entry): entry is [string, Extract<FormFieldView, { type: "string" }>] => {
+      const field = entry[1];
+      return field.type === "string" && field.enum !== undefined;
+    },
+  );
+  if (entries.length !== 1) return undefined;
+
+  const [name, field] = entries[0];
+  const values = field.enum ?? [];
+  return {
+    name,
+    options: values.map((value, index) => ({
+      value,
+      // 显示名与值一一对应；没给显示名就用值本身（`enumNames` 缺项时不猜别的）
+      label: field.enumNames?.[index] ?? value,
+    })),
+  };
+}
+
+/**
+ * 弹出「这道题」并等用户作答。
  *
  * @param setPickerState 会话屏的 picker 状态 setter（TUI 用 `PickerOverlay` 渲染）
- * @param question 宿主给的问题对象（候选顺序即宿主给的顺序，不重排）
+ * @param question 宿主给的那张表
  */
 export function chooseQuestionAnswer(
   setPickerState: ChatOverlays["setPickerState"],
   question: QuestionView,
-): Promise<string | null> {
-  return new Promise<string | null>((resolve) => {
+): Promise<FormAnswerView | null> {
+  const field = pickableField(question);
+  if (field === undefined) {
+    // 这一版画不出这张表：照三态回一个 cancel，而不是编一个「用户选了第一项」
+    return Promise.resolve({ action: "cancel" });
+  }
+
+  return new Promise<FormAnswerView | null>((resolve) => {
     setPickerState({
       title: question.message,
-      // 候选是宿主给的（`choices`：值 + 显示名），顺序即宿主给的顺序，不重排
-      items: question.choices.map((choice) => ({ value: choice.value, label: choice.label })),
-      // 关掉面板：题声明了退路就按它作答（那边知道哪个候选是退路），没声明才是真·不作答
-      resolve: (value) => resolve(value ?? question.cancelValue ?? null),
+      // 候选顺序即宿主给的顺序，不重排
+      items: field.options.map((option) => ({ value: option.value, label: option.label })),
+      // 关掉面板 = cancel（三态里「用户关掉没作答」那一格），不是「替用户选一个」
+      resolve: (value) =>
+        resolve(value === null ? { action: "cancel" } : accept(field.name, value)),
     });
   });
+}
+
+/** 选中一项：`accept` + 那一格的内容 */
+function accept(name: string, value: string): FormAnswerView {
+  return { action: "accept", content: { [name]: value } };
 }

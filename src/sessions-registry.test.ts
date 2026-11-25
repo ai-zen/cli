@@ -78,7 +78,11 @@ function question(id: string, message: string, sessionId = "sess-1"): QuestionVi
     id,
     sessionId,
     message,
-    choices: [{ value: "yes", label: "好" }],
+    requestedSchema: {
+      type: "object",
+      properties: { confirm: { type: "string", enum: ["yes"], enumNames: ["好"] } },
+      required: ["confirm"],
+    },
     blocking: true,
     createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
   };
@@ -504,7 +508,7 @@ describe("SessionRegistry：启动期先开会话（`open`），屏幕随后只�
         sessionId: primed.sessionId,
         onQuestion: async (asked) => {
           answered.push(asked.id);
-          return "later";
+          return { action: "accept" as const, content: { confirm: "yes" } };
         },
       },
       screen,
@@ -539,7 +543,7 @@ describe("SessionRegistry：作答那一手按会话各持一个", () => {
         sessionId: "sess-1",
         onQuestion: async (asked) => {
           answered.push(asked.id);
-          return "yes";
+          return { action: "accept" as const, content: { confirm: "yes" } };
         },
       },
       screenA,
@@ -573,7 +577,10 @@ describe("SessionRegistry：作答那一手按会话各持一个", () => {
     });
     await settle();
     expect(answered).toEqual(["q-a"]);
-    expect(answers()[0]?.params).toEqual({ questionId: "q-a", value: "yes" });
+    expect(answers()[0]?.params).toEqual({
+      questionId: "q-a",
+      answer: { action: "accept", content: { confirm: "yes" } },
+    });
     registry.disposeAll();
   });
 });

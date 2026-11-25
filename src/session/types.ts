@@ -405,21 +405,68 @@ export interface ChatSessionLike {
   dispose(): void;
 }
 
-/** 一段会话上的一个问题（宿主 `question.list` 的一行 + CLI 的三档语气映射） */
+/**
+ * 一段会话上挂着的一道题 = **一张表单**（宿主那侧的形状照抄 MCP elicitation 的 `requestedSchema`：
+ * 扁平对象，属性只能是字符串/数字/布尔/单选枚举，数组只允许「多选枚举」）。
+ *
+ * 候选不再是宿主替我们挑好的 `choices`：面板读 `requestedSchema`，自己决定每一格怎么画。
+ */
 export interface QuestionView {
   id: string;
   sessionId: string;
   /** 题干（宿主已按当前语言渲染好的那句） */
   message: string;
-  choices: readonly { value: string; label: string }[];
-  /**
-   * 「面板被关掉」等于给哪个值（Esc / Ctrl+C）：**宿主声明的那一个**，不是客户端按位置猜的。
-   *
-   * 没这一格就是「关掉 = 不作答」（题继续挂着，宿主随后以 `question_pending` 拒后续发送）。
-   */
-  cancelValue?: string;
+  requestedSchema: FormSchemaView;
   blocking: boolean;
   createdAt: number;
+}
+
+/** 表单里一格（与 `@ai-zen/agents-host` 的 `FormField` 同形，这里只列面板用得到的那几格） */
+export type FormFieldView =
+  | {
+      type: "string";
+      title?: string;
+      description?: string;
+      default?: string;
+      format?: "email" | "uri" | "date" | "date-time";
+      minLength?: number;
+      maxLength?: number;
+      enum?: readonly string[];
+      enumNames?: readonly string[];
+    }
+  | {
+      type: "number" | "integer";
+      title?: string;
+      description?: string;
+      default?: number;
+      minimum?: number;
+      maximum?: number;
+    }
+  | { type: "boolean"; title?: string; description?: string; default?: boolean }
+  | {
+      type: "array";
+      title?: string;
+      description?: string;
+      items: { type: "string"; enum: readonly string[]; enumNames?: readonly string[] };
+      default?: readonly string[];
+      minItems?: number;
+      maxItems?: number;
+    };
+
+/** 一张表：扁平对象 + 哪几格必须填 */
+export interface FormSchemaView {
+  type: "object";
+  properties: Readonly<Record<string, FormFieldView>>;
+  required?: readonly string[];
+}
+
+/**
+ * 一次作答的三态（与 MCP 的 `action` 一一对应）：`accept` 带数据、`decline` 是显式拒绝、
+ * `cancel` 是关掉没作答（Esc / Ctrl+C）。
+ */
+export interface FormAnswerView {
+  action: "accept" | "decline" | "cancel";
+  content?: Record<string, unknown>;
 }
 
 /** `handoff()` 的入参：`sessionId` 由会话层自己带，调用方只说「谁去写」 */
@@ -495,7 +542,7 @@ export interface ChatSessionOptions {
   /** 要不要把这次打开的那段记成「上次打开的那段」（缺省 `true`） */
   remember?: boolean;
   /** 宿主问过来一个问题时，界面怎么作答（返回候选里的 `value`；`null` = 界面放弃作答） */
-  onQuestion?: (question: QuestionView) => Promise<string | null>;
+  onQuestion?: (question: QuestionView) => Promise<FormAnswerView | null>;
   /** 进程级的那一条连接：会话**不建连接**，只借它说话 */
   connection: HostConnection;
 }

@@ -109,7 +109,11 @@ const question = (overrides: Partial<QuestionView> = {}): QuestionView => ({
   id: "q-1",
   sessionId: SESSION,
   message: "要交接吗？",
-  choices: [{ value: "self", label: "自交接" }],
+  requestedSchema: {
+    type: "object",
+    properties: { mode: { type: "string", enum: ["self"], enumNames: ["自交接"] } },
+    required: ["mode"],
+  },
   blocking: true,
   createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
   ...overrides,
@@ -1181,13 +1185,18 @@ describe("RemoteChatSession：问题对象", () => {
   it("有人作答：把候选里的 value 交回去，答完那道题就没了", async () => {
     const host = hostLike({ questions: [question()] });
     const asked = question();
-    const { session } = await open(host, { onQuestion: async () => "self" });
+    const { session } = await open(host, {
+      onQuestion: async () => ({ action: "accept", content: { mode: "self" } }),
+    });
 
     emit(host, { type: "question.asked", sessionId: SESSION, question: asked });
     await flush();
 
     const answer = host.connection.calls.filter((call) => call.method === "question.answer").at(-1);
-    expect(answer?.params).toEqual({ questionId: "q-1", value: "self" });
+    expect(answer?.params).toEqual({
+      questionId: "q-1",
+      answer: { action: "accept", content: { mode: "self" } },
+    });
     expect(session.questions).toEqual([]);
   });
 

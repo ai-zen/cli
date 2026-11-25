@@ -1567,11 +1567,17 @@ describe("问题对象（到交接线时宿主提问）", () => {
     id: "q1",
     sessionId: "chat_test",
     message: "上下文已用 92%，要交接吗？",
-    choices: [
-      { value: "self", label: "原 agent 自交接" },
-      { value: "summary", label: "独立摘要" },
-      { value: "decline", label: "不交接" },
-    ],
+    requestedSchema: {
+      type: "object",
+      properties: {
+        mode: {
+          type: "string",
+          enum: ["self", "summary", "decline"],
+          enumNames: ["原 agent 自交接", "独立摘要", "不交接"],
+        },
+      },
+      required: ["mode"],
+    },
     blocking: true,
     // 时间一律 epoch 毫秒（宿主的口径）
     createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
@@ -1593,7 +1599,7 @@ describe("问题对象（到交接线时宿主提问）", () => {
     expect(frame).toContain("不交接");
 
     stdin.write("\r"); // 默认高亮第一项：「原 agent 自交接」
-    await expect(answering).resolves.toBe("self");
+    await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "self" } });
     unmount();
   });
 
@@ -1606,7 +1612,7 @@ describe("问题对象（到交接线时宿主提问）", () => {
     await flush(40);
     stdin.write("\u001b"); // lone ESC 需 ~20ms（ink 的序列判定）
     await flush(40);
-    await expect(answering).resolves.toBeNull();
+    await expect(answering).resolves.toEqual({ action: "cancel" });
     unmount();
   });
 
@@ -1621,7 +1627,7 @@ describe("问题对象（到交接线时宿主提问）", () => {
     stdin.write("\u001b[A");
     await flush(40);
     stdin.write("\r");
-    await expect(answering).resolves.toBe("decline");
+    await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "decline" } });
 
     // 会话没换（交接是原地换记忆，PRD 4.5）：屏幕上不该冒出「搬到新会话」那类话
     await flush();

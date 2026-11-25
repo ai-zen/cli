@@ -60,6 +60,7 @@ import type {
   MessageInput,
   ModelState,
   NoticeView,
+  FormAnswerView,
   QuestionView,
   ScopeReloadReport,
   SessionActivity,
@@ -91,7 +92,7 @@ export class RemoteChatSession implements ChatSessionLike {
   private readonly connection: HostConnection;
   private readonly notifier: ChatSessionNotifier;
   /** 宿主提问时怎么作答（缺省 = 没人能答，见 `onQuestion`） */
-  private readonly questionHandler?: (question: QuestionView) => Promise<string | null>;
+  private readonly questionHandler?: (question: QuestionView) => Promise<FormAnswerView | null>;
   /** 挂在这条连接上的订阅（整组摘：`dispose` 时一次卸干净） */
   private readonly offs: Unsubscribe[];
   private readonly rate = new TokenRateMeter();
@@ -746,10 +747,12 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   /**
-   * 问题对象 → 交给界面作答（`question.answer`），答完那道题就没了。
+   * 题 → 交给界面作答（`question.answer`），答完那道题就没了。
    *
-   * 没人能答时**不作答**：这道题会一直挂着，宿主会用 `question_pending` 拒绝后续发送 ——
-   * 替用户选一个选项等于替他做决定。但题目本身要让人看见，所以那句题干进通知栏。
+   * 面板给回来的是**三态中的一种**：`accept`（带表单内容）、`decline`（显式拒绝）、`cancel`
+   * （关掉没答）。`null` 是另一种事：**没人作答**（没有面板、或面板被关掉而这一题没有自己的去处）
+   * —— 题会一直挂着，宿主随后以 `question_pending` 拒后续发送，那是实话；替用户答一份等于替他
+   * 做决定。但题目本身要让人看见，所以那句题干进通知栏。
    */
   private async onQuestion(question: QuestionView): Promise<void> {
     this.replaceQuestion(question);
@@ -764,12 +767,12 @@ export class RemoteChatSession implements ChatSessionLike {
     }
     this.asking.add(question.id);
     try {
-      const value = await handler(question);
-      if (value === null) {
+      const answer = await handler(question);
+      if (answer === null) {
         this.notifier.onNotice(question.message, "info");
         return;
       }
-      await this.connection.api.question.answer.mutate({ questionId: question.id, value });
+      await this.connection.api.question.answer.mutate({ questionId: question.id, answer });
       this.questionsValue = this.questionsValue.filter((item) => item.id !== question.id);
       this.notifyChange(true);
     } catch (error) {
