@@ -14,7 +14,7 @@
  * |---|---|
  * | 模型/AgentDefinition 能不能用、不能用为什么 | `ModelView.available` / `AgentView.available` + `unavailableReason` |
  * | 生效模型、思考档位现状与可选档 | `ModelState` / `ThinkingState`（AgentDefinition 视图里是同一个形状） |
- * | 会话列表怎么排 | `session.list`（置顶 + 创建时间倒序由宿主排好） |
+ * | 会话列表怎么排 | `session.list`（置顶 + 最后活动时刻倒序由宿主排好） |
  * | 撤回会删掉什么 | `session.revert` 的入参是**消息 id**，不由客户端数下标 |
  * | 交接降级没降级 | `handoff.start` 的 `degraded` / `usedMode` / `problem` |
  *
@@ -388,7 +388,7 @@ interface SessionWithWorkspace {
 /**
  * 每个项目各取一次会话，合并后重排 —— `/sessions --all` 与「一段会话没了之后去哪儿」共用这一趟。
  *
- * 排序用宿主那一条规矩（置顶优先，再按创建时间倒序）：单个项目里它已经排好了，拼起来的这一份
+ * 排序用宿主那一条规矩（置顶优先，再按最后活动时刻倒序）：单个项目里它已经排好了，拼起来的这一份
  * 没人替你排。多带一格 `workspaceName`，因为跨项目列时同名会话分不开（那是 `workspace.list`
  * 上的一手事实，不是推的）。
  */
@@ -407,7 +407,7 @@ async function sessionsWithWorkspace(api: HostConnection["api"]): Promise<Sessio
     .sort(
       (a, b) =>
         Number(b.session.pinned) - Number(a.session.pinned) ||
-        b.session.createdAt - a.session.createdAt,
+        b.session.updatedAt - a.session.updatedAt,
     );
 }
 
@@ -444,7 +444,7 @@ export interface AfterGone {
  * 三件事按这个顺序：
  *
  *   1. 找下一段：同一项目里最近的那一段（`session.list` —— 顺序是宿主排好的：置顶优先 +
- *      创建时间倒序，这里只取第一条）；`/ws delete` 那一路整个项目都没了，所以在别的项目里找
+ *      最后活动时刻倒序，这里只取第一条）；`/ws delete` 那一路整个项目都没了，所以在别的项目里找
  *      （{@link listSessionsEverywhere}，那是客户端编排的一趟，宿主没有「全库列会话」这条口）；
  *   2. 有就去那儿：`exit({ load })`，两句一起带到新屏（旧屏的通知栏跟着卸载，说的话只能在
  *      新屏上说）；
@@ -545,8 +545,8 @@ interface SessionListRow {
  *
  * ## 行从哪儿来
  *
- * `session.list`：带 `workspaceId` 列**当前项目**的会话（宿主按项目排好：置顶优先 + 创建时间
- * 倒序）。`--all` / `-a` 时把每个项目都取一遍再合并 —— 宿主没有「全库列会话」这条口（PRD
+ * `session.list`：带 `workspaceId` 列**当前项目**的会话（宿主按项目排好：置顶优先 + 最后活动
+ * 时刻倒序）。`--all` / `-a` 时把每个项目都取一遍再合并 —— 宿主没有「全库列会话」这条口（PRD
  * 10-observation 明写不为取数的便利加接口），所以跨项目那一趟由客户端编排
  * （{@link sessionsWithWorkspace}），合并之后自己按宿主那条规矩重排一次。
  *
@@ -908,7 +908,7 @@ const cmdWs: CommandHandler = async ({
 /**
  * `/pin [on|off]` —— 置顶 / 取消置顶**当前这段会话**（`session.pin`）。
  *
- * 顺序不在这里算：列表怎么排（置顶优先 + 创建时间倒序）是宿主 `session.list` 的事，
+ * 顺序不在这里算：列表怎么排（置顶优先 + 最后活动时刻倒序）是宿主 `session.list` 的事，
  * 这一条只写 `pinned` 一个字段；上屏那句话用的是**宿主回来的**那一行上的 `pinned`，不是我们
  * 自己打算写的那个值 —— 两个值不一样时，屏幕上该相信的是库里的。
  *
@@ -1783,7 +1783,7 @@ const cmdMigrate: CommandHandler = async ({ session, push, args }) => {
     await session.handoff(
       handoff.mode === undefined ? { kind: "swap" } : { kind: "swap", mode: handoff.mode },
     );
-    // 原地换手：会话 id 不变、屏幕不换。旧记忆变成的那一段在列表里按创建时间排着
+    // 原地换手：会话 id 不变、屏幕不换。旧记忆变成的那一段在列表里按最后活动时刻排着
     // （没指定执行者时题就是回执，不多说这一句）
     if (handoff.mode !== undefined) push(t("cmd.migrate.started"));
   } catch (error: unknown) {

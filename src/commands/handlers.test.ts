@@ -497,7 +497,7 @@ describe("/sessions：列会话与切换", () => {
     );
   });
 
-  it("`--all` / `-a`：客户端编排（`workspace.list` + 逐个 `session.list`），合并后置顶优先 + 创建时间倒序，每行带项目名", async () => {
+  it("`--all` / `-a`：客户端编排（`workspace.list` + 逐个 `session.list`），合并后置顶优先 + 最后活动时刻倒序，每行带项目名", async () => {
     for (const flag of ["--all", "-a"]) {
       const { host, calls } = createHost({
         routes: {
@@ -509,8 +509,18 @@ describe("/sessions：列会话与切换", () => {
           "session.list": (params) =>
             params.workspaceId === "ws-1"
               ? [
-                  sessionView({ id: "sess-new", name: "本项目新会话", createdAt: at(9, 0) }),
-                  sessionView({ id: "sess-1", name: "当前这段", createdAt: at(8, 0) }),
+                  sessionView({
+                    id: "sess-new",
+                    name: "本项目新会话",
+                    createdAt: at(9, 0),
+                    updatedAt: at(9, 0),
+                  }),
+                  sessionView({
+                    id: "sess-1",
+                    name: "当前这段",
+                    createdAt: at(8, 0),
+                    updatedAt: at(8, 0),
+                  }),
                 ]
               : [
                   sessionView({
@@ -519,6 +529,7 @@ describe("/sessions：列会话与切换", () => {
                     workspaceId: "ws-2",
                     pinned: true,
                     createdAt: at(7, 0),
+                    updatedAt: at(7, 0),
                   }),
                 ],
         },
@@ -534,6 +545,37 @@ describe("/sessions：列会话与切换", () => {
       expect(seen.hints[0]).toContain(t("cmd.sessions.workspace", { name: "项目二" }));
       expect(seen.hints[1]).toContain(t("cmd.sessions.workspace", { name: "项目一" }));
     }
+  });
+
+  it("活动时间压过创建时间：老会话刚聊过就排在前面", async () => {
+    const { host } = createHost({
+      routes: {
+        "workspace.list": () => [workspaceRow("ws-1", "/p1", "项目一")],
+        // 项目内部已由宿主排好 —— 这里就是「排好的」那一个样子：先建的后动过
+        "session.list": () => [
+          sessionView({
+            id: "sess-old",
+            name: "上周建的",
+            createdAt: at(7, 0),
+            updatedAt: at(9, 0),
+          }),
+          sessionView({
+            id: "sess-new",
+            name: "今早建的",
+            createdAt: at(8, 0),
+            updatedAt: at(8, 0),
+          }),
+        ],
+      },
+    });
+    const seen = capturePick(host, null);
+
+    await runCommand("sessions", "/sessions --all", host);
+
+    expect(seen.labels).toEqual(["上周建的", "今早建的"]);
+    // 行上那个时刻读的也是活动那一刻，不是建行那一刻
+    expect(seen.hints[0]).toContain(t("cmd.sessions.updated", { time: "09:00" }));
+    expect(seen.hints[1]).toContain(t("cmd.sessions.updated", { time: "08:00" }));
   });
 
   it("选中即切：把选中那段交给重挂载（不碰任何会话的生死）", async () => {
