@@ -11,7 +11,7 @@
  * 停 —— 杀进程是用户的东西，不能由脚本替他决定。
  *
  * 用法：
- *   pnpm dev                     构建宿主与 CLI，起宿主，起 CLI
+ *   pnpm dev                     构建宿主（连它依赖的各包）与 CLI，起宿主，起 CLI
  *   pnpm dev --skip-build        不构建，直接用现有 dist（快，可能拿到旧产物）
  *   pnpm dev --replace           日常宿主还活着就不问，直接停掉换开发版
  *   pnpm dev --keep-host         退出时不关宿主（下次直接连它）
@@ -124,8 +124,12 @@ async function build() {
     say("· 跳过构建（--skip-build）");
     return;
   }
-  say("· 构建宿主");
-  await run("pnpm", ["--dir", AGENTS_ROOT, "--filter", "@ai-zen/agents-host", "build"]);
+  // 为什么不是「只建 host」：宿主运行时 require 的是各包自己的 `dist`，而 `build-host` 的链条里
+  // 只有 host 一个 —— sdk / core / logger 的产物还停在上一把，改了 sdk 却拿到旧 dist，症状是
+  // 「代码对、行为不对」。`@ai-zen/agents-host...` 末尾那三个点 = 「它依赖的那些包」：
+  // pnpm 按拓扑序建 core / logger → sdk → host，将来多一个依赖也自动跟进来。
+  say("· 构建宿主与它依赖的各包（core / sdk / logger …）");
+  await run("pnpm", ["--dir", AGENTS_ROOT, "-r", "--filter", "@ai-zen/agents-host...", "build"]);
   say("· 构建 CLI");
   await run("pnpm", ["--dir", CLI_ROOT, "run", "build"]);
 }
