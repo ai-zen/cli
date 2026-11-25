@@ -3206,3 +3206,55 @@ describe("/rename：给这一段起个自己能认出的名字（PRD 1.5）", ()
     expect(session.rename).toHaveBeenCalledWith("老写法");
   });
 });
+
+describe("/title：让模型给这一段重新起个名字", () => {
+  /** 宿主那一支的回执：新的一行 + 到底换成了没有 */
+  const answered = (name: string, named: boolean) => () => ({
+    session: sessionView({ id: "sess-1", name, nameSource: "auto" }),
+    named,
+  });
+
+  it("成了：一次 `session.autoTitle`，把新名字说出来", async () => {
+    const { host, calls, notices } = createHost({
+      routes: { "session.autoTitle": answered("交接状态机", true) },
+    });
+
+    await runCommand("title", "/title", host);
+
+    expect(calls.map((call) => call.method)).toContain("session.autoTitle");
+    expect(texts(notices)).toContain(t("cmd.title.done", { name: "交接状态机" }));
+  });
+
+  /**
+   * 「模型没给出能用的名字」不是错误：名字没换，但这一次命令确实跑完了 —— 所以那一句不带
+   * error 的语气，也不该让用户以为出了故障。
+   */
+  it("模型没给出名字：直说没换，不当成失败", async () => {
+    const { host, notices } = createHost({
+      routes: { "session.autoTitle": answered("第一段", false) },
+    });
+
+    await runCommand("title", "/title", host);
+
+    const unchanged = t("cmd.title.unchanged");
+    expect(texts(notices)).toContain(unchanged);
+    // 不是 error 那一档：这一次命令跑完了，只是名字没变
+    expect(notices.find((item) => item.text === unchanged)?.tone).not.toBe("error");
+  });
+
+  it("宿主拒了（例如没有起名模型）：把它的原话上屏，语气是 error", async () => {
+    const { host, notices } = createHost({
+      routes: {
+        "session.autoTitle": () => {
+          throw new Error("没有可用的起名模型");
+        },
+      },
+    });
+
+    await runCommand("title", "/title", host);
+
+    const failed = t("cmd.title.failed", { error: "没有可用的起名模型" });
+    expect(texts(notices)).toContain(failed);
+    expect(notices.find((item) => item.text === failed)?.tone).toBe("error");
+  });
+});

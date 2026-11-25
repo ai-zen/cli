@@ -1018,6 +1018,29 @@ const cmdRename: CommandHandler = async ({ session, args, push }) => {
   push(t("cmd.rename.done", { name }));
 };
 
+/**
+ * `/title` —— 让模型给这一段重新起一个名字（`session.autoTitle`）。
+ *
+ * 自动起名只发生在「第一次答完」那一拍，此后名字就固定了；而一段会话聊上一小时之后，那个名字
+ * 往往已经不是它在干的事了。再要一个由用户点名：一条命令、一次请求。
+ *
+ * 与 `/rename` 划清界限：那条写的是用户自己想的那几个字（宿主记 `nameSource: user`），这条写
+ * 的是模型给的（记 `auto`，所以还归自动那一套管）。
+ *
+ * 三种结果各说各的，不合成一句：成了报新名字；模型没给出能用的名字就直说没换（那不是错误）；
+ * 调用失败（没有起名模型之类）说宿主原话。
+ */
+const cmdTitle: CommandHandler = async ({ session, api, push }) => {
+  try {
+    const { session: row, named } = await api.session.autoTitle.mutate({
+      sessionId: session.sessionId,
+    });
+    push(named ? t("cmd.title.done", { name: row.name }) : t("cmd.title.unchanged"));
+  } catch (error: unknown) {
+    push(t("cmd.title.failed", { error: messageOf(error) }), "error");
+  }
+};
+
 /** `/editor` —— 用本机编辑器写长消息（PRD F-C11：本机能力，换台设备本就该不同） */
 const cmdEditor: CommandHandler = async ({ push, suspendTerminal, setInputText }) => {
   const file = join(tmpdir(), `aizen-input-${Date.now()}.md`);
@@ -2133,6 +2156,7 @@ const HANDLERS: Record<CommandName, CommandHandler> = {
   pin: cmdPin,
   back: cmdBack,
   rename: cmdRename,
+  title: cmdTitle,
   editor: cmdEditor,
   clear: cmdClear,
   free: cmdFree,

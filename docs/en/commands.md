@@ -37,6 +37,7 @@ The `/` menu prefixes those entries with "unavailable while busy"; the gate and 
 | `/pin`      |           | `on`, `off`                         | pin or unpin this session (`session.pin`); without an argument it flips the current state                                                                                                |
 | `/back`     | `/revert` |                                     | retract to before one of your messages (`session.rewind`); the removed text and assets come back to the input                                                                            |
 | `/rename`   | `/save`   | `<name>`                            | rename this session (`session.rename`); the id stays                                                                                                                                     |
+| `/title`    |           |                                     | let the model name this session again (`session.autoTitle`): automatic naming runs once, after the first answer, and this is how you ask for another one later                             |
 | `/editor`   |           |                                     | compose this message in `$EDITOR`, `$VISUAL` or the platform default                                                                                                                     |
 | `/clear`    |           |                                     | clear the screen only; the context stays                                                                                                                                                 |
 | `/free`     |           |                                     | drop the queue (`runtime.agent.clearInbox`) and say how many entries went; with nothing queued it says nothing                                                                           |
@@ -45,6 +46,8 @@ The `/` menu prefixes those entries with "unavailable while busy"; the gate and 
 | `/exit`     | `/quit`   |                                     | quit the client; the host keeps running                                                                                                                                                  |
 
 `/save` is an alias of `/rename`: the old `/save <name>` renamed the session, and that half is kept; saving itself is gone, since a session is in the database from the moment it is created. The launch parameter `--save` is a different thing (it keeps one stdio call as a session).
+
+`/rename` versus `/title`: the first writes the words you came up with, the second hands the naming to the model. The session row records who wrote the name (`user` / `auto`), and the automatic path only ever touches the placeholder or the model-written one.
 
 `/kill` picks a session by full id first, then by id prefix, then by name; when several match it lists their ids instead of guessing. `/delete` moves to the most recent other session in this project afterwards, and when there is none it stays put and says `/new` opens one.
 

@@ -123,9 +123,13 @@ export const en: Record<string, string> = {
   "cmd.pin.desc": "Pin the current session, or unpin it",
   "cmd.new.desc": "Start a new session",
   "cmd.back.desc": "Retract your last message, then resend",
+  "cmd.title.desc": "Let the model name this session again",
   "cmd.rename.desc": "Rename this session",
   "cmd.rename.usage": 'Currently "{name}". To rename: /rename <name>',
   "cmd.rename.done": 'Renamed to "{name}"',
+  "cmd.title.done": 'The model named it "{name}"',
+  "cmd.title.unchanged": "The model offered no usable name; the name is unchanged",
+  "cmd.title.failed": "Naming failed: {error}",
   "cmd.editor.desc": "Compose a long message in your editor",
   // `/clear` clears the screen only, `/free` drops the queue only (one command, one job);
   // the old "drops queued messages" half moved to `cmd.free.*`

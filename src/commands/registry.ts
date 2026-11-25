@@ -121,6 +121,16 @@ const REGISTRY_ENTRIES = [
    * 旧版的「保存会话」那一半已作废 —— 新契约里会话一建就持久化，没有第二个动作要按。
    */
   { name: "rename", aliases: ["save"], descriptionKey: "cmd.rename.desc" },
+  /**
+   * `/title`：让模型给这一段重新起一个名字（`session.autoTitle`）。
+   *
+   * 自动起名只在「第一次答完」那一次动手，之后名字就固定了 —— 聊了半小时之后那名字往往已经不
+   * 是这一段在干的事了。再要一个由用户点名：一条命令，一次请求。与 `/rename` 分得很开：那条
+   * 写的是用户自己想的那几个字，这条写的是模型给的。
+   *
+   * 会调模型（几秒），所以执行期间拦输入框。
+   */
+  { name: "title", descriptionKey: "cmd.title.desc", blocksInput: true },
   { name: "editor", descriptionKey: "cmd.editor.desc" },
   /**
    * `/clear` **只清屏**（屏幕起点后移，上下文一个字不动）：一条命令一件事。

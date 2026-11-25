@@ -135,9 +135,13 @@ export const zh: Record<string, string> = {
   "cmd.pin.desc": "置顶或取消置顶当前会话",
   "cmd.new.desc": "新建会话",
   "cmd.back.desc": "撤回上次发言以便修改重发",
+  "cmd.title.desc": "让模型给这一段重新起个名字",
   "cmd.rename.desc": "重命名当前会话",
   "cmd.rename.usage": "当前名称：{name}。用法：/rename <名称>",
   "cmd.rename.done": "已重命名为「{name}」",
+  "cmd.title.done": "名字已换成「{name}」",
+  "cmd.title.unchanged": "模型没给出可用的名字，名字保持不变",
+  "cmd.title.failed": "起名失败：{error}",
   "cmd.editor.desc": "使用外部编辑器撰写长消息",
   // `/clear` 只清屏、`/free` 只清排队区（一条命令一件事）：
   // 从前「顺手清队列」那一半的说明与提示文案跟着搬到 `cmd.free.*`
