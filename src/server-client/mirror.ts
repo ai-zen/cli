@@ -136,7 +136,7 @@ export class SessionMirror {
     return this.messagesValue;
   }
 
-  /** 名册（从主体里那些工具调用 + 各栏最后一条消息的结局推出来，见 {@link rosterOf}） */
+  /** 名册（从主体里那些工具调用、各栏、以及委派工具那条结果消息推出来，见 {@link rosterOf}） */
   get roster(): SubAgentFact[] {
     return rosterOf(this.messagesValue, this.columns);
   }
@@ -262,36 +262,51 @@ export class SessionMirror {
  *
  *   · `toolCallId` —— 那些 `subagent.message` 事件带过来的；
  *   · 工具名 —— 主体里那次委派的 `tool_calls[].function.name`（真事实，不是猜的）；
- *   · 状态 —— 它那一栏最后一条消息：还在写就是 `working`，写完了（或出错 / 被叫停）就是 `ended`。
- *     一条话都没有时不知道该说哪一格，按 `working`（它刚被派出去）—— 这是客户端**现推**的
- *     一格，旧版由宿主报。
+ *   · 状态 —— **那次委派的工具结果消息定型了没有**：`role: "tool"` 且 `tool_call_id` 就是
+ *     这个 `toolCallId` 的那条，状态不再是 `pending` / `writing` 就是「这一趟真的回来了」，
+ *     否则 `working`。一条话都没有时也按 `working`（它刚被派出去）。
+ *
+ * ## 为什么不看「那一栏最后一条消息定型了没有」
+ *
+ * 那是早先的判据，错在把「它说完了这一句」当成了「它干完了这趟活」：core 里 assistant 消息
+ * 定型（`status = completed` + `responseFinished`）发生在**工具开跑之前**
+ * （`core/src/Agent.ts` 的 `runTurn`：定型 → `runTools`），而 ReActLoop 的常态正是「说一句带
+ * tool_calls 的话 → 去跑一个可能几分钟的工具 → 再说一句」。按那个判据，subagent 吐出第一句话
+ * 的那一刻它就被判成 `ended`，屏幕上那个圆点变灰、`notice.subAgentDone` 直接弹「已完成」，
+ * 而它其实正卡在工具里。
+ *
+ * 委派工具自己那条 tool 消息没有这个问题：`AgentToolLazy.exec` 是 `runOnce()` 返回**之后**才
+ * 交回结果的，所以那条消息定型 ⇔ 这个 subagent 这一趟结束。它还有两个好处：是主转录里的事实
+ *（不是推的），并且随消息入库 —— 重开一段会话也读得到。
  */
 function rosterOf(
   messages: readonly AgentNS.Message[],
   columns: ReadonlyMap<string, AgentNS.Message[]>,
 ): SubAgentFact[] {
   const names = new Map<string, string>();
+  /** 这一趟真的回来了的那些工具调用（判据见上） */
+  const returned = new Set<string>();
   for (const message of messages) {
     for (const call of message.tool_calls ?? []) {
       if (call.id !== undefined && call.function?.name !== undefined) {
         names.set(call.id, call.function.name);
       }
     }
+    if (message.role !== AgentNS.Role.Tool) continue;
+    const toolCallId = message.tool_call_id;
+    if (toolCallId === undefined || toolCallId === "") continue;
+    // 没有状态的那条不算定型：`pending` 是「已经写进 messages、工具还在跑」
+    if (message.status === undefined) continue;
+    if (message.status === AgentNS.MessageStatus.Pending) continue;
+    if (message.status === AgentNS.MessageStatus.Writing) continue;
+    returned.add(toolCallId);
   }
 
-  return [...columns].map(([toolCallId, spoken]) => {
-    const last = spoken[spoken.length - 1];
-    const ended =
-      last !== undefined &&
-      last.status !== undefined &&
-      last.status !== AgentNS.MessageStatus.Writing &&
-      last.status !== AgentNS.MessageStatus.Pending;
-    return {
-      toolCallId,
-      name: names.get(toolCallId) ?? toolCallId,
-      state: ended ? "ended" : "working",
-    };
-  });
+  return [...columns].map(([toolCallId]) => ({
+    toolCallId,
+    name: names.get(toolCallId) ?? toolCallId,
+    state: returned.has(toolCallId) ? "ended" : "working",
+  }));
 }
 
 /**

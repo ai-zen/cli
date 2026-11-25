@@ -917,6 +917,104 @@ describe("RemoteChatSession：速率与状态栏块", () => {
 });
 
 // ==================================================================
+// 名册（subagent 那一栏说的「还在动 / 已经散场」）
+// ==================================================================
+
+describe("RemoteChatSession：subagent 名册", () => {
+  /** 主体里那条委派：assistant 带一个 tool_call，那个 id 就是名册的键 */
+  const delegation = (toolCallId: string): AgentNS.Message =>
+    assistantMessage("a-delegate", {
+      content: "",
+      tool_calls: [
+        {
+          id: toolCallId,
+          type: "function",
+          function: { name: "sub_agent_default", arguments: "{}" },
+        },
+      ],
+    });
+
+  /** 委派工具自己那条结果消息：`pending` = 工具还在跑（core 是先建 pending 再跑） */
+  const delegationResult = (
+    toolCallId: string,
+    status: AgentNS.MessageStatus,
+  ): AgentNS.Message => ({
+    id: `t-${toolCallId}`,
+    createdAt: 3,
+    role: AgentNS.Role.Tool,
+    tool_call_id: toolCallId,
+    content: "结果",
+    status,
+  });
+
+  /**
+   * 这一条钉的是「假已完成」：subagent 说完第一句（消息定型）而工具还在跑 —— 那是 ReActLoop 的
+   * 常态，不是结束。所以名册看的是委派工具那条结果消息，不是它那一栏最后一条消息。
+   */
+  it("说完一句、工具还在跑：仍在 working（不是 ended）", async () => {
+    const host = hostLike();
+    const { session } = await open(host);
+
+    emit(host, { type: "message.added", sessionId: SESSION, message: delegation("call-1") });
+    emit(host, {
+      type: "subagent.message",
+      sessionId: SESSION,
+      toolCallId: "call-1",
+      message: assistantMessage("s-1", { content: "我先看一眼目录" }),
+    });
+    emit(host, {
+      type: "message.added",
+      sessionId: SESSION,
+      message: delegationResult("call-1", AgentNS.MessageStatus.Pending),
+    });
+
+    expect(session.subAgents.map((fact) => fact.state)).toEqual(["working"]);
+    // 名字取自主体那次委派的工具名，不是瞎编的
+    expect(session.subAgents[0].name).toBe("sub_agent_default");
+  });
+
+  it("委派工具的结果消息定型了才算散场", async () => {
+    const host = hostLike();
+    const { session } = await open(host);
+
+    emit(host, { type: "message.added", sessionId: SESSION, message: delegation("call-1") });
+    emit(host, {
+      type: "subagent.message",
+      sessionId: SESSION,
+      toolCallId: "call-1",
+      message: assistantMessage("s-1"),
+    });
+    emit(host, {
+      type: "message.added",
+      sessionId: SESSION,
+      message: delegationResult("call-1", AgentNS.MessageStatus.Pending),
+    });
+    emit(host, {
+      type: "message.changed",
+      sessionId: SESSION,
+      message: delegationResult("call-1", AgentNS.MessageStatus.Completed),
+    });
+
+    expect(session.subAgents.map((fact) => fact.state)).toEqual(["ended"]);
+  });
+
+  it("一条话都没有的 subagent 也算在跑（不编一个结局出来）", async () => {
+    const host = hostLike();
+    const { session } = await open(host);
+
+    emit(host, { type: "message.added", sessionId: SESSION, message: delegation("call-1") });
+    emit(host, {
+      type: "subagent.message",
+      sessionId: SESSION,
+      toolCallId: "call-1",
+      message: assistantMessage("s-1", { status: AgentNS.MessageStatus.Writing }),
+    });
+
+    expect(session.subAgents.map((fact) => fact.state)).toEqual(["working"]);
+  });
+});
+
+// ==================================================================
 // 通知
 // ==================================================================
 
