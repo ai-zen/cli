@@ -65,8 +65,14 @@ export interface ChatLayoutInput {
    * 无子 Agent 时为 0（不占位）；缺省 0。
    */
   agentTabLines?: number;
-  overlay: "none" | "picker";
+  overlay: "none" | "picker" | "form";
   pickerItems: number;
+  /**
+   * 表单覆盖层里画几行内容（一格一行 + 常驻一行给校验失败那句）。缺省 0。
+   *
+   * 错误那行**常驻预留**：它一冒出来就顶高一行，底下的状态栏会被推出屏幕。
+   */
+  formRows?: number;
   /** 视口顶部行索引（相对整个会话行）；null / undefined = 贴底（自动跟随最新） */
   viewTop?: number | null;
   /**
@@ -139,7 +145,12 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
   // 它**不随在不在动变化**：生成中输入框照旧在屏上、照旧可编辑（阶段信息住自己那一行，
   // 见 `phaseLines`），所以草稿多长就占多高。
   const inputHeight = Math.min(inputLines(input.input, input.columns).length, INPUT_MAX_ROWS);
-  const overlayHeight = input.overlay === "picker" ? pickerLines(input.pickerItems) : 0;
+  const overlayHeight =
+    input.overlay === "picker"
+      ? pickerLines(input.pickerItems)
+      : input.overlay === "form"
+        ? pickerLines(input.formRows ?? 0)
+        : 0;
   const noticeCount = input.noticeCount ?? 0;
   const attachmentLines = input.attachmentLines ?? 0;
   const phaseLines = input.phaseLines ?? 0;

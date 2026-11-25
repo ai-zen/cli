@@ -1,0 +1,211 @@
+/**
+ * 表单的编辑状态机（纯函数）。
+ *
+ * 这一组钉住的是「按一下该变成什么」：焦点怎么走、枚举怎么换、多选怎么勾、草稿怎么改，以及提交
+ * 那一刻的校验与类型转换。面板（`overlays.tsx`）只把这些搬上屏 —— 所以这些规矩能在这里一条条验，
+ * 不必从键盘打到屏幕上去。
+ */
+import { describe, expect, it } from "vitest";
+
+import type { FormSchemaView } from "../../session/types.js";
+import {
+  answerOf,
+  applyFormKey,
+  cursorOf,
+  fieldNames,
+  initialEditing,
+  type FormEditing,
+  type FormKey,
+} from "./form-fields.js";
+
+/** 一张什么形状都有的表：文本、必填文本、数字、整数（带范围）、布尔、单选、多选 */
+const SCHEMA: FormSchemaView = {
+  type: "object",
+  properties: {
+    title: { type: "string", title: "标题", default: "初稿" },
+    body: { type: "string", title: "正文", maxLength: 5 },
+    count: { type: "number", title: "数量", minimum: 1, maximum: 10 },
+    whole: { type: "integer", title: "整数" },
+    flag: { type: "boolean", title: "开关" },
+    mode: { type: "string", title: "方式", enum: ["self", "no"], enumNames: ["自己", "不"] },
+    tags: {
+      type: "array",
+      title: "标签",
+      items: { type: "string", enum: ["a", "b"] },
+      maxItems: 1,
+    },
+  },
+  required: ["mode"],
+};
+
+const press = (editing: FormEditing, ...keys: FormKey[]): FormEditing =>
+  keys.reduce((current, key) => applyFormKey(current, SCHEMA, key), editing);
+
+/** 把焦点挪到某个字段上（按 `next` 一格一格走 —— 数下标太容易数错一格） */
+const focusOn = (name: string, editing = initialEditing(SCHEMA)): FormEditing => {
+  let current = editing;
+  for (let step = 0; step < fieldNames(SCHEMA).length; step += 1) {
+    if (fieldNames(SCHEMA)[current.focus] === name) return current;
+    current = applyFormKey(current, SCHEMA, { kind: "next" });
+  }
+  throw new Error(`表里没有字段 ${name}`);
+};
+
+describe("表单：初值与焦点", () => {
+  it("取表里的 default；单选枚举从第一项开始（面板上它就是高亮的）", () => {
+    const editing = initialEditing(SCHEMA);
+
+    expect(editing.values.title).toBe("初稿");
+    expect(editing.values.body).toBe("");
+    expect(editing.values.count).toBe("");
+    expect(editing.values.flag).toBe(false);
+    expect(editing.values.mode).toBe("self");
+    expect(editing.values.tags).toEqual([]);
+    expect(editing.focus).toBe(0);
+  });
+
+  it("字段顺序就是表里 `properties` 的顺序；焦点在两个方向环绕", () => {
+    const names = fieldNames(SCHEMA);
+    expect(names[0]).toBe("title");
+
+    const last = press(initialEditing(SCHEMA), { kind: "prev" });
+    expect(names[last.focus]).toBe(names.at(-1));
+
+    const wrapped = press(last, { kind: "next" });
+    expect(wrapped.focus).toBe(0);
+  });
+});
+
+describe("表单：改值", () => {
+  it("文本收字、退格删字；`maxLength` 满了就不再长", () => {
+    const atBody = focusOn("body");
+    expect(fieldNames(SCHEMA)[atBody.focus]).toBe("body");
+
+    const typed = press(
+      atBody,
+      { kind: "text", input: "a" },
+      { kind: "text", input: "b" },
+      { kind: "backspace" },
+      { kind: "text", input: "x" },
+    );
+    expect(typed.values.body).toBe("ax");
+
+    // maxLength = 5：再敲就顶住了
+    const long = press(
+      atBody,
+      ...Array.from({ length: 8 }, () => ({ kind: "text", input: "z" }) as FormKey),
+    );
+    expect(String(long.values.body)).toHaveLength(5);
+  });
+
+  it("数字那两格只收数字、负号与小数点（字母敲不进去）", () => {
+    const atCount = focusOn("count");
+    expect(fieldNames(SCHEMA)[atCount.focus]).toBe("count");
+
+    const typed = press(
+      atCount,
+      { kind: "text", input: "1" },
+      { kind: "text", input: "a" },
+      { kind: "text", input: "." },
+      { kind: "text", input: "5" },
+    );
+    expect(typed.values.count).toBe("1.5");
+  });
+
+  it("单选枚举 ← / → 换一项，环绕", () => {
+    const atMode = focusOn("mode");
+    expect(fieldNames(SCHEMA)[atMode.focus]).toBe("mode");
+
+    expect(press(atMode, { kind: "step", delta: 1 }).values.mode).toBe("no");
+    expect(press(atMode, { kind: "step", delta: -1 }).values.mode).toBe("no");
+  });
+
+  it("布尔空格取反；多选 ← → 移项光标、空格勾选／取消，项光标按字段各自记", () => {
+    const atFlag = focusOn("flag");
+    expect(fieldNames(SCHEMA)[atFlag.focus]).toBe("flag");
+    expect(press(atFlag, { kind: "space" }).values.flag).toBe(true);
+
+    // 多选在 mode 后面一格：从 flag 走两格（中间隔着单选 mode）
+    const atTags = press(atFlag, { kind: "next" }, { kind: "next" });
+    expect(fieldNames(SCHEMA)[atTags.focus]).toBe("tags");
+
+    const second = press(atTags, { kind: "step", delta: 1 });
+    expect(cursorOf(second, "tags", SCHEMA.properties.tags!)).toBe(1);
+
+    const picked = press(second, { kind: "space" });
+    expect(picked.values.tags).toEqual(["b"]);
+
+    // 再按一次取消勾选
+    expect(press(picked, { kind: "space" }).values.tags).toEqual([]);
+  });
+
+  it("改一下输入就清掉上一次的错误（那句属于上一版草稿）", () => {
+    const failed: FormEditing = { ...initialEditing(SCHEMA), error: "正文：太长" };
+    expect(press(failed, { kind: "text", input: "a" }).error).toBeUndefined();
+  });
+});
+
+describe("表单：提交", () => {
+  it("按表的声明收成内容：数字转成数字、空数字不交、布尔与多选原样", () => {
+    const editing: FormEditing = {
+      ...initialEditing(SCHEMA),
+      values: { ...initialEditing(SCHEMA).values, count: "3", whole: "", flag: true, tags: ["a"] },
+    };
+
+    const result = answerOf(SCHEMA, editing.values);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.content).toEqual({
+      title: "初稿",
+      body: "",
+      count: 3,
+      flag: true,
+      mode: "self",
+      tags: ["a"],
+    });
+  });
+
+  it("必填没填、数字不像数字、整数带了小数、超出范围、太长、多选超项数：各回一格并指出是哪一格", () => {
+    const submit = (values: Record<string, unknown>) =>
+      answerOf(SCHEMA, { ...initialEditing(SCHEMA).values, ...values });
+
+    const missing = submit({ mode: "" });
+    expect(missing).toMatchObject({ ok: false, focus: fieldNames(SCHEMA).indexOf("mode") });
+
+    expect(submit({ count: "abc" })).toMatchObject({ ok: false, focus: 2 });
+    expect(submit({ whole: "1.5" })).toMatchObject({ ok: false, focus: 3 });
+    expect(submit({ count: "11" })).toMatchObject({ ok: false, focus: 2 });
+    expect(submit({ body: "一二三四五六" })).toMatchObject({ ok: false, focus: 1 });
+    expect(submit({ tags: ["a", "b"] })).toMatchObject({ ok: false, focus: 6 });
+  });
+
+  it("`format` 那四种只挡明显不是的东西", () => {
+    const schema: FormSchemaView = {
+      type: "object",
+      properties: {
+        mail: { type: "string", format: "email" },
+        link: { type: "string", format: "uri" },
+        day: { type: "string", format: "date" },
+        at: { type: "string", format: "date-time" },
+      },
+    };
+    const ok = answerOf(schema, {
+      mail: "a@b.co",
+      link: "https://x.dev",
+      day: "2026-11-25",
+      at: "2026-11-25T08:00:00Z",
+    });
+    expect(ok.ok).toBe(true);
+
+    expect(answerOf(schema, { mail: "ab.co", link: "x", day: "11/25", at: "早上" }).ok).toBe(false);
+  });
+
+  it("非必填的空文本照样交上去（空串是一个值，不是「没填」）", () => {
+    const schema: FormSchemaView = {
+      type: "object",
+      properties: { note: { type: "string" } },
+    };
+    const result = answerOf(schema, { note: "" });
+    expect(result).toEqual({ ok: true, content: { note: "" } });
+  });
+});

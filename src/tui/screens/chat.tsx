@@ -44,7 +44,7 @@ import { FrameBuffer } from "./frame-buffer.js";
 import { LineView } from "./render.js";
 import { messageToLines, transcriptLines } from "./messages-view.js";
 import { welcomeLines } from "./welcome.js";
-import { PickerOverlay } from "./overlays.js";
+import { PickerOverlay, FormOverlay } from "./overlays.js";
 import { CursorInputRow, type CursorPosition } from "./input-row.js";
 import { chooseQuestionAnswer } from "./question-choice.js";
 import { runCommand, moveAfterGone } from "../../commands/index.js";
@@ -251,8 +251,9 @@ export function Chat(props: ChatScreenProps) {
   const { setCursorPosition } = useCursor();
   const { columns, rows } = useWindowSize();
 
-  /** 覆盖层（选择器）：弹窗与 resolve 生命周期见 use-overlays.ts */
-  const { pickerState, setPickerState, resolvePicker } = useChatOverlays();
+  /** 覆盖层（选择器 / 表单）：弹窗与 resolve 生命周期见 use-overlays.ts */
+  const { pickerState, setPickerState, resolvePicker, formState, setFormState, resolveForm } =
+    useChatOverlays();
   const sessionRef = useRef<ChatSessionLike | null>(null);
   /**
    * 会话实例（渲染期现取）。首帧为 `null`；创建那个 effect 把 `ready` 翻成 `true` 之后
@@ -530,7 +531,7 @@ export function Chat(props: ChatScreenProps) {
           // 交接题答完之后的后续动作全在宿主那一侧（`question.answer` 的 `effects` 会说
           // 「当场开始了没有 / 为什么没有」），这一屏不必再记一条记号去猜「搬没搬」——
           // 新契约的交接是**原地换记忆**，会话 id 不变，屏幕上什么都不会跳。
-          onQuestion: async (question) => await chooseQuestionAnswer(setPickerState, question),
+          onQuestion: async (question) => await chooseQuestionAnswer(setFormState, question),
         },
         notifier,
       )
@@ -1576,7 +1577,7 @@ export function Chat(props: ChatScreenProps) {
     // 那样一来运行中的按键无处可去，只能只留中止 / 退出 / 回看 —— 现在输入框一直在，
     // 就不该再有两套键位：两套的分歧（哪个键在忙时归谁）是历史上漂移的根源。
     // 只留覆盖层（选择器 / 配置向导）这一个失活条件：它们整屏接管了键盘。
-    { isActive: !pickerState && !wizardStep },
+    { isActive: !pickerState && !formState && !wizardStep },
   );
 
   // 配置向导：整屏接管（凭据设置 / 配置中心），关闭后回到会话屏
@@ -1809,9 +1810,12 @@ export function Chat(props: ChatScreenProps) {
     phaseLines,
     inboxLines,
     agentTabLines,
-    overlay: pickerState ? "picker" : "none",
+    overlay: pickerState ? "picker" : formState ? "form" : "none",
     // 覆盖层只会画出窗口装得下的那几条（`SelectList` 的视窗），所以布局也按同一个数预留高度
     pickerItems: pickerState ? Math.min(pickerState.items.length, pickerRows) : 0,
+    // 表单：一格一行，另**常驻**预留一行给校验失败那句 —— 错误一冒出来就顶高一行，
+    // 底下的状态栏会被推出屏幕（用户正看着的东西跳一下也难受）
+    formRows: formState ? Object.keys(formState.schema.properties).length + 1 : 0,
     viewTop,
     statusBarLines: statusRows.length,
     // 空会话的品牌块落在会话区垂直中部（贴顶太空、贴底太挤）
@@ -1855,7 +1859,7 @@ export function Chat(props: ChatScreenProps) {
   // 首选「渲染器实测」（宽字符 / emoji 的宽度由 Ink 自己算，不会偏）；
   // 首次渲染还没量到时，退回手算值顶一帧（下一帧即被实测值纠正）。
   // 生成中同样要定位 —— 输入框一直在、一直可编辑（PRD 需求 3），候选框也就得跟着走。
-  if (!pickerState) {
+  if (!pickerState && !formState) {
     const measured = imePosition && imePosition.key === cursorKey ? imePosition.position : null;
     setCursorPosition(
       measured ??
@@ -1892,6 +1896,13 @@ export function Chat(props: ChatScreenProps) {
           columns={cols}
           maxRows={pickerRows}
           onPick={resolvePicker}
+        />
+      ) : formState ? (
+        <FormOverlay
+          title={formState.title}
+          schema={formState.schema}
+          onAnswer={resolveForm}
+          onCancel={() => resolveForm({ action: "cancel" })}
         />
       ) : (
         <Box flexDirection="column">

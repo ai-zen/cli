@@ -1,8 +1,21 @@
-// 选择覆盖层（选择器：/load、/back、/model、/agent、交接方式、问题对象…）
+// 覆盖层：选择器（/load、/back、/model、/agent…）与表单（宿主问过来的那张表）
+import { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { theme } from "../theme.js";
 import { SelectList, KeyHints, SelectItem } from "../components.js";
 import { t } from "../../i18n/index.js";
+import type { FormAnswerView, FormFieldView, FormSchemaView } from "../../session/types.js";
+import {
+  answerOf,
+  applyFormKey,
+  cursorOf,
+  fieldNames,
+  initialEditing,
+  labelOf,
+  labelsOf,
+  type FormEditing,
+  type FormKey,
+} from "./form-fields.js";
 
 // ==================== 选择覆盖层 ====================
 
@@ -62,4 +75,194 @@ export function PickerOverlay({
       </Box>
     </Box>
   );
+}
+
+// ==================== 表单覆盖层 ====================
+
+/**
+ * 表单覆盖层 —— 宿主问过来一张表（交接三选一、破坏性动作前确认，将来还有外部服务器发来的
+ * MCP elicitation），用户在面板上逐格填。
+ *
+ * ## 面板不认识「题」，只认识表
+ *
+ * 画什么全由 `requestedSchema` 决定：字符串/数字是一格草稿，布尔是一个勾，单选枚举是一行可左右
+ * 切换的候选，多选枚举是一行可空格勾选的候选。交接那道三选题不过是「一个单选枚举字段」。
+ *
+ * ## 按键的两种事
+ *
+ * ↑ ↓ / Tab 换字段，← → 换选项（多选是移动项光标），空格切布尔与多选，回车提交，Esc 取消。
+ * 编辑的规矩全在 `form-fields.ts` 里（纯函数，单测在那边），这一层只管把 ink 的按键翻译过去、
+ * 把状态画出来。
+ *
+ * 校验不过**不关面板**：焦点跳到那一格、下面多一行说清为什么 —— 用户正在填的东西不该被丢掉。
+ */
+export function FormOverlay({
+  title,
+  schema,
+  onAnswer,
+  onCancel,
+}: {
+  title: string;
+  schema: FormSchemaView;
+  /** 用户提交或取消：`accept` 带内容，`cancel` 是关掉没作答 */
+  onAnswer: (answer: FormAnswerView) => void;
+  onCancel: () => void;
+}) {
+  const [editing, setEditing] = useState<FormEditing>(() => initialEditing(schema));
+  const names = fieldNames(schema);
+
+  useInput((input, key) => {
+    // Ctrl+C 与 Esc 同义（与选择器那一条同源：这段时间两个主输入处理器都失活）
+    if (key.escape || (key.ctrl && input === "c")) {
+      onCancel();
+      return;
+    }
+    if (key.return) {
+      const result = answerOf(schema, editing.values);
+      if (result.ok) onAnswer({ action: "accept", content: result.content });
+      else setEditing({ ...editing, focus: result.focus, error: result.reason });
+      return;
+    }
+
+    const translated = translateKey(input, key);
+    if (translated === undefined) return;
+    setEditing((current) => applyFormKey(current, schema, translated));
+  });
+
+  return (
+    <Box
+      flexDirection="column"
+      marginTop={1}
+      borderStyle="round"
+      borderColor={theme.border}
+      paddingX={2}
+    >
+      <Text color={theme.warn} wrap="wrap">
+        ? {title}
+      </Text>
+      <Box flexDirection="column" marginTop={1}>
+        {names.map((name, index) => (
+          <FieldRow
+            key={name}
+            field={schema.properties[name]!}
+            name={name}
+            value={editing.values[name]}
+            cursor={cursorOf(editing, name, schema.properties[name]!)}
+            focused={index === editing.focus}
+          />
+        ))}
+      </Box>
+      {editing.error === undefined ? null : (
+        <Text color={theme.error} wrap="wrap">
+          {editing.error}
+        </Text>
+      )}
+      <Box marginTop={1}>
+        <KeyHints
+          hints={[
+            ["↑ ↓ / Tab", t("ui.form.switch")],
+            ["← → / Space", t("ui.form.choose")],
+            ["Enter", t("ui.form.submit")],
+            ["Esc", t("ui.cancel")],
+          ]}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+/** 一格里现在的值是成什么样 —— 面板只做展示，转换在 `form-fields.ts` 的 `answerOf` 里 */
+function FieldRow({
+  field,
+  name,
+  value,
+  cursor,
+  focused,
+}: {
+  field: FormFieldView;
+  name: string;
+  value: string | boolean | readonly string[] | undefined;
+  cursor: number;
+  focused: boolean;
+}) {
+  const marker = focused ? "❯" : " ";
+  const label = labelOf(name, field);
+
+  switch (field.type) {
+    case "boolean":
+      return (
+        <Text color={focused ? theme.accent : undefined}>
+          {marker} {label}：{value === true ? "[x]" : "[ ]"}
+        </Text>
+      );
+    case "string":
+    case "number":
+    case "integer": {
+      if (field.type === "string" && field.enum !== undefined) {
+        // 单选枚举：把选中的那一项夹在箭头之间（候选名用 `enumNames`，没给就用值）
+        const labels = labelsOf(field);
+        const values = field.enum;
+        const at = Math.max(0, values.indexOf(String(value ?? "")));
+        return (
+          <Text color={focused ? theme.accent : undefined}>
+            {marker} {label}：◀ {labels[at] ?? values[at]} ▶
+          </Text>
+        );
+      }
+      const text = String(value ?? "");
+      return (
+        <Text color={focused ? theme.accent : undefined}>
+          {marker} {label}：{text.length === 0 ? t("ui.form.empty") : text}
+          {focused ? "▏" : ""}
+        </Text>
+      );
+    }
+    case "array": {
+      const labels = labelsOf(field);
+      const values = field.items.enum;
+      const picked = (value as readonly string[] | undefined) ?? [];
+      const cells = values.map((item, index) => {
+        const box = picked.includes(item) ? "[x]" : "[ ]";
+        const text = `${box} ${labels[index] ?? item}`;
+        // 项光标只在焦点落在这一格时才算数（别处不画，免得以为面板上有两个光标）
+        return focused && index === cursor ? `❯${text}` : text;
+      });
+      return (
+        <Text color={focused ? theme.accent : undefined} wrap="wrap">
+          {marker} {label}：{cells.join("  ")}
+        </Text>
+      );
+    }
+  }
+}
+
+/**
+ * ink 的按键 → 面板认得的那几种。
+ *
+ * 只有一件事不在这里：回车与 Esc（它们不是「编辑」，是提交与取消，由组件自己接）。
+ */
+function translateKey(
+  input: string,
+  key: {
+    tab?: boolean;
+    shift?: boolean;
+    upArrow?: boolean;
+    downArrow?: boolean;
+    leftArrow?: boolean;
+    rightArrow?: boolean;
+    backspace?: boolean;
+    delete?: boolean;
+    ctrl?: boolean;
+    meta?: boolean;
+  },
+): FormKey | undefined {
+  if (key.tab) return key.shift ? { kind: "prev" } : { kind: "next" };
+  if (key.downArrow) return { kind: "next" };
+  if (key.upArrow) return { kind: "prev" };
+  if (key.leftArrow) return { kind: "step", delta: -1 };
+  if (key.rightArrow) return { kind: "step", delta: 1 };
+  if (key.backspace || key.delete) return { kind: "backspace" };
+  if (input === " ") return { kind: "space" };
+  if (input.length > 0 && !key.ctrl && !key.meta) return { kind: "text", input };
+  return undefined;
 }

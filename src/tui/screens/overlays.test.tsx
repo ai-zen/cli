@@ -5,7 +5,7 @@
 // 的人在这段等待里就完全按不动（交接 / 迁移要先选执行者，正是最容易以为卡死的地方）。
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
-import { PickerOverlay } from "./overlays.js";
+import { FormOverlay, PickerOverlay } from "./overlays.js";
 
 /**
  * 等到 `check()` 成立就返回；超时抛错，错误里说清等的是什么。
@@ -108,5 +108,110 @@ describe("PickerOverlay", () => {
 
     await until(() => (lastFrame() ?? "").includes(tail), "长标题的末尾画出来了");
     unmount();
+  });
+});
+
+// ==================== 表单浮层 ====================
+
+/**
+ * 表单浮层的按键语义（规矩本身在 `form-fields.test.ts` 里，纯函数那侧）。
+ *
+ * 这里只钉「面板这一层」的三件事：字能敲进去并提交成内容、Esc 交 cancel、校验没过**不关面板**
+ * 且焦点跳到那一格。
+ */
+function mountForm() {
+  const answers: { action: string; content?: Record<string, unknown> }[] = [];
+  let cancelled = 0;
+  const { stdin, lastFrame, unmount } = render(
+    <FormOverlay
+      title="填一下"
+      schema={{
+        type: "object",
+        properties: {
+          name: { type: "string", title: "名字" },
+          flag: { type: "boolean", title: "开关" },
+          tags: { type: "array", title: "标签", items: { type: "string", enum: ["a", "b"] } },
+        },
+        required: ["name"],
+      }}
+      onAnswer={(answer) => answers.push(answer)}
+      onCancel={() => {
+        cancelled += 1;
+      }}
+    />,
+  );
+  return { answers, cancelled: () => cancelled, stdin, frame: () => lastFrame() ?? "", unmount };
+}
+
+async function mountedForm() {
+  const p = mountForm();
+  await until(() => p.frame().includes("填一下"), "表单浮层画出来");
+  await settle();
+  return p;
+}
+
+describe("FormOverlay", () => {
+  it("文本能敲进去，回车把内容交出去", async () => {
+    const form = await mountedForm();
+
+    form.stdin.write("ab");
+    await settle();
+    await until(() => form.frame().includes("ab"), "字上了屏");
+
+    form.stdin.write("\r");
+    await settle();
+    await until(() => form.answers.length === 1, "提交了一次");
+    expect(form.answers[0]).toEqual({
+      action: "accept",
+      content: { name: "ab", flag: false, tags: [] },
+    });
+    form.unmount();
+  });
+
+  it("必填没填：不关面板，焦点跳到那一格并在下面说清为什么", async () => {
+    const form = await mountedForm();
+
+    form.stdin.write("\r");
+    await settle();
+    await until(() => form.frame().includes("必填"), "错误那一行画出来");
+    // 一次都没交出去：面板还开着
+    expect(form.answers).toEqual([]);
+    form.unmount();
+  });
+
+  it("Esc 交 cancel（不是替用户填一份）", async () => {
+    const form = await mountedForm();
+
+    form.stdin.write("\u001b");
+    await settle();
+    await until(() => form.cancelled() === 1, "取消了一次");
+    expect(form.answers).toEqual([]);
+    form.unmount();
+  });
+
+  it("空格切布尔、← → 移多选项光标、空格勾上", async () => {
+    const form = await mountedForm();
+
+    form.stdin.write("x"); // 先给必填的名字一个值
+    await settle();
+    form.stdin.write("\u001b[B"); // ↓ 到布尔
+    await settle();
+    form.stdin.write(" ");
+    await settle();
+    await until(() => form.frame().includes("[x]"), "布尔被勾上");
+
+    form.stdin.write("\u001b[B"); // ↓ 到多选
+    await settle();
+    form.stdin.write("\u001b[C"); // → 移项光标到 b
+    await settle();
+    form.stdin.write(" ");
+    await settle();
+    await until(() => form.frame().includes("[x] b"), "多选勾上了 b");
+
+    form.stdin.write("\r");
+    await settle();
+    await until(() => form.answers.length === 1, "提交了一次");
+    expect(form.answers[0]?.content).toEqual({ name: "x", flag: true, tags: ["b"] });
+    form.unmount();
   });
 });
