@@ -97,11 +97,13 @@ Both run a model call, so the input line is held while they run.
 
 Both `/upgrade` and `/shutdown` confirm once (yes / no); until then no procedure is called. How each of them runs is on the [Host](./host.md) page.
 
-## Questions from the host
+## Questions from the host (a form)
 
-When the context reaches the handoff line, or before an action that cannot be undone, the host asks a question. The client draws it with the host's own wording and choices, and sends the chosen value back through `question.answer`.
+When the context reaches the handoff line, before an action that cannot be undone, or when an MCP server needs a word from the user mid-call, the host sends a form. A form is MCP elicitation's `requestedSchema`: a flat object whose properties are strings, numbers, booleans or single-select enums, and whose only arrays are multi-select enums.
 
-Leaving it unanswered leaves it pending: the question stays, and the host then refuses further sends. Picking a choice for the human would decide on their behalf whether to hand off, so the client does not pick.
+The client draws it field by field: ↑ ↓ / Tab to move between fields, ← → to change a choice, space to toggle a boolean or a multi-select item, Enter to submit, Esc to cancel. What goes back is one of three actions (`accept` with content, `decline`, `cancel`) through `question.answer`.
+
+Leaving it unanswered leaves it pending: the form stays, and the host then refuses further sends. Filling it in for the human would decide on their behalf whether to hand off or spend that money, so the client does not fill it.
 
 ## The `/` menu and `/help`
 
