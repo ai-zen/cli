@@ -130,6 +130,10 @@ async function build() {
   // pnpm 按拓扑序建 core / logger → sdk → host，将来多一个依赖也自动跟进来。
   say("· 构建宿主与它依赖的各包（core / sdk / logger …）");
   await run("pnpm", ["--dir", AGENTS_ROOT, "-r", "--filter", "@ai-zen/agents-host...", "build"]);
+  // CLI 捆的是 `@ai-zen/agents-client`：它的类型直接由宿主的 `AppRouter` 推出来，不重建就会
+  // 拿着旧宿主的形状去对 `tsc`（运行时也捆旧代码）。它不在 host 的依赖链上，所以另起一步。
+  say("· 构建客户端库（@ai-zen/agents-client）");
+  await run("pnpm", ["--dir", AGENTS_ROOT, "--filter", "@ai-zen/agents-client", "build"]);
   say("· 构建 CLI");
   await run("pnpm", ["--dir", CLI_ROOT, "run", "build"]);
 }
