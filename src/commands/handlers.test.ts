@@ -32,6 +32,7 @@ import type {
   SessionSnapshot,
 } from "../session/types.js";
 import type { LiveSession } from "../sessions-registry.js";
+import type { FormSchemaView } from "../session/types.js";
 import { useTempAiZenDir } from "../test-support/temp-dir.js";
 import { setLocale, t } from "../i18n/index.js";
 
@@ -213,6 +214,8 @@ interface SessionStub {
   agentId: string;
   sessionId: string;
   name: string;
+  /** 会话行那一份（`sessionLabel` 读它：名字的来源与建行时刻都在这上面） */
+  view: SessionSnapshot;
   workspaceId: string;
   currentWorkspaceId: string;
   selectWorkspace: (workspaceId: string) => void;
@@ -345,6 +348,8 @@ function createHost(
     // 覆盖层入口是一个**异步口**（命令层拿不到 React setter）：默认「没人作答」，
     // 需要作答的用例自己替换它。
     pick: vi.fn(async () => null),
+    // 表单那个口（`/form` 用它）：默认「没有填」，需要看内容的用例自己替换
+    askForm: vi.fn(async () => ({ action: "cancel" as const })),
     // 换会话的两个口子（`/new` / `/sessions`）：会话归进程所有（PRD D4），命令层只说「换成哪一段」
     newSession: vi.fn(async () => "conv-new"),
     liveSessions: options.liveSessions ?? [],
@@ -3256,5 +3261,74 @@ describe("/title：让模型给这一段重新起个名字", () => {
     const failed = t("cmd.title.failed", { error: "没有可用的起名模型" });
     expect(texts(notices)).toContain(failed);
     expect(notices.find((item) => item.text === failed)?.tone).toBe("error");
+  });
+});
+
+describe("/form：把每一种表单项摆出来（调试入口）", () => {
+  /**
+   * 这一条拿的是**同一张面板**（`askForm` 就是题走的那一个口），所以用例只需要钉住两件：表里
+   * 七种字段都在、提交之后交出来的内容被念了一遍。
+   */
+  it("七种字段都在表里：文本 / 邮箱 / 单选 / 数字 / 整数 / 布尔 / 多选", async () => {
+    const { host } = createHost();
+    const askForm = vi.fn(async (_title: string, _schema: FormSchemaView) => ({
+      action: "accept" as const,
+      content: {},
+    }));
+    host.askForm = askForm;
+
+    await runCommand("form", "/form", host);
+
+    const [title, schema] = askForm.mock.calls[0]!;
+    expect(title).toBe(t("cmd.form.title"));
+    const fields = schema.properties as Record<string, { type: string }>;
+    expect(Object.keys(fields)).toEqual([
+      "title",
+      "mail",
+      "mode",
+      "count",
+      "whole",
+      "flag",
+      "tags",
+    ]);
+    expect(fields.mail?.type).toBe("string");
+    expect(fields.count?.type).toBe("number");
+    expect(fields.whole?.type).toBe("integer");
+    expect(fields.flag?.type).toBe("boolean");
+    expect(fields.tags?.type).toBe("array");
+    // 必填那两格：空着提交会被面板拦下来
+    expect(schema.required).toEqual(["title", "mode"]);
+  });
+
+  it("填完了：把内容念一遍（多选用 / 连起来，空的写「（空）」）", async () => {
+    const { host, notices } = createHost();
+    host.askForm = vi.fn(async () => ({
+      action: "accept" as const,
+      content: { title: "标题", mode: "self", count: 3, flag: true, tags: ["a", "b"], mail: "" },
+    }));
+
+    await runCommand("form", "/form", host);
+
+    expect(texts(notices)).toContain(
+      t("cmd.form.done", {
+        fields: [
+          `文本（必填）=标题`,
+          `邮箱（format: email）=（空）`,
+          `单选（required）=self`,
+          `数字（1–10）=3`,
+          `布尔=true`,
+          `多选（最多 2 项）=a/b`,
+        ].join(" · "),
+      }),
+    );
+  });
+
+  it("关掉面板：说一句没填，不编一份空内容出来", async () => {
+    const { host, notices } = createHost();
+    host.askForm = vi.fn(async () => ({ action: "cancel" as const }));
+
+    await runCommand("form", "/form", host);
+
+    expect(texts(notices)).toContain(t("cmd.form.skipped"));
   });
 });

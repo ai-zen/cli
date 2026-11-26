@@ -140,6 +140,7 @@ function createHost(scenario: Scenario = {}) {
     // 缺省「问就答是」：没有单独安排的用例走的是「确认之后交给宿主」那一路。
     // 要验「否」与「问什么」的用例自己换一个（`capturePick`）。
     pick: vi.fn(async () => "yes"),
+    askForm: vi.fn(async () => ({ action: "cancel" as const })),
     newSession: vi.fn(async () => "conv-new"),
     liveSessions: [],
     // 这条命令不删会话，但接口上它是必填的（`/delete` 那一手动登记表的口子）

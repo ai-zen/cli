@@ -59,6 +59,8 @@ import {
 import type { LiveSession } from "../sessions-registry.js";
 import type {
   ChatSessionLike,
+  FormAnswerView,
+  FormSchemaView,
   HandoffMode,
   HostConnection,
   MessageInput,
@@ -155,6 +157,13 @@ export interface ChatCommandHost {
   doExit: () => void;
   /** 弹选择器并等用户作答（取消 / Esc 为 `null`）；覆盖层怎么画由宿主决定 */
   pick: (title: string, items: SelectItem<string>[]) => Promise<string | null>;
+  /**
+   * 弹一张表单并等用户填完（与宿主发来的那张表同一个面板）。
+   *
+   * 现在只有调试命令 `/form` 用它：拿它把每一种字段摆上屏看一遍。将来命令层要问“一句话带
+   * 几个字段”的东西（例如批量重命名），也走这一个口，不再另做一种面板。
+   */
+  askForm: (title: string, schema: FormSchemaView) => Promise<FormAnswerView>;
   /**
    * 跑一次 npm（`/upgrade` 查发布标签走它：`npm view <pkg> dist-tags`）。
    *
@@ -1039,6 +1048,77 @@ const cmdTitle: CommandHandler = async ({ session, api, push }) => {
   } catch (error: unknown) {
     push(t("cmd.title.failed", { error: messageOf(error) }), "error");
   }
+};
+
+/**
+ * `/form` —— 把每一种表单项都摆上屏看一遍（调试用，不是一个产品功能）。
+ *
+ * 为什么要有它：面板的形状是照 MCP elicitation 的 `requestedSchema` 抄的，而那种协议只有在真碰上
+ * 一台会 elicitation 的服务器时才看得见。改一改间距、改一改输入框，总不能每次去接一台服务器。
+ * 这条命令拿的是**同一个面板、同一套按键**，只是表是这里写死的。
+ *
+ * 表里刻意把这七种情况都放进去：
+ *
+ * | 字段 | 看什么 |
+ * |---|---|
+ * | 单行文本（必填，有长度上限） | 空值提交会被拦下来、焦点跳回来 |
+ * | 带 `format: email` 的文本 | 格式校验 |
+ * | 单选枚举 | `◀ … ▶`，← → 换 |
+ * | 数字（有上下限） | 只收数字、超范围报错 |
+ * | 整数 | 小数会被拦 |
+ * | 布尔 | 空格切 `[ ]` / `[x]` |
+ * | 多选枚举（上限 2 项） | 逐项 `[ ]/[x]`，空格勾选；超上限报错 |
+ *
+ * 提交之后把内容念一遍 —— 看得见「面板交出去的到底是什么」，才算真的验过。
+ */
+const cmdForm: CommandHandler = async ({ askForm, push }) => {
+  const schema: FormSchemaView = {
+    type: "object",
+    properties: {
+      title: {
+        type: "string",
+        title: t("cmd.form.fieldText"),
+        description: t("cmd.form.fieldTextHint"),
+        maxLength: 40,
+      },
+      mail: { type: "string", title: t("cmd.form.fieldEmail"), format: "email" },
+      mode: {
+        type: "string",
+        title: t("cmd.form.fieldEnum"),
+        enum: ["self", "summary", "no"],
+        enumNames: [t("cmd.form.enumSelf"), t("cmd.form.enumSummary"), t("cmd.form.enumNo")],
+      },
+      count: { type: "number", title: t("cmd.form.fieldNumber"), minimum: 1, maximum: 10 },
+      whole: { type: "integer", title: t("cmd.form.fieldInteger") },
+      flag: { type: "boolean", title: t("cmd.form.fieldBoolean") },
+      tags: {
+        type: "array",
+        title: t("cmd.form.fieldMulti"),
+        items: { type: "string", enum: ["a", "b", "c"], enumNames: ["甲", "乙", "丙"] },
+        maxItems: 2,
+      },
+    },
+    required: ["title", "mode"],
+  };
+
+  const answer = await askForm(t("cmd.form.title"), schema);
+  if (answer.action !== "accept") {
+    // 拒绝与关掉在这一条上没有区别：都只是「没填」
+    push(t("cmd.form.skipped"));
+    return;
+  }
+
+  const content = answer.content ?? {};
+  // 按**表的顺序**念，不按内容对象的键序：用户看的是表的顺序，念出来的也该是那个顺序
+  const parts = Object.keys(schema.properties)
+    .filter((name) => name in content)
+    .map((name) => {
+      const value = content[name];
+      const label = schema.properties[name]?.title ?? name;
+      const shown = Array.isArray(value) ? value.join("/") : String(value);
+      return `${label}=${shown === "" ? t("cmd.form.empty") : shown}`;
+    });
+  push(t("cmd.form.done", { fields: parts.join(" · ") }));
 };
 
 /** `/editor` —— 用本机编辑器写长消息（PRD F-C11：本机能力，换台设备本就该不同） */
@@ -2157,6 +2237,7 @@ const HANDLERS: Record<CommandName, CommandHandler> = {
   back: cmdBack,
   rename: cmdRename,
   title: cmdTitle,
+  form: cmdForm,
   editor: cmdEditor,
   clear: cmdClear,
   free: cmdFree,

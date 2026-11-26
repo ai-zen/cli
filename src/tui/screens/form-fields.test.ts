@@ -166,7 +166,7 @@ describe("表单：提交", () => {
   });
 
   it("必填没填、数字不像数字、整数带了小数、超出范围、太长、多选超项数：各回一格并指出是哪一格", () => {
-    const submit = (values: Record<string, unknown>) =>
+    const submit = (values: Record<string, string | boolean | readonly string[]>) =>
       answerOf(SCHEMA, { ...initialEditing(SCHEMA).values, ...values });
 
     const missing = submit({ mode: "" });

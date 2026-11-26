@@ -131,6 +131,14 @@ const REGISTRY_ENTRIES = [
    * 会调模型（几秒），所以执行期间拦输入框。
    */
   { name: "title", descriptionKey: "cmd.title.desc", blocksInput: true },
+  /**
+   * `/form`：把每一种表单项都摆上屏看一遍。
+   *
+   * 是调试入口（面板的形状只有真碰上会 elicitation 的服务器才看得见），所以不调模型、也不改
+   * 任何状态：
+   * 它只是把同一张面板拿一张写死的表打开一次。
+   */
+  { name: "form", descriptionKey: "cmd.form.desc" },
   { name: "editor", descriptionKey: "cmd.editor.desc" },
   /**
    * `/clear` **只清屏**（屏幕起点后移，上下文一个字不动）：一条命令一件事。

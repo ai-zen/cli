@@ -23,6 +23,7 @@ import {
   type ChatSessionLike,
   type ChatSessionNotifier,
   type FileEntry,
+  type FormAnswerView,
   type HostConnection,
   type NoticeView,
   type RemovedSession,
@@ -924,6 +925,9 @@ export function Chat(props: ChatScreenProps) {
           // 覆盖层入口：命令层拿到的是 Promise，不是 React setter（见 `ChatCommandHost`）
           pick: (title, items) =>
             new Promise<string | null>((resolve) => setPickerState({ title, items, resolve })),
+          // 表单那个口（`/form` 用它）：与宿主发来的那张表走同一个面板、同一套三态
+          askForm: (title, schema) =>
+            new Promise<FormAnswerView>((resolve) => setFormState({ title, schema, resolve })),
           // `/new` 与 `/sessions` 都要「换会话」这件事，而会话归进程所有（PRD D4）：
           // 屏幕只把注册表的两个口子转下去，自己不决定开与关
           newSession: () => deps.sessions.newSegment(),

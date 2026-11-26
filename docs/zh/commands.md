@@ -38,6 +38,7 @@ outline: deep
 | `/back`     | `/revert` |                                    | 撤回到你的某条消息之前（`session.rewind`）；撤掉的文字与 Asset 回到输入框                                     |
 | `/rename`   | `/save`   | `<名字>`                           | 给这一段改名（`session.rename`），id 不动                                                                     |
 | `/title`    |           |                                    | 让模型给这一段重新起个名字（`session.autoTitle`）：自动起名只在第一次答完之后动手，此后要再要一个就点这条 |
+| `/form`     |           |                                    | **调试用**：把每一种表单项（文本 / 邮箱 / 单选 / 数字 / 整数 / 布尔 / 多选）摆上屏看一眼；改面板时不用去接一台服务器 |
 | `/editor`   |           |                                    | 用 `$EDITOR`、`$VISUAL` 或平台缺省编辑器写这一条消息                                                          |
 | `/clear`    |           |                                    | 只清屏，上下文一个字不动                                                                                      |
 | `/free`     |           |                                    | 清空排队区（`runtime.agent.clearInbox`），并说清掉了几条；一条都没排着就什么都不说                            |
