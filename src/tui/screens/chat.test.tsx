@@ -1583,7 +1583,7 @@ describe("问题对象（到交接线时宿主提问）", () => {
     createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
   });
 
-  it("面板照抄宿主那张表：单选枚举左右切换，回车提交选中的那一项", async () => {
+  it("两层交互：回车进这一格编辑、上下换候选、回车退回，最后落到提交项再回车", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
 
@@ -1591,20 +1591,37 @@ describe("问题对象（到交接线时宿主提问）", () => {
     // 等面板画出来、按键监听就位（监听在 mount 后的 effect 里装，抢在它之前敲字会丢）
     await waitFor(() => (lastFrame() ?? "").includes("原 agent 自交接"));
     await flush(40);
-    // 题目是宿主渲染好的那句；单选枚举竖着列，选中的那一项是 `(o)`
+    // 浏览层：一格一行，右边写着当前值；最后一行是提交项
     expect(lastFrame() ?? "").toContain("上下文已用 92%，要交接吗？");
-    expect(lastFrame() ?? "").toContain("(o) 原 agent 自交接");
-    expect(lastFrame() ?? "").toContain("( ) 独立摘要");
+    expect(lastFrame() ?? "").toContain("❯");
+    expect(lastFrame() ?? "").toContain("原 agent 自交接");
+    expect(lastFrame() ?? "").toContain("提交");
 
-    // → 换一项：`(o)` 跟着走到第二项上（顺序即宿主给的顺序）
-    stdin.write("\u001b[C");
+    // 回车进这一格：候选才展开成 `(o)` / `( )`
+    stdin.write("\r");
+    await flush(40);
+    await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
+
+    // ↓ 换到第二项（编辑层里上下箭头动的是候选）
+    stdin.write("\u001b[B");
     await flush(40);
     await waitFor(() => (lastFrame() ?? "").includes("(o) 独立摘要"));
 
-    // ← 回到第一项再回车
-    stdin.write("\u001b[D");
+    // 回车退回浏览层（不提交），再 ↑ 回到第一项
+    stdin.write("\r");
+    await flush(40);
+    stdin.write("\r");
+    await flush(40);
+    stdin.write("\u001b[A");
     await flush(40);
     await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
+    stdin.write("\r");
+    await flush(40);
+
+    // 最后一步：↓ 落到提交项，回车交卷
+    stdin.write("\u001b[B");
+    await flush(40);
+    await waitFor(() => (lastFrame() ?? "").includes("❯ 提交"));
     stdin.write("\r");
     await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "self" } });
     unmount();
@@ -1630,12 +1647,19 @@ describe("问题对象（到交接线时宿主提问）", () => {
     const answering = created.options.onQuestion(handoffQuestion());
     await waitFor(() => (lastFrame() ?? "").includes("原 agent 自交接"));
     await flush(40);
-    // 往右走两格到「不交接」（顺序：自己 → 独立摘要 → 不交接），再回车
-    stdin.write("\u001b[C");
+    // 进这一格编辑，往下走两格到「不交接」，退回浏览层，再落到提交项交卷
+    stdin.write("\r");
+    await flush(40);
+    stdin.write("\u001b[B");
     await flush(30);
-    stdin.write("\u001b[C");
+    stdin.write("\u001b[B");
     await flush(40);
     await waitFor(() => (lastFrame() ?? "").includes("(o) 不交接"));
+    stdin.write("\r");
+    await flush(40);
+    stdin.write("\u001b[B");
+    await flush(40);
+    await waitFor(() => (lastFrame() ?? "").includes("❯ 提交"));
     stdin.write("\r");
     await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "decline" } });
 

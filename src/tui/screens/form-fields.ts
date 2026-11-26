@@ -10,10 +10,16 @@
  * 文本与数字都按**字符串**存：用户敲到一半的 `3.` 不是一个合法数字，但它必须能显示出来。真的转
  * 成数字只在提交那一刻（{@link answerOf}）。
  *
- * ## 焦点与「选哪个」是两件事
+ * ## 两级：先选一项，再编辑那一项
  *
- * ↑ / ↓ / Tab 换字段；← / → 换枚举里选中的那一项（多选是移动项光标），空格切布尔与多选。
- * 混在一起的话，用户按 ↓ 想换字段、光标却在候选里走，而没有任何一处说得清它为什么这么动。
+ * 打开时是**浏览**：↑ / ↓ 在「各个字段 + 最后那个提交项」之间走，回车落到某一项上。
+ *
+ *   · 落在字段上 → 进**编辑**（`mode: "editing"`）：文本/数字敲字、布尔与多选按空格切、
+ *     单选与多选↑ / ↓（← / → 也行）换候选 —— 这一层里的上下箭头动的是候选，不是字段；
+ *   · 落在提交上 → 校验并交出内容。
+ *
+ * 编辑里按回车或 Esc 都退回浏览（值留着）：回车不提交，是因为提交是一件要说清的事
+ * （表单末尾那一项），误按回车把一份半成品交出去比多按一下坏得多。
  */
 
 import type { FormFieldView, FormSchemaView } from "../../session/types.js";
@@ -21,9 +27,19 @@ import type { FormFieldView, FormSchemaView } from "../../session/types.js";
 /** 编辑期间的草稿：文本/数字是字符串，布尔是布尔，多选是一组值 */
 export type FormValues = Record<string, string | boolean | readonly string[]>;
 
+/** 面板现在在哪一层 */
+export type FormMode = "browsing" | "editing";
+
 export interface FormEditing {
   readonly values: FormValues;
-  /** 当前焦点落在第几个字段（按 `properties` 的键顺序） */
+  /** 浏览器层在「各个字段 + 提交项」之间走，编辑层停留在某一个字段上 */
+  readonly mode: FormMode;
+  /**
+   * 当前焦点落在第几个**项**上（`properties` 的键顺序，最后一项是提交）。
+   *
+   * 提交项的下标是 `fieldNames(schema).length` —— 它与字段共用这一个下标，于是上下箭头
+   * 只需要管一条线。
+   */
   readonly focus: number;
   /**
    * 多选那一格内部的项光标（字段名 → 第几项）。
@@ -43,7 +59,18 @@ export type FormKey =
   | { kind: "step"; delta: -1 | 1 }
   | { kind: "space" }
   | { kind: "text"; input: string }
-  | { kind: "backspace" };
+  | { kind: "backspace" }
+  | { kind: "enter" }
+  | { kind: "escape" };
+
+/**
+ * 按一下之后发生在**面板**上的三种事。
+ *
+ * 为什么不让状态机自己提交：提交要把 `values` 交给 `answerOf`，而校验失败的结果又要回到面板上
+ * （焦点跳到那一格、说一句为什么）。于是状态机只说「该交卷了」，由面板去算、再决定回哪一层。
+ */
+export type FormStep =
+  { kind: "state"; editing: FormEditing } | { kind: "submit" } | { kind: "cancel" };
 
 /** 字段名，按表里的顺序（焦点是这一串的下标） */
 export function fieldNames(schema: FormSchemaView): string[] {
@@ -80,37 +107,84 @@ export function initialEditing(schema: FormSchemaView): FormEditing {
         break;
     }
   }
-  return { values, focus: 0, cursors: {} };
+  return { values, mode: "browsing", focus: 0, cursors: {} };
 }
 
 /** 按一下键，得到新的编辑状态 */
-export function applyFormKey(
-  editing: FormEditing,
-  schema: FormSchemaView,
-  key: FormKey,
-): FormEditing {
+export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: FormKey): FormStep {
   const names = fieldNames(schema);
-  if (names.length === 0) return editing;
-  const name = names[Math.min(editing.focus, names.length - 1)]!;
-  const field = schema.properties[name]!;
+  // 提交项与字段共用那条焦点线：它的下标正好是字段个数
+  const submitAt = names.length;
   // 改任何一种输入都清掉上一次的错误：那句是「上一版草稿」的结论
   const cleared: FormEditing =
     editing.error === undefined ? editing : { ...editing, error: undefined };
 
-  switch (key.kind) {
-    case "next":
-      return { ...cleared, focus: (cleared.focus + 1) % names.length };
-    case "prev":
-      return { ...cleared, focus: (cleared.focus - 1 + names.length) % names.length };
-    case "step":
-      return step(cleared, name, field, key.delta);
-    case "space":
-      return toggle(cleared, name, field);
-    case "backspace":
-      return backspace(cleared, name, field);
-    case "text":
-      return type(cleared, name, field, key.input);
+  const move = (delta: 1 | -1): FormStep => ({
+    kind: "state",
+    editing: { ...cleared, focus: (cleared.focus + delta + submitAt + 1) % (submitAt + 1) },
+  });
+
+  if (key.kind === "escape") {
+    // 编辑里退一层（值留着）；浏览里就是关掉整张表
+    return cleared.mode === "editing"
+      ? { kind: "state", editing: { ...cleared, mode: "browsing" } }
+      : { kind: "cancel" };
   }
+
+  if (cleared.mode === "browsing") {
+    switch (key.kind) {
+      case "next":
+        return move(1);
+      case "prev":
+        return move(-1);
+      case "enter":
+        // 焦点在提交项上：交卷（校验由面板做，见 `FormStep` 的注释）
+        if (cleared.focus === submitAt) return { kind: "submit" };
+        return { kind: "state", editing: { ...cleared, mode: "editing" } };
+      default:
+        // 浏览层不认字：字要在编辑层里敲（否则「按着说话」会顺手改掉某一格）
+        return { kind: "state", editing: cleared };
+    }
+  }
+
+  // ---- 编辑层：焦点一定落在某个字段上 ----
+  if (names.length === 0) return { kind: "state", editing: { ...cleared, mode: "browsing" } };
+  const name = names[Math.min(cleared.focus, names.length - 1)]!;
+  const field = schema.properties[name]!;
+
+  switch (key.kind) {
+    case "enter":
+      return { kind: "state", editing: { ...cleared, mode: "browsing" } };
+    case "next":
+      // 编辑枚举时上下箭头动的是候选（用户在这里按 ↓ 想知道的是「下一项是什么」）
+      return { kind: "state", editing: advance(cleared, name, field, 1) };
+    case "prev":
+      return { kind: "state", editing: advance(cleared, name, field, -1) };
+    case "step":
+      return { kind: "state", editing: step(cleared, name, field, key.delta) };
+    case "space":
+      return { kind: "state", editing: toggle(cleared, name, field) };
+    case "backspace":
+      return { kind: "state", editing: backspace(cleared, name, field) };
+    case "text":
+      return { kind: "state", editing: type(cleared, name, field, key.input) };
+  }
+}
+
+/**
+ * 编辑层里的 ↑ / ↓：枚举上就是「上一个 / 下一个候选」。
+ *
+ * 单选换的是**值**；多选换的是**项光标**（要不要勾由空格说）。文本/数字/布尔没有候选可换 ——
+ * 那三种在编辑层里上下箭头什么都不做：把「↓」解释成「离开这一格」会让正在打字的人莫名其妙
+ * 地跳出输入。
+ */
+function advance(
+  editing: FormEditing,
+  name: string,
+  field: FormFieldView,
+  delta: -1 | 1,
+): FormEditing {
+  return enumValues(field) === undefined ? editing : step(editing, name, field, delta);
 }
 
 /** ← →：单选枚举换一项，多选移动项光标 */
@@ -318,61 +392,75 @@ export interface FormLine {
 }
 
 /**
- * 一个字段占几行。
+ * 一个字段占几行（**浏览层**：一行）。
  *
- * 文本/数字/布尔各一行；两种枚举是**一列**——标签一行，每个候选各一行（与多选同一个形状，
- * 只是括号用圆括号）。布局按它预留高度，所以它与 {@link formLines} 必须同一套数法。
+ * 只有进编辑、而且那一个是枚举时才会展开成「标签 + 每个候选一行」。布局按浏览层预留 ——
+ * 展开多出来的那几行由覆盖层自己滚动（见 {@link formLines} 的 `maxRows`）。
  */
-export function fieldRows(field: FormFieldView): number {
-  const options = enumValues(field);
-  return options === undefined ? 1 : options.length + 1;
+export function fieldRows(): number {
+  return 1;
 }
 
-/** 整张表占几行（不算校验失败那一句） */
+/** 整张表占几行：每个字段一行 + 最后那个提交项 */
 export function schemaRows(schema: FormSchemaView): number {
-  return Object.values(schema.properties).reduce((sum, field) => sum + fieldRows(field), 0);
+  return fieldNames(schema).length + 1;
+}
+
+/** 面板上要印的两句话（文案由调用方给：`formLines` 是纯函数，不碰 i18n） */
+export interface FormTexts {
+  /** 空值的写法，例如「（空）」 */
+  readonly empty: string;
+  /** 最后那个提交项的显示名 */
+  readonly submit: string;
 }
 
 /**
  * 把表和草稿摊成一行行。
  *
- * ## 两种枚举都竖着排，只差一对括号
+ * ## 两层长得不一样
  *
- * 单选 `(o) 名字` / `( ) 别的`，多选 `[x] 名字` / `[ ] 别的` —— 同一个形状，括号不同。横排
- * `◀ … ▶` 那一版在多选上没法表达（多选是集合），两种枚举长得不一样会让人以为它们是两种控件。
+ * 浏览层一格一行，右边直接写出当前值（`单选：第一项` / `多选：甲、乙`）—— 一眼能扫完；
+ * 进了编辑、而且那格是枚举时，才在它下面列一列候选：单选 `(o) 名字`，多选 `[x] 名字`。
+ * 两种枚举同一个形状，只差一对括号。
+ *
+ * 最后一律是**提交项**：回车落在它上面才交卷。它和字段共用同一条焦点线（下标 = 字段个数）。
  *
  * ## 放不下就滚动
  *
- * 候选一多（十个标签、二十个服务器）整块会顶穿屏幕，所以给 `maxRows` 就只画窗口里那一段：
- * 窗口跟着焦点走，被截掉的头部与尾部各用一句 `…` 说明还有东西 —— 不静默丢行。
+ * 编辑一个候选很多的枚举时整块会顶穿屏幕，所以给 `maxRows` 就只画窗口里那一段：窗口跟着焦点
+ * 走，被截掉的头部与尾部各用一句 `…` 说明还有东西 —— 不静默丢行。
  */
 export function formLines(
   schema: FormSchemaView,
   editing: FormEditing,
-  emptyLabel: string,
+  texts: FormTexts,
   maxRows?: number,
 ): FormLine[] {
+  const names = fieldNames(schema);
+  const submitAt = names.length;
   const lines: FormLine[] = [];
   /** 焦点那一块的第一行在 `lines` 里的下标（滚动要对准它） */
   let focusAt = 0;
 
-  for (const [index, name] of fieldNames(schema).entries()) {
+  for (const [index, name] of names.entries()) {
     const field = schema.properties[name]!;
-    const focused = index === editing.focus;
-    const marker = focused ? "❯" : " ";
-    if (focused) focusAt = lines.length;
-
+    const isFocus = index === editing.focus;
+    const inEditing = isFocus && editing.mode === "editing";
+    if (isFocus) focusAt = lines.length;
+    // 编辑层用 `▸`：与浏览层的 `❯` 分开，一眼看得出「按了回车之后我在哪一层」
+    const marker = isFocus ? (inEditing ? "▸" : "❯") : " ";
+    const label = labelOf(name, field);
     const options = enumValues(field);
-    if (options === undefined) {
-      lines.push({
-        text: `${marker} ${labelOf(name, field)}：${valueText(field, editing.values[name], emptyLabel)}${focused && isTextual(field) ? "▏" : ""}`,
-        focused,
-      });
+
+    if (options === undefined || !inEditing) {
+      const shown = browsingValue(field, editing.values[name], texts.empty);
+      const caret = inEditing && isTextual(field) ? "▏" : "";
+      lines.push({ text: `${marker} ${label}：${shown}${caret}`, focused: isFocus });
       continue;
     }
 
-    // 枚举：标签一行，候选各一行（缩进两格对齐在标记后面）
-    lines.push({ text: `${marker} ${labelOf(name, field)}`, focused });
+    // 编辑中的枚举：标签一行，候选各一行（缩进两个空格，对齐在标记后面）
+    lines.push({ text: `${marker} ${label}`, focused: true });
     const labels = labelsOf(field);
     const picked =
       field.type === "array" ? ((editing.values[name] as readonly string[] | undefined) ?? []) : [];
@@ -387,23 +475,40 @@ export function formLines(
             ? "(o)"
             : "( )";
       // 多选要一个项光标（空格切哪一项）；单选不需要，选中的那个就是光标
-      const pointer = focused && field.type === "array" && at === cursor ? "❯" : " ";
-      lines.push({ text: `   ${pointer} ${mark} ${labels[at] ?? option}`, focused });
+      const pointer = field.type === "array" && at === cursor ? "❯" : " ";
+      lines.push({ text: `   ${pointer} ${mark} ${labels[at] ?? option}`, focused: true });
     }
   }
+
+  const submitFocus = editing.mode === "browsing" && editing.focus === submitAt;
+  if (submitFocus) focusAt = lines.length;
+  lines.push({ text: `${submitFocus ? "❯" : " "} ${texts.submit}`, focused: submitFocus });
 
   if (editing.error !== undefined) lines.push({ text: editing.error, error: true });
   return clip(lines, focusAt, maxRows);
 }
 
-/** 文本/数字那种「正在输入」的游标只画在有焦点的那一格上 */
+/** 文本/数字那种「正在输入」的游标只画在编辑中的那一格上 */
 function isTextual(field: FormFieldView): boolean {
   return field.type === "string" || field.type === "number" || field.type === "integer";
 }
 
-/** 一格里现在的值长什么样（枚举走各自的括号，这里只处理一行的那些） */
-function valueText(field: FormFieldView, value: unknown, emptyLabel: string): string {
+/** 浏览层里一格的值怎么写：枚举写显示名，其余按原样 */
+function browsingValue(field: FormFieldView, value: unknown, emptyLabel: string): string {
   if (field.type === "boolean") return value === true ? "[x]" : "[ ]";
+
+  const options = enumValues(field);
+  if (options !== undefined) {
+    const labels = labelsOf(field);
+    if (field.type === "array") {
+      const picked = (value as readonly string[] | undefined) ?? [];
+      if (picked.length === 0) return emptyLabel;
+      return picked.map((item) => labels[options.indexOf(item)] ?? item).join("、");
+    }
+    const at = options.indexOf(String(value ?? ""));
+    return at < 0 ? emptyLabel : (labels[at] ?? options[at]!);
+  }
+
   const text = String(value ?? "");
   return text.length === 0 ? emptyLabel : text;
 }

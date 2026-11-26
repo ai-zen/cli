@@ -114,25 +114,45 @@ export function FormOverlay({
 }) {
   const [editing, setEditing] = useState<FormEditing>(() => initialEditing(schema));
 
+  /**
+   * 按一下：三种去处（新的编辑状态 / 该交卷了 / 关掉）。
+   *
+   * 「交卷」与「关掉」由状态机说，但**做的事**在这一层：校验要读 `answerOf`，失败了还要把焦点
+   * 跳回那一格 —— 那是面板的事，不是状态机的（见 `FormStep` 的注释）。
+   */
+  const step = (key: FormKey) => {
+    setEditing((current) => {
+      const result = applyFormKey(current, schema, key);
+      if (result.kind === "state") return result.editing;
+      if (result.kind === "submit") {
+        const answer = answerOf(schema, current.values);
+        if (answer.ok) onAnswer({ action: "accept", content: answer.content });
+        // 校验没过：留在浏览层、焦点跳到那一格，下面多一行说清为什么
+        else return { ...current, mode: "browsing", focus: answer.focus, error: answer.reason };
+        return current;
+      }
+      onCancel();
+      return current;
+    });
+  };
+
   useInput((input, key) => {
     // Ctrl+C 与 Esc 同义（与选择器那一条同源：这段时间两个主输入处理器都失活）
-    if (key.escape || (key.ctrl && input === "c")) {
-      onCancel();
-      return;
-    }
-    if (key.return) {
-      const result = answerOf(schema, editing.values);
-      if (result.ok) onAnswer({ action: "accept", content: result.content });
-      else setEditing({ ...editing, focus: result.focus, error: result.reason });
-      return;
-    }
+    if (key.ctrl && input === "c") return step({ kind: "escape" });
+    if (key.escape) return step({ kind: "escape" });
+    if (key.return) return step({ kind: "enter" });
 
     const translated = translateKey(input, key);
     if (translated === undefined) return;
-    setEditing((current) => applyFormKey(current, schema, translated));
+    step(translated);
   });
 
-  const lines = formLines(schema, editing, t("ui.form.empty"), maxRows);
+  const lines = formLines(
+    schema,
+    editing,
+    { empty: t("ui.form.empty"), submit: t("ui.form.submit") },
+    maxRows,
+  );
 
   return (
     <Box
@@ -158,13 +178,22 @@ export function FormOverlay({
         ))}
       </Box>
       <Box marginTop={1}>
+        {/* 两层的按键不是同一套，提示也跟着换 —— 一条固定提示总有一半是错的 */}
         <KeyHints
-          hints={[
-            ["↑ ↓ / Tab", t("ui.form.switch")],
-            ["← → / Space", t("ui.form.choose")],
-            ["Enter", t("ui.form.submit")],
-            ["Esc", t("ui.cancel")],
-          ]}
+          hints={
+            editing.mode === "browsing"
+              ? [
+                  ["↑ ↓", t("ui.form.switch")],
+                  ["Enter", t("ui.form.edit")],
+                  ["Esc", t("ui.cancel")],
+                ]
+              : [
+                  ["↑ ↓", t("ui.form.choose")],
+                  ["Space", t("ui.form.toggle")],
+                  ["Enter", t("ui.form.commit")],
+                  ["Esc", t("ui.form.back")],
+                ]
+          }
         />
       </Box>
     </Box>

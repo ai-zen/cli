@@ -3,8 +3,9 @@
 // 只测一件在生产里真的出过事的事：浮层弹出期间，`Chat` 的两个主输入处理器都
 // 因为 `isActive` 带 `!pickerState` 而失活 —— 浮层自己若只认 Esc，那习惯按 Ctrl+C
 // 的人在这段等待里就完全按不动（交接 / 迁移要先选执行者，正是最容易以为卡死的地方）。
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";
+import { setLocale } from "../../i18n/index.js";
 import { FormOverlay, PickerOverlay } from "./overlays.js";
 
 /**
@@ -150,14 +151,36 @@ async function mountedForm() {
   return p;
 }
 
+/** 敲一个键，再等它被 ink 的序列判定吃掉（连续写方向键时会被合并成一条） */
+async function key(form: { stdin: { write: (data: string) => void } }, data: string) {
+  form.stdin.write(data);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+}
+
 describe("FormOverlay", () => {
-  it("文本能敲进去，回车把内容交出去", async () => {
+  // 提交项与空值那两句是文案（走 `t`）：这里按中文断言
+  beforeEach(() => setLocale("zh"));
+  it("回车进这一格才收字；退回浏览层、落到提交项再回车才交卷", async () => {
     const form = await mountedForm();
 
+    // 浏览层：敲字不该改到任何一格
+    form.stdin.write("x");
+    await settle();
+    expect(form.frame()).not.toContain("x：");
+
+    await key(form, "\r"); // 进「名字」这一格
     form.stdin.write("ab");
     await settle();
     await until(() => form.frame().includes("ab"), "字上了屏");
 
+    await key(form, "\r"); // 退回浏览层（不提交）
+    expect(form.answers).toEqual([]);
+
+    // ↓ 落到提交项（名字 → 开关 → 标签 → 提交）
+    for (let step = 0; step < 3; step += 1) {
+      await key(form, "\u001b[B");
+    }
+    await until(() => form.frame().includes("❯ 提交"), "焦点落到提交项");
     form.stdin.write("\r");
     await settle();
     await until(() => form.answers.length === 1, "提交了一次");
@@ -168,13 +191,17 @@ describe("FormOverlay", () => {
     form.unmount();
   });
 
-  it("必填没填：不关面板，焦点跳到那一格并在下面说清为什么", async () => {
+  it("必填没填就交卷：不关面板，焦点跳到那一格并在下面说清为什么", async () => {
     const form = await mountedForm();
 
+    // 一路 ↓ 到提交项，直接回车
+    for (let step = 0; step < 3; step += 1) {
+      await key(form, "\u001b[B");
+    }
     form.stdin.write("\r");
     await settle();
+
     await until(() => form.frame().includes("必填"), "错误那一行画出来");
-    // 一次都没交出去：面板还开着
     expect(form.answers).toEqual([]);
     form.unmount();
   });
@@ -189,25 +216,31 @@ describe("FormOverlay", () => {
     form.unmount();
   });
 
-  it("空格切布尔、← → 移多选项光标、空格勾上", async () => {
+  it("布尔与多选：进格之后空格切勾选，多选还能上下移项光标", async () => {
     const form = await mountedForm();
 
-    form.stdin.write("x"); // 先给必填的名字一个值
+    form.stdin.write("\r"); // 名字：进格
     await settle();
-    form.stdin.write("\u001b[B"); // ↓ 到布尔
+    form.stdin.write("x");
     await settle();
+    await key(form, "\r"); // 退回
+
+    await key(form, "\u001b[B"); // ↓ 到开关
+    await key(form, "\r"); // 进格
     form.stdin.write(" ");
     await settle();
     await until(() => form.frame().includes("[x]"), "布尔被勾上");
+    await key(form, "\r"); // 退回
 
-    form.stdin.write("\u001b[B"); // ↓ 到多选
-    await settle();
-    form.stdin.write("\u001b[C"); // → 移项光标到 b
-    await settle();
+    await key(form, "\u001b[B"); // ↓ 到标签
+    await key(form, "\r"); // 进格
+    await key(form, "\u001b[B"); // ↓ 项光标到 b
     form.stdin.write(" ");
     await settle();
     await until(() => form.frame().includes("[x] b"), "多选勾上了 b");
+    await key(form, "\r"); // 退回
 
+    await key(form, "\u001b[B"); // ↓ 到提交项
     form.stdin.write("\r");
     await settle();
     await until(() => form.answers.length === 1, "提交了一次");
