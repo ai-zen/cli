@@ -113,15 +113,17 @@ export function initialEditing(schema: FormSchemaView): FormEditing {
 /** 按一下键，得到新的编辑状态 */
 export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: FormKey): FormStep {
   const names = fieldNames(schema);
-  // 提交项与字段共用那条焦点线：它的下标正好是字段个数
+  // 两个动作与字段共用那条焦点线：提交的下标是字段个数，取消紧随其后
   const submitAt = names.length;
+  const cancelAt = submitAt + 1;
   // 改任何一种输入都清掉上一次的错误：那句是「上一版草稿」的结论
   const cleared: FormEditing =
     editing.error === undefined ? editing : { ...editing, error: undefined };
 
+  const slots = cancelAt + 1;
   const move = (delta: 1 | -1): FormStep => ({
     kind: "state",
-    editing: { ...cleared, focus: (cleared.focus + delta + submitAt + 1) % (submitAt + 1) },
+    editing: { ...cleared, focus: (cleared.focus + delta + slots) % slots },
   });
 
   if (key.kind === "escape") {
@@ -138,8 +140,9 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
       case "prev":
         return move(-1);
       case "enter":
-        // 焦点在提交项上：交卷（校验由面板做，见 `FormStep` 的注释）
+        // 两个动作各有去处；落在字段上进编辑（校验由面板做，见 `FormStep` 的注释）
         if (cleared.focus === submitAt) return { kind: "submit" };
+        if (cleared.focus === cancelAt) return { kind: "cancel" };
         return { kind: "state", editing: { ...cleared, mode: "editing" } };
       default:
         // 浏览层不认字：字要在编辑层里敲（否则「按着说话」会顺手改掉某一格）
@@ -386,9 +389,20 @@ function formatProblem(
  * `error` 决定那是不是校验失败那一句。样式与折行交给 Ink，这里不碰终端宽度。
  */
 export interface FormLine {
+  /** 星号之前那一段（通常是 `标记 + 标签`）；动作行是 `[提交]` 这种整块 */
   readonly text: string;
+  /** 必填标记：这一行在 `text` 后面跟一个红色的 `*` */
+  readonly star?: boolean;
+  /** 星号之后那一段（`：值`）；必填与非必填都要拼上它 */
+  readonly rest?: string;
   readonly focused?: boolean;
-  readonly error?: boolean;
+  /** 动作行与错误行的固定颜色（焦点只改标记，不改颜色） */
+  readonly tone?: "submit" | "cancel" | "error";
+}
+
+/** 一行拍平之后的文字（用例与日志读它；上色是渲染那一层的事） */
+export function lineText(line: FormLine): string {
+  return `${line.text}${line.star === true ? " *" : ""}${line.rest ?? ""}`;
 }
 
 /**
@@ -401,17 +415,22 @@ export function fieldRows(): number {
   return 1;
 }
 
-/** 整张表占几行：每个字段一行 + 最后那个提交项 */
+/** 整张表占几行：每个字段一行 + 空行 + 提交 + 取消 */
 export function schemaRows(schema: FormSchemaView): number {
-  return fieldNames(schema).length + 1;
+  return fieldNames(schema).length + ACTION_ROWS + 1;
 }
+
+/** 动作行的个数（提交、取消），以及它们前面的那一空行 */
+const ACTION_ROWS = 2;
 
 /** 面板上要印的两句话（文案由调用方给：`formLines` 是纯函数，不碰 i18n） */
 export interface FormTexts {
   /** 空值的写法，例如「（空）」 */
   readonly empty: string;
-  /** 最后那个提交项的显示名 */
+  /** 提交那个动作的显示名（渲染成 `[提交]`） */
   readonly submit: string;
+  /** 取消那个动作的显示名（渲染成 `[取消]`） */
+  readonly cancel: string;
 }
 
 /**
@@ -452,15 +471,27 @@ export function formLines(
     const label = labelOf(name, field);
     const options = enumValues(field);
 
+    // 只有必填才带这一格（`undefined` 而不是 `false`：渲染那边只判有没有）
+    const star = (schema.required ?? []).includes(name) || undefined;
+
     if (options === undefined || !inEditing) {
-      const shown = browsingValue(field, editing.values[name], texts.empty);
+      // 编辑中的文本/数字**不写「（空）」**：那儿只有一个光标，写「空」是把「没有值」当成值
+      const shown =
+        inEditing && isTextual(field)
+          ? String(editing.values[name] ?? "")
+          : browsingValue(field, editing.values[name], texts.empty);
       const caret = inEditing && isTextual(field) ? "▏" : "";
-      lines.push({ text: `${marker} ${label}：${shown}${caret}`, focused: isFocus });
+      lines.push({
+        text: `${marker} ${label}`,
+        star,
+        rest: `：${shown}${caret}`,
+        focused: isFocus,
+      });
       continue;
     }
 
     // 编辑中的枚举：标签一行，候选各一行（缩进两个空格，对齐在标记后面）
-    lines.push({ text: `${marker} ${label}`, focused: true });
+    lines.push({ text: `${marker} ${label}`, star, focused: true });
     const labels = labelsOf(field);
     const picked =
       field.type === "array" ? ((editing.values[name] as readonly string[] | undefined) ?? []) : [];
@@ -480,11 +511,22 @@ export function formLines(
     }
   }
 
-  const submitFocus = editing.mode === "browsing" && editing.focus === submitAt;
-  if (submitFocus) focusAt = lines.length;
-  lines.push({ text: `${submitFocus ? "❯" : " "} ${texts.submit}`, focused: submitFocus });
+  // 动作之前空一行：它们是「对整张表做的事」，与上面那几格不是同一类
+  lines.push({ text: "" });
 
-  if (editing.error !== undefined) lines.push({ text: editing.error, error: true });
+  const actions = [texts.submit, texts.cancel] as const;
+  for (const [offset, label] of actions.entries()) {
+    const index = submitAt + offset;
+    const isFocus = editing.mode === "browsing" && editing.focus === index;
+    if (isFocus) focusAt = lines.length;
+    lines.push({
+      text: `${isFocus ? "❯" : " "} [${label}]`,
+      focused: isFocus,
+      tone: offset === 0 ? "submit" : "cancel",
+    });
+  }
+
+  if (editing.error !== undefined) lines.push({ text: editing.error, tone: "error" });
   return clip(lines, focusAt, maxRows);
 }
 

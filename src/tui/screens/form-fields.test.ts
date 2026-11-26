@@ -18,6 +18,7 @@ import {
   fieldNames,
   formLines,
   initialEditing,
+  lineText,
   schemaRows,
   type FormEditing,
   type FormKey,
@@ -54,7 +55,7 @@ const PICKS: FormSchemaView = {
   },
 };
 
-const TEXTS = { empty: "（空）", submit: "提交" };
+const TEXTS = { empty: "（空）", submit: "提交", cancel: "取消" };
 
 /** 按一串键，只取「状态」那一路（提交/取消由面板接） */
 const press = (
@@ -106,16 +107,19 @@ describe("表单：浏览层", () => {
     expect(editing.mode).toBe("browsing");
   });
 
-  it("上下箭头在「字段 + 提交项」之间环绕：提交项是最后一格", () => {
+  it("上下箭头在「字段 + 提交 + 取消」之间环绕：末尾是取消", () => {
     const names = fieldNames(SCHEMA);
     const toSubmit = names.reduce<FormEditing>(
       (current) => press(current, [next]),
       initialEditing(SCHEMA),
     );
     expect(toSubmit.focus).toBe(names.length);
-    // 再往下就是回到第一格
-    expect(press(toSubmit, [next]).focus).toBe(0);
-    expect(press(initialEditing(SCHEMA), [prev]).focus).toBe(names.length);
+
+    // 提交之后是取消，再下一格回到第一格
+    const toCancel = press(toSubmit, [next]);
+    expect(toCancel.focus).toBe(names.length + 1);
+    expect(press(toCancel, [next]).focus).toBe(0);
+    expect(press(initialEditing(SCHEMA), [prev]).focus).toBe(names.length + 1);
   });
 
   it("回车落在字段上进编辑层；落在提交项上就是该交卷了", () => {
@@ -275,66 +279,105 @@ describe("表单：提交", () => {
 });
 
 describe("表单：摊成一行行", () => {
-  it("浏览层一格一行：值写显示名，最后一格是提交项", () => {
-    const lines = formLines(PICKS, initialEditing(PICKS), TEXTS).map((line) => line.text);
+  it("浏览层一格一行：值写显示名；动作在空行之后，各自带方括号", () => {
+    const lines = formLines(PICKS, initialEditing(PICKS), TEXTS).map(lineText);
 
-    expect(lines).toEqual(["❯ 单选：甲", "  多选：（空）", "  备注：（空）", "  提交"]);
+    expect(lines).toEqual([
+      "❯ 单选：甲",
+      "  多选：（空）",
+      "  备注：（空）",
+      // 动作之前那一行是空的：它们是对整张表做的事，与上面那几格不是同一类
+      "",
+      "  [提交]",
+      "  [取消]",
+    ]);
+  });
+
+  it("必填字段标签后面跟一个星号（渲染时它是红色的）", () => {
+    const required: FormSchemaView = {
+      type: "object",
+      properties: {
+        name: { type: "string", title: "名字" },
+        note: { type: "string", title: "备注" },
+      },
+      required: ["name"],
+    };
+    const [first, second] = formLines(required, initialEditing(required), TEXTS);
+
+    expect(lineText(first!)).toBe("❯ 名字 *：（空）");
+    expect(first!.star).toBe(true);
+    expect(lineText(second!)).toBe("  备注：（空）");
+    expect(second!.star).toBeUndefined();
+  });
+
+  it("编辑中的文本格不写「（空）」：那儿只有一个光标", () => {
+    const schema: FormSchemaView = {
+      type: "object",
+      properties: { name: { type: "string", title: "名字" } },
+    };
+    const lines = formLines(schema, editing("name", schema), TEXTS).map(lineText);
+    expect(lines[0]).toBe("▸ 名字：▏");
   });
 
   it("进编辑之后枚举才展开：单选 `(o)`、多选 `[x]`，同一个形状只差一对括号", () => {
     const atMode = editing("mode", PICKS);
-    const lines = formLines(PICKS, atMode, TEXTS).map((line) => line.text);
+    const lines = formLines(PICKS, atMode, TEXTS).map(lineText);
 
     expect(lines[0]).toBe("▸ 单选");
     expect(lines[1]).toBe("     (o) 甲");
     expect(lines[2]).toBe("     ( ) 乙");
     expect(lines[3]).toBe("     ( ) 丙");
 
-    const atTags = press(atMode, [escape], PICKS);
+    const backToBrowsing = press(atMode, [escape], PICKS);
     const multi = formLines(
       PICKS,
-      press(focusOn("tags", atTags, PICKS), [enter], PICKS),
+      press(focusOn("tags", backToBrowsing, PICKS), [enter], PICKS),
       TEXTS,
-    ).map((line) => line.text);
+    ).map(lineText);
     expect(multi).toContain("   ❯ [ ] x");
     expect(multi).toContain("     [ ] y");
   });
 
-  it("提交项被选中时带标记（那是交卷那一下落的地方）", () => {
+  it("动作被选中时带标记：提交与取消各一行，颜色由 `tone` 说", () => {
     const atSubmit = fieldNames(PICKS).reduce<FormEditing>(
       (current) => press(current, [next], PICKS),
       initialEditing(PICKS),
     );
-    expect(formLines(PICKS, atSubmit, TEXTS).at(-1)!.text).toBe("❯ 提交");
+    const submitted = formLines(PICKS, atSubmit, TEXTS).slice(-2);
+    expect(submitted[0]).toMatchObject({ text: "❯ [提交]", tone: "submit" });
+    expect(submitted[1]).toMatchObject({ text: "  [取消]", tone: "cancel" });
+
+    const atCancel = press(atSubmit, [next], PICKS);
+    expect(formLines(PICKS, atCancel, TEXTS).at(-1)).toMatchObject({
+      text: "❯ [取消]",
+      tone: "cancel",
+    });
   });
 
-  it("行数：浏览层是「字段数 + 提交项」", () => {
-    expect(schemaRows(PICKS)).toBe(4);
-    expect(formLines(PICKS, initialEditing(PICKS), TEXTS)).toHaveLength(4);
+  it("行数：字段数 + 空行 + 两个动作", () => {
+    expect(schemaRows(PICKS)).toBe(fieldNames(PICKS).length + 3);
+    expect(formLines(PICKS, initialEditing(PICKS), TEXTS)).toHaveLength(schemaRows(PICKS));
   });
 
   it("放不下就滚动：窗口跟着焦点走，被截掉的那一头各说一句", () => {
-    // 编辑 tags（三个候选）：整块 1 + 4 + 1 + 1 = 7 行，窗只给 4 行
-    const atTags = editing("tags", PICKS);
-    const lines = formLines(PICKS, atTags, TEXTS, 4);
+    // 编辑 tags（三个候选）：字段 1 + 候选 3 + 备注 1 + 空行 1 + 动作 2 = 8 行，窗只给 4 行
+    const lines = formLines(PICKS, editing("tags", PICKS), TEXTS, 4);
 
     expect(lines).toHaveLength(4);
-    // 焦点那一块在窗口里（滚动是对准它的）
-    expect(lines.some((line) => line.text.includes("多选"))).toBe(true);
-    // 焦点靠前，于是尾部被截掉
-    expect(lines.at(-1)!.text).toContain("下面还有");
+    expect(lines.some((line) => lineText(line).includes("多选"))).toBe(true);
+    expect(lineText(lines.at(-1)!)).toContain("下面还有");
 
-    // 焦点靠后（最后的提交项）：换另一头
-    const atSubmit = fieldNames(PICKS).reduce<FormEditing>(
+    // 焦点在最末（取消）：换另一头
+    const atCancel = fieldNames(PICKS).reduce<FormEditing>(
       (current) => press(current, [next], PICKS),
       initialEditing(PICKS),
     );
-    const tail = formLines(PICKS, atSubmit, TEXTS, 2);
-    expect(tail[0]!.text).toContain("上面还有");
+    const tail = formLines(PICKS, press(atCancel, [next], PICKS), TEXTS, 2);
+    expect(lineText(tail[0]!)).toContain("上面还有");
   });
 
   it("校验失败那句排在最后（不参与滚动窗口的居中）", () => {
     const lines = formLines(PICKS, { ...initialEditing(PICKS), error: "单选：必填" }, TEXTS);
-    expect(lines.at(-1)).toEqual({ text: "单选：必填", error: true });
+    expect(lines.at(-1)).toEqual({ text: "单选：必填", tone: "error" });
   });
 });

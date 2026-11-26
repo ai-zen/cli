@@ -180,7 +180,7 @@ describe("FormOverlay", () => {
     for (let step = 0; step < 3; step += 1) {
       await key(form, "\u001b[B");
     }
-    await until(() => form.frame().includes("❯ 提交"), "焦点落到提交项");
+    await until(() => form.frame().includes("❯ [提交]"), "焦点落到提交项");
     form.stdin.write("\r");
     await settle();
     await until(() => form.answers.length === 1, "提交了一次");

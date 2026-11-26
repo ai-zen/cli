@@ -1621,7 +1621,7 @@ describe("问题对象（到交接线时宿主提问）", () => {
     // 最后一步：↓ 落到提交项，回车交卷
     stdin.write("\u001b[B");
     await flush(40);
-    await waitFor(() => (lastFrame() ?? "").includes("❯ 提交"));
+    await waitFor(() => (lastFrame() ?? "").includes("❯ [提交]"));
     stdin.write("\r");
     await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "self" } });
     unmount();
@@ -1659,7 +1659,7 @@ describe("问题对象（到交接线时宿主提问）", () => {
     await flush(40);
     stdin.write("\u001b[B");
     await flush(40);
-    await waitFor(() => (lastFrame() ?? "").includes("❯ 提交"));
+    await waitFor(() => (lastFrame() ?? "").includes("❯ [提交]"));
     stdin.write("\r");
     await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "decline" } });
 

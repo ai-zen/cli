@@ -12,6 +12,7 @@ import {
   initialEditing,
   type FormEditing,
   type FormKey,
+  type FormLine,
 } from "./form-fields.js";
 
 // ==================== 选择覆盖层 ====================
@@ -150,7 +151,7 @@ export function FormOverlay({
   const lines = formLines(
     schema,
     editing,
-    { empty: t("ui.form.empty"), submit: t("ui.form.submit") },
+    { empty: t("ui.form.empty"), submit: t("ui.form.submit"), cancel: t("ui.cancel") },
     maxRows,
   );
 
@@ -170,10 +171,13 @@ export function FormOverlay({
           <Text
             // 行是摊平算出来的，没有稳定 id：位置就是它的身份（内容一变整块重算）
             key={index}
-            color={line.error ? theme.error : line.focused ? theme.accent : undefined}
+            color={lineColor(line)}
             wrap="wrap"
           >
             {line.text}
+            {/* 必填那个星号单独上色：它说的是「不填交不上去」，不是排版装饰 */}
+            {line.star === true ? <Text color={theme.error}> *</Text> : null}
+            {line.rest ?? ""}
           </Text>
         ))}
       </Box>
@@ -198,6 +202,18 @@ export function FormOverlay({
       </Box>
     </Box>
   );
+}
+
+/**
+ * 一行的颜色。
+ *
+ * 两个动作是固定的：提交蓝、取消红 —— 它们说的是「会发生什么」，与焦点无关；焦点只加那个 `❯`。
+ * 其余行：焦点用强调色，校验失败那句用错误色。
+ */
+function lineColor(line: FormLine): string | undefined {
+  if (line.tone === "submit") return theme.accent;
+  if (line.tone === "cancel" || line.tone === "error") return theme.error;
+  return line.focused === true ? theme.accent : undefined;
 }
 
 /**
