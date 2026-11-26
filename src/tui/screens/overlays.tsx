@@ -4,15 +4,12 @@ import { Box, Text, useInput } from "ink";
 import { theme } from "../theme.js";
 import { SelectList, KeyHints, SelectItem } from "../components.js";
 import { t } from "../../i18n/index.js";
-import type { FormAnswerView, FormFieldView, FormSchemaView } from "../../session/types.js";
+import type { FormAnswerView, FormSchemaView } from "../../session/types.js";
 import {
   answerOf,
   applyFormKey,
-  cursorOf,
-  fieldNames,
+  formLines,
   initialEditing,
-  labelOf,
-  labelsOf,
   type FormEditing,
   type FormKey,
 } from "./form-fields.js";
@@ -99,17 +96,23 @@ export function PickerOverlay({
 export function FormOverlay({
   title,
   schema,
+  maxRows,
   onAnswer,
   onCancel,
 }: {
   title: string;
   schema: FormSchemaView;
+  /**
+   * 一次最多画几行内容（窗高）。由屏幕按布局算好递进来 —— 覆盖层不知道终端行数，也不该去算。
+   *
+   * 候选多的那几种字段会顶穿屏幕，所以给窗就只画窗口里那一段，窗口跟着焦点走。
+   */
+  maxRows?: number;
   /** 用户提交或取消：`accept` 带内容，`cancel` 是关掉没作答 */
   onAnswer: (answer: FormAnswerView) => void;
   onCancel: () => void;
 }) {
   const [editing, setEditing] = useState<FormEditing>(() => initialEditing(schema));
-  const names = fieldNames(schema);
 
   useInput((input, key) => {
     // Ctrl+C 与 Esc 同义（与选择器那一条同源：这段时间两个主输入处理器都失活）
@@ -129,6 +132,8 @@ export function FormOverlay({
     setEditing((current) => applyFormKey(current, schema, translated));
   });
 
+  const lines = formLines(schema, editing, t("ui.form.empty"), maxRows);
+
   return (
     <Box
       flexDirection="column"
@@ -141,22 +146,17 @@ export function FormOverlay({
         ? {title}
       </Text>
       <Box flexDirection="column" marginTop={1}>
-        {names.map((name, index) => (
-          <FieldRow
-            key={name}
-            field={schema.properties[name]!}
-            name={name}
-            value={editing.values[name]}
-            cursor={cursorOf(editing, name, schema.properties[name]!)}
-            focused={index === editing.focus}
-          />
+        {lines.map((line, index) => (
+          <Text
+            // 行是摊平算出来的，没有稳定 id：位置就是它的身份（内容一变整块重算）
+            key={index}
+            color={line.error ? theme.error : line.focused ? theme.accent : undefined}
+            wrap="wrap"
+          >
+            {line.text}
+          </Text>
         ))}
       </Box>
-      {editing.error === undefined ? null : (
-        <Text color={theme.error} wrap="wrap">
-          {editing.error}
-        </Text>
-      )}
       <Box marginTop={1}>
         <KeyHints
           hints={[
@@ -169,71 +169,6 @@ export function FormOverlay({
       </Box>
     </Box>
   );
-}
-
-/** 一格里现在的值是成什么样 —— 面板只做展示，转换在 `form-fields.ts` 的 `answerOf` 里 */
-function FieldRow({
-  field,
-  name,
-  value,
-  cursor,
-  focused,
-}: {
-  field: FormFieldView;
-  name: string;
-  value: string | boolean | readonly string[] | undefined;
-  cursor: number;
-  focused: boolean;
-}) {
-  const marker = focused ? "❯" : " ";
-  const label = labelOf(name, field);
-
-  switch (field.type) {
-    case "boolean":
-      return (
-        <Text color={focused ? theme.accent : undefined}>
-          {marker} {label}：{value === true ? "[x]" : "[ ]"}
-        </Text>
-      );
-    case "string":
-    case "number":
-    case "integer": {
-      if (field.type === "string" && field.enum !== undefined) {
-        // 单选枚举：把选中的那一项夹在箭头之间（候选名用 `enumNames`，没给就用值）
-        const labels = labelsOf(field);
-        const values = field.enum;
-        const at = Math.max(0, values.indexOf(String(value ?? "")));
-        return (
-          <Text color={focused ? theme.accent : undefined}>
-            {marker} {label}：◀ {labels[at] ?? values[at]} ▶
-          </Text>
-        );
-      }
-      const text = String(value ?? "");
-      return (
-        <Text color={focused ? theme.accent : undefined}>
-          {marker} {label}：{text.length === 0 ? t("ui.form.empty") : text}
-          {focused ? "▏" : ""}
-        </Text>
-      );
-    }
-    case "array": {
-      const labels = labelsOf(field);
-      const values = field.items.enum;
-      const picked = (value as readonly string[] | undefined) ?? [];
-      const cells = values.map((item, index) => {
-        const box = picked.includes(item) ? "[x]" : "[ ]";
-        const text = `${box} ${labels[index] ?? item}`;
-        // 项光标只在焦点落在这一格时才算数（别处不画，免得以为面板上有两个光标）
-        return focused && index === cursor ? `❯${text}` : text;
-      });
-      return (
-        <Text color={focused ? theme.accent : undefined} wrap="wrap">
-          {marker} {label}：{cells.join("  ")}
-        </Text>
-      );
-    }
-  }
 }
 
 /**

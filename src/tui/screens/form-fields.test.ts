@@ -13,7 +13,10 @@ import {
   applyFormKey,
   cursorOf,
   fieldNames,
+  fieldRows,
+  formLines,
   initialEditing,
+  schemaRows,
   type FormEditing,
   type FormKey,
 } from "./form-fields.js";
@@ -42,11 +45,15 @@ const press = (editing: FormEditing, ...keys: FormKey[]): FormEditing =>
   keys.reduce((current, key) => applyFormKey(current, SCHEMA, key), editing);
 
 /** 把焦点挪到某个字段上（按 `next` 一格一格走 —— 数下标太容易数错一格） */
-const focusOn = (name: string, editing = initialEditing(SCHEMA)): FormEditing => {
+const focusOn = (
+  name: string,
+  editing = initialEditing(SCHEMA),
+  schema: FormSchemaView = SCHEMA,
+): FormEditing => {
   let current = editing;
-  for (let step = 0; step < fieldNames(SCHEMA).length; step += 1) {
-    if (fieldNames(SCHEMA)[current.focus] === name) return current;
-    current = applyFormKey(current, SCHEMA, { kind: "next" });
+  for (let step = 0; step < fieldNames(schema).length; step += 1) {
+    if (fieldNames(schema)[current.focus] === name) return current;
+    current = applyFormKey(current, schema, { kind: "next" });
   }
   throw new Error(`表里没有字段 ${name}`);
 };
@@ -207,5 +214,78 @@ describe("表单：提交", () => {
     };
     const result = answerOf(schema, { note: "" });
     expect(result).toEqual({ ok: true, content: { note: "" } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 画什么（`fieldRows` / `formLines`）
+// ---------------------------------------------------------------------------
+
+/** 单一枚举 + 多选枚举，两者都三个候选：用来验「同一个形状，只差一对括号」 */
+const PICKS: FormSchemaView = {
+  type: "object",
+  properties: {
+    mode: { type: "string", title: "单选", enum: ["a", "b", "c"], enumNames: ["甲", "乙", "丙"] },
+    tags: { type: "array", title: "多选", items: { type: "string", enum: ["x", "y", "z"] } },
+    note: { type: "string", title: "备注" },
+  },
+};
+
+describe("表单：摊成一行行", () => {
+  it("两种枚举都竖着列：单选 `(o)`、多选 `[x]`，其余一行", () => {
+    const editing = focusOn("mode", initialEditing(PICKS), PICKS);
+    const lines = formLines(PICKS, editing, "（空）").map((line) => line.text);
+
+    // 单选：标签一行 + 三个候选各一行；选中的是第一项
+    expect(lines[0]).toBe("❯ 单选");
+    // 三个空格缩进 + 一个项光标位（单选没有项光标，留空）+ 括号
+    expect(lines[1]).toBe("     (o) 甲");
+    expect(lines[2]).toBe("     ( ) 乙");
+
+    // 多选：同一个形状，括号换成方括号（没勾任何一项）
+    expect(lines).toContain("     [ ] x");
+    expect(lines).toContain("     [ ] y");
+  });
+
+  it("多选聚焦时项光标在某一项上（空格切它）", () => {
+    let editing = focusOn("tags", initialEditing(PICKS), PICKS);
+    editing = applyFormKey(editing, PICKS, { kind: "step", delta: 1 });
+    editing = applyFormKey(editing, PICKS, { kind: "space" });
+
+    const lines = formLines(PICKS, editing, "（空）").map((line) => line.text);
+    // 光标落在第二项，并且它被勾上了
+    expect(lines).toContain("   ❯ [x] y");
+    expect(lines).toContain("     [ ] x");
+  });
+
+  it("一行一个字段的那几种：布尔用方括号、空文本写「（空）」、焦点格带游标", () => {
+    const editing = focusOn("note", initialEditing(PICKS), PICKS);
+    const lines = formLines(PICKS, editing, "（空）").map((line) => line.text);
+    expect(lines).toContain("❯ 备注：（空）▏");
+  });
+
+  it("行数：文本/数字/布尔各一行，枚举是「标签 + 每个候选一行」", () => {
+    expect(fieldRows(PICKS.properties.mode!)).toBe(4);
+    expect(fieldRows(PICKS.properties.note!)).toBe(1);
+    expect(schemaRows(PICKS)).toBe(4 + 4 + 1);
+  });
+
+  it("放不下就滚动：窗口跟着焦点走，被截掉的头尾各说一句", () => {
+    const editing = focusOn("tags", initialEditing(PICKS), PICKS);
+    const lines = formLines(PICKS, editing, "（空）", 4);
+
+    expect(lines).toHaveLength(4);
+    // 焦点那一块在窗口里（滚动是对准它的）
+    expect(lines.some((line) => line.text.includes("多选"))).toBe(true);
+    // 两头都被截掉了就各说一句，不静默丢行
+    expect(lines[0]!.text).toContain("上面还有");
+    expect(lines.at(-1)!.text).toContain("下面还有");
+  });
+
+  it("校验失败那句排在最后（不参与滚动窗口的居中）", () => {
+    const editing = { ...initialEditing(PICKS), error: "单选：必填" };
+    const lines = formLines(PICKS, editing, "（空）");
+    const last = lines.at(-1)!;
+    expect(last).toEqual({ text: "单选：必填", error: true });
   });
 });

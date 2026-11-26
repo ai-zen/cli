@@ -300,3 +300,124 @@ function formatProblem(
       return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text) ? undefined : "不是 ISO 时刻";
   }
 }
+
+// ---------------------------------------------------------------------------
+// 画什么：把表和草稿摊成一行行
+// ---------------------------------------------------------------------------
+
+/**
+ * 面板上的一行。
+ *
+ * 渲染只看这三格：`text` 是成品（已经是「标记 + 标签 + 值」），`focused` 决定上不上色，
+ * `error` 决定那是不是校验失败那一句。样式与折行交给 Ink，这里不碰终端宽度。
+ */
+export interface FormLine {
+  readonly text: string;
+  readonly focused?: boolean;
+  readonly error?: boolean;
+}
+
+/**
+ * 一个字段占几行。
+ *
+ * 文本/数字/布尔各一行；两种枚举是**一列**——标签一行，每个候选各一行（与多选同一个形状，
+ * 只是括号用圆括号）。布局按它预留高度，所以它与 {@link formLines} 必须同一套数法。
+ */
+export function fieldRows(field: FormFieldView): number {
+  const options = enumValues(field);
+  return options === undefined ? 1 : options.length + 1;
+}
+
+/** 整张表占几行（不算校验失败那一句） */
+export function schemaRows(schema: FormSchemaView): number {
+  return Object.values(schema.properties).reduce((sum, field) => sum + fieldRows(field), 0);
+}
+
+/**
+ * 把表和草稿摊成一行行。
+ *
+ * ## 两种枚举都竖着排，只差一对括号
+ *
+ * 单选 `(o) 名字` / `( ) 别的`，多选 `[x] 名字` / `[ ] 别的` —— 同一个形状，括号不同。横排
+ * `◀ … ▶` 那一版在多选上没法表达（多选是集合），两种枚举长得不一样会让人以为它们是两种控件。
+ *
+ * ## 放不下就滚动
+ *
+ * 候选一多（十个标签、二十个服务器）整块会顶穿屏幕，所以给 `maxRows` 就只画窗口里那一段：
+ * 窗口跟着焦点走，被截掉的头部与尾部各用一句 `…` 说明还有东西 —— 不静默丢行。
+ */
+export function formLines(
+  schema: FormSchemaView,
+  editing: FormEditing,
+  emptyLabel: string,
+  maxRows?: number,
+): FormLine[] {
+  const lines: FormLine[] = [];
+  /** 焦点那一块的第一行在 `lines` 里的下标（滚动要对准它） */
+  let focusAt = 0;
+
+  for (const [index, name] of fieldNames(schema).entries()) {
+    const field = schema.properties[name]!;
+    const focused = index === editing.focus;
+    const marker = focused ? "❯" : " ";
+    if (focused) focusAt = lines.length;
+
+    const options = enumValues(field);
+    if (options === undefined) {
+      lines.push({
+        text: `${marker} ${labelOf(name, field)}：${valueText(field, editing.values[name], emptyLabel)}${focused && isTextual(field) ? "▏" : ""}`,
+        focused,
+      });
+      continue;
+    }
+
+    // 枚举：标签一行，候选各一行（缩进两格对齐在标记后面）
+    lines.push({ text: `${marker} ${labelOf(name, field)}`, focused });
+    const labels = labelsOf(field);
+    const picked =
+      field.type === "array" ? ((editing.values[name] as readonly string[] | undefined) ?? []) : [];
+    const cursor = cursorOf(editing, name, field);
+    for (const [at, option] of options.entries()) {
+      const mark =
+        field.type === "array"
+          ? picked.includes(option)
+            ? "[x]"
+            : "[ ]"
+          : String(editing.values[name] ?? "") === option
+            ? "(o)"
+            : "( )";
+      // 多选要一个项光标（空格切哪一项）；单选不需要，选中的那个就是光标
+      const pointer = focused && field.type === "array" && at === cursor ? "❯" : " ";
+      lines.push({ text: `   ${pointer} ${mark} ${labels[at] ?? option}`, focused });
+    }
+  }
+
+  if (editing.error !== undefined) lines.push({ text: editing.error, error: true });
+  return clip(lines, focusAt, maxRows);
+}
+
+/** 文本/数字那种「正在输入」的游标只画在有焦点的那一格上 */
+function isTextual(field: FormFieldView): boolean {
+  return field.type === "string" || field.type === "number" || field.type === "integer";
+}
+
+/** 一格里现在的值长什么样（枚举走各自的括号，这里只处理一行的那些） */
+function valueText(field: FormFieldView, value: unknown, emptyLabel: string): string {
+  if (field.type === "boolean") return value === true ? "[x]" : "[ ]";
+  const text = String(value ?? "");
+  return text.length === 0 ? emptyLabel : text;
+}
+
+/** 只留窗口里那一段，头尾被截掉就各放一句 `…` */
+function clip(lines: FormLine[], focusAt: number, maxRows: number | undefined): FormLine[] {
+  if (maxRows === undefined || lines.length <= maxRows || maxRows <= 0) return lines;
+
+  // 焦点那一块尽量居中，再夹回两端
+  const half = Math.floor((maxRows - 1) / 2);
+  const start = Math.min(Math.max(0, focusAt - half), lines.length - maxRows);
+  const slice = lines.slice(start, start + maxRows);
+  if (start > 0) slice[0] = { text: `   …（上面还有 ${start} 行）` };
+  const below = lines.length - (start + maxRows);
+  if (below > 0) slice[slice.length - 1] = { text: `   …（下面还有 ${below} 行）` };
+  return slice;
+}

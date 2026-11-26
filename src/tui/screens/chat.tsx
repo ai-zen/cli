@@ -48,6 +48,7 @@ import { welcomeLines } from "./welcome.js";
 import { PickerOverlay, FormOverlay } from "./overlays.js";
 import { CursorInputRow, type CursorPosition } from "./input-row.js";
 import { chooseQuestionAnswer } from "./question-choice.js";
+import { schemaRows } from "./form-fields.js";
 import { runCommand, moveAfterGone } from "../../commands/index.js";
 import { t } from "../../i18n/index.js";
 import { endpointHasKey } from "../../config-editor.js";
@@ -1625,6 +1626,8 @@ export function Chat(props: ChatScreenProps) {
    * 布局预留高度（`pickerItems`）与覆盖层的 `maxRows` 都读这一个数，差一行输入框就会位移。
    */
   const pickerRows = pickerCapacity(rows ?? 24);
+  /** 表单那块最多画几行内容（与选择器同一份窗高口径） */
+  const formRowsMax = pickerRows;
 
   const messages = session?.messages ?? [];
   const subAgents = session?.subAgents ?? [];
@@ -1817,9 +1820,10 @@ export function Chat(props: ChatScreenProps) {
     overlay: pickerState ? "picker" : formState ? "form" : "none",
     // 覆盖层只会画出窗口装得下的那几条（`SelectList` 的视窗），所以布局也按同一个数预留高度
     pickerItems: pickerState ? Math.min(pickerState.items.length, pickerRows) : 0,
-    // 表单：一格一行，另**常驻**预留一行给校验失败那句 —— 错误一冒出来就顶高一行，
-    // 底下的状态栏会被推出屏幕（用户正看着的东西跳一下也难受）
-    formRows: formState ? Object.keys(formState.schema.properties).length + 1 : 0,
+    // 表单：文本/数字/布尔各一行，两种枚举是「标签 + 每个候选一行」；另**常驻**预留一行给校验
+    // 失败那句 —— 错误一冒出来就顶高一行，底下的状态栏会被推出屏幕。
+    // 超过窗高的那一段由覆盖层自己滚动（见 `formLines` 的 `maxRows`），所以这里夹在容量上。
+    formRows: formState ? Math.min(schemaRows(formState.schema) + 1, formRowsMax) : 0,
     viewTop,
     statusBarLines: statusRows.length,
     // 空会话的品牌块落在会话区垂直中部（贴顶太空、贴底太挤）
@@ -1905,6 +1909,7 @@ export function Chat(props: ChatScreenProps) {
         <FormOverlay
           title={formState.title}
           schema={formState.schema}
+          maxRows={formRowsMax}
           onAnswer={resolveForm}
           onCancel={() => resolveForm({ action: "cancel" })}
         />

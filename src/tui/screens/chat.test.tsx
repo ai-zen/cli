@@ -1591,19 +1591,20 @@ describe("问题对象（到交接线时宿主提问）", () => {
     // 等面板画出来、按键监听就位（监听在 mount 后的 effect 里装，抢在它之前敲字会丢）
     await waitFor(() => (lastFrame() ?? "").includes("原 agent 自交接"));
     await flush(40);
-    // 题目是宿主渲染好的那句；单选枚举只有一格，显示的是**当前选中的那一项**
+    // 题目是宿主渲染好的那句；单选枚举竖着列，选中的那一项是 `(o)`
     expect(lastFrame() ?? "").toContain("上下文已用 92%，要交接吗？");
-    expect(lastFrame() ?? "").toContain("原 agent 自交接");
+    expect(lastFrame() ?? "").toContain("(o) 原 agent 自交接");
+    expect(lastFrame() ?? "").toContain("( ) 独立摘要");
 
-    // → 换一项：面板上跟着变（顺序即宿主给的顺序）
+    // → 换一项：`(o)` 跟着走到第二项上（顺序即宿主给的顺序）
     stdin.write("\u001b[C");
     await flush(40);
-    await waitFor(() => (lastFrame() ?? "").includes("独立摘要"));
+    await waitFor(() => (lastFrame() ?? "").includes("(o) 独立摘要"));
 
     // ← 回到第一项再回车
     stdin.write("\u001b[D");
     await flush(40);
-    await waitFor(() => (lastFrame() ?? "").includes("原 agent 自交接"));
+    await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
     stdin.write("\r");
     await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "self" } });
     unmount();
@@ -1634,7 +1635,7 @@ describe("问题对象（到交接线时宿主提问）", () => {
     await flush(30);
     stdin.write("\u001b[C");
     await flush(40);
-    await waitFor(() => (lastFrame() ?? "").includes("不交接"));
+    await waitFor(() => (lastFrame() ?? "").includes("(o) 不交接"));
     stdin.write("\r");
     await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "decline" } });
 
