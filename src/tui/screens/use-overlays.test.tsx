@@ -10,8 +10,8 @@ import { useChatOverlays } from "./use-overlays.js";
 /**
  * 等到 `check()` 成立就返回；超时抛错，错误里说清等的是什么。
  *
- * **别用「睡够 4ms」代替它**：那是赌「够久」，而这里要的是「真的发生了」。上限 1000ms 是
- * **失败上限**，不是等待时长。
+ * 不用「睡够 4ms」代替它：那是赌「够久」，而这里要的是「真的发生了」。上限 1000ms 是
+ * 失败上限，不是等待时长。
  */
 const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
   const start = Date.now();
@@ -24,11 +24,11 @@ const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
 };
 
 /**
- * 让出几拍宏任务 —— 让这一拍里**排在后面**的活先跑完。让的是执行顺序，不是一个时长。
+ * 让出几拍宏任务 —— 让这一拍里排在后面的活先跑完。让的是执行顺序，不是一个时长。
  *
  * 为什么敲键之前要它：帧是在 commit 里画的，而 `useInput` 的订阅落在 passive effect 里，
- * 同一拍里排在画帧**之后**（React 的 Scheduler 在 Node 下走 `setImmediate`）。所以「探针已经
- * 画出来了」还不等于「按键有人接」：这一刻塞进去的键会被直接**丢掉**，不是延后处理，是永远不到。
+ * 同一拍里排在画帧之后（React 的 Scheduler 在 Node 下走 `setImmediate`）。所以「探针已经
+ * 画出来了」还不等于「按键有人接」：这一刻塞进去的键会被直接丢掉，不是延后处理，是永远不到。
  */
 const settle = async (turns = 2) => {
   for (let turn = 0; turn < turns; turn += 1) {
@@ -84,7 +84,7 @@ describe("useChatOverlays", () => {
     await p.press("p");
     expect(p.frame()).toBe("picker=选一个");
     await p.press("1");
-    // 等的是**结算**（`resolve` 真的被调到），不是「睡一下大概就结算了」
+    // 等的是结算（`resolve` 真的被调到），不是「睡一下大概就结算了」
     await until(() => p.log.length > 0, "选中被结算");
     expect(p.log).toEqual(["picker:a"]);
 
@@ -105,7 +105,7 @@ describe("useChatOverlays", () => {
     await until(() => p.log.length > 0, "第一次作答被结算");
     expect(p.frame()).toBe("picker=null");
 
-    // 这一条是**负向断言**：多按的那两下不该再结算一次。但「什么都没发生」也可能是
+    // 这一条是负向断言：多按的那两下不该再结算一次。但「什么都没发生」也可能是
     // 「键被吞了」，所以下面必须给出「键真的被处理过」的证据。
     await p.press("1");
     await p.press("x");

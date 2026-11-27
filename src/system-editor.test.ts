@@ -6,7 +6,7 @@
  *   · 编辑器起不来必须 reject —— 调用方要能把原因报给用户，不能静默当成功。
  *
  * 环境变量是进程级的，而本仓的用例共享一个进程（`isolate: false`）：改了就当场还原，
- * 不能指望别的文件替你收拾。
+ * 不能指望别的文件替它收拾。
  */
 
 import { describe, expect, it } from "vitest";
@@ -63,8 +63,6 @@ describe("openInSystemEditor", () => {
     ).rejects.toThrow(/ENOENT/);
   });
 });
-
-// ==================== 用本机默认程序打开一个文件（图片那条路） ====================
 
 describe("systemOpenCommand", () => {
   it("三个平台各一条命令（`start` 是 cmd 的内建命令，没有单独的 exe）", () => {

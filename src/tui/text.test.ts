@@ -4,7 +4,7 @@ import { clusterWidth, displayWidth, graphemes, layoutInput, wrapText, clipWidth
 /**
  * 字素簇（grapheme cluster）与显示宽度。
  *
- * 这套东西存在的原因：`✌️` 是 `U+270C U+FE0F` **两个 code point 组成的一个字素簇**。
+ * 这套东西存在的原因：`✌️` 是 `U+270C U+FE0F` 两个 code point 组成的一个字素簇。
  * 如果按 code point 当「一个字符」处理，光标就能停在簇中间（`✌` 与 `U+FE0F` 之间），
  * 后果是：反显光标变成在反显一个变体选择符 —— 屏幕上什么都不显示（Ink 的输出里
  * 反显段直接消失，实测）；退格只删掉半个 emoji；列号也因「半个簇」而算错。

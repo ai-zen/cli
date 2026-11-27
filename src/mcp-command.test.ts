@@ -45,7 +45,7 @@ describe("parseMcpScope：/mcp 的作用域参数", () => {
     expect(parseMcpScope(undefined)).toBeNull();
     expect(parseMcpScope("")).toBeNull();
     expect(parseMcpScope("   ")).toBeNull();
-    // 旧词接回来的是那两个**词**，不是旧缩写 g / p：多认一个字母就是多一处没人要的别名
+    // 旧词接回来的是那两个词，不是旧缩写 g / p：多认一个字母就是多一处没人要的别名
     expect(parseMcpScope("g")).toBeNull();
     expect(parseMcpScope("nonsense")).toBeNull();
   });

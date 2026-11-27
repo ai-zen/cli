@@ -1,17 +1,17 @@
 /**
  * 「这次连哪台」的解析、优先级与探活。
  *
- * 这一组钉的是三件在别处会偷偷分叉的事：
+ * 这一组钉的是三件在别处会各自分叉的事：
  *
- *   1. **「没配过」是 `null`**，不是 `{ mode: "local" }` —— 后者会把首启压成「用户选过本地」，
- *      于是第一次启动就悄悄拉起一个宿主；
- *   2. **显式压过落盘**（地址来自 `--server` / `AI_ZEN_SERVER_URL`，凭证来自
+ *   1. 「没配过」是 `null`，不是 `{ mode: "local" }` —— 后者会把首启压成「用户选过本地」，
+ *      于是第一次启动就拉起一个宿主；
+ *   2. 显式压过落盘（地址来自 `--server` / `AI_ZEN_SERVER_URL`，凭证来自
  *      `AI_ZEN_SERVER_TOKEN`），与 `ensureHost` 的「显式 > `<数据根>/run/token`」同一个方向；
- *   3. **连一次就是连上**：新契约没有 `ping`，握手（`host.hello`）本身校验凭证 —— 于是探活只需
+ *   3. 连一次就是连上：新契约没有 `ping`，握手（`host.hello`）本身校验凭证 —— 于是探活只需
  *      「`ensureHost` 成了没有」，诊断只需「问一句 `host.version`」。
  *
  * 连接层本身（WebSocket、握手、重连、补拉）是 `@ai-zen/agents-client` 的用例范围，这里一律注入
- * 假件：本文件验的是**接线**（哪一份设置、哪一串凭证、连哪个地址被递了下去）。
+ * 假件：本文件验的是接线（哪一份设置、哪一串凭证、连哪个地址被递了下去）。
  */
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -72,7 +72,7 @@ function seedLocalHost(host = "127.0.0.1", port = 8790, token = "local-token"): 
 /**
  * 一条假连接：只长着被测代码用到的那几件事。
  *
- * `api.host.version.query()` 之外的 procedure 都不打桩 —— 本文件验的是**接线**（哪一份设置、
+ * `api.host.version.query()` 之外的 procedure 都不打桩 —— 本文件验的是接线（哪一份设置、
  * 哪一串凭证、连哪个地址被递了下去），不验某条 procedure 怎么回。
  */
 function fakeClient(): { client: HostClient; closed: () => boolean } {
@@ -250,7 +250,7 @@ describe("connectHost：把 CLI 的事实绑到 ensureHost 上", () => {
       },
     });
 
-    // 范围是**构建时**从本包 devDependencies 注入的那一段（直接跑 TS 时读 package.json 同一个字段）：
+    // 范围是构建时从本包 devDependencies 注入的那一段（直接跑 TS 时读 package.json 同一个字段）：
     // 它必须是 semver range，不能是 `link:` 那种本地路径 —— npx 只认前者
     expect(seen[0].versionRange).toBe(AGENTS_HOST_RANGE);
     expect(AGENTS_HOST_RANGE).toMatch(/^[\^~]?\d+\.\d+\.\d+/);

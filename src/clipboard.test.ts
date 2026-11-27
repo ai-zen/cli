@@ -10,7 +10,7 @@ import {
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-/** 造一个「命令 → stdout」的假执行器；未列出的命令视为不可用（null） */
+/** 「命令 → stdout」的假执行器；未列出的命令返回 null，视为该命令不可用 */
 function fakeRun(table: Record<string, Buffer | string | null>) {
   const calls: { cmd: string; args: string[] }[] = [];
   const run = async (cmd: string, args: string[]) => {
@@ -75,7 +75,7 @@ describe("readClipboardImage：有图片", () => {
     });
     const result = await readClipboardImage(linux(run, { WAYLAND_DISPLAY: "wayland-0" }));
     expect(result.kind).toBe("image");
-    // 先试 wl-paste（两条：png / jpeg），再试 xclip
+    // 两个 wl-paste 分别是 png 与 jpeg 两次尝试；两条都不成，才落到 xclip
     expect(calls.map((call) => call.cmd)).toEqual(["wl-paste", "wl-paste", "xclip"]);
   });
 
@@ -94,7 +94,7 @@ describe("readClipboardImage：有图片", () => {
   });
 
   it("上限由调用方给：宿主比本地兜底值大时，本地不拦", async () => {
-    // 宿主说了算（`hello.limits.maxAssetBytes`）：同样是 20MB+1 的图，宿主给 64MB 就该放行
+    // 上限以宿主给的 `hello.limits.maxAssetBytes` 为准：同为 20MB+1 的图，宿主给 64MB 时本地不拦
     const huge = Buffer.alloc(MAX_CLIPBOARD_IMAGE_BYTES + 1, 0x89);
     const { run } = fakeRun({ "xclip -selection clipboard -t image/png -o": huge });
     const result = await readClipboardImage(linux(run), 64 * 1024 * 1024);

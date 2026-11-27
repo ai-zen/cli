@@ -1,4 +1,4 @@
-// 折行宽度必须按**字素簇**算 —— 与 Ink 排版用的是同一把尺子（见 lines.ts::toCells）
+// 折行宽度必须按字素簇算 —— 与 Ink 排版用的是同一套宽度算法（见 lines.ts::toCells）
 //
 // 回归背景：`toCells` / `clipSpans` 曾按 code point 遍历文本，导致
 //   - VS16 序列（✌️ = U+270C U+FE0F）被算成 1 列而实际占 2 列 → 行超宽 → Ink 在渲染期

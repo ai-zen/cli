@@ -2,15 +2,15 @@
  * 通知补看用例：`flushPendingNotices` 只做「查 / 显示 / 清」这三步的顺序与粒度。
  *
  * 四件要钉住的事：
- *   1. **先显示、后清**：反过来的话清成功而显示失败，那条通知就谁也没看见地消失了；
- *   2. **逐条清**（`notice.delete({ id })`）：上屏了哪几条就按那几条的 id 清 —— 从前按会话清
- *      一片，代价是同一段里**还没上屏**的几条跟着一起没（`pending-notices.ts` 的文件头）；
- *   3. **只清真的上屏了的那几条**：显示那一侧回 `false`（屏已卸载 / 栏位不再收）的留着，
- *      谁也没看见的东西不能被清掉；
- *   4. **全局通知（`sessionId === null`）照旧留着**：它不属于这一段，按 id 清掉就等于替别的
+ *   1. 先显示、后清：反过来的话清成功而显示失败，那条通知就在没人看见的情况下消失；
+ *   2. 逐条清（`notice.delete({ id })`）：上屏了哪几条就按那几条的 id 清 —— 从前按会话清
+ *      一片，代价是同一段里还没上屏的几条跟着一起没（`pending-notices.ts` 的文件头）；
+ *   3. 只清真的上屏了的那几条：显示那一侧回 `false`（屏已卸载 / 栏位不再收）的留着，
+ *      没上屏的东西不能被清掉；
+ *   4. 全局通知（`sessionId === null`）照旧留着：它不属于这一段，按 id 清掉就等于替别的
  *      客户端做了「清一条」的决定，所以只上屏、不清。
  *
- * 另加「手动全部清空」的那一条（`clearSessionNotices`）：它走 `notice.deleteAll` 的**按会话**口径，
+ * 另加「手动全部清空」的那一条（`clearSessionNotices`）：它走 `notice.deleteAll` 的按会话口径，
  * 不带 `sessionId` 的那一档会抹掉其他会话还没上屏的通知。
  */
 
@@ -40,7 +40,7 @@ function notice(
 /**
  * 假的连接：认 `notice.list` / `notice.delete` / `notice.deleteAll` 三条。
  *
- * `notice.delete` 顺手把那条从表里删掉（生产里「清掉即消」，所以「清过的不再重播」才测得出来）；
+ * `notice.delete` 同时把那条从表里删掉（生产里「清掉即消」，所以「清过的不再重播」才测得出来）；
  * 那条本来就没有时回 `{ changed: false }` —— 与宿主同一个口径（没改动，不抛错）。
  * `notice.deleteAll` 筛的照宿主：给了 `sessionId` 就是「这一段 + 全局」。
  */
@@ -123,7 +123,7 @@ describe("flushPendingNotices：查 / 显示 / 清", () => {
       { method: "notice.delete", params: { id: "n-1" } },
       { method: "notice.delete", params: { id: "n-2" } },
     ]);
-    // 一次按会话清都不发：那一片里可能有还没上屏的（这一刀改的就是这个）
+    // 不发任何一次按会话清：那一片里可能有还没上屏的（这一处改的就是这个）
     expect(calls.filter((call) => call.method === "notice.deleteAll")).toEqual([]);
     expect(store()).toEqual([]);
   });

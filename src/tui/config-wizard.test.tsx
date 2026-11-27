@@ -26,9 +26,9 @@ const settle = async (turns = 2) => {
 // 普通按键的帧变化实测 0.5~3.4ms；单独 ESC 要 20ms（ink 对 lone ESC 的序列判定）
 //
 // 为什么不是单纯的 `setTimeout(4)`：帧是在 commit 里画的，而 `useInput` 的订阅落在 passive
-// effect 里，同一拍里排在画帧**之后**（React 的 Scheduler 在 Node 下走 `setImmediate`）。事件循环
+// effect 里，同一拍里排在画帧之后（React 的 Scheduler 在 Node 下走 `setImmediate`）。事件循环
 // 被占着时，`setTimeout(4)`（timers 阶段）会先于 Scheduler 的回调（check 阶段）醒 —— 那一刻
-// 敲进去的键会被**吐掉**（不是延后处理，是永远不到）。所以先让一拍执行顺序，再计那 4ms 真
+// 敲进去的键会被丢掉（不是延后处理，是永远不到）。所以先让一拍执行顺序，再计那 4ms 真
 // 时间（后者留给 ink 的 lone-ESC 判定这类真的按时间来的事）。
 const tick = async () => {
   await settle(1);
@@ -39,7 +39,7 @@ const tick = async () => {
  * 等到 `check()` 成立就返回；超时抛错，错误里说清等的是什么。
  *
  * 凡是等异步结果（`calls` / `onClose` / 屏上那句话）的一律走它；上限 1000ms 是
- * **失败上限**，不是等待时长。
+ * 失败上限，不是等待时长。
  */
 const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
   const start = Date.now();
@@ -62,8 +62,6 @@ const TAB = "\t";
  */
 const SIZE = { columns: 100, rows: 24 };
 
-// ==================== 假宿主（一条 tRPC 客户端，按 procedure 名分派）====================
-
 interface RecordedCall {
   method: string;
   params: unknown;
@@ -78,8 +76,8 @@ interface FakeHost {
  * 造一个只认「调一条 procedure」的 `api`。
  *
  * 路径按 `Proxy` 拼成 procedure 名（`api.config.models.create.mutate` → `"config.models.create"`），
- * 于是「打了哪条」的断言与生产代码里的那条调用逐字对得上；没登记的路由**直接抛**，
- * 「向导偷偷调了第二条」会当场红。
+ * 于是「打了哪条」的断言与生产代码里的那条调用逐字对得上；没登记的路由直接抛，
+ * 「向导多调了第二条」会当场红。
  */
 function makeHost(handlers: Record<string, (params: unknown) => unknown>): FakeHost {
   const calls: RecordedCall[] = [];
@@ -108,15 +106,13 @@ const referencedError = () =>
     message: "端点 deepseek 上还挂着模型 DeepSeek-V4-Flash，未先迁移或删除这些模型时",
   });
 
-// ==================== 夹具（全部是契约形状）====================
-
 const makeConfig = (): AppConfig => ({
   endpoints: [
     {
       id: "deepseek",
       name: "DeepSeek",
       baseUrl: "https://api.deepseek.com/v1",
-      // 配置里存的是**明文**（宿主这一版不再掩码），屏上看到的是 `sk-…9f3a`
+      // 配置里存的是明文（宿主这一版不再掩码），屏上看到的是 `sk-…9f3a`
       apiKey: "sk-live-9f3a",
       capabilities: { filesApi: false },
     },
@@ -168,7 +164,7 @@ const makeAgents = (): AgentDefinition[] => [
   {
     id: "default",
     name: "默认助手定义",
-    // 定义是「能写就能读」的：提示词就是我们读回来、改完再写回去的那一串
+    // 定义是「能写就能读」的：提示词就是读回来、改完再写回去的那一串
     messages: [Message.System("你是默认助手定义"), Message.User("开始吧")],
     modelId: "deepseek-v4-flash",
     modelParams: {},
@@ -251,8 +247,6 @@ function mount(options: MountOptions = {}) {
   );
   return { ...view, ...fake, onClose };
 }
-
-// ==================== 输入屏（与契约无关，形状未变）====================
 
 describe("PromptScreen（凭据输入屏）", () => {
   it("掩码显示：不把明文回显到屏幕，Enter 提交原值", async () => {
@@ -388,8 +382,6 @@ describe("promptLayout（吸底留白 + IME 光标）", () => {
   });
 });
 
-// ==================== 菜单 ====================
-
 describe("配置中心菜单", () => {
   it("每一行都印契约给的现成事实（端点 / 模型 / MCP 两层 / 默认项 / 上限）", async () => {
     const { lastFrame, unmount } = mount();
@@ -440,8 +432,6 @@ describe("列表屏布局", () => {
     unmount();
   });
 });
-
-// ==================== 端点 ====================
 
 describe("端点", () => {
   it("列表上印掩码与「未配置密钥」，两处分开说", async () => {
@@ -529,7 +519,7 @@ describe("端点", () => {
       await tick();
     }
     stdin.write(ENTER); // 二次确认
-    // 代价在**事前**摆出来（宿主那句拒绝是事后）：模型 id 就在这句话里
+    // 代价在事前摆出来（宿主那句拒绝是事后）：模型 id 就在这句话里
     await until(
       () => (lastFrame() ?? "").includes("仍有 1 个模型挂在该端点上"),
       "「还有谁挂着」那句话上屏",
@@ -610,7 +600,7 @@ describe("端点", () => {
     await tick();
     stdin.write(ENTER);
     // 「一次写都不发」是负向断言：先等「校验没过的那句话」上屏 —— 它才是回车真的被处理过的
-    // 证据。没有它，`calls` 为空也可能只是「什么都没发生」（键被吐掉也会绿）。
+    // 证据。没有它，`calls` 为空也可能只是「什么都没发生」（键被丢掉也会绿）。
     await until(() => (lastFrame() ?? "").includes("Base URL 必须以"), "校验提示上屏");
     expect(calls).toHaveLength(0);
     expect(lastFrame()).toContain("http");
@@ -656,11 +646,9 @@ describe("端点", () => {
   });
 });
 
-// ==================== 模型 / 图片模型 ====================
-
 describe("模型", () => {
   /**
-   * 模型管理是**两级**：先选供应商，再选那一家底下的模型（与 `/model` 同一套读法）。
+   * 模型管理是两级：先选供应商，再选那一家底下的模型（与 `/model` 同一套读法）。
    *
    * 平铺那两个毛病都在这条用例里钉住：清单只列这一家的（别家的一条都不出现），
    * 「新建模型」在第二级（建出来就绑这家，不再默认绑第一个端点）。
@@ -716,7 +704,7 @@ describe("模型", () => {
         model: {
           id: "my-model",
           name: "My Model",
-          // 建在**选中的那一家**下面（旧版固定绑第一个端点）
+          // 建在选中的那一家下面（旧版固定绑第一个端点）
           endpointId: "openai",
           tokenThresholds: { handoff: 128_000, guard: 256_000 },
         },
@@ -750,7 +738,7 @@ describe("模型", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual({
       method: "config.models.update",
-      // `tokenThresholds` 是**整格**替换（宿主按它判两条线的大小关系），所以两条一起给
+      // `tokenThresholds` 是整格替换（宿主按它判两条线的大小关系），所以两条一起给
       params: {
         id: "deepseek-v4-flash",
         change: { tokenThresholds: { handoff: 100_000, guard: 375_000 } },
@@ -985,8 +973,6 @@ describe("图片模型", () => {
   });
 });
 
-// ==================== 默认项 / 上限 ====================
-
 describe("默认项", () => {
   it("子菜单列出五格默认值 + 两项中断策略 + 自动命名开关", async () => {
     const { lastFrame, unmount } = mount({ initialStep: { kind: "defaults" } });
@@ -1202,8 +1188,6 @@ describe("工具输出上限", () => {
     unmount();
   });
 });
-
-// ==================== MCP ====================
 
 describe("MCP", () => {
   it("每一层只列写在自己这一层的服务器，别的层不混进来", async () => {
@@ -1469,8 +1453,6 @@ describe("MCP", () => {
   });
 });
 
-// ==================== Agent ====================
-
 describe("Agent", () => {
   it("列表上印「默认 / 出厂内置」这两件事（定义 + 配置给的事实）", async () => {
     const { lastFrame, unmount } = mount({ initialStep: { kind: "agents" } });
@@ -1517,7 +1499,7 @@ describe("Agent", () => {
     stdin.write(ENTER); // 进多行编辑屏
     await tick();
     stdin.write(ENTER); // 打开系统编辑器（假实现直接把新内容写进临时文件）
-    // 改的是**定义**：写之前先出一次确认（PRD 1.6），文案说影响面不说字段名
+    // 改的是定义：写之前先出一次确认，文案说影响面不说字段名
     await until(() => (lastFrame() ?? "").includes("确认修改该助手定义"), "改定义的二次确认上屏");
     expect(lastFrame() ?? "").toContain("当前回答会中断");
     await tick(); // 让确认屏的按键订阅接上
@@ -1694,7 +1676,7 @@ describe("Agent", () => {
       method: "config.agents.update",
       params: {
         agentId: "default",
-        // 定义里存的是**展开后的参数**（配置即事实），档位名只活在档位表里
+        // 定义里存的是展开后的参数（配置即事实），档位名只活在档位表里
         change: { modelParams: { thinking: { type: "enabled" }, reasoning_effort: "high" } },
       },
     });
@@ -1828,8 +1810,6 @@ describe("Agent", () => {
   });
 });
 
-// ==================== 首启引导 ====================
-
 describe("首启引导 / `/key`", () => {
   it("closeOnSave：写成功后直接关闭，并带回 dirty", async () => {
     const { stdin, onClose, calls, unmount } = mount({
@@ -1859,7 +1839,7 @@ describe("首启引导 / `/key`", () => {
 });
 
 /**
- * 首启那一条链：**先选服务商，再填密钥，最后把它的首要模型落成默认项**。
+ * 首启那一条链：先选服务商，再填密钥，最后把它的首要模型落成默认项。
  *
  * 旧版是拿默认模型反推出一个端点、一上屏就要求那家的密钥 —— 服务商是它替用户挑的。这一组钉
  * 的就是「选」这一步真的在，以及选完之后的落点（`defaultModel` + 关闭时带回的
@@ -1966,7 +1946,7 @@ describe("首启引导：选服务商 → 填密钥 → 定首要模型", () => 
   });
 
   it("那家端点没有标记首要模型：密钥照存，但不动默认项、也不带回模型", async () => {
-    // OpenAI 有一条对话模型但**没有** `primary`：这样它会出现在清单里，且落不到任何模型上
+    // OpenAI 有一条对话模型但没有 `primary`：这样它会出现在清单里，且落不到任何模型上
     const config = bootConfig();
     config.models = config.models.map((model) =>
       model.id === "gpt-primary" ? { ...model, primary: false } : model,

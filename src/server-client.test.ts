@@ -1,24 +1,22 @@
 /**
  * 绑定层（`server-client/index.ts`）自己的两件事。
  *
- * ## 旧文件测的那些为什么不在这儿了
- *
- * 旧文件钉的是两样东西：
+ * 旧文件钉的是两样东西，如今都不在这里：
  *
  *   1. `SERVER_PACKAGE` 的版本漂移（`"@ai-zen/agents-server@0.1.0-alpha.0"` 必须等于仓库里那个包的
  *      `version`）—— 那个常量很久之前就消失了；现在本机拉起宿主是「`npx` 按 CLI 自己声明的
- *      semver range 拉一个最新版」（PRD L14），也就没有可漂移的字符串：范围只住在 `package.json`
+ *      semver range 拉一个最新版」，也就没有可漂移的字符串：范围只住在 `package.json`
  *      的 `devDependencies` 里，构建时注入（`rolldown.config.mjs`）；
  *   2. 「显式地址与凭证真的出现在了那条 socket 的 `hello` 上」—— 接线点搬到了 `connection.ts`
  *      （`connectHost` / `probeConnection`），用例跟着搬过去了（那边用注入的假件断言递下去的那份
  *      设置与凭证）。
  *
- * ## 留在这里的
+ * 留在这里的是三件事：
  *
- * 1. 绑定的**就是**包里那一份（逐个引用相等）—— 防止有人在这里「顺手实现一个」；
+ * 1. 绑定的就是包里那一份（逐个引用相等）—— 防止有人在这里再实现一份；
  * 2. 旧便利层一个都不留 —— 硬约束要求不留兼容层，这条把它钉成一条会红的断言；
- * 3. （原来还有）`CLIENT_INFO` 自报的版本 —— **这一格没了**：新宿主的握手帧只带令牌与语言，
- *    `ensureHost` 也不再收 `clientInfo`（任务书第 2 条），于是「我是谁、哪个版本」不再出网。
+ * 3. （原来还有）`CLIENT_INFO` 自报的版本 —— 这一格没了：新宿主的握手帧只带令牌与语言，
+ *    `ensureHost` 也不再收 `clientInfo`，于是「我是谁、哪个版本」不再出网。
  *    留在这里的是一条反向断言：它不该以兼容导出的形式回来。
  */
 
@@ -82,7 +80,7 @@ describe("CLI 自己造的那两样（镜像与旧路）跟着绑定层一起出
     expect(
       attached.filter((row) => row.legacy.startsWith("session.")).map((row) => row.legacy),
     ).toEqual(["session.create", "session.send"]);
-    // 配置域这一刀搬完的那 24 条各自写明了今天的落点（表是这份迁移唯一的账）
+    // 配置域搬完的那 24 条各自写明了今天的落点（表是这份迁移唯一的账）
     expect(attached.filter((row) => /^(config|agent|model)\./.test(row.legacy))).toHaveLength(24);
   });
 });

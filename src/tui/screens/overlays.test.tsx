@@ -11,8 +11,8 @@ import { FormOverlay, PickerOverlay } from "./overlays.js";
 /**
  * 等到 `check()` 成立就返回；超时抛错，错误里说清等的是什么。
  *
- * **别用「睡够多少毫秒」代替它**：那是赌「够久」，而这里要的是「真的发生了」。上限 1000ms
- * 是**失败上限**，不是等待时长。
+ * 不用「睡够多少毫秒」代替它：那是赌「够久」，而这里要的是「真的发生了」。上限 1000ms
+ * 是失败上限，不是等待时长。
  */
 const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
   const start = Date.now();
@@ -25,11 +25,11 @@ const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
 };
 
 /**
- * 让出几拍宏任务 —— 让这一拍里**排在后面**的活先跑完。让的是执行顺序，不是一个时长。
+ * 让出几拍宏任务 —— 让这一拍里排在后面的活先跑完。让的是执行顺序，不是一个时长。
  *
  * 为什么敲键之前要它：帧是在 commit 里画的，而 `useInput` 的订阅落在 passive effect 里，
- * 同一拍里排在画帧**之后**（React 的 Scheduler 在 Node 下走 `setImmediate`）。所以「帧里已经
- * 有浮层」还不等于「按键有人接」：这一刻塞进去的键会被直接**丢掉**，之后再睡多久都没用。
+ * 同一拍里排在画帧之后（React 的 Scheduler 在 Node 下走 `setImmediate`）。所以「帧里已经
+ * 有浮层」还不等于「按键有人接」：这一刻塞进去的键会被直接丢掉，之后再睡多久都没用。
  */
 const settle = async (turns = 2) => {
   for (let turn = 0; turn < turns; turn += 1) {
@@ -89,7 +89,7 @@ describe("PickerOverlay", () => {
   });
 
   /**
-   * 标题**折行**而不是裁切。
+   * 标题折行而不是裁切。
    *
    * 破坏性动作之前那一问（`/shutdown`、`/upgrade`、`/delete`）说的就是代价：裁掉后半截等于
    * 少说一个事实，而「同机其他客户端也会断开」正好落在后半截。这里用一条长到装不下的标题，
@@ -112,12 +112,10 @@ describe("PickerOverlay", () => {
   });
 });
 
-// ==================== 表单浮层 ====================
-
 /**
- * 表单浮层的按键语义（规矩本身在 `form-fields.test.ts` 里，纯函数那侧）。
+ * 表单浮层的按键语义（状态机那一侧在 `form-fields.test.ts` 里，纯函数那侧）。
  *
- * 这里只钉「面板这一层」的三件事：字能敲进去并提交成内容、Esc 交 cancel、校验没过**不关面板**
+ * 这里只钉「面板这一层」的三件事：字能敲进去并提交成内容、Esc 交 cancel、校验没过不关面板
  * 且焦点跳到那一格。
  */
 function mountForm() {

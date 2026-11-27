@@ -1,14 +1,14 @@
 /**
- * 纯 stdio 模式的两层测试。
+ * 纯 stdio 模式的两层用例。
  *
- * 上半层是纯函数（`mergePrompt` / `extractText`）：它们决定「喂进去的东西」与「吐出来的文本」，
+ * 上半层是纯函数（`mergePrompt` / `extractText`）：它们决定递进去的提示词与写出去的文本，
  * 改一处就是改用户可见行为。
  *
- * 下半层用**假连接**：这一模式的四条对外契约都能直接断言，不必起真宿主 ——
+ * 下半层用假连接：这一模式的四条对外契约都能直接断言，不必起真宿主 ——
  *
  *   · stdout 只含答案，其余一律走 stderr；
  *   · 默认（不带 `--save`）走 `runtime.agent.runOnce`：连会话都不建，用户列表一条都不多；
- *   · `--save` 走真会话，但**不挪**「本机上次打开的那段」；
+ *   · `--save` 走真会话，但不挪「本机上次打开的那段」；
  *   · 模型报错：stdout 为空、错误走 stderr、退出码 1。
  */
 
@@ -83,8 +83,6 @@ describe("extractText", () => {
     expect(text).not.toMatch(/\x1b/);
   });
 });
-
-// ==================== 假连接 ====================
 
 /**
  * 一条假连接：procedure 按 `reply` 回，`session.open` / `resync` 按 `open` 回。
@@ -202,7 +200,7 @@ describe("runStdio：一次性调用（默认走临时会话）", () => {
     expect(result.stderr).toBe("");
     // 「一次性管道调用不该篡改用户的会话列表」的全部证据：一条会话行都没建
     expect(connection.calls.map((call) => call.method)).not.toContain("runtime.agent.send");
-    // 本机：当前目录这条糖（**不登记项目**），内容原样递上去
+    // 本机：当前目录这条糖（不登记项目），内容原样递上去
     expect(connection.calls.find((call) => call.method === "workspace.create")).toBeUndefined();
     expect(
       connection.calls.find((call) => call.method === "runtime.agent.runOnce")?.params,
@@ -264,10 +262,10 @@ describe("runStdio：一次性调用（默认走临时会话）", () => {
 
 describe("runStdio：--save 走真会话", () => {
   /**
-   * 一段真会话要的几条回执：列项目 → 建行（`session.create`）→ 叫起来（`agent.wake`）→
+   * 一段真会话要的几条回执：列项目 → 建行（`session.create`）→ 唤醒（`agent.wake`）→
    * 投一句（`agent.send`）→ 跟读（`session.open` 一次取全）。
    *
-   * 宿主的行为：`agent.send` **受理即回**，这一句的写进 messages 与答复随后从事件上来（这里下一拍就走完）。
+   * 宿主的行为：`agent.send` 受理即回，这一句写进 messages 与答复随后从事件上来（这里下一拍就走完）。
    */
   function savingConnection(messages: AgentNS.Message[]) {
     let connection!: FakeConnection;
@@ -327,7 +325,7 @@ describe("runStdio：--save 走真会话", () => {
     // 投的那一句是真的那一句（不是空正文），落在那一段上
     const send = connection.calls.filter((call) => call.method === "runtime.agent.send").at(-1);
     expect(send?.params).toMatchObject({ sessionId: "sess-1", content: "留一份" });
-    // 建行不造 Agent：先叫起来再投，两件事的次序就是这个
+    // 建行不造 Agent：先唤醒再投递，两件事的次序就是这个
     const methods = connection.methods();
     expect(methods.indexOf("runtime.agent.wake")).toBeLessThan(
       methods.indexOf("runtime.agent.send"),
@@ -359,7 +357,7 @@ describe("runStdio：--save 走真会话", () => {
 
 describe("runStdio：远端宿主（D30：不许拿本机 cwd 去猜）", () => {
   /**
-   * 一台**远端**宿主的回执：项目按 id 给，目录是**它那台机器**上的（`/srv/repo`）。
+   * 一台远端宿主的回执：项目按 id 给，目录是它那台机器上的（`/srv/repo`）。
    *
    * 这里刻意不提供 `workspace.create`：一次性调用在远端上不该往宿主的项目表里登记任何东西。
    */
@@ -429,7 +427,7 @@ describe("runStdio：远端宿主（D30：不许拿本机 cwd 去猜）", () => 
     expect(result.code).toBe(2);
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("/ws");
-    // 这条就是 D30 要消灭的行为：把本机的 `process.cwd()` 当成宿主上的目录登记进去
+    // 这条就是那个错：把本机的 `process.cwd()` 当成宿主上的目录登记进去
     expect(connection.calls.map((call) => call.method)).not.toContain("workspace.create");
     expect(connection.calls.map((call) => call.method)).not.toContain("runtime.agent.runOnce");
   });
@@ -513,7 +511,7 @@ describe("没配过宿主：一次性调用直接失败，不偷偷拉起本地�
 
       expect(code).toBe(2);
       expect(stderr).toContain("no host configured");
-      // 指路：要么进交互界面选一次，要么当场用 --server 说清楚
+      // 要么进交互界面选一次，要么当场用 --server 说清楚
       expect(stderr).toContain("run `ai` once");
       expect(stderr).toContain("--server");
       // 判定发生在消费管道之前：`cat 大文件 | ai "…"` 不必先把管道读完再报错
@@ -566,7 +564,7 @@ describe("读 stdin 失败 ≠ 没给输入", () => {
     // 读失败是失败：真因 + 退出码 1
     expect(code).toBe(1);
     expect(stderr).toContain("ai: EIO: i/o error, read");
-    // 「你没给输入」是一句假话 —— 用户明明管道了东西，是读的时候失败了
+    // 「没有输入」这个判断不成立：用户确实管道了内容，是读的时候失败了
     expect(stderr).not.toContain("no input");
     expect(stdout).toBe("");
     // 读都没读成，不去连宿主
@@ -587,7 +585,7 @@ describe("读 stdin 失败 ≠ 没给输入", () => {
 
 describe("runStdio：本机拉起宿主失败（一次性调用没有屏）", () => {
   /**
-   * 盘上那份是「本机」：`ai "…"` 会去拉起宿主（npx 现下现起）。拉不起来时一次性调用**没有**
+   * 盘上那份是「本机」：`ai "…"` 会去拉起宿主（npx 临时下载并启动）。拉不起来时一次性调用没有
    * 重试与折回的地方 —— 只有一行原因 + 非 0 退出码，脚本才好分支。
    */
   function seedLocalPlan(): void {

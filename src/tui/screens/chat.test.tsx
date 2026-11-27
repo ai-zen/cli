@@ -94,7 +94,7 @@ const { created, createFakeSession } = vi.hoisted(() => {
         thinking: fakeThinking(),
         folder: { cwd: "/work/demo", exists: true },
       },
-      // 状态栏的块用**真函数**现拼（`status-blocks.ts`）：刻意不写一份夹具，
+      // 状态栏的块用真函数现拼（`status-blocks.ts`）：刻意不写一份夹具，
       // 否则契约一改、拼法一改，这里都会变成「看起来还在用的死数据」
       get blocks() {
         return statusBlocksOf({
@@ -140,7 +140,7 @@ const { created, createFakeSession } = vi.hoisted(() => {
       abort: vi.fn(),
       // `/model` 的会话级那一档（`session.updateModel`）：写的是会话行，这里只记「写没写、写了什么」
       updateModel: vi.fn(async () => undefined),
-      // 复活 / 暂停 / 继续：三个动作各管一件事（PLAN §5.1），「按发送」那三步由屏幕编排
+      // 复活 / 暂停 / 继续：三个动作各管一件事，「按发送」那三步由屏幕编排
       start: vi.fn(async () => undefined),
       pauseOutput: vi.fn(async () => undefined),
       resumeOutput: vi.fn(async () => undefined),
@@ -183,7 +183,7 @@ const { created, createFakeSession } = vi.hoisted(() => {
 });
 
 /**
- * 全部依赖改为**注入**（`Chat` 的 `deps`），不再 `vi.mock`：
+ * 全部依赖改为注入（`Chat` 的 `deps`），不再 `vi.mock`：
  * 模块级 mock 是全局注册的，进程内共享模块（`isolate: false`）时会污染其他测试文件。
  */
 
@@ -232,11 +232,11 @@ const waitFor = async (predicate: () => boolean, ms = 1000) => {
 };
 
 /**
- * 让出几拍宏任务 —— 让这一拍里**排在后面**的活先跑完。让的是执行顺序，不是一个时长。
+ * 让出几拍宏任务 —— 让这一拍里排在后面的活先跑完。让的是执行顺序，不是一个时长。
  *
- * 帧是在 commit 里画的，而 `useInput` 的订阅落在 passive effect 里，同一拍里排在画帧**之后**
+ * 帧是在 commit 里画的，而 `useInput` 的订阅落在 passive effect 里，同一拍里排在画帧之后
  * （React 的 Scheduler 在 Node 下走 `setImmediate`）：所以「某个屏幕刚画出来」还不等于
- * 「按键有人接」，此刻敲进去的键会被直接**丢掉**（实测），之后再睡多久都没用。
+ * 「按键有人接」，此刻敲进去的键会被直接丢掉（实测），之后再睡多久都没用。
  */
 const settle = async (turns = 2) => {
   for (let turn = 0; turn < turns; turn += 1) {
@@ -266,7 +266,7 @@ const countOf = (frame: string, needle: string): number => frame.split(needle).l
  * 判据用「敲一个字符看输入框有没有回显」：有回显就证明编辑处理器在收键，
  * 随即退格清掉，不影响后续断言。
  *
- * 注：生成中**不再**失活（PRD 需求 3），所以这一招只能证明“键能进去”；
+ * 注：生成中不再失活，所以这一招只能证明“键能进去”；
  * 需要“本次已落定”的用例自己用 `waitFor` 盯可观测的效果。
  */
 const waitUntilEditable = async (
@@ -304,10 +304,10 @@ const fakeDefinition = () => ({
 /**
  * 假连接 —— 两面对外：
  *
- *   · `api`（tRPC 客户端）：会话域、命令层与**配置向导**的读写都走它；
+ *   · `api`（tRPC 客户端）：会话域、命令层与配置向导的读写都走它；
  *   · `call`（旧路）：还没搬的域（`session.list` / `host.*` …）仍按旧方法名说话。
  *
- * 向导的读写与会话的说话落在**同一条连接**上，所以这里一张 procedure 流水
+ * 向导的读写与会话的说话落在同一条连接上，所以这里一张 procedure 流水
  * （{@link FakeConnection.apiCalls}）就够断言「那次写有没有真的发出去」。
  */
 const fakeConnection = (
@@ -407,9 +407,9 @@ const mount = (
       // 「这台宿主是不是本机」是连接的事实：屏幕只把它转给 `/ws`，不自己推
       workspaceHost={{ local: true, key: "local" }}
       deps={{
-        // 那**一条**连接：会话说话与向导读写都从它走（屏幕没有兜底）
+        // 那一条连接：会话说话与向导读写都从它走（屏幕没有兜底）
         connection: connection as any,
-        // 会话注册表：屏幕只借、不管生死（PRD D4）。假注册表只做两件事 ——
+        // 会话注册表：屏幕只借、不管生死。假注册表只做两件事 ——
         // `enter` 转给假会话、`detach` 记下听众身份
         sessions: {
           enter: async (sessionOptions: unknown, notifier: any) => {
@@ -519,10 +519,8 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
-  // -------------------------------------------------------------------------
-  // 按发送的两步（屏幕这一侧）：开开关 → 投递。复活归会话层的 `send()`（PRD 4.1「生死」：
-  // 客户端点发送时先判这段是死是活，死的就调接口复活、再投递）。
-  // -------------------------------------------------------------------------
+  // 按发送的两步（屏幕这一侧）：开开关 → 投递。复活归会话层的 `send()`：客户端点发送时先判
+  // 这段是死是活，死的就调接口复活、再投递。
 
   /** 走真按键那条路提交一句（写进输入框 → 回车），等一个可观测的结果由调用方给 */
   const submit = async (stdin: { write: (data: string) => void }, text: string) => {
@@ -535,7 +533,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
   it("死了：屏幕**不**自己叫一次 `start`（那一步在会话层的 `send` 里，屏幕再叫一次就是白跑一趟）", async () => {
     const { stdin, unmount } = mount();
     await flush();
-    // 宿主报「这一段没有 agent」（死活那一格是现读的，不是我们记的）
+    // 宿主报「这一段没有 agent」（死活那一格是现读的，不是客户端记的）
     created.session.alive = false;
     created.notifier.onChange(true);
     await flush();
@@ -605,7 +603,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
   it("手上在动时：阶段行在分隔线之上，输入框仍在分隔线之下", async () => {
     const { lastFrame, unmount } = mount();
     await flush();
-    // 宿主报「手上在动」（`state` 那一格）—— 这一格是契约给的，不是我们记的
+    // 宿主报「手上在动」（`state` 那一格）—— 这一格是契约给的，不是客户端记的
     created.session.status = "working";
     created.notifier.onChange(true);
     await flush();
@@ -613,7 +611,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     expect(frame).toContain("连接中");
     expect(inputLineOf(frame)).toContain("输入消息");
 
-    // 阶段行紧贴在分隔线**之上**（它只占自己那一行，不抢输入框的位置）
+    // 阶段行紧贴在分隔线之上（它只占自己那一行，不抢输入框的位置）
     const phase = rowOf(frame, "连接中");
     const divider = rowOf(frame, "───");
     expect(phase).toBeGreaterThanOrEqual(0);
@@ -624,9 +622,9 @@ describe("Chat 集成（拆分前的护栏）", () => {
   });
 
   /**
-   * 队里的话**只由排队区回显**：阶段行说的是「这一任此刻在干什么」，它不再兼说一句「排队中」。
+   * 队里的话只由排队区回显：阶段行说的是「这一任此刻在干什么」，它不再兼说一句「排队中」。
    *
-   * 两件事分开看才知道各自说对了没有：那一条「排队中」出现在**队列那两句自己的行首**
+   * 两件事分开看才知道各自说对了没有：那一条「排队中」出现在队列那两句自己的行首
    * （`inbox.pending` 前缀），而不是出现在阶段行上。
    */
   it("队里的话由排队区自己回显，阶段行不喊「排队」", async () => {
@@ -740,7 +738,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
   /**
    * 忙时那几条（`needsIdle`）在菜单里明说不可用 —— 与入口那道门同一个判据。
    *
-   * 只是**标一句**，不是把候选藏起来：菜单是「有哪些命令」的清单，藏起来会让人以为命令没了；
+   * 只是标一句，不是把候选藏起来：菜单是「有哪些命令」的清单，藏起来会让人以为命令没了；
    * 标出来则说得清「现在按不了、为什么」。
    */
   it("忙时斜杠菜单给那几条标「处理中不可用」，其余照旧", async () => {
@@ -795,7 +793,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
    * 默认的 `testTimeout`（5000ms，本仓没有改过）还长。所以显式放宽这一条的时限。
    *
    * 为什么不把那些 2000/4000 调小：它们是「慢机器上最多等多久」，调小了就在慢机器上误伤；
-   * 而**预算合计 > 时限**这个结构问题，只能从时限这一侧修（逻辑写错时仍然会在第一个
+   * 而预算合计 > 时限这个结构问题，只能从时限这一侧修（逻辑写错时仍然会在第一个
    * 等不到的 `waitFor` 上以清晰的断言失败报出来，不会因为时限放宽而变成挂死）。
    */
   it("向导落盘走那条连接：`/key` 保存时调 config.endpoints.update", async () => {
@@ -832,7 +830,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await waitFor(() => (lastFrame() ?? "").includes("设置 API Key"), 4000);
     // 帧先出现、向导自己的 useInput 监听稍后（mount 后的 effect）才就位：
     // 不等这一步就敲字，按键会落在一个还没人收的窗口里（实测丢字）。
-    // 让出几拍宏任务（`setImmediate`）—— 让的是**执行顺序**，不是一个时长（`flush(40)` 就是
+    // 让出几拍宏任务（`setImmediate`）—— 让的是执行顺序，不是一个时长（`flush(40)` 就是
     // 赌 40ms 够：负载高时会睡进那个窗口，键直接丢掉，之后再等多久都没用）。
     await settle();
 
@@ -846,7 +844,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
       2000,
     );
 
-    // 写的是**procedure**，不是某个本地文件：这一跳就是「写到宿主那份配置」
+    // 写的是 procedure，不是某个本地文件：这一跳就是「写到宿主那份配置」
     const write = connection.apiCalls.find((one) => one.method === "config.endpoints.update");
     expect(write).toBeTruthy();
     // 只发改的那一格（`update` 是合并语义：省略 = 保留原值）
@@ -855,7 +853,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
   }, 15_000);
 
   /**
-   * `/config` 打开配置中心：整屏接管读的那三份快照都来自**同一条连接**。
+   * `/config` 打开配置中心：整屏接管读的那三份快照都来自同一条连接。
    *
    * 菜单里印着读回来的端点摘要（`✓` 来自配置里那一格），所以「读到了哪一份」在帧上看得见 ——
    * 这条盖的是「chat 打开的向导接的是那条连接」，具体每一步写什么由 `config-wizard.test.tsx`
@@ -905,7 +903,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
   }, 20_000);
 
   /**
-   * 候选比屏幕多时选择器**自己滚动**，不再截断、也不把画面顶高。
+   * 候选比屏幕多时选择器自己滚动，不再截断、也不把画面顶高。
    *
    * 这条走的是真键盘：`/model` → 选端点 → 在 30 条模型里一路按到底 → 回车。旧行为下
    * 二级那份清单会被 `pickerCapacity` 之外的部分直接丢掉（或整帧溢出把状态栏挤出屏幕），
@@ -1002,8 +1000,6 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
-  // ==================== ↑/↓：多行先移光标，到边界才翻历史 ====================
-
   it("光标已在首行时 ↑ 才翻历史（单行输入保持原行为）", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
@@ -1024,8 +1020,6 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
-  // ==================== 多行光标移动（↑/↓ 优先在行间移动）====================
-
   it("输入 ≥ 2 行时 ↑/↓ 先移动光标，不到首/末行不翻历史", async () => {
     const { stdin, lastFrame, unmount } = mount({ initialInput: "aa\nbb" });
     await flush();
@@ -1043,8 +1037,6 @@ describe("Chat 集成（拆分前的护栏）", () => {
     expect(lastFrame() ?? "").toContain("bbY");
     unmount();
   });
-
-  // ==================== 输入区限高 8 行 ====================
 
   /** 20 行草稿：L0 … L19；挂载时光标在末尾（第 19 行） */
   const twentyLines = Array.from({ length: 20 }, (_, i) => `L${i}`).join("\n");
@@ -1074,8 +1066,6 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
-  // ==================== 底部锚定菜单 ====================
-
   /** 找出包含某片段的行号（-1 = 没渲染） */
   const rowOf = (frame: string, needle: string) =>
     frame.split("\n").findIndex((row) => row.includes(needle));
@@ -1100,9 +1090,9 @@ describe("Chat 集成（拆分前的护栏）", () => {
   });
 
   /**
-   * 高亮项（菜单行的 `❯` 在**两格**缩进之后；输入行的 `❯` 只有一格缩进，不能用它）。
+   * 高亮项（菜单行的 `❯` 在两格缩进之后；输入行的 `❯` 只有一格缩进，不能用它）。
    *
-   * 方向断言**必须用 ≥ 3 条候选**：只有 2 条时 `(i−1+n)%n` 与 `(i+1)%n` 结果恒等，
+   * 方向断言必须用 ≥ 3 条候选：只有 2 条时 `(i−1+n)%n` 与 `(i+1)%n` 结果恒等，
    * 映射写反了也照样“绿”—— 真机上 19 条候选才暴露出 `↑` 实际冲向最顶端。
    */
   const highlightedCommand = (frame: string): string | null => {
@@ -1125,7 +1115,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     // 初始：高亮最底那条（`hints[0]`）
     expect(highlightedCommand(lastFrame() ?? "")).toBe(name(0));
 
-    // ↑：上移**一格**到相邻项，而不是回卷到最顶（候选够多时才区分得出来）
+    // ↑：上移一格到相邻项，而不是回卷到最顶（候选够多时才区分得出来）
     stdin.write("\u001b[A");
     await flush(20);
     expect(highlightedCommand(lastFrame() ?? "")).toBe(name(1));
@@ -1165,8 +1155,6 @@ describe("Chat 集成（拆分前的护栏）", () => {
     expect(readme).toBe(separator - 1);
     unmount();
   });
-
-  // ==================== Agent 栏目（主 / 子 Agent 切换）====================
 
   /**
    * 造一个 subagent（`session.state.subAgents` 的元素：`toolCallId` / `name` / `state`）。
@@ -1210,11 +1198,11 @@ describe("Chat 集成（拆分前的护栏）", () => {
   });
 
   /**
-   * PRD 3.9「本次结束栏目自动收起」。
+   * 本次结束栏目自动收起。
    *
    * 名册的清空点在 core 外循环的下一批开头 —— 所以这一段答完之后，那条栏目会连同几个绿点
    * 一直挂着，直到用户下次说话。但客户端手上有「这一段闲下来了」这个事实（`activity`），
-   * 配上名册里全是 `ended`，就该按 PRD 的字面收起来。
+   * 配上名册里全是 `ended`，就该在这一刻收起来。
    */
   it("一段闲下来且子助手全散场：栏目自动收起；再有在动的又出来", async () => {
     const { lastFrame, unmount } = mount();
@@ -1238,8 +1226,6 @@ describe("Chat 集成（拆分前的护栏）", () => {
     unmount();
   });
 
-  // ==================== subagent 结束了要说一句（PRD 3.9）====================
-
   /**
    * 跑完了要报一声：栏目随后会自动收起（「本次结束栏目自动收起」），收起之后再没谁提它。
    * 一条结局只说一次 —— 重画一帧不该再多出一条。
@@ -1255,8 +1241,8 @@ describe("Chat 集成（拆分前的护栏）", () => {
     created.session.subAgents[0].state = "ended";
     await repaint();
     const said = t("notice.subAgentDone", { name: "reviewer" });
-    // 结局是**下一帧**才进栏位：那条通知在渲染后的 effect 里 push，push 又要一次重渲染才画出来。
-    // 所以等它出现，不赌「一次 flush 刚好盖住两帧」（`waitFor` 的注释里写着同一个理由）。
+    // 结局是下一帧才进栏位：那条通知在渲染后的 effect 里 push，push 又要一次重渲染才画出来。
+    // 所以等它出现，不赌「一次 flush 刚好盖住两帧」。
     await waitFor(() => (lastFrame() ?? "").includes(said));
 
     // 再画一帧：同一格、同一条结局消息，不重说
@@ -1309,7 +1295,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
   });
 
   /**
-   * 被叫停不是失败（PRD D14）：两种说法不共用一条文案。
+   * 被叫停不是失败：两种说法不共用一条文案。
    */
   it("子助手被叫停：说一句被叫停（不报成失败）", async () => {
     const { lastFrame, unmount } = mount();
@@ -1439,11 +1425,9 @@ describe("Chat 集成（拆分前的护栏）", () => {
   });
 });
 
-// ==================== Esc：继续 ⇄ 中断 互切（PRD 4.4）====================
-
 /**
- * 一个键两个含义，靠**状态**分流：忙时它是中断，忙完而输出开关还关着时它是继续（PRD 4.4
- * 「实践中输入框里只放两个：一个『继续 ⇄ 中断』互切，一个『发送』」）。
+ * 一个键两个含义，靠状态分流：忙时它是中断，忙完而输出开关还关着时它是继续
+ * （「实践中输入框里只放两个：一个『继续 ⇄ 中断』互切，一个『发送』」）。
  *
  * 优先级不许反：开关关着而手上还有活是正常组合（暂停只关开关、不收回已取在手上的那批），
  * 那时按 Esc 要的是「立刻停」。
@@ -1471,7 +1455,7 @@ describe("Esc 的优先级：忙 > 闸关 > 清草稿", () => {
     await flush(40);
 
     expect(created.session.resumeOutput).toHaveBeenCalledTimes(1);
-    // 这是「继续」，不是「停」—— 不能顺手掐一下
+    // 这是「继续」，不是「停」—— 不能在这一步中断一次
     expect(created.session.abort).not.toHaveBeenCalled();
     // 草稿留着：Esc 在这一档是开开关，不是清空键
     expect(inputLineOf(lastFrame() ?? "")).toContain("还没发出去的话");
@@ -1561,7 +1545,7 @@ describe("问题对象（到交接线时宿主提问）", () => {
   /**
    * 宿主问过来的那道交接题：一张表，一个单选枚举字段（宿主那一侧就是这么出题的）。
    *
-   * 面板显示的是**当前选中的那一项**：← → 换、回车提交、Esc 关掉。
+   * 面板显示的是当前选中的那一项：← → 换、回车提交、Esc 关掉。
    */
   const handoffQuestion = () => ({
     id: "q1",
@@ -1656,7 +1640,7 @@ describe("问题对象（到交接线时宿主提问）", () => {
     stdin.write("\r");
     await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "decline" } });
 
-    // 会话没换（交接是原地换记忆，PRD 4.5）：屏幕上不该冒出「搬到新会话」那类话
+    // 会话没换（交接是原地换记忆）：屏幕上不该冒出「搬到新会话」那类话
     await flush();
     const frame = lastFrame() ?? "";
     expect(frame).not.toContain("迁移完成");
@@ -1896,7 +1880,7 @@ describe("发送那一刻：清掉日志转发来的通知", () => {
     expect(frame).not.toContain("记不住 last-session.json");
     expect(frame).not.toContain("宿主日志上浮的那条");
     expect(frame).not.toContain("宿主说的话");
-    // 宿主上**这一段会话**的那一份也清：不带 sessionId 的清全部是另一档（Ctrl+G）
+    // 宿主上这一段会话的那一份也清：不带 sessionId 的清全部是另一档（Ctrl+G）
     const cleared = connection.apiCalls.filter((call) => call.method === "notice.deleteAll");
     expect(cleared).toEqual([{ method: "notice.deleteAll", params: { sessionId: "chat_test" } }]);
     unmount();
@@ -1904,10 +1888,10 @@ describe("发送那一刻：清掉日志转发来的通知", () => {
 });
 
 /**
- * `Ctrl+X`（清本会话的通知）：清成之后**不吭声**。
+ * `Ctrl+X`（清本会话的通知）：清成之后不额外提示。
  *
  * 曾经成功那一路还要 push 一句「已清空本会话的通知」—— 栏位刚清空就立刻又长出一行，按一次
- * 冒一条，用户永远看不到空栏位（而那句通知唯一的作用就是让这次清白白做一次）。
+ * 就多一条，用户看不到空栏位（而那句通知唯一的作用就是让这次清空白做一次）。
  *
  * 栏位空时连入口提示那一行都不画（`noticeBarContent` 的 `hint` 为 null），所以「提示行没了」
  * 就是「栏位真的空了」的判据 —— 用一句话去断言「没有话」，反而会把这句文案锁进用例。
@@ -1936,7 +1920,7 @@ describe("Ctrl+X：清本会话的通知", () => {
     await waitFor(() => connection.apiCalls.some((call) => call.method === "notice.deleteAll"));
     await flush();
 
-    // 只清宿主上**这一段会话**那一份（不带 sessionId 的清全部是另一个键）
+    // 只清宿主上这一段会话那一份（不带 sessionId 的清全部是另一个键）
     expect(connection.apiCalls).toEqual([
       { method: "notice.deleteAll", params: { sessionId: "chat_test" } },
     ]);
@@ -1963,7 +1947,7 @@ describe("Ctrl+X：清本会话的通知", () => {
 });
 
 /**
- * 终端里的粘贴（**括号粘贴**）：`CSI 200~ … CSI 201~` 之间是一段文本，不是按键。
+ * 终端里的粘贴（括号粘贴）：`CSI 200~ … CSI 201~` 之间是一段文本，不是按键。
  *
  * 老行为下多行粘贴的每个 `\r` 都被当成回车 —— 第一行发出去、剩下的按按键处理（`/` 还会去开
  * 命令菜单），Windows 剪贴板带来的 `\r\n` 则把回显挤歪。这条用例钉三件事：整段进草稿、
@@ -2030,7 +2014,7 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
   });
 
   /**
-   * 不再预判（PRD 4.6「不在客户端预判」）：粘贴既不数张数、也不看这一张多大。
+   * 不再预判（「不在客户端预判」）：粘贴既不数张数、也不看这一张多大。
    *
    * 上限的真相在宿主：剪贴板里有什么就收什么，超了由宿主那一次 `invalid_params` 说。
    */
@@ -2158,10 +2142,6 @@ describe("粘贴：Ctrl+V 图片优先、无图回退文本", () => {
   });
 });
 
-// ==================================================================
-// 撤回回填：文字进草稿、Asset 挂回输入（PRD 3.9「带图的那条连图一起恢复」）
-// ==================================================================
-
 describe("撤回回填带图的那条", () => {
   beforeEach(() => {
     setLocale("zh");
@@ -2281,7 +2261,7 @@ describe("会话的生死不归屏幕", () => {
     unmount();
 
     expect(created.session.dispose).not.toHaveBeenCalled();
-    // 摘的是**这一屏的**听众（身份就是那个 notifier）
+    // 摘的是这一屏的听众（身份就是那个 notifier）
     expect(created.detached).toEqual([created.notifier]);
   });
 
@@ -2312,13 +2292,11 @@ describe("会话的生死不归屏幕", () => {
   });
 });
 
-// ==================== 别处删掉了这一屏那一段（`session.removed`）====================
-
 /**
  * 注册表把「这一段没了」交给这一屏（`ChatSessionNotifier.onRemoved`），屏幕负责收尾：说一句、
  * 换到同项目里最近的那一段，没有就回连接屏。
  *
- * 收尾那一套（`moveAfterGone`）自己有用例；这一条只钉**那根线接上了**：收到那一下之后，屏幕
+ * 收尾那一套（`moveAfterGone`）自己有用例；这一条只钉那根线接上了：收到那一下之后，屏幕
  * 真的去问「同项目里还有哪几段」（那是换屏与回连接屏两档都要先知道的事实）。
  */
 describe("别处删掉了这一屏那一段：屏幕当场收尾", () => {
@@ -2339,15 +2317,13 @@ describe("别处删掉了这一屏那一段：屏幕当场收尾", () => {
     created.notifier.onRemoved({ sessionId: "chat_test", workspaceId: "ws_test" });
 
     await waitFor(() => connection.apiCalls.some((one) => one.method === "session.list"));
-    // 问的是**这一段自己的**项目（`/ws` 选中的那个不算：这一段属于它建出来的那个项目）
+    // 问的是这一段自己的项目（`/ws` 选中的那个不算：这一段属于它建出来的那个项目）
     expect(connection.apiCalls.find((one) => one.method === "session.list")?.params).toEqual({
       workspaceId: "ws_test",
     });
     unmount();
   });
 });
-
-// ==================== 交接期间：拦住人（PRD 4.5 / 1.3）====================
 
 describe("交接期间：不发、说清楚、只留中断", () => {
   it("回车不发出去，并说明「你的话会交给下一段」", async () => {
@@ -2363,7 +2339,7 @@ describe("交接期间：不发、说清楚、只留中断", () => {
     stdin.write("\r");
     await flush();
 
-    // 宿主照收（PRD 4.5 只关输出开关）—— 所以拦在客户端：一条都不能进队列
+    // 宿主照收（只关输出开关）—— 所以拦在客户端：一条都不能进队列
     expect(created.session.send).not.toHaveBeenCalled();
     expect(lastFrame() ?? "").toContain("正在交接");
     unmount();
@@ -2408,11 +2384,9 @@ describe("交接期间：不发、说清楚、只留中断", () => {
   });
 });
 
-// ==================== 通知栏三档粒度里的第三档：清全部 ====================
-
 /**
- * 「清」有三档（`prd/08-client.md` 的通知那一节）：清一条（补看那条路）、清一段会话的
- * （`Ctrl+X`）、清全部（`Ctrl+G`）。这一组钉的是第三档：**它自己不清任何东西，先问一次**，
+ * 「清」有三档：清一条（补看那条路）、清一段会话的（`Ctrl+X`）、清全部（`Ctrl+G`）。这一组
+ * 钉的是第三档：它自己不清任何东西，先问一次，
  * 而那一问必须把「连全局、连其他会话一起没」说出来。
  */
 describe("通知栏的清全部：先问一次，问完才动整个库", () => {
@@ -2512,11 +2486,9 @@ describe("通知栏的清全部：先问一次，问完才动整个库", () => {
   });
 });
 
-// ==================== 图片：终端里给得出事实，而且打得开 ====================
-
 /**
  * 终端不可能内联渲染图片，所以图片在转录里只能是个占位 —— 但占位要说得出手里已有的事实，
- * 并且要有一个动作把选中的那张交给**本机默认程序**打开（`asset.get` → 临时文件 → 打开）。
+ * 并且要有一个动作把选中的那张交给本机默认程序打开（`asset.get` → 临时文件 → 打开）。
  */
 describe("图片：占位说事实，Ctrl+O 用本机默认程序打开", () => {
   beforeEach(() => {

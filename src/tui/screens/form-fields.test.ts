@@ -3,10 +3,10 @@
  *
  * 这一组钉住的是「按一下该变成什么」，按面板的两层分开：
  *
- * - **浏览层**：↑ ↓ 在「各个字段 + 最后那个提交项」之间走，回车落到某一项上；
- * - **编辑层**：落在字段上之后，箭头动的是候选，回车/Esc 退回浏览层（值留着）。
+ * - 浏览层：↑ ↓ 在「各个字段 + 最后那个提交项」之间走，回车落到某一项上；
+ * - 编辑层：落在字段上之后，箭头动的是候选，回车/Esc 退回浏览层（值留着）。
  *
- * 面板（`overlays.tsx`）只把这些搬上屏 —— 于是这些规矩能在这里一条条验，不必从键盘打到屏幕上。
+ * 面板（`overlays.tsx`）只把这些状态搬到屏上，于是这些行为能在这里一条条验，不必从键盘打到屏幕上。
  */
 import { describe, expect, it } from "vitest";
 
@@ -489,7 +489,7 @@ describe("表单：只有一格的表也走同一条路", () => {
     const start = initialEditing(ONE_CHOICE);
     expect(press(start, [next], ONE_CHOICE).focus).toBe(1);
     expect(press(start, [prev], ONE_CHOICE).focus).toBe(3);
-    // 值一直没动过：换焦点不该顺手改答案
+    // 值一直没动过：换焦点不该顺带改答案
     expect(press(start, [next], ONE_CHOICE).values.mode).toBe("self");
   });
 

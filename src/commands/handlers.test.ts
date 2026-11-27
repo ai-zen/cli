@@ -1,9 +1,9 @@
-// 命令层回归：表驱动的那 22 条命令在**假连接 + 假会话**上的行为。
+// 命令层回归：表驱动的那 22 条命令在假连接 + 假会话上的行为。
 //
-// 这一层最容易错的地方是「写错层 / 写错地方」，而它错得很安静 —— 界面说「改好了」，请求里
+// 这一层最容易错的地方是「写错层 / 写错地方」，而它错得很安静：界面上显示「改好了」，请求里
 // 还是旧的，或者撤回成功了屏幕却一片空白。所以这份文件钉的是四类：
 //
-//   · 每条命令**只调一个契约方法**，入参形状与宿主 `wire` 一致（会话域走会话层，其余走 `call`）；
+//   · 每条命令只调一个契约方法，入参形状与宿主 `wire` 一致（会话域走会话层，其余走 `call`）；
 //   · `/model` `/think` `/agent` 各自写到哪一层（会话行 / AgentDefinition / 全局兜底），谁需要 reload；
 //   · `/back` `/new` `/migrate` 之后转录显示起点必须跟着重置（否则 `slice()` 恒为空）；
 //   · 失败只有一个出口：宿主拒绝是一条通知，不是一条未处理的 rejection。
@@ -47,8 +47,6 @@ beforeEach(() => {
 });
 afterAll(() => zen.cleanup());
 
-// ==================== 假连接 / 假会话 ====================
-
 /** 一次契约调用的记录：断言「调了哪个方法、给了什么入参」 */
 interface CallRecord {
   method: string;
@@ -60,7 +58,7 @@ type Routes = Record<string, (params: Record<string, unknown>) => unknown>;
 /**
  * 造一个只认「调一个方法」的连接口。
  *
- * 打桩按方法名登记，**没登记就抛** —— 这样「命令偷偷调了第二个方法」会当场红，
+ * 打桩按方法名登记，没登记就抛 —— 这样「命令多调了一个方法」会当场红，
  * 而不是靠断言调用次数去猜。
  */
 function fakeCall(routes: Routes, calls: CallRecord[]): HostConnection["call"] {
@@ -74,7 +72,7 @@ function fakeCall(routes: Routes, calls: CallRecord[]): HostConnection["call"] {
 }
 
 /**
- * 会话域 / 工作区域**直连**的那一面（`api`）：与 {@link fakeCall} 共用同一张路由表。
+ * 会话域 / 工作区域直连的那一面（`api`）：与 {@link fakeCall} 共用同一张路由表。
  *
  * 路径按 `Proxy` 拼成 procedure 名（`api.workspace.list.query` → `"workspace.list"`），于是
  * 「打了哪条」在两种路上是同一套名字、同一份 `calls`。
@@ -207,7 +205,7 @@ const MCP_ENTRY: McpEntry = {
 };
 
 /**
- * 会话假件：**只造命令层真正读的那几个字段**（其余成员由 `ChatSessionLike` 的实现提供，
+ * 会话假件：只造命令层真正读的那几个字段（其余成员由 `ChatSessionLike` 的实现提供，
  * 命令层一个都不碰）。所以这里能直接用，而不是逐个补空。
  */
 interface SessionStub {
@@ -345,12 +343,12 @@ function createHost(
     // 「让这个端点的密钥就位」：缺省「配不上」（`/model` 那组用例按需覆写成 `true`）
     ensureKey: vi.fn(async () => false),
     doExit: vi.fn(async () => {}),
-    // 覆盖层入口是一个**异步口**（命令层拿不到 React setter）：默认「没人作答」，
+    // 覆盖层入口是一个异步口（命令层拿不到 React setter）：默认「没人作答」，
     // 需要作答的用例自己替换它。
     pick: vi.fn(async () => null),
     // 表单那个口（`/form` 用它）：默认「没有填」，需要看内容的用例自己替换
     askForm: vi.fn(async () => ({ action: "cancel" as const })),
-    // 换会话的两个口子（`/new` / `/sessions`）：会话归进程所有（PRD D4），命令层只说「换成哪一段」
+    // 换会话的两个口子（`/new` / `/sessions`）：会话归进程所有，命令层只说「换成哪一段」
     newSession: vi.fn(async () => "conv-new"),
     liveSessions: options.liveSessions ?? [],
     // `/delete` 删完之后把这一段从登记里摘掉（注册表的口子；这一组只看它调没调、传的哪一段）
@@ -408,8 +406,6 @@ function capturePicks(host: ChatCommandHost, answers: Array<string | null>) {
 const texts = (notices: Array<{ text: string }>) => notices.map((n) => n.text).join("\n");
 const methods = (calls: CallRecord[]) => calls.map((call) => call.method);
 
-// ==================== /new ====================
-
 describe("/new：开新的一段，不打断当前那一段", () => {
   it("向注册表要一段新的（不要原地 `reset`），并带着一句话换屏过去", async () => {
     const { host, session, notices } = createHost();
@@ -430,8 +426,6 @@ describe("/new：开新的一段，不打断当前那一段", () => {
     expect(session.reset).not.toHaveBeenCalled();
   });
 });
-
-// ==================== /sessions ====================
 
 /** 本进程挂着的一段会话（`/sessions` 列表里来自注册表的那一半） */
 function live(overrides: Partial<LiveSession> = {}): LiveSession {
@@ -454,7 +448,7 @@ const at = (hour: number, minute: number) => new Date(2026, 9, 1, hour, minute).
 
 describe("/sessions：列会话与切换", () => {
   /**
-   * 名字那一格按**来源**写：占位名（`default`）不该把库里的 ISO 时刻串直接上屏，存档（`handoff`）
+   * 名字那一格按来源写：占位名（`default`）不该把库里的 ISO 时刻串直接上屏，存档（`handoff`）
    * 要和它抄自的那一段区分得开 —— 两者的名字本来就一模一样。
    */
   it("名字按来源写：占位名说「新会话 + 时刻」，存档名标一句「存档」", async () => {
@@ -517,7 +511,7 @@ describe("/sessions：列会话与切换", () => {
         t("cmd.sessions.updated", { time: "09:30" }),
       ].join(" · "),
     );
-    // 这一边没挂着的那两段：**状态那一格一个字不说**（不把「不知道」写成「在忙」/「空闲」）
+    // 这一边没挂着的那两段：状态那一格一个字不说（不把「不知道」写成「在忙」/「空闲」）
     expect(seen.hints[1]).toBe(
       [
         t("cmd.sessions.pinned"),
@@ -542,7 +536,7 @@ describe("/sessions：列会话与切换", () => {
             workspaceRow("ws-1", "/p1", "项目一"),
             workspaceRow("ws-2", "/p2", "项目二"),
           ],
-          // 每个项目内部是宿主排好的；拼起来的那一份没人替你排
+          // 每个项目内部是宿主排好的；拼起来的那一份没有第二处排序
           "session.list": (params) =>
             params.workspaceId === "ws-1"
               ? [
@@ -732,8 +726,6 @@ describe("/sessions：列会话与切换", () => {
   });
 });
 
-// ==================== /back ====================
-
 describe("/back：按消息 id 撤回，内容回填输入框", () => {
   it("只列用户消息、最近的在最前，选中的是**消息 id** 不是下标", async () => {
     const { host, session } = createHost();
@@ -860,8 +852,6 @@ describe("/back：按消息 id 撤回，内容回填输入框", () => {
   });
 });
 
-// ==================== /load ====================
-
 describe("/load：列表来自 session.list，选中后换会话", () => {
   it("按当前项目问列表，读的是宿主给的顺序（不自己排）", async () => {
     const { host, calls } = createHost();
@@ -898,7 +888,7 @@ describe("/load：列表来自 session.list，选中后换会话", () => {
     const { host } = createHost({
       routes: {
         "workspace.list": () => [workspaceRow("ws-1", "/p1"), workspaceRow("ws-2", "/p2")],
-        // 每个工作区内部已经是宿主排好的顺序；拼起来的那一份没人替你排
+        // 每个工作区内部已经是宿主排好的顺序；拼起来的那一份没有第二处排序
         "session.list": (params) =>
           params.workspaceId === "ws-1"
             ? [
@@ -1024,17 +1014,15 @@ describe("/load：列表来自 session.list，选中后换会话", () => {
   });
 });
 
-// ==================== 忙时禁用（`needsIdle`） ====================
-
 /**
- * 「这一段正在跑」时哪几条命令不可用，以及**为什么**其余照旧可用。
+ * 「这一段正在跑」时哪几条命令不可用，以及为什么其余照旧可用。
  *
  * 判据表在 `registry.ts`（`CommandMeta.needsIdle`），门在 `runCommand` 入口。这一组钉两件事：
  *
- *   1. 那五条**一个字节都不写**（不弹选择器、不发 procedure、也不问「要不要现在试」）——
- *      `/back` `/handoff` `/migrate` 宿主本来就会拒，`/model` `/think` 则是**一批内部换家**
- *      （写会话行当场生效，下一轮请求就换模型与思考参数）；
- *   2. 会话的**新建与切换**不受影响：它们不动运行中的那一段，这正是「忙也能干的事」。
+ *   1. 那五条一个字节都不写（不弹选择器、不发 procedure、也不问「要不要现在试」）——
+ *      `/back` `/handoff` `/migrate` 宿主本来就会拒，`/model` `/think` 则是在一段运行中的会话上
+ *      换模型与思考参数（写会话行当场生效，下一轮请求就用新的）；
+ *   2. 会话的新建与切换不受影响：它们不动运行中的那一段，这正是「忙也能干的事」。
  */
 describe("忙时禁用", () => {
   it("`/back` 处理中不可用：不弹选择器，一个 procedure 都不发", async () => {
@@ -1104,14 +1092,12 @@ describe("忙时禁用", () => {
   });
 });
 
-// ==================== /pin ====================
-
 /**
  * `/pin` 只碰 `pinned` 一个字段：列表怎么排（置顶优先 + 创建时间倒序）是宿主的事，
  * 这批用例钉的就是「调了哪个方法、入参什么形状、上屏用的是谁给的句子」。
  *
  * 读写两条都在 procedure 面上：现状读 `session.open`（那一条同时给出会话行），写入是
- * `session.pin`，它回**改完之后**的那一行。
+ * `session.pin`，它回改完之后的那一行。
  */
 describe("/pin：仅生成 pinned 一个字段，顺序归宿主", () => {
   it("无参：先从 `session.open` 读现状，再按相反值写（入参与宿主 procedure 逐字一致）", async () => {
@@ -1212,10 +1198,8 @@ describe("/pin：仅生成 pinned 一个字段，顺序归宿主", () => {
   });
 });
 
-// ==================== /model ====================
-
 /**
- * AgentDefinition 级思考档位那两趟读：定义本身（`modelParams` 存的是**展开后的参数**）+ 档位表。
+ * AgentDefinition 级思考档位那两趟读：定义本身（`modelParams` 存的是展开后的参数）+ 档位表。
  *
  * 档位由客户端拿表反查（`reasoning-effort.ts` 的 `agentThinkingOf`），所以模型必须挂着
  * `reasoningPreset`，否则「不可调档」—— 那也是一种事实，另有用例守它。
@@ -1238,7 +1222,7 @@ describe("/model：三档作用级别各写各的那一层", () => {
     await runCommand("model", "/model m2", host);
 
     expect(session.updateModel).toHaveBeenCalledWith("m2");
-    // 只有「读模型表」这一次往返（`config.get` 一次给全），没有顺手改 AgentDefinition 或全局兜底
+    // 只有「读模型表」这一次往返（`config.get` 一次给全），没有另外改 AgentDefinition 或全局兜底
     expect(methods(calls)).toEqual(["config.get"]);
     // 会话级写完宿主就回完整视图，再 reload 是白跑一个往返
     expect(session.reload).not.toHaveBeenCalled();
@@ -1393,11 +1377,11 @@ describe("/model：三档作用级别各写各的那一层", () => {
   });
 
   /**
-   * 忙时**整条命令不可用**（`CommandMeta.needsIdle`）：不弹选择器、不写会话行、也不问「要不要现在试」。
+   * 忙时整条命令不可用（`CommandMeta.needsIdle`）：不弹选择器、不写会话行、也不问「要不要现在试」。
    *
-   * 为什么从「问一句」改成「禁用」：宿主对 `session.updateModel` / `updateThinkingLevel` **不设**
-   * 忙闲守卫，写下去当场生效，下一轮请求立刻换家 —— 一批内部换模型，工具调用格式与思考参数都可能
-   * 对不上（另一处注释自己写着「旧模型的参数发给新模型 → 端点 400」）。问一句只会把这件事变成
+   * 为什么从「问一句」改成「禁用」：宿主对 `session.updateModel` / `updateThinkingLevel` 不设
+   * 忙闲守卫，写下去当场生效，下一轮请求立刻换成新的模型与思考参数 —— 工具调用格式与思考参数都
+   * 可能对不上（旧模型的参数发给新模型会得到端点 400）。问一句只会把这件事变成
    * 「用户点了确认，然后拿到一个错位的结果」。
    */
   it("这一段在忙：整条 `/model` 不可用，一个字节都不写、也不弹选择器", async () => {
@@ -1425,7 +1409,7 @@ describe("/model：三档作用级别各写各的那一层", () => {
  * `/model` 切到「供应商还没配密钥」的模型。
  *
  * 判据与首启引导、`/key` 是同一个（`resolveCredential` 看那端点密钥空不空），修复入口
- * 是同一屏（`ensureKey`）。这里钉两件事：**没配成就不切**，配成了才照常切。
+ * 是同一屏（`ensureKey`）。这里钉两件事：没配成就不切，配成了才照常切。
  */
 describe("/model：供应商没配密钥时先配，配不成就不切", () => {
   /** 一个「模型在它上面、密钥还空着」的端点 */
@@ -1474,8 +1458,6 @@ describe("/model：供应商没配密钥时先配，配不成就不切", () => {
     expect(session.updateModel).toHaveBeenCalledWith("m2");
   });
 });
-
-// ==================== /think ====================
 
 describe("/think：会话行与助手定义两个作用级别", () => {
   it("默认写会话行，并把状态栏刷新成新的那份现状", async () => {
@@ -1597,7 +1579,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     expect(seen.labels).toEqual(["跟随模型默认（当前）", "低", "高"]);
   });
 
-  // 两档选择器的 InboxEntry 几乎一样，标题是唯一说清「改的是哪一层」的地方（PRD 4.7）
+  // 两档选择器的 InboxEntry 几乎一样，标题是唯一说清「改的是哪一层」的地方
   it("标题印出作用级别：会话级是「这一段」、助手定义级是「这个助手定义（影响之后新建的会话）」", async () => {
     const { host } = createHost();
     const sessionSeen = capturePick(host, null);
@@ -1626,7 +1608,7 @@ describe("/think：会话行与助手定义两个作用级别", () => {
     await runCommand("think", "/think -a", host);
 
     // 第一项就是「这一层不再写档位」那一项：标签与会话级那条同一个说法，
-    // hint 说清它删的是**AgentDefinition**上的参数（会话级那条说的是本次会话）
+    // hint 说清它删的是 AgentDefinition 上的参数（会话级那条说的是本次会话）
     expect(seen.labels).toEqual(["跟随模型默认", "低", "高（当前）"]);
     expect(seen.hints[0]).toBe(t("cmd.think.clearHintAgent"));
     expect(seen.hints.slice(1)).toEqual(["low", "high"]);
@@ -1724,13 +1706,11 @@ describe("/think：会话行与助手定义两个作用级别", () => {
   });
 });
 
-// ==================== /agent ====================
-
 describe("/agent：选「以后的会话用哪个助手定义」（写默认助手定义）", () => {
   it("选中之后仅生成 defaultAgent 这一个字段", async () => {
     const { host, calls, notices } = createHost({
       routes: {
-        // `agentDefinition.list` 回的是**定义数组**（默认 AgentDefinition 是配置里的那一格，见 `agentListOf`）
+        // `agentDefinition.list` 回的是定义数组（默认 AgentDefinition 是配置里的那一格，见 `agentListOf`）
         "config.agents.list": () => [
           agentView(),
           agentView({ id: "coder", name: "编程 Agent", modelId: "m2" }),
@@ -1774,8 +1754,6 @@ describe("/agent：选「以后的会话用哪个助手定义」（写默认助�
     expect(texts(notices)).toBe(t("cmd.agent.noAgents"));
   });
 });
-
-// ==================== /mcp ====================
 
 describe("/mcp：入口作用域看 mcp.list 的 scope", () => {
   it("项目层有条目时默认进项目层（workspace）", async () => {
@@ -1840,8 +1818,6 @@ describe("/mcp：入口作用域看 mcp.list 的 scope", () => {
     expect(texts(notices)).toBe(t("cmd.mcp.unknownScope", { scope: "nonsense" }));
   });
 });
-
-// ==================== /lang ====================
 
 describe("/lang：语言是用户的属性，不是连接的属性", () => {
   /** 本机偏好文件里现在记的是哪个语言（`/lang` 落盘的那一格；没写过就是 `undefined`） */
@@ -1934,8 +1910,6 @@ describe("/lang：语言是用户的属性，不是连接的属性", () => {
     });
   });
 });
-
-// ==================== /handoff / /migrate ====================
 
 describe("/handoff 与 /migrate：同一个方法，两种后续，执行者都由宿主问", () => {
   /**
@@ -2030,8 +2004,6 @@ describe("/handoff 与 /migrate：同一个方法，两种后续，执行者都�
   });
 });
 
-// ==================== /help / /reload ====================
-
 describe("/help：说明就是命令表里的本地词条", () => {
   it("一次宿主调用都不发，逐条印本地说明", async () => {
     const { host, calls, notices } = createHost();
@@ -2104,13 +2076,11 @@ describe("/reload：让宿主重新发现能力，再把回执说给人听", () 
   });
 });
 
-// ==================== 失败只有一个出口 ====================
-
 /**
- * `/load` `/new` `/back` 这几条**没有**自己的 `catch`，而它们的 await 全是网络往返；
+ * `/load` `/new` `/back` 这几条没有自己的 `catch`，而它们的 await 全是网络往返；
  * 宿主那边 `runCommand(...)` 外面也没有 `catch`（`chat.tsx` 的 `runSubmit` 只有 `finally`），
  * 漏出去就是 `unhandledRejection` —— 而 `tui/index.tsx` 把它接成 `process.exit(1)`。
- * 所以这里钉的是：**宿主拒绝 = 一条通知**，不是一条未处理的 rejection。
+ * 所以这里钉的是：宿主拒绝 = 一条通知，不是一条未处理的 rejection。
  */
 describe("宿主拒绝：一条通知，不是一条未处理的 rejection", () => {
   it("/load 取不到会话列表 → 通知里说清是哪条命令 + 宿主原话", async () => {
@@ -2132,7 +2102,7 @@ describe("宿主拒绝：一条通知，不是一条未处理的 rejection", () 
 
   it("/new 的宿主动作失败 → 同样走通知，不炸进程", async () => {
     const { host, notices } = createHost();
-    // 开新会话归注册表（PRD D4）：失败就由它抛，命令层不自己 catch —— 兜底只有一处
+    // 开新会话归注册表：失败就由它抛，命令层不自己 catch —— 失败出口只有一处
     host.newSession = async () => {
       throw new Error("workspace missing");
     };
@@ -2159,11 +2129,9 @@ describe("宿主拒绝：一条通知，不是一条未处理的 rejection", () 
   });
 });
 
-// ==================== /ws：工作区（PRD D30） ====================
-
 /** 一个工作区的视图（宿主 `WorkspaceView` 原样形状） */
 /**
- * 宿主 `workspace.list` 的一行（`cwd` 是**它那台机器**上的路径，时间一律 epoch 毫秒）。
+ * 宿主 `workspace.list` 的一行（`cwd` 是它那台机器上的路径，时间一律 epoch 毫秒）。
  *
  * 这一版没有「目录还在不在」那一格（宿主不报），所以第三个参数只是给用例标一下意图，
  * 不再进对象。
@@ -2284,7 +2252,7 @@ describe("/ws：列 / 选 / 新建", () => {
 
     expect(calls.at(-1)).toEqual({ method: "workspace.create", params: { cwd: "/srv/repo" } });
     expect(session.selectWorkspace).toHaveBeenCalledWith("ws-remote");
-    // 记忆落在**那台宿主**那一格，不跟本机串
+    // 记忆落在那台宿主那一格，不跟本机串
     expect(workspaceMemory()).toEqual({ "ws://10.0.0.5:8790": "ws-remote" });
   });
 
@@ -2315,11 +2283,9 @@ describe("/ws：列 / 选 / 新建", () => {
   });
 });
 
-// ==================== /ws delete ====================
-
 /**
- * `/ws delete <项目名或 ID>` —— 删项目**连带删它名下的会话**（PRD 1.5），目录一个字不动；
- * 删之前把代价摆出来、再一次确认（PRD 1.6「二次确认要能先给代价、再真做」）。
+ * `/ws delete <项目名或 ID>` —— 删项目连带删它名下的会话，目录一个字不动；
+ * 删之前把代价摆出来、再一次确认（「二次确认要能先给代价、再真做」）。
  *
  * 这一组钉五件：确认之前一次写都没有、代价里带着会话数并点到目录不动、认名字也认 ID、
  * 上屏的数字用回执里的、删的是当前项目时屏幕不会停在一段已经不存在的会话上。
@@ -2530,10 +2496,8 @@ describe("/ws delete：先摆代价、再一次确认、连带删会话", () => 
   });
 });
 
-// ==================== 一段会话没了之后往哪儿去 ====================
-
 /**
- * `moveAfterGone` 是**三条路共用**的那一套收尾：`/delete`、`/ws delete`、以及「别处删掉了这一
+ * `moveAfterGone` 是三条路共用的一套收尾：`/delete`、`/ws delete`、以及「别处删掉了这一
  * 屏正看着的那一段」那条事件。换到哪一段、没地方可换时说什么，只有这一处。
  *
  * （InboxEntry 1 的四种处境里，「删别段不换屏」与「一次连来三条只出声一次」在注册表那一层钉，
@@ -2640,14 +2604,12 @@ describe("moveAfterGone：一段会话没了之后往哪儿去", () => {
   });
 });
 
-// ==================== /kill ====================
-
 /**
- * `/kill` 收掉的是**Agent**（PRD 1.2「死的路只有三条」、4.1「中断不是杀死」那张表）：
- * 之后没有 agent 了、在途请求被掐断、没消费的 InboxEntry 作废；而**会话行与历史一个字不动**。
+ * `/kill` 收掉的是 Agent（「死的路只有三条」之一、「中断不是杀死」那张表）：
+ * 之后没有 agent 了、在途请求被中断、没消费的 InboxEntry 作废；而会话行与历史一个字不动。
  *
  * 这一组钉四件：只调 `agent.kill` 一条、先摆代价再问一次、杀完不换屏也不清历史、
- * 已经死了的那一段不扉一句「N 条会作废」（宿主那边的 kill 对没有 Agent 的一段是空操作）。
+ * 已经死了的那一段不报一句「N 条会作废」（宿主那边的 kill 对没有 Agent 的一段是空操作）。
  */
 describe("/kill：先摆代价、再杀 Agent、不换屏", () => {
   it("不带参数 = 杀当前这一段：代价说清排队区几条会作废，并且只调 `agent.kill`", async () => {
@@ -2659,7 +2621,7 @@ describe("/kill：先摆代价、再杀 Agent、不换屏", () => {
 
     await runCommand("kill", "/kill", host);
 
-    // 确认那一句把三件事都说清了：几条会作废、历史保留、下次发话会重新叫起来
+    // 确认那一句把三件事都说清了：几条会作废、历史保留、下次发话会重新唤醒 Agent
     expect(seen.title).toBe(t("cmd.kill.title", { name: "第一段", pending: 3 }));
     expect(seen.values).toEqual(["yes", "no"]);
     // 只有这一条写：杀的不是会话，是它的 agent
@@ -2813,10 +2775,8 @@ describe("/kill：先摆代价、再杀 Agent、不换屏", () => {
   });
 });
 
-// ==================== /delete ====================
-
 /**
- * `/delete` 是**硬删**（PRD 1.2 三条死路之一，4.1 要求删前警告并把代价说清）。
+ * `/delete` 是硬删（三条死路之一，删前要警告并把代价说清）。
  *
  * 这一组钉四件：先摆代价再问、确认之前一次写都没有、删完不能停在一段已经不存在的会话上、
  * 宿主说找不到时原话上屏而屏幕不换。
@@ -2898,7 +2858,7 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
 
     expect(methods(calls)).toEqual(["session.open", "session.delete", "session.list"]);
     expect(calls[1]).toEqual({ method: "session.delete", params: { sessionId: "sess-1" } });
-    // 屏幕换到同一段项目里最近的那一段，**上屏的数字是回执里的 2 / 1**（自己数的是 3 / 2）
+    // 屏幕换到同一段项目里最近的那一段，上屏的数字是回执里的 2 / 1（自己数的是 3 / 2）
     expect(host.exit).toHaveBeenCalledWith({
       load: { sessionId: "sess-2" },
       notice: `${t("cmd.delete.done", { messages: 2, assets: 1 })}\n${t("cmd.delete.switched", { name: "会话二" })}`,
@@ -2921,7 +2881,7 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
 
     await runCommand("delete", "/delete", host);
 
-    // 按**这一段自己的项目**列（不是当前选中的那一个）
+    // 按这一段自己的项目列（不是当前选中的那一个）
     expect(calls.at(-1)).toEqual({ method: "session.list", params: { workspaceId: "ws-1" } });
     expect(host.exit).toHaveBeenCalledWith({
       load: { sessionId: "sess-3" },
@@ -2946,8 +2906,8 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
   });
 
   /**
-   * 宿主在 mutation 里就把 `session.removed` 推到那条流上，它到得比回执**早**。所以这一条命令
-   * 必须**先报名**再删：不报的话，注册表会先把「这一段被删掉了」演一遍（说一句话、换一次屏），
+   * 宿主在 mutation 里就把 `session.removed` 推到那条流上，它到得比回执早。所以这一条命令
+   * 必须先报名再删：不报的话，注册表会先按「这一段被删掉了」处理一遍（说一句话、换一次屏），
    * 紧接着这里的收尾又来一次 —— 同一件事两句话。
    */
   it("真删之前先报个名，删完把账结掉（`session.removed` 不再演一遍）", async () => {
@@ -3045,10 +3005,8 @@ describe("/delete：先摆代价、再硬删、然后换一段", () => {
   });
 });
 
-// ==================== /shutdown ====================
-
 /**
- * `/shutdown` 会**真关掉宿主**，所以这里只在假连接上验：确认框说什么、调的是哪个方法、
+ * `/shutdown` 会真关掉宿主，所以这里只在假连接上验：确认框说什么、调的是哪个方法、
  * 确认之后这一屏往哪去。真关一台宿主的端到端由 e2e 自己起一台临时宿主来做。
  */
 describe("/shutdown：一次二次确认，确认之后回连接屏", () => {
@@ -3082,7 +3040,7 @@ describe("/shutdown：一次二次确认，确认之后回连接屏", () => {
 
     await runCommand("shutdown", "/shutdown", host);
 
-    // 契约里这一条**没有入参**：关哪个宿主由这条连接决定，确认已经在这一屏做过
+    // 契约里这一条没有入参：关哪个宿主由这条连接决定，确认已经在这一屏做过
     expect(calls).toEqual([{ method: "host.shutdown", params: {} }]);
     expect(host.exit).toHaveBeenCalledWith({ backToConnect: t("cmd.shutdown.done") });
   });
@@ -3108,12 +3066,10 @@ describe("/shutdown：一次二次确认，确认之后回连接屏", () => {
   });
 });
 
-// ==================== /clear / /free ====================
-
 /**
  * 一条命令一件事：`/clear` 只动屏幕，`/free` 只动排队区。
  *
- * 从前 `/clear` 两样都做（PRD 4.5 那一版口径），于是「清了屏」与「清了队列」在按下去那一刻
+ * 从前 `/clear` 两样都做，于是「清了屏」与「清了队列」在按下去那一刻
  * 分不开，也没法只要其中一件。现在清队列归 `/free`（宿主 `agent.clearInbox`）。
  */
 describe("/clear：只清屏", () => {
@@ -3173,8 +3129,6 @@ describe("/free：清排队区", () => {
     });
   });
 });
-
-// ==================== /rename ====================
 
 describe("/rename：给这一段起个自己能认出的名字（PRD 1.5）", () => {
   it("带名字：写会话行，并把改成了什么说出来", async () => {
@@ -3266,7 +3220,7 @@ describe("/title：让模型给这一段重新起个名字", () => {
 
 describe("/form：把每一种表单项摆出来（调试入口）", () => {
   /**
-   * 这一条拿的是**同一张面板**（`askForm` 就是题走的那一个口），所以用例只需要钉住两件：表里
+   * 这一条拿的是同一张面板（`askForm` 就是题走的那一个口），所以用例只需要钉住两件：表里
    * 七种字段都在、提交之后交出来的内容被念了一遍。
    */
   it("七种字段都在表里：文本 / 邮箱 / 单选 / 数字 / 整数 / 布尔 / 多选", async () => {

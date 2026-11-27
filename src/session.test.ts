@@ -1,9 +1,9 @@
 /**
- * `RemoteChatSession` 用例：会话层是「宿主事实 ↔ 界面契约」的那一层，所以用**假连接**测。
+ * `RemoteChatSession` 用例：会话层是「宿主事实 ↔ 界面契约」的那一层，所以用假连接测。
  *
  * 假连接里真的跑着一个 `SessionMirror`（`test-support/fake-connection.ts`）：消息与四件事的折叠
  * 归 `server-client/mirror.ts`，这一层只负责「催一帧 / 采样速率 / 收个尾 / 把命令打成 procedure
- * 调用」。于是这里的每条用例钉的都是**这一层自己的纪律**：
+ * 调用」。于是这里的每条用例钉的都是这一层自己的纪律：
  *
  *   · 打开会话打哪几条 procedure（`session.open` 一次取全 / `session.create` 建行）；
  *   · `agent.send` 带的是什么（`workspaceId` + `agentId` + `content` + `messageId` + `sessionId`）；
@@ -11,9 +11,8 @@
  *   · 忙闲落回 `idle` 就补拉一次（`resync`），速率用消息上的 `usage` 合计定格；
  *   · 通知、问题、名册、subagent 那一栏各自从哪来、按什么过滤。
  *
- * 这一刀改写的部分（口径⑦）：旧断言里守「镜像 / 旧事件 / 旧视图」的换成守新事实 ——
- * `session.open` 一次取全、`HostEvent` 的**整条消息**、会话行上的 `modelId` / `thinkingLevel`
- * 两个字段。守行为的断言（谁被叫、次序、文案）一条没删。
+ * 守的是新事实：`session.open` 一次取全、`HostEvent` 的整条消息、会话行上的 `modelId` /
+ * `thinkingLevel` 两个字段。守行为的断言（谁被叫、次序、文案）一条没删。
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -37,10 +36,6 @@ import type {
   NoticeTone,
   QuestionView,
 } from "./session/types.js";
-
-// ==================================================================
-// 契约形状的样板
-// ==================================================================
 
 const SESSION = "sess-1";
 const WORKSPACE = "ws-1";
@@ -118,10 +113,6 @@ const question = (overrides: Partial<QuestionView> = {}): QuestionView => ({
   createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
   ...overrides,
 });
-
-// ==================================================================
-// 一个「像宿主一样」的假连接：状态与消息放在这几个可变量里
-// ==================================================================
 
 interface HostLike {
   connection: FakeConnection;
@@ -259,10 +250,6 @@ const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 /** 推一条事件（`emit` 的短手） */
 const emit = (host: HostLike, event: HostEvent) => host.connection.emit(event);
 
-// ==================================================================
-// 打开
-// ==================================================================
-
 describe("RemoteChatSession：怎么打开那一段", () => {
   it("按 id 打开：`session.open` 一次取全（会话行 + 四件事 + 整段消息 + 排队区）", async () => {
     const host = hostLike({
@@ -372,10 +359,6 @@ describe("RemoteChatSession：怎么打开那一段", () => {
   });
 });
 
-// ==================================================================
-// 四件事
-// ==================================================================
-
 describe("RemoteChatSession：四件事各一格（不压成一个状态）", () => {
   it("`live` 一次给齐：忙闲 / 两道闸 / 死活", async () => {
     const host = hostLike({
@@ -439,16 +422,16 @@ describe("RemoteChatSession：四件事各一格（不压成一个状态）", ()
    * 两种刷新的分界（`onEvent` 那个 `contentOnly`）：流式内容进合帧缓冲（`false`），
    * 「发生了一件事」立即上屏（`true`）。
    *
-   * 这条曾经掉过：`onEvent` 末尾无条件 `notifyChange(true)`，而流式期间宿主**每一小段**都推一条
+   * 这条曾经掉过：`onEvent` 末尾无条件 `notifyChange(true)`，而流式期间宿主每一小段都推一条
    * `message.changed` —— 于是 `FrameBuffer` 的 60ms 合帧在唯一那条路上等于没开，一次回答几十
-   * 上百次全量重渲染。改回来之后用这条用例钉住两边：内容变化 `false`，瞌闲 / 收尾 `true`。
+   * 上百次全量重渲染。改回来之后用这条用例钉住两边：内容变化 `false`，忙闲 / 收尾 `true`。
    */
   it("内容变化走合帧（`onChange(false)`），其余事件立即上屏（`onChange(true)`）", async () => {
     const host = hostLike();
     const { notifier } = await open(host);
     notifier.changes.length = 0;
 
-    // 流式：宿主每吐一片推一条 —— 这几条进合帧缓冲，不立即重渲染
+    // 流式：宿主每推一片增量就发一条事件 —— 这几条进合帧缓冲，不立即重渲染
     emit(host, { type: "message.added", sessionId: SESSION, message: assistantMessage("a-1") });
     emit(host, { type: "message.changed", sessionId: SESSION, message: assistantMessage("a-1") });
     expect(notifier.changes).toEqual([false, false]);
@@ -468,10 +451,6 @@ describe("RemoteChatSession：四件事各一格（不压成一个状态）", ()
     expect(notifier.changes).toHaveLength(before);
   });
 });
-
-// ==================================================================
-// 发话
-// ==================================================================
 
 describe("RemoteChatSession：发一句", () => {
   it("打成 `agent.send`（`sessionId` + `workspaceId` + `agentId` + `content` + `messageId`）", async () => {
@@ -586,7 +565,7 @@ describe("RemoteChatSession：发一句", () => {
 
   /**
    * 刚建出来的那一段就是这一种「死」：`session.create` 不造 Agent，所以第一次发话必须先叫。
-   * 这条从建行那一步走起（而不是拿一个 `live: null` 的假回执），钉的是「建出来 → 叫起来 →
+   * 这条从建行那一步走起（而不是拿一个 `live: null` 的假回执），钉的是「建出来 → 唤醒 →
    * 投进去」这三步在会话层真的连得上。
    */
   it("刚用 `session.create` 建出来的空会话：第一次发话先 `agent.wake` 再投", async () => {
@@ -627,7 +606,7 @@ describe("RemoteChatSession：发一句", () => {
 
     await expect(session.send("发不出去的话")).resolves.toBeUndefined();
 
-    // 没叫起来就不能投：发出去半句比没发更糟
+    // 没有唤醒就不能投递：发出去半句比没发更糟
     expect(host.connection.methods()).not.toContain("runtime.agent.send");
     // 只叫一次，不重试
     expect(
@@ -680,10 +659,6 @@ describe("RemoteChatSession：发一句", () => {
   });
 });
 
-// ==================================================================
-// 复活 / 暂停 / 继续：三个正交动作（PLAN §5.1）
-// ==================================================================
-
 describe("RemoteChatSession：复活 / 暂停 / 继续", () => {
   it("各打自己那一条 procedure，入参只有 sessionId", async () => {
     const host = hostLike();
@@ -729,10 +704,6 @@ describe("RemoteChatSession：复活 / 暂停 / 继续", () => {
     expect(host.connection.methods()).toContain("runtime.agent.abort");
   });
 });
-
-// ==================================================================
-// 等结局
-// ==================================================================
 
 describe("RemoteChatSession：等这一句有了下文", () => {
   it("还在写就不算完：忙闲回 `idle` 之后才返回", async () => {
@@ -798,10 +769,6 @@ describe("RemoteChatSession：等这一句有了下文", () => {
     await expect(session.waitForReply()).resolves.toBeUndefined();
   });
 });
-
-// ==================================================================
-// 速率与状态栏块
-// ==================================================================
 
 describe("RemoteChatSession：速率与状态栏块", () => {
   it("收尾时用消息上的 `usage` 合计定格平均速率（契约不给合计，自己加）", async () => {
@@ -920,10 +887,6 @@ describe("RemoteChatSession：速率与状态栏块", () => {
   });
 });
 
-// ==================================================================
-// 名册（subagent 那一栏说的「还在动 / 已经散场」）
-// ==================================================================
-
 describe("RemoteChatSession：subagent 名册", () => {
   /** 主体里那条委派：assistant 带一个 tool_call，那个 id 就是名册的键 */
   const delegation = (toolCallId: string): AgentNS.Message =>
@@ -1017,10 +980,6 @@ describe("RemoteChatSession：subagent 名册", () => {
     expect(session.subAgents.map((fact) => fact.state)).toEqual(["working"]);
   });
 });
-
-// ==================================================================
-// 通知
-// ==================================================================
 
 describe("RemoteChatSession：通知", () => {
   it("打开时补看一次（通知是挂着的槽位，只推给当时在听的那条连接）", async () => {
@@ -1158,10 +1117,6 @@ describe("RemoteChatSession：通知", () => {
   });
 });
 
-// ==================================================================
-// 问题对象
-// ==================================================================
-
 describe("RemoteChatSession：问题对象", () => {
   it("打开时问一次 `question.list`（题不落库，只活在内存里）", async () => {
     const host = hostLike({ questions: [question()] });
@@ -1216,10 +1171,6 @@ describe("RemoteChatSession：问题对象", () => {
   });
 });
 
-// ==================================================================
-// subagent 那一栏
-// ==================================================================
-
 describe("RemoteChatSession：subagent 那一栏", () => {
   it("它说的话按 `toolCallId` 归到那一栏（不进主转录）", async () => {
     const host = hostLike();
@@ -1247,10 +1198,6 @@ describe("RemoteChatSession：subagent 那一栏", () => {
     expect(host.connection.calls).toHaveLength(before);
   });
 });
-
-// ==================================================================
-// 命令层要的那几个动作
-// ==================================================================
 
 describe("RemoteChatSession：命令层要的那几个动作", () => {
   it("撤回：`session.rewind` 回来后补拉一次，并把回填内容原样给回去", async () => {
@@ -1311,7 +1258,7 @@ describe("RemoteChatSession：命令层要的那几个动作", () => {
 
   /**
    * 宿主那四条判据的第一条是「这一段有活着的 Agent」，而刚打开、还没说过话的那一段一条 Agent
-   * 都没有 —— 不先叫起来，用户直接敲 `/handoff` 只会拿回「没有运行中的Agent，无法交接」。
+   * 都没有 —— 不先唤醒，用户直接敲 `/handoff` 只会拿回「没有运行中的Agent，无法交接」。
    * 唤醒是客户端的编排（与 `send` 同一条口径），所以顺序必须是「先 wake，再 handoff.start」。
    */
   it("交接：死会话（`live: null`）先 `agent.wake`，再 `handoff.start`", async () => {
@@ -1520,10 +1467,6 @@ describe("RemoteChatSession：命令层要的那几个动作", () => {
   });
 });
 
-// ==================================================================
-// 断线与补拉
-// ==================================================================
-
 describe("RemoteChatSession：断线与补拉", () => {
   it("事件流报错就去重连，连上之后补拉一次（`resync`）", async () => {
     const host = hostLike();
@@ -1549,10 +1492,6 @@ describe("RemoteChatSession：断线与补拉", () => {
     expect(host.connection.mirrors.has(SESSION)).toBe(false);
   });
 });
-
-// ==================================================================
-// last-session.json：读不出来不是「没记过」
-// ==================================================================
 
 describe("last-session.json：读不出来不是「没记过」", () => {
   it("报一句，并按「没记过」开一段新的（坏记忆不许把启动卡住）", async () => {

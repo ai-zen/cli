@@ -25,7 +25,7 @@ const thinkingOf = (over: Partial<ThinkingState> = {}): ThinkingState => ({
 describe("档位标签", () => {
   it("常见档位有中文标签，未知档位原样显示", () => {
     for (const level of KNOWN_EFFORT_LEVELS) {
-      // 中文界面下每个已知档位都应有本土化文案（不等于档位名本身）
+      // 中文界面下每个已知档位都有本土化文案，且不等于档位名本身
       expect(effortLabel(level)).not.toBe(level);
     }
     expect(effortLabel("high")).toBe("高");
@@ -83,7 +83,7 @@ describe("thinkingView 状态栏文案与置灰", () => {
   });
 
   it("手改过参数（凑不成任何一档）→ 「自定义」，与「默认」分开", () => {
-    // 两者含义相反：自定义是「你改过」，默认是「你没设过」。说成一样会让用户以为
+    // 两者含义相反：自定义表示用户改过，默认表示用户没有设过。两者说成一样，会让用户以为
     // 自己那份没生效，或者再设一次把手写值覆盖掉。
     const view = thinkingView(
       thinkingOf({
@@ -94,7 +94,7 @@ describe("thinkingView 状态栏文案与置灰", () => {
     );
     expect(view).toEqual({ text: "自定义", dimmed: false });
     expect(view.text).not.toBe(thinkingView(thinkingOf()).text);
-    // 英文界面同一格事实换一种说法
+    // 英文界面下同一格事实由英文文案表达
     setLocale("en");
     expect(thinkingView(thinkingOf({ selected: null, source: "custom" })).text).toBe("custom");
     setLocale("zh");

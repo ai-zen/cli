@@ -60,7 +60,7 @@ describe("FrameBuffer（流式合帧）", () => {
       buffer.push(1);
       vi.advanceTimersByTime(2);
     }
-    // 收尾：让最后一帧也吐出
+    // 收尾：让最后一帧也输出
     vi.advanceTimersByTime(STREAM_FRAME_MS * 2);
     // 200ms / 60ms ≈ 3~5 帧，远小于 100 次上屏
     expect(batches.length).toBeLessThanOrEqual(5);

@@ -4,7 +4,7 @@
 // 一旦 Ink 自己折出第二行，整帧就比预算高一行、把输入框顶出屏幕——与状态栏折行那类
 // bug 同源。所以这里要在「内容远超一屏宽」时断言仍然只有一行。
 //
-// 执行状态（◈）内联在标签**前**，而不是另推一条通知：通知栏凭空多一行会让整帧高度跳一下，
+// 执行状态（◈）内联在标签前，而不是另推一条通知：通知栏凭空多一行会让整帧高度跳一下，
 // 这正是本设计要避免的。名册给 working / idle / ended 三格，另两格（error / aborted）由
 // `subagent-status.ts` 从它自己的消息上推（那边有自己的用例）。
 import { describe, expect, it } from "vitest";
@@ -51,7 +51,7 @@ describe("AgentTabs（主 / 子 Agent 切换条）", () => {
       ],
       "main",
     );
-    // 符号在标签**之前**（作状态指示符），且选项自带左右各 1 空格 padding
+    // 符号在标签之前（作状态指示符），且选项自带左右各 1 空格 padding
     expect(frame).toContain(`${AGENT_STATUS_DOT}子AGENT1`);
     expect(frame).toContain(`${AGENT_STATUS_DOT}子AGENT2`);
     expect(frame).toContain(`${AGENT_STATUS_DOT}子AGENT3`);

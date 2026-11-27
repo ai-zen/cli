@@ -8,7 +8,7 @@ import { setLocale, t } from "./i18n/index.js";
 beforeEach(() => setLocale("zh"));
 
 /**
- * `/agent` 的选择器与预检现在**只搬运契约给的事实**：
+ * `/agent` 的选择器与预检现在只搬运契约给的事实：
  * 清单是 `agentDefinition.list`（定义本身），模型显示名从 `config.models` 里按 id 挑。
  *
  * 旧的那一格「能不能用」（`AgentView.available` / `unavailableReason`）随旧形状退场了 ——

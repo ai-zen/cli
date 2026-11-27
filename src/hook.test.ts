@@ -1,11 +1,11 @@
 /**
- * shell 钩子安装 / 卸载测试。
+ * shell 钩子安装 / 卸载用例。
  *
  * 全部在临时 HOME 下进行：`detectShell()` 读 `SHELL`，rc 路径来自 `homedir()`，
- * 所以改这几个环境变量就能完全隔离，**绝不触碰真实 `~/.bashrc`**。
+ * 所以改这几个环境变量就能完全隔离，绝不触碰真实 `~/.bashrc`。
  *
  * `HOME` 与 `USERPROFILE` 两个都要设：`os.homedir()` 在 Windows 上取的是后者，只设 `HOME`
- * 时这些用例会在**开发机的真实主目录**下找不到刚写的文件（在 bash/zsh 里则完全没问题）。
+ * 时这些用例会在开发机的真实主目录下找不到刚写的文件（在 bash/zsh 里则完全没问题）。
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -109,7 +109,7 @@ describe("installHook", () => {
     const installed = await read();
     await fs.writeFile(
       rcFile,
-      // 第二个块用**当前**标记但函数体是老版本（老版本与新版本共用同一对标记）
+      // 第二个块用当前标记但函数体是老版本（老版本与新版本共用同一对标记）
       [
         installed.replace(/\n+$/, ""),
         MARKER_START,
@@ -180,7 +180,7 @@ describe("uninstallHook", () => {
 
     await expect(uninstallHook()).rejects.toThrow(/EACCES/);
 
-    // 「没有安装（文件不存在）」是一句假话：文件在，只是读不出来
+    // 「没有安装（文件不存在）」这个判断不成立：文件在，只是读不出来
     expect(console.log).not.toHaveBeenCalled();
     await fs.chmod(rcFile, 0o600);
     expect(await read()).toBe("export FOO=1\n");

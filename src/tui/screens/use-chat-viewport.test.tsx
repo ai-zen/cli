@@ -1,7 +1,7 @@
-// 视口 hook 的单元测试 —— 只测「滚动算术 + 钳制 + 回底」这一层
+// 视口 hook 的用例：只测「滚动算术 + 钳制 + 回底」这一层
 //
 // 用一个探针组件按 `Chat` 的方式使用 hook（布局在渲染期写入 `layoutRef`，键盘回调
-// 读它），从真 stdin 发键，再断言 `viewTop` 的值 —— 这样测的是 hook 的**实际行为**，
+// 读它），从真 stdin 发键，再断言 `viewTop` 的值 —— 这样测的是 hook 的实际行为，
 // 而不是把内部实现抄一遍。
 import { describe, expect, it } from "vitest";
 import { render } from "ink-testing-library";

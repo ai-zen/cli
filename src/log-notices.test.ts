@@ -2,7 +2,7 @@
  * `log-notices.ts` —— 日志 → 本地通知的那一格：`info` 不上栏、同一句去重、每屏封顶、
  * 界面未起时攒几条。
  *
- * 这些护栏是**被日志量逼出来的**（日志会把同一句反复刷），所以说的是「不冲垮通知栏」，而不是
+ * 这些护栏出自日志量：同一句会被反复刷，所以约束是「不冲垮通知栏」，而不是
  * 「哪一条更重要」。它们与日志写流分居两处：写流只负责把行落到盘上，这一格只负责「该不该上栏」。
  */
 
@@ -15,7 +15,7 @@ function record(level: LogRecord["level"], message: string): LogRecord {
   return { level, source: "cli", message, at: "2026-01-01T00:00:00.000Z" };
 }
 
-/** 笔记本：注册一个把每条都记下来的 sink，返回那个数组 */
+/** 记录器：注册一个把每条都记下来的 sink，返回那个数组 */
 function collect(relay: LogNotices): Array<[string, string]> {
   const seen: Array<[string, string]> = [];
   relay.setSink((level, message) => seen.push([level, message]));
@@ -77,7 +77,7 @@ describe("LogNotices：日志 → 本地通知", () => {
     expect(seen).toHaveLength(MAX_LOG_NOTICES + 1);
     expect(seen.at(-1)![0]).toBe("warn");
     expect(seen.at(-1)![1]).toContain("More log notices suppressed");
-    // 指路：那条提示要说出日志在哪个文件
+    // 那条提示要说出日志在哪个文件
     expect(seen.at(-1)![1]).toContain(LOG_FILE);
   });
 

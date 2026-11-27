@@ -112,8 +112,8 @@ function make(path: string[]): unknown {
 /**
  * 等到 `check()` 成立就返回；超时抛错，错误里说清等的是什么。
  *
- * **别用「睡够 4ms」代替它**：那是赌「够久」，而这里要的是「真的发生了」。上限 1000ms 是
- * **失败上限**，不是等待时长。
+ * 不用「睡够 4ms」代替它：那是赌「够久」，而这里要的是「真的发生了」。上限 1000ms 是
+ * 失败上限，不是等待时长。
  */
 const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
   const start = Date.now();
@@ -126,11 +126,11 @@ const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
 };
 
 /**
- * 让出几拍宏任务 —— 让这一拍里**排在后面**的活先跑完。让的是执行顺序，不是一个时长。
+ * 让出几拍宏任务 —— 让这一拍里排在后面的活先跑完。让的是执行顺序，不是一个时长。
  *
  * 为什么敲键之前要它：帧是在 commit 里画的，而 `useInput` 的订阅落在 passive effect 里，
- * 同一拍里排在画帧**之后**（React 的 Scheduler 在 Node 下走 `setImmediate`）。所以「探针已经
- * 画出来了」还不等于「按键有人接」：这一刻塞进去的键会被直接**丢掉**，不是延后处理，是永远不到。
+ * 同一拍里排在画帧之后（React 的 Scheduler 在 Node 下走 `setImmediate`）。所以「探针已经
+ * 画出来了」还不等于「按键有人接」：这一刻塞进去的键会被直接丢掉，不是延后处理，是永远不到。
  */
 const settle = async (turns = 2) => {
   for (let turn = 0; turn < turns; turn += 1) {
@@ -357,7 +357,7 @@ describe("useWizardHost", () => {
     await until(() => p.frame() === MENU, "向导接管（三份快照读齐）");
     await p.press("n");
     // 这一条断言的是「什么都没发生」（负向）。它不能只靠「没事件」成立：
-    // 先等向导真的被关掉 —— 而关掉只可能由刚才那个 `n` 触发，于是键被吐掉就不会误绿。
+    // 先等向导真的被关掉 —— 而关掉只可能由刚才那个 `n` 触发，于是键被丢掉就不会误绿。
     await until(() => p.frame() === p.idle, "向导关掉了");
     expect(calls.notify).toHaveLength(0);
     expect(calls.reloaded).toBe(0);

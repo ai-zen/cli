@@ -1,5 +1,5 @@
 // 「显示光标」那一个序列在写终端那一层被拦掉：位置照旧逐帧更新（输入法要靠它），
-// 只是那个方块不再被画出来。这几条锁的是「拦得准」与「别的字节一个都不动」。
+// 只是那个方块不再被画出来。这几条用例锁定两件事：拦得准，其余字节一个都不动。
 import { describe, expect, it } from "vitest";
 import { quietCursor, stripCursorShow } from "./cursor-quiet.js";
 

@@ -5,9 +5,9 @@ import { CursorInputRow, type CursorPosition } from "./input-row.js";
 import { computeInputCursorPosition } from "./input.js";
 
 /**
- * `CursorInputRow` 的职责只有一件事：**让渲染器说出光标在哪一列、哪一行**。
+ * `CursorInputRow` 的职责只有一件事：让渲染器说出光标在哪一列、哪一行。
  *
- * 这些断言的价值在于它们**不依赖我们的宽度模型**：期望值取自 Ink 自身的排版结果
+ * 这些断言的价值在于它们不依赖本仓的宽度模型：期望值取自 Ink 自身的排版结果
  * （`⚡` 算 2 列、` 中文 ` 算 4 列），而不是 `displayWidth`。最后一条用例专门把两者
  * 摆在一起对比 —— 手算会错 1 列，实测不会。
  */
@@ -87,7 +87,7 @@ describe("CursorInputRow（渲染器实测的光标坐标）", () => {
     const { measured, frame } = renderRow({ before: "ab⚡cd", at: "e", after: "" });
     await new Promise((r) => setTimeout(r, 20));
     expect(measured.at(-1)?.x).toBe(9);
-    // 手算（displayWidth）现在也是 9 —— 两者一致，说明宽度表不再是“另一把尺子”
+    // 手算（displayWidth）现在也是 9 —— 两者一致，说明宽度表与 Ink 的排版结果对得上
     const manual = computeInputCursorPosition({
       transcriptLines: 0,
       hintCount: 0,

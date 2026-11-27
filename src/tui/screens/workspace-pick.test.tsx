@@ -1,4 +1,4 @@
-// 工作区屏（PRD D30）：远端宿主上「该进哪个工作区」的那个选择环节。
+// 工作区屏：远端宿主上「该进哪个工作区」的那个选择环节。
 //
 // 三条路：列出来按回车进；宿主上一个都没有就直接要路径；新建被拒时把原因留在屏上。
 // 用 ink-testing-library 真渲染（`useInput` 的行为只有真按键能验），结局用注入的 `onResult`
@@ -21,7 +21,7 @@ afterAll(() => zen.cleanup());
 /**
  * 等到 `check()` 成立就返回；超时抛错，错误里说清等的是什么。
  *
- * **别用「睡够 20ms」代替它**：那是赌「够久」，而这里要的是「真的发生了」。全量跑时事件
+ * 不用「睡够 20ms」代替它：那是赌「够久」，而这里要的是「真的发生了」。全量跑时事件
  * 循环被别的用例占着，同一个 20ms 有时够、有时不够 —— 同一份代码时红时绿，红的那次还
  * 只报个「`[]` 不等于 `[{ kind: 'chosen' }]`」，看不出在等什么。
  *
@@ -38,12 +38,12 @@ const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
 };
 
 /**
- * 让出几拍宏任务 —— 让这一拍里**排在后面**的活先跑完。让的是执行顺序，不是一个时长。
+ * 让出几拍宏任务 —— 让这一拍里排在后面的活先跑完。让的是执行顺序，不是一个时长。
  *
  * 为什么敲键之前要它：屏幕的帧是在 commit 里画的，而 `useInput` 的订阅落在 passive
- * effect 里，同一拍里排在画帧**之后**（React 的 Scheduler 在 Node 下走 `setImmediate`）。
+ * effect 里，同一拍里排在画帧之后（React 的 Scheduler 在 Node 下走 `setImmediate`）。
  * 所以「帧里已经有这一屏」还不等于「按键有人接」：在这一拍里塞一个键进去，那个键会被
- * 直接**丢掉** —— 不是延后处理，是永远不到，之后再睡多久都没用（这一点是实测出来的：
+ * 直接丢掉 —— 不是延后处理，是永远不到，之后再睡多久都没用（这一点是实测出来的：
  * 重负载下「等 20ms 再敲回车」，`results` 之后一直空；敲键前让一拍，键就当场被处理）。
  */
 const settle = async (turns = 2) => {
@@ -74,7 +74,7 @@ interface FakeHost {
 /**
  * 假宿主：`list` 是它的工作区表，`createFails` 让 `workspace.create` 回一句人话（宿主拒绝）。
  *
- * 打桩按方法名登记，没登记就抛 —— 屏偷偷调了第三个方法会当场红。
+ * 打桩按方法名登记，没登记就抛 —— 屏多调了第三个方法会当场红。
  */
 function fakeHost(options: {
   workspaces?: WorkspaceSnapshot[];
@@ -145,7 +145,7 @@ describe("工作区屏：列 / 选", () => {
     const frame = screen.frame();
     expect(frame).toContain("甲");
     expect(frame).toContain("/srv/a");
-    // 宿主这一版**不报**「那个目录还在不在」：客户端因此也不该编一句「目录已不在」
+    // 宿主这一版不报「那个目录还在不在」：客户端因此也不该编一句「目录已不在」
     expect(frame).not.toContain(t("ws.folderMissing"));
 
     screen.stdin.write("\r");

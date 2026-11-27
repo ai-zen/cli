@@ -1,15 +1,12 @@
 /**
  * `CliApp` —— 路由、退出码，以及「哪条路径拿到了哪份事实」。
  *
- * ## 这个文件为什么存在
- *
  * 改动前这些判定全在 `index.ts` 的 `main()` 里，它直接读 `process.argv`、直接写
- * `process.stdout`、直接设 `process.exitCode` —— 于是五条分支**一条都验不了**，只能靠
- * `src/__tests__/e2e.test.ts` 起真进程（`AGENTS.md` 里那句「组装根改了……只有真跑才看得见」
- * 就是这条的代价）。
+ * `process.stdout`、直接设 `process.exitCode` —— 于是五条分支一条都验不了，只能靠
+ * `src/__tests__/e2e.test.ts` 起真进程（「组装根改了……只有真跑才看得见」就是这条的代价）。
  *
- * 现在 argv / env / tty / 出口 / 四条重路径全是注入项，这一组用例用假件把每个格子咬死。
- * 真进程 e2e **仍然保留**：它验的是另一个东西（`dist/index.js` 这个产物装出来能不能跑），
+ * 现在 argv / env / tty / 出口 / 四条重路径全是注入项，这一组用例用假件把每个格子钉住。
+ * 真进程 e2e 仍然保留：它验的是另一个东西（`dist/index.js` 这个产物装出来能不能跑），
  * 不是路由逻辑 —— 两层都要有，少一层就有一类错没人看。
  */
 
@@ -150,7 +147,7 @@ describe("server-status：把这一次的事实递下去，退出码按「在不
     });
     expect(await app.run()).toBe(1);
     expect(calls.status).toHaveLength(1);
-    // 同一份 `CliEnv`，不是拆成几个值再掍一遍：地址与凭证必须同源
+    // 同一份 `CliEnv`，不是拆成几个值再拼一遍：地址与凭证必须同源
     expect(calls.status[0]).toBe(app.env);
     expect(calls.status[0]).toMatchObject({
       aiZenDir: "/tmp/aiz-status",
@@ -215,7 +212,7 @@ describe("stdio：把指令与这一次的事实一起递下去，退出码原�
     expect(calls.stdio).toHaveLength(1);
     expect(calls.stdio[0].instruction).toBe("解释一下 这段代码");
     expect(calls.stdio[0].save).toBe(false);
-    // 递下去的是**同一个** env 对象：不是复制一份，也就不可能有第二个真相
+    // 递下去的是同一个 env 对象：不是复制一份，也就不可能有第二个真相
     expect(calls.stdio[0].env).toBe(app.env);
   });
 
@@ -245,7 +242,7 @@ describe("tui：把首条消息与这一次的事实一起递下去", () => {
 
 describe("显式地址拼错：在启动早期说一句对症的话（D12）", () => {
   it("stdio 路径上地址不合法 → 退出码 2、**不**连也不跑，错误里带原值", async () => {
-    // `ftp:` 不是宿主认的四种 scheme（ws / wss / http / https），也不会有任何“补全”救它。
+    // `ftp:` 不是宿主认的四种 scheme（ws / wss / http / https），也不存在补全规则。
     // 判据与措辞都是连接层那一句 `parseAddress` 的（地址形状只有一个实现处）。
     const { app, err, out, calls } = makeApp(["--server", "ftp://example.com/ai-zen", "你好"]);
     expect(await app.run()).toBe(2);

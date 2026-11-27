@@ -1,4 +1,4 @@
-// 下载屏（PRD D31）的三条路：阶段一行行换、失败给真原因 + R 重试、Esc 折回连接屏。
+// 下载屏的三条路：阶段一行行换、失败给真原因 + R 重试、Esc 折回连接屏。
 //
 // 这一组用 ink-testing-library 真渲染（`useInput` 的行为只有真按键能验），而结局用注入的
 // `onResult` 接住 —— 不去动 ink 的退出通道。
@@ -13,9 +13,9 @@ setLocale("zh");
 /**
  * 等到 `check()` 成立就返回；超时抛错，错误里说清等的是什么。
  *
- * **别用「睡够多少毫秒」代替它**：那是赌「够久」，而这里要的是「真的发生了」。全量跑时事件
+ * 不用「睡够多少毫秒」代替它：那是赌「够久」，而这里要的是「真的发生了」。全量跑时事件
  * 循环被别的用例占着，同一个固定时长有时够、有时不够 —— 同一份代码时红时绿，红的那次还只
- * 报个 `[] !== [{kind:'connected'}]`，看不出在等什么。上限 1000ms 是**失败上限**，不是等待时长。
+ * 报个 `[] !== [{kind:'connected'}]`，看不出在等什么。上限 1000ms 是失败上限，不是等待时长。
  */
 const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
   const start = Date.now();
@@ -28,11 +28,11 @@ const until = async (check: () => boolean, what: string, timeoutMs = 1000) => {
 };
 
 /**
- * 让出几拍宏任务 —— 让这一拍里**排在后面**的活先跑完。让的是执行顺序，不是一个时长。
+ * 让出几拍宏任务 —— 让这一拍里排在后面的活先跑完。让的是执行顺序，不是一个时长。
  *
  * 为什么敲键之前要它：帧是在 commit 里画的，而 `useInput` 的订阅落在 passive effect 里，
- * 同一拍里排在画帧**之后**（React 的 Scheduler 在 Node 下走 `setImmediate`）。所以「帧里已经
- * 有这一屏」还不等于「按键有人接」：这一刻塞进去的键会被直接**丢掉**，不是延后处理，是永远不到。
+ * 同一拍里排在画帧之后（React 的 Scheduler 在 Node 下走 `setImmediate`）。所以「帧里已经
+ * 有这一屏」还不等于「按键有人接」：这一刻塞进去的键会被直接丢掉，不是延后处理，是永远不到。
  */
 const settle = async (turns = 2) => {
   for (let turn = 0; turn < turns; turn += 1) {
@@ -40,7 +40,7 @@ const settle = async (turns = 2) => {
   }
 };
 
-/** 剧本里模拟「子进程那边的耗时」用；**不是**「等结果」—— 等结果一律用 `until` */
+/** 剧本里模拟「子进程那边的耗时」用；不是「等结果」—— 等结果一律用 `until` */
 const flush = async (ms = 8) => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
@@ -48,7 +48,7 @@ const flush = async (ms = 8) => {
 /**
  * 一个按剧本回答的 `connect`：每次被调都记一笔（含那一轮收到的阶段），按剧本推进。
  *
- * 剧本里的 `steps` 是**这一幕要报的阶段**，最后把 `reason` 交回去（`null` = 连上了）。
+ * 剧本里的 `steps` 是这一幕要报的阶段，最后把 `reason` 交回去（`null` = 连上了）。
  */
 function scriptedConnect(scenes: Array<{ stages?: HostLaunchStage[]; reason: string | null }>) {
   const calls: HostLaunchStage[][] = [];
@@ -92,7 +92,7 @@ describe("阶段：一行行往下换，不报百分比", () => {
     ]);
     const screen = mountScreen(connect);
 
-    // 等的是**结局**（一次异步结果），不是「200ms 大概够了」
+    // 等的是结局（一次异步结果），不是「200ms 大概够了」
     await until(() => screen.results.length > 0, "连上的结局回来");
     expect(screen.results).toEqual([{ kind: "connected" }]);
     screen.unmount();
@@ -156,7 +156,7 @@ describe("失败：真原因 + R 重试", () => {
     ]);
     const screen = mountScreen(connect);
 
-    // 等失败那句话**真的上屏**（一次异步结果），顺带也证明了这一次拉起已经跑完、没报结局
+    // 等失败那句话真的上屏（一次异步结果），顺带也证明了这一次拉起已经跑完、没报结局
     await until(() => screen.frame().includes("npm error 404 not found"), "失败原因上屏");
     expect(screen.frame()).toContain("R");
     expect(screen.results).toEqual([]);
@@ -202,7 +202,7 @@ describe("失败：真原因 + R 重试", () => {
     await until(() => screen.frame().includes("第一条原因"), "失败原因上屏");
     expect(calls).toBe(1);
 
-    // 反证刚才那个 R **确实被处理过**：同一个键，在失败之后按下就该重拉。
+    // 反证刚才那个 R 确实被处理过：同一个键，在失败之后按下就该重拉。
     // 少了这一步，上面的 `calls === 1` 是「什么都没发生」—— 键被吞掉也会绿。
     screen.stdin.write("r");
     await until(() => calls === 2, "失败之后按 R 真的重拉了");

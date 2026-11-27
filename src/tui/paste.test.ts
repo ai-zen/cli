@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { normalizePastedText, PasteAssembler } from "./paste.js";
 
 /**
- * 粘贴这条路的两件事：**归一**（`\r\n` 与控制字符）与**拼装**（一段粘贴可能被拆成几块）。
+ * 粘贴这条路的两件事：归一（`\r\n` 与控制字符）与拼装（一段粘贴可能被拆成几块）。
  *
  * 为什么它值得一组用例：这两件事都在「输入」这条路上，出错时不是崩溃，而是「粘进来的东西
  * 看起来不对」—— 多行粘贴被当成回车发出去、Windows 剪贴板的 `\r` 留在行尾把回显挤歪、

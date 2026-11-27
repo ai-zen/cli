@@ -34,8 +34,6 @@ import { setLocale } from "./i18n/index.js";
 // 摘要与校验文案已 i18n 化：这些用例断言中文，显式锁定语言（不依赖宿主 LANG）
 beforeEach(() => setLocale("zh"));
 
-// ==================== 夹具（宿主 / 契约里的形状）====================
-
 const endpointOf = (over: Partial<EndpointDefinition> = {}): EndpointDefinition => ({
   id: "deepseek",
   name: "DeepSeek",
@@ -65,8 +63,6 @@ const configOf = (over: Partial<AppConfig> = {}): AppConfig => ({
 const permissionsOf = (): NonNullable<AgentDefinition["permissions"]> => ({
   tools: { allow: ["*"] },
 });
-
-// ==================== 查询 ====================
 
 describe("config-editor / 查询", () => {
   it("findModel / findEndpoint 命中与未命中", () => {
@@ -151,8 +147,6 @@ describe("config-editor / 查询", () => {
   });
 });
 
-// ==================== 由名称派生 id ====================
-
 describe("config-editor / 派生 id（id 由客户端定，宿主只落盘）", () => {
   it("uniqueEndpointId / uniqueModelId / uniqueImageModelId 派生合法 id 并避让冲突", () => {
     const config = configOf({
@@ -180,8 +174,6 @@ describe("config-editor / 派生 id（id 由客户端定，宿主只落盘）", 
     expect(uniqueAgentId([], "Code Reviewer")).toBe("code-reviewer");
   });
 });
-
-// ==================== argv / KEY=VALUE ====================
 
 describe("parseArgs / formatArgs", () => {
   it("按空白切分，支持引号包裹与转义空格", () => {
@@ -222,8 +214,6 @@ describe("parseKvInput / kvEntries / kvSummary", () => {
   });
 });
 
-// ==================== 权限四维 ====================
-
 describe("权限策略的文本往返", () => {
   it("parsePermission / formatPermission 往返", () => {
     expect(parsePermission("allow: a, b")).toEqual({ allow: ["a", "b"] });
@@ -261,8 +251,6 @@ describe("权限策略的文本往返", () => {
     expect(added.tools).toEqual({ allow: ["*"] });
   });
 });
-
-// ==================== AgentDefinition 提示词 / 函数定义 ====================
 
 describe("助手提示词与函数定义", () => {
   it("agentPromptText 只认首条 system 的纯文本，读不到就当空", () => {

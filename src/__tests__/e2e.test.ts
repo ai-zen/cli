@@ -1,36 +1,28 @@
 /**
  * 端到端：真 `node dist/index.js` → 真宿主进程 → 真 SDK → 真 HTTP 流 → 真 stdout / 退出码。
  *
- * ## 这一组跑的是什么
- *
- * `ai "<消息>"` 那一条路（stdio 模式）：它读连接设置 → 连上宿主（本机模式没有活的宿主就
- * 拉起一个）→ `runtime.agent.runOnce` 跑一轮 → 把答复写进 stdout。断言的是用户看得见的那几样：
+ * 跑的是 `ai "<消息>"` 那一条路（stdio 模式）：它读连接设置 → 连上宿主（本机模式没有活的宿主
+ * 就拉起一个）→ `runtime.agent.runOnce` 跑一轮 → 把答复写进 stdout。断言的是用户看得见的那几样：
  * stdout 的内容与纯净度、stderr 的错误、退出码。
  *
- * ## 「拉起一个」现在走 npx，而这一组不联网
- *
- * 本机拉起的口径是 `npx -y @ai-zen/agents-host@<range> serve --ai-zen-dir <数据根>`（PRD L14），
- * 而那个包还没发到 registry —— 真 npx 只会 404，而「能不能下载」不该由 e2e 去联网等（慢、还随
- * 网络与 npm 缓存浮动）。所以本机模式的用例把 `PATH` 前面的 `npx` 换成一个**只会转发的假件**
- * （见 `localEnv` / `makeFakeNpx`）：它吃掉 `-y` 与包坐标，剩下的原样交给本仓构建出来的宿主入口。
+ * 本机拉起走 `npx -y @ai-zen/agents-host@<range> serve --ai-zen-dir <数据根>`，而那个包还没发到
+ * registry：真 npx 只会 404，而「能不能下载」不该由 e2e 去联网等（慢，还随网络与 npm 缓存浮动）。
+ * 所以本机模式的用例把 `PATH` 前面的 `npx` 换成一个只会转发的假件（见 `localEnv` /
+ * `makeFakeNpx`）：它吃掉 `-y` 与包坐标，剩下的原样交给本仓构建出来的宿主入口。
  *
  * 于是「命令行怎么拼 → detached 子进程 → 发现文件 → 握手」这条真实路径仍然被走一遍，而耗时与
- * 网络无关（多出来的只有起一个 node 进程的时间）。清一色 30～40 秒的超时是留给真宿主与假 LLM
- * 的，与下载无关。
+ * 网络无关（多出来的只有起一个 node 进程的时间）。30～40 秒的超时是留给真宿主与假 LLM 的，
+ * 与下载无关。
  *
- * ## 收摊必须显式做
- *
- * 本机模式下宿主是 CLI **自己**拉起来的 detached 进程。每个用例一个 `AI_ZEN_DIR`，不显式关掉
- * 就是一堆常驻进程 + 删不掉的临时目录（进程的 cwd 还留在里面）。判据用发现文件
+ * 本机模式下宿主是 CLI 自己拉起来的 detached 进程。每个用例一个 `AI_ZEN_DIR`，不显式关掉
+ * 就是一堆常驻进程与删不掉的临时目录（进程的 cwd 还留在里面）。判据用发现文件
  * `<aiZenDir>/run/host.json` 里的 `pid`。
  *
- * **这一刀起收摊不再走 `host.shutdown`**（那条 procedure 宿主已经没有了）：改成「发 SIGTERM
- * 等它自己走」+「顺手把发现文件删掉」—— 后者是兜底，宿主正常收尾时它自己就删了，但被
- * SIGKILL 掉的那一次会留下一个指向死 pid 的文件，下一轮读它的人会白等。
+ * 收摊不再走 `host.shutdown`（那条 procedure 宿主已经没有了）：改成「发 SIGTERM 等它自己走」
+ * 加「把发现文件删掉」。后者是兜底：宿主正常收尾时它自己就删了，但被 SIGKILL 掉的那一次会留下
+ * 一个指向死 pid 的文件，下一轮读它的人会一直等到超时。
  *
- * ## 不跑在默认门禁里
- *
- * 这一组需要 **构建产物**（`dist/index.js`）与一个真宿主进程，所以它在 `vitest.e2e.config.ts`
+ * 这一组需要构建产物（`dist/index.js`）与一个真宿主进程，所以它在 `vitest.e2e.config.ts`
  * 里单独跑（`npm run test:e2e` 会先 `build`）；默认的 `vitest run` 把它排除在外。
  */
 
@@ -42,14 +34,12 @@ import { delimiter, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { startFakeLlm, type FakeLlm } from "@ai-zen/fake-llm";
 
-// ==================== Helpers ====================
-
 const CLI = join(process.cwd(), "dist", "index.js");
 /**
- * `agents-host` 的 bin 入口（跳梁 `agents` 仓，与 `vitest.config.ts` / `rolldown.config.mjs`
+ * `agents-host` 的 bin 入口（跨 `agents` 仓，与 `vitest.config.ts` / `rolldown.config.mjs`
  * 指 `@ai-zen/agents-client` 源码用的是同一种写法）。
  *
- * 只有一条用例自己拉起宿主（`--server-status` 那一条，它要一台**持续活着**的宿主），
+ * 只有一条用例自己拉起宿主（`--server-status` 那一条，它要一台持续活着的宿主），
  * 其余都让 `ai` 自己拉起 —— 那是它们要验的事。
  */
 const HOST_ENTRY = join(process.cwd(), "..", "agents", "packages", "host", "dist", "cli.js");
@@ -95,7 +85,7 @@ function runCli(
 }
 
 /**
- * 本机宿主在数据根里留下的**发现文件**（`<数据根>/run/host.json`：`pid` / `host` / `port`）。
+ * 本机宿主在数据根里留下的发现文件（`<数据根>/run/host.json`：`pid` / `host` / `port`）。
  *
  * 路径与字段名是协议的一部分（连接层按同一份形状读它），用例这里直接拼 —— 要验的不是
  * 「路径对不对」，而是「拉起来的那台停没停」。
@@ -160,7 +150,7 @@ function isAlive(pid: number): boolean {
  * 自己把真宿主拉起来，等到它写好了发现文件才返回。
  *
  * 为什么不用 `ai "…"` 预热：一次性调用结束后连接就没了，宿主自己的退出判据（没有连接、
- * 没有在跑的轮次）成立就收尾并**把发现文件摘掉** —— 拿它当预热等于和宿主的退出赛跑。
+ * 没有在跑的轮次）成立就收尾并把发现文件摘掉 —— 拿它当预热等于和宿主的退出赛跑。
  */
 async function startHost(dataRoot: string): Promise<{ pid: number; port: number }> {
   if (!existsSync(HOST_ENTRY)) {
@@ -186,7 +176,7 @@ async function startHost(dataRoot: string): Promise<{ pid: number; port: number 
 }
 
 /**
- * 收掉某个临时目录里被 `ai "…"` 顺手拉起的宿主。
+ * 收掉某个临时目录里由 `ai "…"` 拉起的宿主。
  *
  * 判据只用两样纯 Node 的东西：发现文件里的 `pid`（宿主自己写的），与 `SIGTERM`（宿主在
  * `cli.ts` 里已接管：收到就收尾并删掉发现文件）。不经过连接层 —— e2e 要的是「进程真的停了」，
@@ -272,7 +262,7 @@ interface SetupOptions {
 /**
  * 一个此刻空着的本地端口（向系统要：绑 0，读回拿到的那个，再放开）。
  *
- * 为什么要它：宿主默认听 **8790**，而开发者机器上常常已经有一台在听（`pnpm dev`、或上一次
+ * 为什么要它：宿主默认听 8790，而开发者机器上常常已经有一台在听（`pnpm dev`、或上一次
  * 手工起的宿主）。那时这一组每一条都会红在 `EADDRINUSE` 上 —— 看着像代码坏了，其实只是端口被
  * 别人占着。每个用例自带一个空端口之后，这一组就不再取决于「本机现在有没有在跑宿主」。
  *
@@ -292,7 +282,7 @@ function freePort(): Promise<number> {
 }
 
 /**
- * 建一个**带自己的端口**的用例数据根 —— 凡是会让 `ai` 拉起宿主的用例都用它。
+ * 建一个自带端口的用例数据根 —— 凡是会让 `ai` 拉起宿主的用例都用它。
  *
  * 端口写进 `<数据根>/host.json`（宿主的设置文件，优先级「启动参数 > 这个文件 > 出厂 8790」；
  * 客户端拉起时不带 `--port`，所以这一格就是最终答案），与本机有没有别的宿主无关。
@@ -311,7 +301,7 @@ async function setupHostDir(options: SetupOptions = {}): Promise<string> {
 /**
  * 在测试目录里备好「这台机器已经配过」（连接设置 + 一份配置 + 一个默认 AgentDefinition）。
  *
- * 不写 `cli/connection.json` 的话，`ai "…"` 会按「没配过」**直接失败**（那是「没配过」那条
+ * 不写 `cli/connection.json` 的话，`ai "…"` 会按「没配过」直接失败（那是「没配过」那条
  * 用例要验的事）；本组其余用例要验的是「跑一轮」本身。
  */
 function setupConfigDir(aizDir: string, options: SetupOptions = {}): void {
@@ -388,8 +378,6 @@ function getApiKey(): string {
 
 const API_KEY = getApiKey();
 
-// ==================== Tests ====================
-
 describe("E2E: 启动命令与子命令", () => {
   it("ai --version 输出版本号（stdout，退出码 0）", async () => {
     const result = await runCli(["--version"]);
@@ -411,7 +399,7 @@ describe("E2E: 显式宿主地址（--server / AI_ZEN_SERVER_URL）", () => {
     setupConfigDir(aizDir);
 
     // 端口写成非数字：`parseAddress` 认不出，与「把 wss:// 敲丢了一部分」是同一类手误。
-    // （裸 `host:port` 是**合法**的：连接层按 `ws://` 补全，所以不能拿它当反例。）
+    // （裸 `host:port` 是合法的：连接层按 `ws://` 补全，所以不能拿它当反例。）
     const badAddress = "example.com:abc";
     const result = await runCli(["--server", badAddress, "你好"], undefined, {
       AI_ZEN_DIR: aizDir,
@@ -429,12 +417,12 @@ describe("E2E: 显式宿主地址（--server / AI_ZEN_SERVER_URL）", () => {
   }, 20_000);
 
   it("--server-status 给了显式地址：问的是那个地址，不是本机的发现文件", async () => {
-    // 宿主跑在 A（发现文件与凭证都在 A），而客户端那侧是**另一个**空目录 B —— 这就是
+    // 宿主跑在 A（发现文件与凭证都在 A），而客户端那侧是另一个空目录 B —— 这就是
     // 远程 / 隧道的形状：B 里既没有 `run/host.json`，也没有 `run/token`
     const serverDir = await setupHostDir();
     const clientDir = makeTestDir();
 
-    // 宿主在 A 里**自己**起来并一直活着：一次性调用结束后它就会判空退出，
+    // 宿主在 A 里自己起来并一直活着：一次性调用结束后它就会判空退出，
     // 而本用例要的是一台能被第二个客户端问到的宿主
     const facts = await startHost(serverDir);
     expect(typeof facts.port).toBe("number");
@@ -508,7 +496,7 @@ describe("E2E: shell 兜底钩子", () => {
   });
 
   // 只有「认不出的子动作」才报错到 stderr、退出码 1；只想看用法是正常路径。
-  // 断言**不锁语言**：这条输出跟随界面语言（偏好 / 系统 LANG），临时 AI_ZEN_DIR 里
+  // 断言不锁语言：这条输出跟随界面语言（偏好 / 系统 LANG），临时 AI_ZEN_DIR 里
   // 没有 preferences.json 时落到英文；锁「两种语言都会出现的那段」才不 flaky。
   it("ai hook 不带参数时输出用法（stdout，退出码 0）", async () => {
     const aizDir = makeTestDir();
@@ -537,7 +525,7 @@ describe("E2E: 纯 stdio 模式", () => {
     const result = await runCli(["你好"], undefined, localEnv(aizDir));
     expect(result.exitCode).not.toBe(0);
     /*
-     * 这一格的口径变了：旧宿主把 SDK 那句「没配 API key」原样带出网，现在它是一条**内部**失败
+     * 这一格的口径变了：旧宿主把 SDK 那句「没配 API key」原样带出网，现在它是一条内部失败
      * （tRPC 的 `INTERNAL_SERVER_ERROR`，句子被折成「the call did not complete」）。客户端能保证
      * 的仍然是这一条 —— 失败要说出来、且 stdout 一个字都不许有；「为什么」这一半由宿主的日志说。
      */
@@ -614,7 +602,7 @@ describe("E2E: 真跑一轮（假 LLM 端点，不需要 key）", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe(`${CLI_REPLY}\n`);
-    // 会话 id 由宿主分配（L6）：客户端只负责把它写出来
+    // 会话 id 由宿主分配：客户端只负责把它写出来
     expect(result.stderr).toContain("Saved session:");
   }, 40_000);
 

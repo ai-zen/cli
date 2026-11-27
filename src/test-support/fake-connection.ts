@@ -1,21 +1,17 @@
 /**
- * 会话层用例用的**假连接**：契约的每一条 procedure 都按 `reply` 回，事件随手推。
- *
- * ## 这一版为什么变薄了
+ * 会话层用例用的假连接：契约的每一条 procedure 都按 `reply` 回，事件由用例直接推入。
  *
  * 旧版里面真的建了一个 `SessionMirror`（客户端库那一个），因为「一片增量怎么折进消息」的规则在
- * 库里。新契约**没有增量事件**：流式期间每片都推一条整条消息的 `message.changed`，攒这件事
- * 于是只剩「按 id 整条替换」。折叠规则就在 `src/server-client/mirror.ts` —— 这里直接用**真**的
+ * 库里。新契约没有增量事件：流式期间每片都推一条整条消息的 `message.changed`，攒这件事
+ * 于是只剩「按 id 整条替换」。折叠规则就在 `src/server-client/mirror.ts` —— 这里直接用真的
  * 那一个（不是替身），于是用例里推一条事件得到的镜像，与真连接上得到的那一份同源同规则。
  *
- * 事件的次序也照真连接：**先折进镜像，再交给订阅者**（`connection.ts` 的 `dispatch` 就是这么
+ * 事件的次序也照真连接：先折进镜像，再交给订阅者（`connection.ts` 的 `dispatch` 就是这么
  * 排的）。
  *
- * ## 假的是哪一半
- *
- * 只有「宿主怎么回」是假的：`reply(method, params)` 按**procedure 名**（`session.rename` /
+ * 只有「宿主怎么回」是假的：`reply(method, params)` 按 procedure 名（`session.rename` /
  * `agent.send` / `config.get` …）回答，路径由一条 `Proxy` 拼出来（`api.session.rename.mutate` →
- * `"session.rename"`）。`call` 那一侧用的是**真实现**（`createLegacyCall`）：只有
+ * `"session.rename"`）。`call` 那一侧用的是真实现（`createLegacyCall`）：只有
  * `session.create` / `session.send` 通，其余抛 `unsupported` —— 于是「未搬的域会抛」这件事在
  * 用例里也是真的。
  */
@@ -109,7 +105,7 @@ export function fakeConnection(options: FakeConnectionOptions = {}): FakeConnect
   /**
    * 假 `api`：叶子是 `{ query, mutate }` 两个函数，路径按 `Proxy` 拼成 procedure 名。
    *
-   * 名字用点拼而不是驼峰（`session.updateThinkingLevel` 而不是 `session.updateThinkingLevel`）——
+   * 名字用点拼而不是驼峰：`session.rename` 这种点号全名就是 tRPC 的 procedure 名，照抄最不容易错。
    * tRPC 的 procedure 名本来就是 `session.updateThinkingLevel` 这种点号全名，照抄最不容易错。
    */
   const makeApi = (path: string[]): unknown =>
