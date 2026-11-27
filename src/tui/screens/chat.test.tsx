@@ -1188,6 +1188,8 @@ describe("Chat 集成（拆分前的护栏）", () => {
 
     addSubAgent("子结论", "reviewer");
     addSubAgent("审查结论", "writer");
+    // 栏目只在手上还有活时存在：闲下来就收（见下方的收起用例）
+    created.session.status = "working";
     await repaint();
     const frame = lastFrame() ?? "";
     expect(frame).toContain("主助手");
@@ -1198,13 +1200,12 @@ describe("Chat 集成（拆分前的护栏）", () => {
   });
 
   /**
-   * 本次结束栏目自动收起。
+   * 闲置时栏目直接收起，不等名册清空、也不等每个子助手都报 `ended`。
    *
-   * 名册的清空点在 core 外循环的下一批开头 —— 所以这一段答完之后，那条栏目会连同几个绿点
-   * 一直挂着，直到用户下次说话。但客户端手上有「这一段闲下来了」这个事实（`activity`），
-   * 配上名册里全是 `ended`，就该在这一刻收起来。
+   * 名册的清空点在 core 外循环的下一批开头，所以答完之后那条栏目会一直挂着，直到用户下次
+   * 说话；而客户端手上已经有「闲下来了」这个事实（`activity`），就在这一刻收。
    */
-  it("一段闲下来且子助手全散场：栏目自动收起；再有在动的又出来", async () => {
+  it("一段闲下来：栏目立即收起（名册里还有没报 ended 的也收）", async () => {
     const { lastFrame, unmount } = mount();
     await flush();
     addSubAgent("子结论", "reviewer", "ended");
@@ -1213,21 +1214,51 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await repaint();
     expect(lastFrame() ?? "").toContain("reviewer");
 
-    // 这一段闲下来了、名册里全散场 → 收起
+    // 这一段闲下来了 → 收起。名册里那一项仍是 `ended` 也一样收
     created.session.status = "idle";
     await repaint();
     expect(lastFrame() ?? "").not.toContain("主助手");
 
-    // 又有 subagent 在动 → 又出来（收起不是「把名册删掉」）
+    // 名册里还有没报 ended 的项：闲下来照样收
+    addSubAgent("第二个", "writer", "working");
     created.session.status = "working";
-    addSubAgent("第二个", "writer");
     await repaint();
     expect(lastFrame() ?? "").toContain("writer");
+    created.session.status = "idle";
+    await repaint();
+    expect(lastFrame() ?? "").not.toContain("主助手");
     unmount();
   });
 
   /**
-   * 跑完了要报一声：栏目随后会自动收起（「本次结束栏目自动收起」），收起之后再没谁提它。
+   * 停在子栏时闲下来：栏目收起，视图也回主 Agent。
+   *
+   * 否则会出现「栏目已经没了、版面还在放子 Agent 的话」—— 一份自己收回自己显示的状态。
+   */
+  it("看着子栏时闲下来：栏目收起且视图回到主 Agent", async () => {
+    const { stdin, lastFrame, unmount } = mount();
+    await flush();
+    created.session.messages.push({ id: "m1", role: "assistant", content: "主 Agent 的话" });
+    addSubAgent("子 Agent 自己的话");
+    created.session.status = "working";
+    await repaint();
+
+    // →：切到子栏
+    stdin.write("\u001b[C");
+    await waitFor(() => (lastFrame() ?? "").includes("子 Agent 自己的话"));
+
+    // 闲下来：栏目收起，视图回主
+    created.session.status = "idle";
+    await repaint();
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toContain("主助手");
+    expect(frame).not.toContain("子 Agent 自己的话");
+    expect(frame).toContain("主 Agent 的话");
+    unmount();
+  });
+
+  /**
+   * 跑完了要报一声：栏目随后会自动收起（「闲置时栏目自动收起」），收起之后再没谁提它。
    * 一条结局只说一次 —— 重画一帧不该再多出一条。
    */
   it("子助手跑完：说一句「已完成」，且同一条结局只说一次", async () => {
@@ -1324,6 +1355,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await flush();
     created.session.messages.push({ id: "m1", role: "assistant", content: "主 Agent 的话" });
     addSubAgent("子 Agent 自己的话");
+    created.session.status = "working";
     await repaint();
 
     // →：输入框为空，切到那个子 Agent
@@ -1348,6 +1380,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     created.session.listSubAgentMessages = vi.fn(async () => {
       throw new Error("宿主拒了 message.list");
     });
+    created.session.status = "working";
     await repaint();
 
     stdin.write("\u001b[C");
@@ -1362,6 +1395,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     await flush();
     created.session.messages.push({ id: "m1", role: "user", content: "主 Agent 的提问" });
     addSubAgent("子 Agent 的结论");
+    created.session.status = "working";
     await repaint();
     expect(lastFrame() ?? "").toContain("主 Agent 的提问");
 
@@ -1408,6 +1442,7 @@ describe("Chat 集成（拆分前的护栏）", () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
     addSubAgent("子 Agent 的结论");
+    created.session.status = "working";
     await repaint();
     stdin.write("\u001b[C");
     await flush();

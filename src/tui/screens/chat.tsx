@@ -1108,6 +1108,16 @@ export function Chat(props: ChatScreenProps) {
   }, [activeAgentId, ready, subAgentSignature]);
 
   /**
+   * 闲置时把视图收回主 Agent。
+   *
+   * 栏目在闲置的那一刻就收起来了（见下方的 `subAgentsSettled`），所以这时还停在某个子栏上，
+   * 就成了「栏目已经没了、版面却在放子 Agent 的话」—— 一份自己收回自己显示的状态。
+   */
+  useEffect(() => {
+    if (activity !== "working" && activeAgentId !== "main") setActiveAgentId("main");
+  }, [activity, activeAgentId]);
+
+  /**
    * Agent 栏目切换（← / →）：在「主 Agent + 各子 Agent」之间循环。
    *
    * 键位分流见下方的 `useInput`：输入框为空时左右键本来就无处可做，正好用来切换；
@@ -1115,6 +1125,9 @@ export function Chat(props: ChatScreenProps) {
    * 编辑键）—— 不能为了切栏目把文本编辑的左右移动废掉。
    */
   const switchAgentView = (dir: -1 | 1) => {
+    // 栏目已收起（这一段闲下来了）：左右键无处可切，也不该把视图从主 Agent 挪走。
+    // 判据与 `subAgentsSettled` 同一份：那一格在条件 return 之后才算，这里直接用 `activity`。
+    if (activity !== "working") return;
     const ids = ["main", ...subAgentViews.map((item) => item.toolCallId)];
     // 旧 id 已失效（会话重建）时 indexOf 为 -1，归一后从主 Agent 起步
     const current = Math.max(0, ids.indexOf(activeAgentId));
@@ -1632,6 +1645,14 @@ export function Chat(props: ChatScreenProps) {
   const generating = activity === "working";
   const working = generating || blockingCommand !== null;
   /**
+   * 子 Agent 栏目什么时候收起：这一段闲下来就收。
+   *
+   * 名册的清空点在 core 外循环的下一批开头，所以答完之后那条栏目会连同几个状态点一直挂着，
+   * 直到用户下次说话。客户端手上已经有「闲下来了」这个事实（`activity`），不必再等名册清空，
+   * 也不必等每个子 Agent 都报 `ended`：收的只是显示，名册与子 Agent 的消息一个字不动。
+   */
+  const subAgentsSettled = !generating;
+  /**
    * 阶段行要的现读事实（忙闲 + 消息）：`phaseLine` 是一支纯函数，不存任何状态。
    *
    * 队里那几句不进来：排队区（`InboxArea`）已经把它们的原话逐条摆出来了，阶段行只回答
@@ -1642,8 +1663,10 @@ export function Chat(props: ChatScreenProps) {
     messages,
     handingOff,
   };
-  /** 当前查看的子 Agent；不在列表里（换了一次之后过期）时回落到主 Agent */
-  const activeSub = subAgents.find((item) => item.toolCallId === activeAgentId) ?? null;
+  /** 当前查看的子 Agent；栏目已收起或这一项过期时回落到主 Agent */
+  const activeSub = subAgentsSettled
+    ? null
+    : (subAgents.find((item) => item.toolCallId === activeAgentId) ?? null);
 
   const userCount = messages.filter((m) => m.role === AgentNS.Role.User).length;
   // 乐观回显只属于主 Agent 的视图（子 Agent 不会收到用户直接发的消息）
@@ -1721,21 +1744,9 @@ export function Chat(props: ChatScreenProps) {
    * 状态是名册那一格 + 它自己消息上的结局（`subAgentStatusOf`）：名册不报「出错 / 被叫停」，
    * 但那两件事就写在它栏里最后一条消息的 `status` / `error` 上 —— 能算的就把它算回来，
    *「失败必须显示失败」。它一条消息都没有时才停在名册那一格。
-   */
-  /**
-   * 栏目什么时候该收起来，「本次结束栏目自动收起」。
    *
-   * 名册是宿主的事实，而宿主的清空点在 core 外循环的下一批开头 —— 于是这一段答完之后，
-   * 那条栏目会连同几个绿点一直挂着，直到用户下次说话。客户端手里已经有「这一段闲下来了」
-   * 这个事实（`activity === "idle"`），配上名册里还有没有在动 / 还挂着的项，就够收起来了
-   * （`ended` 是名册给的「已结束」那一格）。
-   *
-   * 收的只是显示：名册一个字不动，`subAgentMessages` 照样取得到。用户正停在某个子栏时
-   * 不收 —— 那会把他正看着的东西抽走，也断了他切回主栏的路。
+   * 栏目什么时候收起见上面的 `subAgentsSettled`：这一段闲下来就收。
    */
-  const subAgentsSettled =
-    activeSub === null && activity === "idle" && subAgents.every((item) => item.state === "ended");
-
   const agentTabs: AgentTab[] =
     subAgents.length > 0 && !subAgentsSettled
       ? [
