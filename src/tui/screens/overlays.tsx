@@ -184,37 +184,50 @@ export function FormOverlay({
       </Box>
       <Box marginTop={1}>
         {/* 两层的按键不是同一套，提示也跟着换 —— 一条固定提示总有一半是错的 */}
-        <KeyHints hints={hintsOf(schema, editing.mode)} />
+        <KeyHints hints={hintsOf(schema, editing)} />
       </Box>
     </Box>
   );
 }
 
 /**
- * 提示那一行：按「现在是哪一层」给。
+ * 提示那一行：按**此刻能按的键**给，而不是按「在哪一层」给。
  *
- * 单项表是另一套 —— 它没有浏览层、也没有动作按钮，回车直接交卷。
+ * 一条固定的提示总有一半是错的：编辑文本时没有「空格勾选」这回事，停在提交按钮上时回车也不是
+ * 「编辑」。所以这里先找焦点落在哪个字段上，再决定印哪几条。
  */
-function hintsOf(schema: FormSchemaView, mode: FormEditing["mode"]): [string, string][] {
-  if (fieldNames(schema).length === 1) {
+function hintsOf(schema: FormSchemaView, editing: FormEditing): [string, string][] {
+  const names = fieldNames(schema);
+  const single = names.length === 1;
+  const focused =
+    single || editing.focus < names.length ? schema.properties[names[editing.focus]!] : undefined;
+  // 空格只在两种地方有意义：布尔（切）与多选（勾）
+  const space = focused?.type === "boolean" || focused?.type === "array";
+  const spaceHint: [string, string][] = space ? [["Space", t("ui.form.toggle")]] : [];
+
+  if (single) {
     return [
       ["↑ ↓", t("ui.form.choose")],
-      ["Space", t("ui.form.toggle")],
+      ...spaceHint,
       ["Enter", t("ui.form.submit")],
       ["Esc", t("ui.cancel")],
     ];
   }
-  if (mode === "browsing") {
-    return [
-      ["↑ ↓", t("ui.form.switch")],
-      ["Enter", t("ui.form.edit")],
-      ["Space", t("ui.form.toggle")],
-      ["Esc", t("ui.cancel")],
+
+  if (editing.mode === "browsing") {
+    // 停在动作行上时，回车执行的是那一个动作，不是「编辑」
+    const onSubmit = editing.focus === names.length;
+    const onCancel = editing.focus === names.length + 1;
+    const enterHint: [string, string] = [
+      "Enter",
+      onSubmit ? t("ui.form.submit") : onCancel ? t("ui.cancel") : t("ui.form.edit"),
     ];
+    return [["↑ ↓", t("ui.form.switch")], enterHint, ...spaceHint, ["Esc", t("ui.cancel")]];
   }
+
   return [
     ["↑ ↓", t("ui.form.choose")],
-    ["Space", t("ui.form.toggle")],
+    ...spaceHint,
     ["Enter", t("ui.form.commit")],
     ["Esc", t("ui.form.back")],
   ];

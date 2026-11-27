@@ -246,3 +246,62 @@ describe("FormOverlay", () => {
     form.unmount();
   });
 });
+
+/**
+ * 提示行：只印此刻真的能按的键。
+ *
+ * 这一条是被真机上的噪声逼出来的：编辑文本时提示里还挂着「空格勾选」，而那时按空格什么都不做。
+ */
+describe("FormOverlay：提示行", () => {
+  beforeEach(() => setLocale("zh"));
+
+  /** 一张有文本、布尔、多选的表（三项，走浏览层那套） */
+  function mountThree() {
+    const { stdin, lastFrame, unmount } = render(
+      <FormOverlay
+        title="提示"
+        schema={{
+          type: "object",
+          properties: {
+            name: { type: "string", title: "名字" },
+            flag: { type: "boolean", title: "开关" },
+            tags: { type: "array", title: "标签", items: { type: "string", enum: ["a", "b"] } },
+          },
+        }}
+        onAnswer={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    return { stdin, frame: () => lastFrame() ?? "", unmount };
+  }
+
+  it("编辑文本时不印「空格勾选」；编辑多选时才印", async () => {
+    const form = mountThree();
+    await until(() => form.frame().includes("提示"), "面板画出来");
+    await settle();
+
+    await key(form, "\r"); // 进「名字」
+    const editingText = form.frame();
+    expect(editingText).toContain("Enter");
+    expect(editingText).not.toContain("Space");
+
+    await key(form, "\r"); // 退回
+    await key(form, "\u001b[B"); // ↓ 到标签
+    await key(form, "\r"); // 进「标签」（多选）
+    await until(() => form.frame().includes("Space"), "多选的提示里有空格");
+    form.unmount();
+  });
+
+  it("浏览层停在布尔上才印「空格勾选」", async () => {
+    const form = mountThree();
+    await until(() => form.frame().includes("提示"), "面板画出来");
+    await settle();
+
+    // 第一格是文本：没有空格提示
+    expect(form.frame()).not.toContain("Space");
+
+    await key(form, "\u001b[B"); // ↓ 到开关
+    await until(() => form.frame().includes("Space"), "布尔上的提示里有空格");
+    form.unmount();
+  });
+});
