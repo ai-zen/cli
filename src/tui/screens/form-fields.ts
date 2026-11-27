@@ -20,13 +20,15 @@
  * | 布尔 | — | 切换 | 切换 |
  * | 单选 / 多选（收起） | — | **展开**候选 | — |
  * | 单选 / 多选（展开后） | ↑↓（←→）换候选，多选空格勾 | 收起 | 勾（仅多选） |
- * | `[提交]` / `[取消]` | — | 执行 | — |
+ * | `[同意]` / `[拒绝]` / `[取消]` | — | 执行 | — |
  *
  * 于是 `mode: "editing"` 只剩一个含义：**这一格的候选展开了**。文本与布尔永远不进去。
  *
- * **单项表**是另一条路：整张表就一格，没有「下一格」可去，回车就是交卷（也不画两个动作）。
+ * 动作那三个按钮指的是**谁做的决定**（MCP elicitation 的三态）：`[同意]` 是带内容交卷、
+ * `[拒绝]` 是明确说不、`[取消]` 是没做决定（Esc 同义）。一条表一种形状 —— 没有「只有一个
+ * 字段时另走一条路」那种特例：整张表就一格也一样要走到按钮上才交卷。
  *
- * 回车永远安全：在文本上是「下一格」、在枚举上是「展开」、在布尔上是切换 —— 只有落在 `[提交]`
+ * 回车永远安全：在文本上是「下一格」、在枚举上是「展开」、在布尔上是切换 —— 只有落在动作按钮
  * 上才交卷。提交是一件要说清的事，误按回车把半成品交出去比多按一下坏得多。
  */
 
@@ -40,13 +42,13 @@ export type FormMode = "browsing" | "editing";
 
 export interface FormEditing {
   readonly values: FormValues;
-  /** 浏览器层在「各个字段 + 提交项」之间走，编辑层停留在某一个字段上 */
+  /** 浏览层在「各个字段 + 三个动作」之间走，编辑层停留在某一个字段上 */
   readonly mode: FormMode;
   /**
    * 当前焦点落在第几个**项**上（`properties` 的键顺序，最后一项是提交）。
    *
-   * 提交项的下标是 `fieldNames(schema).length` —— 它与字段共用这一个下标，于是上下箭头
-   * 只需要管一条线。
+   * 动作项的下标从 `fieldNames(schema).length` 起（同意、拒绝、取消各占一格）—— 它们与字段
+   * 共用这一个下标，于是上下箭头只需要管一条线。
    */
   readonly focus: number;
   /**
@@ -78,7 +80,10 @@ export type FormKey =
  * （焦点跳到那一格、说一句为什么）。于是状态机只说「该交卷了」，由面板去算、再决定回哪一层。
  */
 export type FormStep =
-  { kind: "state"; editing: FormEditing } | { kind: "submit" } | { kind: "cancel" };
+  | { kind: "state"; editing: FormEditing }
+  | { kind: "accept" }
+  | { kind: "decline" }
+  | { kind: "cancel" };
 
 /** 字段名，按表里的顺序（焦点是这一串的下标） */
 export function fieldNames(schema: FormSchemaView): string[] {
@@ -115,18 +120,17 @@ export function initialEditing(schema: FormSchemaView): FormEditing {
         break;
     }
   }
-  // 只有一个字段的表直接站在编辑层：整张表就这一格，让人先按一次回车才肯收字是白按一下。
-  // 布尔也一样 —— 单项表里回车是「交卷」，切换归空格（见 `applyFormKey`）。
-  const single = fieldNames(schema).length === 1;
-  return { values, mode: single ? "editing" : "browsing", focus: 0, cursors: {} };
+  // 一律从浏览层、第一格开始 —— 一张表只有一种形状，字段几个都一样
+  return { values, mode: "browsing", focus: 0, cursors: {} };
 }
 
 /** 按一下键，得到新的编辑状态 */
 export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: FormKey): FormStep {
   const names = fieldNames(schema);
-  // 两个动作与字段共用那条焦点线：提交的下标是字段个数，取消紧随其后
-  const submitAt = names.length;
-  const cancelAt = submitAt + 1;
+  // 三个动作与字段共用那条焦点线：accept 的下标是字段个数，拒绝、取消紧随其后
+  const acceptAt = names.length;
+  const declineAt = acceptAt + 1;
+  const cancelAt = declineAt + 1;
   // 改任何一种输入都清掉上一次的错误：那句是「上一版草稿」的结论
   const cleared: FormEditing =
     editing.error === undefined ? editing : { ...editing, error: undefined };
@@ -136,34 +140,6 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
     kind: "state",
     editing: { ...cleared, focus: (cleared.focus + delta + slots) % slots },
   });
-
-  if (fieldNames(schema).length === 1) {
-    // 单项表没有「浏览层」这一层：动作按钮也不画，于是回车与 Esc 各归各的去处。
-    // 列在这里先判，是因为下面那套「两格动作 + 环绕」在单项表上全都不成立。
-    const name = names[0]!;
-    const field = schema.properties[name]!;
-    switch (key.kind) {
-      case "enter":
-        return { kind: "submit" };
-      case "escape":
-        return { kind: "cancel" };
-      case "space":
-        return { kind: "state", editing: toggle(cleared, name, field) };
-      case "next":
-      case "prev":
-        // 候选只有一个字段可走：↑ ↓ 就在这里换候选（不必先进哪一层）
-        return {
-          kind: "state",
-          editing: advance(cleared, name, field, key.kind === "next" ? 1 : -1),
-        };
-      case "step":
-        return { kind: "state", editing: step(cleared, name, field, key.delta) };
-      case "backspace":
-        return { kind: "state", editing: backspace(cleared, name, field) };
-      case "text":
-        return { kind: "state", editing: type(cleared, name, field, key.input) };
-    }
-  }
 
   if (key.kind === "escape") {
     // 编辑里退一层（值留着）；浏览里就是关掉整张表
@@ -194,8 +170,9 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
           editing: backspace(cleared, focusedName!, focusedField!),
         };
       case "enter": {
-        // 两个动作各有去处
-        if (cleared.focus === submitAt) return { kind: "submit" };
+        // 三个动作各有去处
+        if (cleared.focus === acceptAt) return { kind: "accept" };
+        if (cleared.focus === declineAt) return { kind: "decline" };
         if (cleared.focus === cancelAt) return { kind: "cancel" };
 
         if (focusedField === undefined || focusedName === undefined) {
@@ -472,7 +449,7 @@ export interface FormLine {
   readonly rest?: string;
   readonly focused?: boolean;
   /** 动作行与错误行的固定颜色（焦点只改标记，不改颜色） */
-  readonly tone?: "submit" | "cancel" | "error";
+  readonly tone?: "accept" | "decline" | "cancel" | "error";
 }
 
 /** 一行拍平之后的文字（用例与日志读它；上色是渲染那一层的事） */
@@ -493,28 +470,25 @@ export function fieldRows(): number {
 /**
  * 整张表占几行。
  *
- * 多项表：每个字段一行 + 空行 + 提交 + 取消。
- * 单项表：只有那一格（枚举连候选一起算）—— 它没有动作行，回车就是交卷。
+ * 每个字段一行 + 空行 + 三个动作（同意/拒绝/取消）。只有枚举展开时会多出候选，那部分由覆盖层
+ * 自己滚动（见 {@link formLines} 的 `maxRows`）。
  */
 export function schemaRows(schema: FormSchemaView): number {
-  const names = fieldNames(schema);
-  if (names.length === 1) {
-    const field = schema.properties[names[0]!]!;
-    return 1 + (enumValues(field)?.length ?? 0);
-  }
-  return names.length + ACTION_ROWS + 1;
+  return fieldNames(schema).length + ACTION_ROWS + 1;
 }
 
-/** 动作行的个数（提交、取消），以及它们前面的那一空行 */
-const ACTION_ROWS = 2;
+/** 动作行的个数（同意、拒绝、取消），以及它们前面的那一空行 */
+const ACTION_ROWS = 3;
 
-/** 面板上要印的两句话（文案由调用方给：`formLines` 是纯函数，不碰 i18n） */
+/** 面板上要印的那几句话（文案由调用方给：`formLines` 是纯函数，不碰 i18n） */
 export interface FormTexts {
   /** 空值的写法，例如「（空）」 */
   readonly empty: string;
-  /** 提交那个动作的显示名（渲染成 `[提交]`） */
-  readonly submit: string;
-  /** 取消那个动作的显示名（渲染成 `[取消]`） */
+  /** 带内容交卷那个动作（渲染成 `[同意]`） */
+  readonly accept: string;
+  /** 明确拒绝那个动作（渲染成 `[拒绝]`） */
+  readonly decline: string;
+  /** 没做决定、关掉那个动作（渲染成 `[取消]`） */
   readonly cancel: string;
 }
 
@@ -527,7 +501,7 @@ export interface FormTexts {
  * 进了编辑、而且那格是枚举时，才在它下面列一列候选：单选 `(o) 名字`，多选 `[x] 名字`。
  * 两种枚举同一个形状，只差一对括号。
  *
- * 最后一律是**提交项**：回车落在它上面才交卷。它和字段共用同一条焦点线（下标 = 字段个数）。
+ * 最后是三个动作：**同意**、**拒绝**、**取消**。它们和字段共用同一条焦点线（下标从字段个数起）。
  *
  * ## 放不下就滚动
  *
@@ -541,7 +515,7 @@ export function formLines(
   maxRows?: number,
 ): FormLine[] {
   const names = fieldNames(schema);
-  const submitAt = names.length;
+  const acceptAt = names.length;
   const lines: FormLine[] = [];
   /** 焦点那一块的第一行在 `lines` 里的下标（滚动要对准它） */
   let focusAt = 0;
@@ -600,24 +574,18 @@ export function formLines(
     }
   }
 
-  // 单项表不画动作：回车就是交卷、Esc 就是关掉，画两个按不到的按钮只是噪声
-  if (names.length === 1) {
-    if (editing.error !== undefined) lines.push({ text: editing.error, tone: "error" });
-    return clip(lines, focusAt, maxRows);
-  }
-
   // 动作之前空一行：它们是「对整张表做的事」，与上面那几格不是同一类
   lines.push({ text: "" });
 
-  const actions = [texts.submit, texts.cancel] as const;
+  const actions = [texts.accept, texts.decline, texts.cancel] as const;
   for (const [offset, label] of actions.entries()) {
-    const index = submitAt + offset;
+    const index = acceptAt + offset;
     const isFocus = editing.mode === "browsing" && editing.focus === index;
     if (isFocus) focusAt = lines.length;
     lines.push({
       text: `[${label}]`,
       focused: isFocus,
-      tone: offset === 0 ? "submit" : "cancel",
+      tone: offset === 0 ? "accept" : offset === 1 ? "decline" : "cancel",
     });
   }
 

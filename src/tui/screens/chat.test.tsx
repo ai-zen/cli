@@ -1583,40 +1583,49 @@ describe("问题对象（到交接线时宿主提问）", () => {
     createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
   });
 
-  it("两层交互：回车进这一格编辑、上下换候选、回车退回，最后落到提交项再回车", async () => {
+  it("同上一条形状：回车展开候选、上下换候选、回车收起，走到「同意」再回车交卷", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
 
     const answering = created.options.onQuestion(handoffQuestion());
-    // 只有一项的表打开就是编辑层：候选已经展开
-    await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
+    // 一张表只有一种形状：打开在浏览层、焦点落在那一格，三个动作按钮照画
+    await waitFor(() => (lastFrame() ?? "").includes("上下文已用 92%，要交接吗？"));
     await flush(40);
-    expect(lastFrame() ?? "").toContain("上下文已用 92%，要交接吗？");
-    // 单项表不画动作按钮：回车就是交卷
-    expect(lastFrame() ?? "").not.toContain("[提交]");
+    expect(lastFrame() ?? "").toContain("[同意]");
+    expect(lastFrame() ?? "").toContain("[拒绝]");
+    expect(lastFrame() ?? "").toContain("[取消]");
 
-    // ↓ 换到第二项（编辑层里上下箭头动的是候选）
+    // 回车展开候选（枚举的第二层）
+    stdin.write("\r");
+    await flush(40);
+    await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
+
+    // ↓ 换到第二项，↑ 回第一项
     stdin.write("\u001b[B");
     await flush(40);
     await waitFor(() => (lastFrame() ?? "").includes("(o) 独立摘要"));
-
-    // ↑ 回到第一项，回车直接交卷（不必再找提交按钮）
     stdin.write("\u001b[A");
     await flush(40);
     await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
+
+    // 回车收起候选，再 ↓ 落到「同意」，回车交卷
+    stdin.write("\r");
+    await flush(40);
+    stdin.write("\u001b[B");
+    await flush(40);
     stdin.write("\r");
     await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "self" } });
     unmount();
   });
 
-  it("Esc 放弃作答 → 交回 null（不替用户选一个）", async () => {
+  it("Esc 放弃作答 → 交回 cancel（不替用户选一个）", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
 
     const answering = created.options.onQuestion(handoffQuestion());
-    await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
+    await waitFor(() => (lastFrame() ?? "").includes("上下文已用 92%，要交接吗？"));
     await flush(40);
-    // 单项表没有浏览层：一下 Esc 就是关掉
+    // 浏览层里一下 Esc 就是关掉整张表
     stdin.write("\u001b");
     await flush(60);
     await expect(answering).resolves.toEqual({ action: "cancel" });
@@ -1628,14 +1637,20 @@ describe("问题对象（到交接线时宿主提问）", () => {
     await flush();
 
     const answering = created.options.onQuestion(handoffQuestion());
-    await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
+    await waitFor(() => (lastFrame() ?? "").includes("上下文已用 92%，要交接吗？"));
     await flush(40);
-    // 打开就是编辑层：往下走两格到「不交接」，回车直接交卷
+    // 展开候选 → 往下走到「不交接」→ 收起 → ↓ 到「同意」→ 回车
+    stdin.write("\r");
+    await flush(40);
     stdin.write("\u001b[B");
     await flush(30);
     stdin.write("\u001b[B");
     await flush(40);
     await waitFor(() => (lastFrame() ?? "").includes("(o) 不交接"));
+    stdin.write("\r");
+    await flush(40);
+    stdin.write("\u001b[B");
+    await flush(40);
     stdin.write("\r");
     await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "decline" } });
 

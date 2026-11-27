@@ -158,10 +158,10 @@ async function key(form: { stdin: { write: (data: string) => void } }, data: str
 }
 
 describe("FormOverlay", () => {
-  // 提交项与空值那两句是文案（走 `t`）：这里按中文断言
+  // 动作与空值那几句是文案（走 `t`）：这里按中文断言
   beforeEach(() => setLocale("zh"));
 
-  it("文本直接就能敲；枚举要回车展开；最后落到提交项回车交卷", async () => {
+  it("文本直接就能敲；枚举要回车展开；最后落到同意上回车交卷", async () => {
     const form = await mountedForm();
 
     // 焦点在「名字」上，直接敲 —— 不必先按回车进什么编辑态
@@ -182,10 +182,9 @@ describe("FormOverlay", () => {
     await until(() => form.frame().includes("[x] b"), "多选勾上了 b");
     await key(form, "\r");
 
-    // 落到提交项，回车交卷
+    // 落到「同意」，回车交卷；焦点不再占字符（靠颜色与加粗说），这里只断言按钮画出来了
     await key(form, "\u001b[B");
-    // 焦点不再占字符：提交那一行还在，靠颜色与加粗说（这里只断言它被画出来了）
-    await until(() => form.frame().includes("[提交]"), "焦点落到提交项");
+    await until(() => form.frame().includes("[同意]"), "焦点落到同意上");
     await key(form, "\r");
     await until(() => form.answers.length === 1, "提交了一次");
     expect(form.answers[0]).toEqual({
@@ -215,15 +214,32 @@ describe("FormOverlay", () => {
     form.unmount();
   });
 
-  it("动作按钮之前留一个空行（Ink 里空的 `<Text>` 高度是 0，得写一个空格）", async () => {
+  it("三个动作各一行：同意 / 拒绝 / 取消，前面留一个空行", async () => {
     const form = await mountedForm();
-    await until(() => form.frame().includes("[提交]"), "提交按钮画出来");
+    await until(() => form.frame().includes("[同意]"), "同意按钮画出来");
 
     const rows = form.frame().split("\n");
-    const submitAt = rows.findIndex((row) => row.includes("[提交]"));
+    const acceptAt = rows.findIndex((row) => row.includes("[同意]"));
+    expect(rows[acceptAt + 1]).toContain("[拒绝]");
+    expect(rows[acceptAt + 2]).toContain("[取消]");
+
     // 上一行去掉边框与两侧空白之后应当是空的
-    const above = (rows[submitAt - 1] ?? "").replace(/^[│\s]+|[│\s]+$/g, "");
+    // （Ink 里空的 `<Text>` 高度是 0，那一行得写一个空格才画得出来）
+    const above = (rows[acceptAt - 1] ?? "").replace(/^[│\s]+|[│\s]+$/g, "");
     expect(above).toBe("");
+    form.unmount();
+  });
+
+  it("[拒绝] 上回车：交 decline（带不动内容）", async () => {
+    const form = await mountedForm();
+    await until(() => form.frame().includes("[拒绝]"), "拒绝按钮画出来");
+
+    // ↓ 越过三个字段（名字、开关、标签），再 ↓ 一次越过「同意」落在「拒绝」上
+    for (let step = 0; step < 4; step += 1) await key(form, "\u001b[B");
+    await key(form, "\r");
+
+    await until(() => form.answers.length === 1, "交了一次");
+    expect(form.answers[0]).toEqual({ action: "decline" });
     form.unmount();
   });
 

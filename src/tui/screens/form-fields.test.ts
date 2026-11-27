@@ -55,7 +55,7 @@ const PICKS: FormSchemaView = {
   },
 };
 
-const TEXTS = { empty: "（空）", submit: "提交", cancel: "取消" };
+const TEXTS = { empty: "（空）", accept: "同意", decline: "拒绝", cancel: "取消" };
 
 /** 按一串键，只取「状态」那一路（提交/取消由面板接） */
 const press = (
@@ -107,7 +107,7 @@ describe("表单：浏览层", () => {
     expect(editing.mode).toBe("browsing");
   });
 
-  it("上下箭头在「字段 + 提交 + 取消」之间环绕：末尾是取消", () => {
+  it("上下箭头在「字段 + 同意 + 拒绝 + 取消」之间环绕：末尾是取消", () => {
     const names = fieldNames(SCHEMA);
     const toSubmit = names.reduce<FormEditing>(
       (current) => press(current, [next]),
@@ -115,11 +115,13 @@ describe("表单：浏览层", () => {
     );
     expect(toSubmit.focus).toBe(names.length);
 
-    // 提交之后是取消，再下一格回到第一格
-    const toCancel = press(toSubmit, [next]);
-    expect(toCancel.focus).toBe(names.length + 1);
+    // 同意 → 拒绝 → 取消 → 回到第一格
+    const toDecline = press(toSubmit, [next]);
+    expect(toDecline.focus).toBe(names.length + 1);
+    const toCancel = press(toDecline, [next]);
+    expect(toCancel.focus).toBe(names.length + 2);
     expect(press(toCancel, [next]).focus).toBe(0);
-    expect(press(initialEditing(SCHEMA), [prev]).focus).toBe(names.length + 1);
+    expect(press(initialEditing(SCHEMA), [prev]).focus).toBe(names.length + 2);
   });
 
   it("回车按焦点说话：文本跳下一格、枚举展开、动作行才执行", () => {
@@ -137,8 +139,10 @@ describe("表单：浏览层", () => {
       (current) => press(current, [next]),
       initialEditing(SCHEMA),
     );
-    expect(stepOf(onSubmit, enter)).toEqual({ kind: "submit" });
-    expect(stepOf(press(onSubmit, [next]), enter)).toEqual({ kind: "cancel" });
+    expect(stepOf(onSubmit, enter)).toEqual({ kind: "accept" });
+    // 三个动作各一个去处：同意 / 拒绝 / 取消
+    expect(stepOf(press(onSubmit, [next]), enter)).toEqual({ kind: "decline" });
+    expect(stepOf(press(press(onSubmit, [next]), [next]), enter)).toEqual({ kind: "cancel" });
   });
 
   it("浏览层的文本格直接收字（那一格在焦点上就是活的），枚举上敲字什么都不发生", () => {
@@ -231,19 +235,24 @@ describe("表单：编辑层", () => {
     expect(after.mode).toBe("browsing");
   });
 
-  it("只有一个字段的表：打开就进编辑层（先按一次回车才肯收字是白按一下）", () => {
+  it("只有一格的表也在浏览层打开：那一格是活的，直接收字", () => {
     const single: FormSchemaView = {
       type: "object",
       properties: { name: { type: "string", title: "名字" } },
     };
-    expect(initialEditing(single).mode).toBe("editing");
+    // 一张表只有一种形状：打开在浏览层、焦点在第一格，文本格本来就是活的（不必先按回车）
+    expect(initialEditing(single).mode).toBe("browsing");
+    expect(press(initialEditing(single), [{ kind: "text", input: "甲" }], single).values.name).toBe(
+      "甲",
+    );
 
-    // 布尔也一样：单项表里回车是交卷，切换归空格
+    // 布尔也一样：浏览层回车与空格都是切换
     const onlyBool: FormSchemaView = {
       type: "object",
       properties: { flag: { type: "boolean", title: "开关" } },
     };
-    expect(initialEditing(onlyBool).mode).toBe("editing");
+    expect(initialEditing(onlyBool).mode).toBe("browsing");
+    expect(press(initialEditing(onlyBool), [enter], onlyBool).values.flag).toBe(true);
   });
 
   it("枚举展开后回车收起（不提交）：值留着", () => {
@@ -332,7 +341,8 @@ describe("表单：摊成一行行", () => {
       "- 备注：（空）",
       // 动作之前那一行是空的：它们是对整张表做的事，与上面那几格不是同一类
       "",
-      "[提交]",
+      "[同意]",
+      "[拒绝]",
       "[取消]",
     ]);
   });
@@ -360,7 +370,7 @@ describe("表单：摊成一行行", () => {
       type: "object",
       properties: { name: { type: "string", title: "名字" } },
     };
-    // 只有一个字段的表打开就是编辑层，光标在那儿
+    // 只有一个字段也一样：打开在浏览层、光标已经在那格里
     const lines = formLines(schema, initialEditing(schema), TEXTS).map(lineText);
     expect(lines[0]).toBe("- 名字：▏");
   });
@@ -384,16 +394,25 @@ describe("表单：摊成一行行", () => {
     expect(multi).toContain("     [ ] y");
   });
 
-  it("动作被选中时带标记：提交与取消各一行，颜色由 `tone` 说", () => {
+  it("动作被选中时带标记：三个动作各一行，颜色由 `tone` 说", () => {
     const atSubmit = fieldNames(PICKS).reduce<FormEditing>(
       (current) => press(current, [next], PICKS),
       initialEditing(PICKS),
     );
-    const submitted = formLines(PICKS, atSubmit, TEXTS).slice(-2);
-    expect(submitted[0]).toMatchObject({ text: "[提交]", focused: true, tone: "submit" });
-    expect(submitted[1]).toMatchObject({ text: "[取消]", focused: false, tone: "cancel" });
+    const actions = formLines(PICKS, atSubmit, TEXTS).slice(-3);
+    expect(actions[0]).toMatchObject({ text: "[同意]", focused: true, tone: "accept" });
+    expect(actions[1]).toMatchObject({ text: "[拒绝]", focused: false, tone: "decline" });
+    expect(actions[2]).toMatchObject({ text: "[取消]", focused: false, tone: "cancel" });
 
-    const atCancel = press(atSubmit, [next], PICKS);
+    // 焦点走到「拒绝」上，颜色不变（颜色说的是会发生什么，焦点只改加粗）
+    const atDecline = press(atSubmit, [next], PICKS);
+    expect(formLines(PICKS, atDecline, TEXTS).at(-2)).toMatchObject({
+      text: "[拒绝]",
+      focused: true,
+      tone: "decline",
+    });
+
+    const atCancel = press(atDecline, [next], PICKS);
     expect(formLines(PICKS, atCancel, TEXTS).at(-1)).toMatchObject({
       text: "[取消]",
       focused: true,
@@ -401,13 +420,13 @@ describe("表单：摊成一行行", () => {
     });
   });
 
-  it("行数：字段数 + 空行 + 两个动作", () => {
-    expect(schemaRows(PICKS)).toBe(fieldNames(PICKS).length + 3);
+  it("行数：字段数 + 空行 + 三个动作", () => {
+    expect(schemaRows(PICKS)).toBe(fieldNames(PICKS).length + 4);
     expect(formLines(PICKS, initialEditing(PICKS), TEXTS)).toHaveLength(schemaRows(PICKS));
   });
 
   it("放不下就滚动：窗口跟着焦点走，被截掉的那一头各说一句", () => {
-    // 编辑 tags（三个候选）：字段 1 + 候选 3 + 备注 1 + 空行 1 + 动作 2 = 8 行，窗只给 4 行
+    // 编辑 tags（三个候选）：字段 3 + 候选 3 + 空行 1 + 动作 3 = 10 行，窗只给 4 行
     const lines = formLines(PICKS, editing("tags", PICKS), TEXTS, 4);
 
     expect(lines).toHaveLength(4);
@@ -415,11 +434,11 @@ describe("表单：摊成一行行", () => {
     expect(lineText(lines.at(-1)!)).toContain("下面还有");
 
     // 焦点在最末（取消）：换另一头
-    const atCancel = fieldNames(PICKS).reduce<FormEditing>(
+    const atSubmit = fieldNames(PICKS).reduce<FormEditing>(
       (current) => press(current, [next], PICKS),
       initialEditing(PICKS),
     );
-    const tail = formLines(PICKS, press(atCancel, [next], PICKS), TEXTS, 2);
+    const tail = formLines(PICKS, press(press(atSubmit, [next], PICKS), [next], PICKS), TEXTS, 2);
     expect(lineText(tail[0]!)).toContain("上面还有");
   });
 
@@ -429,7 +448,7 @@ describe("表单：摊成一行行", () => {
   });
 });
 
-describe("表单：单项表", () => {
+describe("表单：只有一格的表也走同一条路", () => {
   /** 一道只有三个候选的单选题（交接那道就是这个形状） */
   const ONE_CHOICE: FormSchemaView = {
     type: "object",
@@ -444,33 +463,41 @@ describe("表单：单项表", () => {
     required: ["mode"],
   };
 
-  it("打开就在编辑层、不画动作行（回车就是交卷）", () => {
+  it("打开在浏览层第一格，动作行照画（三态一个不少）", () => {
     const lines = formLines(ONE_CHOICE, initialEditing(ONE_CHOICE), TEXTS).map(lineText);
 
-    expect(lines).toEqual(["+ 方式 *", "     (o) 自己", "     ( ) 独立", "     ( ) 不"]);
-    expect(schemaRows(ONE_CHOICE)).toBe(4);
+    expect(lines).toEqual(["+ 方式 *：自己", "", "[同意]", "[拒绝]", "[取消]"]);
+    expect(schemaRows(ONE_CHOICE)).toBe(5);
   });
 
-  it("回车就是提交，Esc 就是关掉（没有浏览层那一跳）", () => {
-    const editing = initialEditing(ONE_CHOICE);
-    expect(stepOf(editing, enter, ONE_CHOICE)).toEqual({ kind: "submit" });
-    expect(stepOf(editing, escape, ONE_CHOICE)).toEqual({ kind: "cancel" });
+  it("回车在枚举上是展开；走到 [同意] 才交卷，Esc 直接关掉", () => {
+    const start = initialEditing(ONE_CHOICE);
+    expect(press(start, [enter], ONE_CHOICE).mode).toBe("editing");
+    expect(stepOf(start, escape, ONE_CHOICE)).toEqual({ kind: "cancel" });
+
+    // 一格 + 三个动作：第 1、2、3 次 ↓ 分别落在同意、拒绝、取消上
+    const atSubmit = press(start, [next], ONE_CHOICE);
+    expect(stepOf(atSubmit, enter, ONE_CHOICE)).toEqual({ kind: "accept" });
+    expect(stepOf(press(atSubmit, [next], ONE_CHOICE), enter, ONE_CHOICE)).toEqual({
+      kind: "decline",
+    });
   });
 
-  it("↑ ↓ 直接换候选（不必先「进格」）", () => {
-    const editing = initialEditing(ONE_CHOICE);
-    expect(press(editing, [next], ONE_CHOICE).values.mode).toBe("summary");
-    expect(press(editing, [prev], ONE_CHOICE).values.mode).toBe("no");
+  it("↑ ↓ 在「字段 + 三个动作」之间走（不再是换候选）", () => {
+    const start = initialEditing(ONE_CHOICE);
+    expect(press(start, [next], ONE_CHOICE).focus).toBe(1);
+    expect(press(start, [prev], ONE_CHOICE).focus).toBe(3);
+    // 值一直没动过：换焦点不该顺手改答案
+    expect(press(start, [next], ONE_CHOICE).values.mode).toBe("self");
   });
 
-  it("单项是布尔时：回车交卷、空格切换", () => {
+  it("单项是布尔时：浏览器层回车与空格都是切换", () => {
     const only: FormSchemaView = {
       type: "object",
       properties: { flag: { type: "boolean", title: "开关" } },
     };
-    const editing = initialEditing(only);
-    // 回车不再「切过去」—— 单项表里它只有一个意思：交卷
-    expect(stepOf(editing, enter, only)).toEqual({ kind: "submit" });
-    expect(press(editing, [{ kind: "space" }], only).values.flag).toBe(true);
+    const start = initialEditing(only);
+    expect(press(start, [enter], only).values.flag).toBe(true);
+    expect(press(start, [{ kind: "space" }], only).values.flag).toBe(true);
   });
 });

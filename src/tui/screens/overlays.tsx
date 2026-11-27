@@ -110,14 +110,14 @@ export function FormOverlay({
    * 候选多的那几种字段会顶穿屏幕，所以给窗就只画窗口里那一段，窗口跟着焦点走。
    */
   maxRows?: number;
-  /** 用户提交或取消：`accept` 带内容，`cancel` 是关掉没作答 */
+  /** 用户作答：三态 —— `accept` 带内容、`decline` 明确拒绝、`cancel` 关掉没作答 */
   onAnswer: (answer: FormAnswerView) => void;
   onCancel: () => void;
 }) {
   const [editing, setEditing] = useState<FormEditing>(() => initialEditing(schema));
 
   /**
-   * 按一下：三种去处（新的编辑状态 / 该交卷了 / 关掉）。
+   * 按一下：四种去处（新的编辑状态 / 同意 / 拒绝 / 关掉）。
    *
    * 「交卷」与「关掉」由状态机说，但**做的事**在这一层：校验要读 `answerOf`，失败了还要把焦点
    * 跳回那一格 —— 那是面板的事，不是状态机的（见 `FormStep` 的注释）。
@@ -126,7 +126,11 @@ export function FormOverlay({
     setEditing((current) => {
       const result = applyFormKey(current, schema, key);
       if (result.kind === "state") return result.editing;
-      if (result.kind === "submit") {
+      if (result.kind === "decline") {
+        onAnswer({ action: "decline" });
+        return current;
+      }
+      if (result.kind === "accept") {
         const answer = answerOf(schema, current.values);
         if (answer.ok) onAnswer({ action: "accept", content: answer.content });
         // 校验没过：留在浏览层、焦点跳到那一格，下面多一行说清为什么
@@ -152,7 +156,12 @@ export function FormOverlay({
   const lines = formLines(
     schema,
     editing,
-    { empty: t("ui.form.empty"), submit: t("ui.form.submit"), cancel: t("ui.cancel") },
+    {
+      empty: t("ui.form.empty"),
+      accept: t("ui.form.accept"),
+      decline: t("ui.form.decline"),
+      cancel: t("ui.form.cancel"),
+    },
     maxRows,
   );
 
@@ -201,9 +210,8 @@ export function FormOverlay({
  */
 function hintsOf(schema: FormSchemaView, editing: FormEditing): [string, string][] {
   const names = fieldNames(schema);
-  const single = names.length === 1;
   const focused =
-    single || editing.focus < names.length ? schema.properties[names[editing.focus]!] : undefined;
+    editing.focus < names.length ? schema.properties[names[editing.focus]!] : undefined;
 
   const choices =
     focused !== undefined &&
@@ -212,49 +220,46 @@ function hintsOf(schema: FormSchemaView, editing: FormEditing): [string, string]
   const toggles = focused?.type === "boolean" || (choices && expanded && focused?.type === "array");
 
   const out: [string, string][] = [];
-  // 单项表：↑ ↓ 永远在候选里走（整张表就这一格）；其余情况只有展开的枚举才换选项
-  if (single && choices) out.push(["↑ ↓", t("ui.form.choose")]);
-  else if (!single && expanded && choices) out.push(["↑ ↓", t("ui.form.choose")]);
+  // 只有展开的枚举才换选项
+  if (expanded && choices) out.push(["↑ ↓", t("ui.form.choose")]);
 
   if (toggles) out.push(["Space", t("ui.form.toggle")]);
-
-  // 单项表：回车交卷、Esc 关掉
-  if (single) {
-    out.push(["Enter", t("ui.form.submit")], ["Esc", t("ui.cancel")]);
-    return out;
-  }
 
   if (expanded) {
     out.push(["Enter", t("ui.form.commit")], ["Esc", t("ui.form.back")]);
     return out;
   }
 
-  // 收起状态：↑ ↓ 换格，回车按焦点说话
-  const onSubmit = editing.focus === names.length;
-  const onCancel = editing.focus === names.length + 1;
+  // 收起状态：↑ ↓ 换格，回车按焦点说话（三个动作各一句话）
+  const onAccept = editing.focus === names.length;
+  const onDecline = editing.focus === names.length + 1;
+  const onCancel = editing.focus === names.length + 2;
   const enter: [string, string] = [
     "Enter",
-    onSubmit
-      ? t("ui.form.submit")
-      : onCancel
-        ? t("ui.cancel")
-        : choices
-          ? t("ui.form.expand")
-          : focused?.type === "boolean"
-            ? t("ui.form.toggle")
-            : t("ui.form.next"),
+    onAccept
+      ? t("ui.form.accept")
+      : onDecline
+        ? t("ui.form.decline")
+        : onCancel
+          ? t("ui.form.cancel")
+          : choices
+            ? t("ui.form.expand")
+            : focused?.type === "boolean"
+              ? t("ui.form.toggle")
+              : t("ui.form.next"),
   ];
-  return [["↑ ↓", t("ui.form.switch")], ...out, enter, ["Esc", t("ui.cancel")]];
+  return [["↑ ↓", t("ui.form.switch")], ...out, enter, ["Esc", t("ui.form.cancel")]];
 }
 
 /**
  * 一行的颜色。
  *
- * 两个动作是固定的：提交蓝、取消红 —— 它们说的是「会发生什么」，与焦点无关；焦点只加那个 `❯`。
- * 其余行：焦点用强调色，校验失败那句用错误色。
+ * 三个动作是固定的：同意蓝、拒绝黄、取消红 —— 它们说的是「会发生什么」，与焦点无关；焦点只靠
+ * 强调色与加粗。其余行：焦点用强调色，校验失败那句用错误色。
  */
 function lineColor(line: FormLine): string | undefined {
-  if (line.tone === "submit") return theme.accent;
+  if (line.tone === "accept") return theme.accent;
+  if (line.tone === "decline") return theme.warn;
   if (line.tone === "cancel" || line.tone === "error") return theme.error;
   return line.focused === true ? theme.accent : undefined;
 }
