@@ -1,91 +1,83 @@
----
-title: Configuration
-description: The seven subjects of the configuration centre — endpoints, models, image models, MCP servers, agents and sub-agents, defaults, tool output limit; each field written as it is edited, configuration living on the host.
-outline: deep
----
-
 # Configuration
 
-## Configuration lives on the host
+Configuration lives in two places, and the boundary is who needs to read it:
 
-Configuration is `config.json` under the data root (given by `AI_ZEN_DIR`, `~/.ai-zen` by default), read and written by the host. The client does not assemble a whole configuration locally and does not write that file: it reads through procedures — one `config.get` returns the configuration together with the reasoning preset table — and every edit is one write call (`config.defaults.update`, `config.update`, `config.endpoints.*`, `config.models.*`, `config.imageModels.*`, `config.mcp.update`, `config.agents.update` and so on) whose result is the whole configuration after the change.
+| File | Content | Written by |
+|---|---|---|
+| `<data root>/config.json` | Endpoints, models, image models, agent definitions, sub-agents, MCP server references | The client, through the host's procedures |
+| `<data root>/cli/preferences.json` | Interface language | The CLI alone |
 
-So what the screen shows next is what the host has. A successful write is already in effect; there is no "restart to apply".
+The interface language does not go into `config.json`: that file's shape is shared across clients, so putting a CLI preference in it gives the desktop app something it cannot interpret and may drop on write-back.
 
 ## The configuration centre
 
-`/config` opens the configuration centre. One screen per subject, with a create entry as the first row (the MCP screen also carries one entry that switches layers) and a detail screen for editing an entry in place:
+`/config` opens it, and all four kinds of settings are there:
 
-| Screen              | What it edits                                                                                                                                    |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| EndpointDefinitions | name, base URL, API key, description; add and remove                                                                                             |
-| ModelDefinitions    | name, endpoint, model name, reasoning preset, handoff and guard thresholds, vision flag, description; add, remove, restore a factory entry       |
-| Image models        | name, endpoint, model name, default size and quality, description; add, remove, restore a factory entry                                          |
-| MCP servers         | one layer at a time (user or project): name, transport (stdio / http / sse), command, arguments, environment, URL, headers, enabled, description |
-| Agents              | agents and sub-agents: name, description, model, reasoning level, prompt, the four permission dimensions (tools, skills, MCPs, sub-agents)       |
-| Defaults            | see the next section                                                                                                                             |
-| Tool output limit   | characters of tool output kept in context                                                                                                        |
+| Group | Editable |
+|---|---|
+| Endpoints | Name, base URL, API key, description |
+| Models | Endpoint, model name sent to the endpoint, reasoning preset, handoff threshold, guard threshold, vision support |
+| Image models | Endpoint, model name, default size, default quality |
+| Agent definitions | Name, description, system prompt, bound model, the four permission dimensions; sub-agents additionally have a function description and a parameter schema |
+| MCP servers | Transport, command and arguments, environment variables, headers, enabled state |
 
-There is one rule: each field writes as soon as it is edited. No save key, no draft copy to lose — a field is committed with one write call, and the configuration that comes back is the next frame on screen.
+Long text fields (system prompt, parameter schema) open an external editor on `Enter`. Validation happens before saving: the name cannot be empty, the base URL must start with `http://` or `https://`, the API key cannot be empty, and the parameter schema must be a JSON object.
 
-Four details:
+## Three-level model resolution
 
-- Removing an endpoint first shows who points at it (the names of the models and image models); when the host refuses, its own sentence is shown.
-- Removing a model first says which of the three default slots point at it and what they will point at instead (the first remaining model on the same endpoint), or that they will be cleared.
-- A new model needs both thresholds on the spot (handoff and guard): the host does not fill them in, so the screen offers a starting point that can be edited right there.
-- Multi-line content — prompts, function descriptions, parameter schemas — opens the local editor on `Enter`; content that did not change is not written.
+Which model a session uses is resolved in three levels, first hit wins:
 
-Closing the configuration centre folds the entries changed this time into one notice saying what changed; when anything changed, this session also re-reads the facts it holds (model, reasoning level, the status bar blocks).
+1. The session row's `modelId` ("this session" in `/model`)
+2. The agent definition's `modelId` ("agent definition")
+3. `defaultModel` in `config.json` ("global")
 
-## Defaults
+When all three are empty it fails, and the error names the definition that has no bound model. It does not quietly fall back to a factory model — that would show A in the interface while the request and the bill went to B.
 
-| Item                     | What it is                                                                                                                  |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| Default agent            | which agent sessions opened later use; sessions already open are unaffected                                                 |
-| Fallback model           | what is used when an agent definition binds no model                                                                        |
-| Migration model          | what the handoff run uses                                                                                                   |
-| Default image model      | what image generation uses by default                                                                                       |
-| Naming model             | what automatic naming uses                                                                                                  |
-| Keep output on interrupt | `abortedMessageStrategy`: keep the partial answer from before the interrupt in the context, or drop it                      |
-| Tool calls on interrupt  | `abortedToolRoundStrategy`: keep the whole batch of tool calls with a reason backfilled for the unfinished ones, or drop it |
-| Auto title               | on / off: whether the host names a session the first time it goes idle                                                      |
+Parameters follow the level the model came from: when the session overrides the model, the `modelParams` on the agent definition are not merged in. Parameters meant for the old model would be rejected by the endpoint.
 
-The first five can be left unset, and clearing one leaves nothing pointing; the last three are a fixed set of choices with no empty state. The two interrupt items are the user-visible form of those two fields and take effect on live agents right away; auto title rebuilds no agent — the next idle moment reads the new value.
+## Thinking levels
 
-The tool output limit is not carried by the agent: the capability scope reads it at the moment a tool is called, so no agent has to be rebuilt after the change.
+The levels available to `/think` are not hard-coded; they are read from the endpoint's preset table `<data root>/reasoning-presets.json`. Whatever levels the table has are the ones on offer:
 
-## Factory-managed entries
+- Turning thinking off requires an `off` level in the table. A model that always thinks and has no disabling parameter simply has no off level
+- Choosing "follow model default" clears this layer and falls back to the model definition's `defaultParams`
+- Each level corresponds to a set of request parameter patches. Provider differences (`reasoning_effort` versus `thinking`) stay inside the table; the client only writes the chosen level into the configuration
 
-ModelDefinitions and image models carry a `custom` flag. An entry that is not marked `custom: true` belongs to the factory list and is replaced by it every time the host reads the configuration; editing a factory-managed entry makes the host mark it custom.
+No level arithmetic happens at runtime: what is written into the configuration is the expanded parameters, and a request only does one shallow merge.
 
-The detail screen of a model or an image model has a restore action: it replaces that entry with the factory entry of the same id and puts it back under factory management. EndpointDefinitions are never managed that way — adding, editing and removing them is a human decision.
+## Handoff thresholds
 
-## ModelDefinitions come from three levels
+Both thresholds can be written on the model definition or overridden per session (the configuration centre edits the former; session overrides are written by the handoff-related entry points):
 
-| Level            | Written where                             | Written by       |
-| ---------------- | ----------------------------------------- | ---------------- |
-| this session     | `modelId` on the session row              | `/model <id>`    |
-| agent definition | `modelId` on the definition               | `/model -a <id>` |
-| global fallback  | `defaultModelDefinition` in `config.json` | `/model -g <id>` |
+| Threshold | Meaning |
+|---|---|
+| Handoff threshold (`handoff`) | Soft line. Crossed, the agent hands off when it is idle |
+| Guard threshold (`guard`) | Hard line. Compared before every request; crossing it rejects the request |
 
-The session-level override wins, then the agent definition, then the fallback. The model id on the status bar is what the host resolved through those levels; the client does not work it out itself.
+The factory values are 40% and 80% of the window. Both are absolute numbers.
 
-The reasoning level has two writable levels: this session (`session.updateThinkingLevel`) and the agent definition (`modelParams` in `config.agents.update`). The levels offered come from the preset table the model references; the client looks them up and keeps no second copy.
+## API keys
 
-The other commands each write one field: `/agent` writes the default agent, `/key` writes the API key of the current endpoint, `/mcp` opens the MCP screens of those two layers, `/lang` writes `config.language` and the local preference, and `/reload` changes no configuration — it has the host re-read its capability scopes from what is on disk.
+`/key` sets one endpoint's key in place. The plaintext is stored in `config.json` and the file permissions are the user's responsibility. This key is not a credential in the sense of connecting to a host — that one lives on the host side, see `/upgrade` and the host documentation.
 
-## What is left on this machine
+## MCP servers
 
-Under the data root the client owns four small files and its own log directory; everything else there belongs to the host.
+`/mcp` adds, removes, edits, enables and disables servers. Which file is written depends on the layer the server came from:
 
-| Path                      | Contents                                                                                            |
-| ------------------------- | --------------------------------------------------------------------------------------------------- |
-| `cli/connection.json`     | the host picked on the connect screen; written only when a human picks one                          |
-| `cli/last-workspace.json` | the project entered last, one entry per host                                                        |
-| `cli/last-session.json`   | the session opened last, one entry per project                                                      |
-| `cli/preferences.json`    | interface language (`AIZ_PREFERENCES_FILE` overrides the path)                                      |
-| `logs/cli/cli.log`        | the client's log, 2 MB per file, two files kept; warnings and errors also surface in the notice bar |
-| `logs/cli/launch.log`     | output of the host process this client started, rewritten on every launch                           |
-| `logs/cli/keys.log`       | key diagnostics, written only with `AIZ_DEBUG_KEYS=1` (`AIZ_KEYS_FILE` overrides the path)          |
+| Layer | File | Editable from here |
+|---|---|---|
+| Project host directory | `<project>/.ai-zen/mcp.json` | Yes |
+| User level | `<data root>/mcp.json` | Yes |
+| Project root, project shared directory, home shared directory | the respective `mcp.json` | Read-only: those files belong to someone else |
 
-All of these are caches: a file that cannot be read is not written back — the client carries on as if there were no record and leaves the bytes on disk alone.
+Renaming, changing the transport and disabling all happen here. Disabling writes `disabled` on that entry rather than removing it — removing it would let a farther definition of the same name come back to life, which is not what you asked for.
+
+No restart is needed after editing: use `/reload`, or wait for the host's `autoRefreshTools` refresh.
+
+## Language
+
+`/lang` switches the interface language and writes `<data root>/cli/preferences.json`. The host's language is a separate setting: it lives in `language` in `config.json` and affects text the host produces (notices, questions, error messages). The client syncs its own language to the host once it connects, so the two normally agree.
+
+## Default agent
+
+`/agent` sets which agent definition new sessions default to. It does not change the definition this session uses, and it does not change the model: the model bound in a definition is the second resolution level, which is a different thing from this session's model override.

@@ -7,10 +7,7 @@
   },
   "version": "1.1.0-alpha.4",
   "docsRoot": "docs",
-  "locales": [
-    "zh",
-    "en"
-  ],
+  "locales": ["zh", "en"],
   "defaultLocale": "zh",
   "entry": {
     "zh": "zh/index.md",
@@ -18,48 +15,20 @@
   },
   "sections": {
     "zh": [
-      {
-        "title": "快速开始",
-        "path": "zh/getting-started.md"
-      },
-      {
-        "title": "命令",
-        "path": "zh/commands.md"
-      },
-      {
-        "title": "配置",
-        "path": "zh/configuration.md"
-      },
-      {
-        "title": "界面",
-        "path": "zh/interface.md"
-      },
-      {
-        "title": "宿主",
-        "path": "zh/host.md"
-      }
+      { "title": "快速开始", "path": "zh/getting-started.md" },
+      { "title": "界面", "path": "zh/interface.md" },
+      { "title": "命令", "path": "zh/commands.md" },
+      { "title": "配置", "path": "zh/configuration.md" },
+      { "title": "管道与钩子", "path": "zh/pipeline.md" },
+      { "title": "故障排查", "path": "zh/troubleshooting.md" }
     ],
     "en": [
-      {
-        "title": "Quick Start",
-        "path": "en/getting-started.md"
-      },
-      {
-        "title": "Commands",
-        "path": "en/commands.md"
-      },
-      {
-        "title": "Configuration",
-        "path": "en/configuration.md"
-      },
-      {
-        "title": "Interface",
-        "path": "en/interface.md"
-      },
-      {
-        "title": "Host",
-        "path": "en/host.md"
-      }
+      { "title": "Getting started", "path": "en/getting-started.md" },
+      { "title": "Interface", "path": "en/interface.md" },
+      { "title": "Commands", "path": "en/commands.md" },
+      { "title": "Configuration", "path": "en/configuration.md" },
+      { "title": "Pipeline and hooks", "path": "en/pipeline.md" },
+      { "title": "Troubleshooting", "path": "en/troubleshooting.md" }
     ]
   }
 }

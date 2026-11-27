@@ -1,122 +1,83 @@
----
-title: Quick Start
-description: Install @ai-zen/cli, connect to a host for the first time (fetched locally with npx, or remote), enter a project and a session, send the first message, quit.
-outline: deep
----
+# Getting started
 
-# Quick Start
+`@ai-zen/cli` is the terminal client for an AI-Zen host. It does not call models itself and does not store sessions: sessions, history and model configuration live on the host. The client connects, renders and sends commands.
 
-## Install and build
+## Requirements
 
-The repository uses pnpm, and the build output is a bundled `dist/`:
+- Node.js 24 or newer
+- A reachable host (`@ai-zen/agents-host`), local or remote
+- An OpenAI-compatible endpoint key, configured on the host side
 
-| Command        | What it does                                                            |
-| -------------- | ----------------------------------------------------------------------- |
-| `pnpm install` | installs dependencies                                                   |
-| `pnpm build`   | bundles the sources and the connection layer into `dist/` with rolldown |
-| `pnpm start`   | `pnpm build`, then `node dist/index.js`                                 |
-
-`package.json` declares three bin names — `ai`, `aiz`, `zen` — and all three point at `dist/index.js`. Installing the package globally on this machine (`npm install -g .`) puts those three names on the PATH.
-
-The host is not a runtime dependency: `@ai-zen/agents-host` lives in `devDependencies` only, as the declaration of a version range, and at runtime it is fetched with `npx` (see below); `@ai-zen/agents-client` is a private package inlined into `dist/` at build time.
-
-## Launch parameters
-
-| Parameter                         | What it does                                                                                                                 |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `--server <url>`                  | talk to this host instead of the local one                                                                                   |
-| `--new`                           | open a new session instead of resuming the last one (the interactive path only)                                              |
-| `--tui [prompt…]`                 | force the interactive interface; trailing words are sent as the first message; rejected when stdin or stdout is not a TTY    |
-| `--save`                          | keep a stdio call as a real session (ignored by the interactive path)                                                        |
-| `--server-status`                 | print the status of the host at that address as JSON and exit 0 when it answers, 1 when it does not; never launches anything |
-| `hook install` / `hook uninstall` | install or remove the shell fallback hook                                                                                    |
-| `-h`, `--help`, `-v`, `--version` | usage and version; the single words `ai help` / `ai version` are the same                                                    |
-
-`--` ends option parsing, so a prompt may start with `-`.
-
-## The first launch
-
-Nothing is configured yet, so the client asks. With no `<data root>/cli/connection.json` (the file it writes only after a human picks a host on screen) and no explicit address, `ai` opens the connect screen — local, remote, exit — and performs no I/O until one of them is chosen.
-
-Choosing local hands over to the launch screen. The host is started through `npx`, so the first local launch downloads it:
+## Install and start
 
 ```bash
-npx -y @ai-zen/agents-host@<range> serve --ai-zen-dir <data root>
+npm i -g @ai-zen/cli
+ai
 ```
 
-`<range>` is the semver range of `@ai-zen/agents-host` this build was made against, baked into `dist/` at build time; `<data root>` is `AI_ZEN_DIR`, `~/.ai-zen` by default.
+Three equivalent names are registered in `bin`: `ai`, `aiz`, `zen`. To build from source: `cd cli && npm run build`, entry point `dist/index.js`.
 
-The launch screen reports where the launch stands, one line at a time, and never a percentage (npm output is not parsed):
+Startup lands on the connect screen:
 
-| Stage                 | What is being waited for                                                  |
-| --------------------- | ------------------------------------------------------------------------- |
-| Resolving the version | npx resolving which version in that range to use                          |
-| Installing            | npx downloading and installing it                                         |
-| Starting the host     | the child process is up; waiting for the discovery file and the handshake |
-| connected             | not drawn: the screen switches to the session                             |
+| Item | What it does |
+|---|---|
+| Local | Start a host on this machine and connect to it. If the host is not installed it is downloaded first, and started if necessary; the interface shows download and startup progress |
+| Remote | Enter a host address and an access token |
 
-A failed launch adds the child process's own last line and accepts `R` to try again; `Esc` and `Ctrl+C` kill the child and go back to the connect screen without quitting. When a host is already listening, no stage ever arrives and the launch screen draws nothing at all.
+`↑↓` selects, `Enter` confirms, `Esc` exits. The address may be `wss://example.com/ai-zen` or `10.0.0.5:8790`; with no scheme it is treated as `ws://`. An empty token means the local host's token, which is generated when the host starts and written to `<data root>/run/token`.
 
-## Connecting to a remote host
-
-Nothing starts a host on the remote machine for you, so it is only ever connected to:
-
-| Form                                   | Result                                                                 |
-| -------------------------------------- | ---------------------------------------------------------------------- |
-| `ai --server <url>`                    | talk to this host instead of the local one                             |
-| `AI_ZEN_SERVER_URL`                    | same as `--server <url>`; the flag wins when both are given            |
-| the remote entry on the connect screen | address plus access token; an empty token means the local host's token |
-
-An address accepts `ws:`, `wss:`, `http:` and `https:`, and a path for a reverse-proxy mount; a bare `host:port` without a scheme is taken as `ws://`. A malformed address fails before anything connects or launches, with one sentence on stderr and exit code 2.
-
-| Environment variable  | Meaning                            |
-| --------------------- | ---------------------------------- |
-| `AI_ZEN_DIR`          | data root (default `~/.ai-zen`)    |
-| `AI_ZEN_SERVER_URL`   | same as `--server <url>`           |
-| `AI_ZEN_SERVER_TOKEN` | credential for an explicit address |
-
-There is no `--token`: argv ends up in `ps` output and in shell history. Where credentials come from, in full, is on the [Host](./host.md) page.
-
-`ai --server-status` is the diagnostic: it prints the status of the host at that address as JSON, exiting 0 when it answers and 1 when it does not. It never launches anything.
-
-## Entering a project, opening a session
-
-Once connected, the client enters a project and opens a session:
-
-| Step       | Local host                                                                          | Remote host                                                |
-| ---------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Project    | the directory `ai` was run in, reused when `workspace.list` already has it          | the one entered last time on that host, otherwise a picker |
-| Session    | the one opened last time in that project, unless `--new` is given                   | same                                                       |
-| Credential | a screen asks for the API key when the endpoint behind the effective model has none | same                                                       |
-
-## Sending the first message
-
-The cursor sits in the input line: type, and `Enter` sends. The answer streams into the transcript, and the status bar and phase line say what is happening right now (see [Interface](./interface.md)).
-
-Four things worth knowing straight away:
-
-- A leading `/` lists the commands and narrows them by prefix; `/help` lists them all (see [Commands](./commands.md)).
-- `@` completes file paths of this project; what goes into the draft is the path itself, so the message stays ordinary text and the model reads the file with a tool.
-- `Ctrl+V` asks the clipboard for an image first and attaches it to this message; with no image on the clipboard it pastes text.
-- Typing keeps working while a request is in flight: that message is handed to the host, which puts it in the inbox, and the queue band above the divider shows what is waiting.
-
-## Quitting
-
-| How                               | Result           |
-| --------------------------------- | ---------------- |
-| `/exit` or `/quit`                | quits the client |
-| `Ctrl+C` with an empty input line | quits the client |
-| `Ctrl+D` twice in a row           | quits the client |
-
-Quitting only takes down this process: the host keeps running, and the session that was working keeps working on the host side. Shutting the host down is `/shutdown` (see [Host](./host.md)).
-
-## With arguments, or through a pipe
-
-`ai` only enters the interactive interface when there are no positional arguments and both stdin and stdout are TTYs. With an argument, or when stdin or stdout is not a TTY, it runs in pure stdio: one invocation is one message and one answer, stdout carries the answer text and nothing else, log and progress go to stderr, and this mode writes no log file.
+An explicit target skips this screen:
 
 ```bash
-ai 你好，请介绍一下你自己。
-cat README.md | ai "用三句话总结"
+ai --server ws://192.168.1.10:8790
 ```
 
-By default the call goes through `runtime.agent.runOnce` with the directory it was run in: no session row is created, nothing appears in any session list. With `--save` it becomes a real session, and the session id is printed on stderr. Exit codes: 0 on success, 1 when the call fails, 2 when the invocation itself is wrong.
+## Two modes
+
+One process takes exactly one of them:
+
+| Invocation | Mode |
+|---|---|
+| With positional arguments, or stdin / stdout is not a TTY | Pure stdio: one call, only the final assistant text on stdout, logs and progress on stderr |
+| No arguments and both stdin and stdout are TTYs, or `--tui` | Interactive interface |
+
+```bash
+ai "which build scripts does this repo use"   # one call, nothing persisted
+ai --save "read src and summarise it"         # one call, written into a real session
+ai --new                                     # open the interface on a new session
+```
+
+`--tui` demands the interface; when the terminal cannot provide it the command fails instead of degrading to stdio.
+
+## Inside the interface
+
+Type in the input row at the bottom. `Enter` sends, `Ctrl+J` inserts a newline, `/` opens the command menu, `@` opens file completion, `PgUp` looks back through history.
+
+A session works in a workspace directory. The first time you enter a directory the interface asks you to pick a workspace — that directory is where the agent works, and both `@` completion and tool paths are relative to it.
+
+## Exiting
+
+| Action | Result |
+|---|---|
+| `Ctrl+D` twice | Exit the program; the host keeps running |
+| `/exit` (alias `/quit`) | Same |
+| `/shutdown` | Shut the host down and return to the connect screen |
+
+Exiting does not affect sessions: the history is on the host, and returning to the same directory picks up the session that was last open.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success (including `--help`, `--version`, `hook` usage output, and `--server-status` when the host is running) |
+| `1` | Failure after the run has started: a model error, `--server-status` finding nothing running, an unknown `hook` sub-action |
+| `2` | The command itself was wrong: `--tui` without a TTY, a malformed `--server` address, no input in stdio mode |
+
+Scripts rely on this split: `1` is runtime failure, `2` is misuse.
+
+## Next
+
+- Areas of the interface and key bindings: [Interface](interface.md)
+- Every command: [Commands](commands.md)
+- Configuration centre, models and thinking levels: [Configuration](configuration.md)
+- Pipeline usage and the shell hook: [Pipeline and hooks](pipeline.md)
