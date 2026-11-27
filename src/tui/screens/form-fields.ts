@@ -10,16 +10,24 @@
  * 文本与数字都按**字符串**存：用户敲到一半的 `3.` 不是一个合法数字，但它必须能显示出来。真的转
  * 成数字只在提交那一刻（{@link answerOf}）。
  *
- * ## 两级：先选一项，再编辑那一项
+ * ## 焦点在哪一格，那一格就是「活的」
  *
- * 打开时是**浏览**：↑ / ↓ 在「各个字段 + 最后那个提交项」之间走，回车落到某一项上。
+ * 不再让用户为「文本」多按一次回车 —— 一个只能打字的格子，先按回车才肯收字是纯多余的一步：
  *
- *   · 落在字段上 → 进**编辑**（`mode: "editing"`）：文本/数字敲字、布尔与多选按空格切、
- *     单选与多选↑ / ↓（← / → 也行）换候选 —— 这一层里的上下箭头动的是候选，不是字段；
- *   · 落在提交上 → 校验并交出内容。
+ * | 焦点 | 直接能做 | 回车 | 空格 |
+ * |---|---|---|---|
+ * | 文本 / 数字 | 敲字、退格（光标就在那儿） | 下一格 | — |
+ * | 布尔 | — | 切换 | 切换 |
+ * | 单选 / 多选（收起） | — | **展开**候选 | — |
+ * | 单选 / 多选（展开后） | ↑↓（←→）换候选，多选空格勾 | 收起 | 勾（仅多选） |
+ * | `[提交]` / `[取消]` | — | 执行 | — |
  *
- * 编辑里按回车或 Esc 都退回浏览（值留着）：回车不提交，是因为提交是一件要说清的事
- * （表单末尾那一项），误按回车把一份半成品交出去比多按一下坏得多。
+ * 于是 `mode: "editing"` 只剩一个含义：**这一格的候选展开了**。文本与布尔永远不进去。
+ *
+ * **单项表**是另一条路：整张表就一格，没有「下一格」可去，回车就是交卷（也不画两个动作）。
+ *
+ * 回车永远安全：在文本上是「下一格」、在枚举上是「展开」、在布尔上是切换 —— 只有落在 `[提交]`
+ * 上才交卷。提交是一件要说清的事，误按回车把半成品交出去比多按一下坏得多。
  */
 
 import type { FormFieldView, FormSchemaView } from "../../session/types.js";
@@ -165,21 +173,41 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
   }
 
   if (cleared.mode === "browsing") {
+    const focusedField =
+      cleared.focus < names.length ? schema.properties[names[cleared.focus]!] : undefined;
+    const focusedName = cleared.focus < names.length ? names[cleared.focus]! : undefined;
+
     switch (key.kind) {
       case "next":
         return move(1);
       case "prev":
         return move(-1);
+      // 文本/数字在浏览层就能直接改：光标就在那一格上，没有「先进编辑」这一步。
+      // 枚举是字符串但**不收字** —— 它的值只能从候选里选（`enumValues` 有值就不算能打字）
+      case "text":
+        if (!typing(focusedField)) return { kind: "state", editing: cleared };
+        return { kind: "state", editing: type(cleared, focusedName!, focusedField!, key.input) };
+      case "backspace":
+        if (!typing(focusedField)) return { kind: "state", editing: cleared };
+        return {
+          kind: "state",
+          editing: backspace(cleared, focusedName!, focusedField!),
+        };
       case "enter": {
         // 两个动作各有去处
         if (cleared.focus === submitAt) return { kind: "submit" };
         if (cleared.focus === cancelAt) return { kind: "cancel" };
 
-        // 布尔没有可编辑的东西：它的「进这一格」就是按一下切过去，切完还留在浏览层
-        const field = schema.properties[names[cleared.focus]!];
-        if (field !== undefined && field.type === "boolean") {
-          return { kind: "state", editing: toggle(cleared, names[cleared.focus]!, field) };
+        if (focusedField === undefined || focusedName === undefined) {
+          return { kind: "state", editing: cleared };
         }
+        // 布尔没有第二层：回车就是切过去
+        if (focusedField.type === "boolean") {
+          return { kind: "state", editing: toggle(cleared, focusedName, focusedField) };
+        }
+        // 文本/数字没有候选可展开：回车当「下一格」（Tab / ↓ 同义）
+        if (enumValues(focusedField) === undefined) return move(1);
+        // 枚举：这才是「进编辑」—— 候选展开
         return { kind: "state", editing: { ...cleared, mode: "editing" } };
       }
       case "space": {
@@ -532,12 +560,13 @@ export function formLines(
     const star = (schema.required ?? []).includes(name) || undefined;
 
     if (options === undefined || !inEditing) {
-      // 编辑中的文本/数字**不写「（空）」**：那儿只有一个光标，写「空」是把「没有值」当成值
-      const shown =
-        inEditing && isTextual(field)
-          ? String(editing.values[name] ?? "")
-          : browsingValue(field, editing.values[name], texts.empty);
-      const caret = inEditing && isTextual(field) ? "▏" : "";
+      // 活着的文本格（在焦点上、而且能打字）不写「（空）」：那儿只有一个光标，
+      // 把「没有值」写成空是把「空」当成一个值
+      const live = isFocus && isTextual(field);
+      const shown = live
+        ? String(editing.values[name] ?? "")
+        : browsingValue(field, editing.values[name], texts.empty);
+      const caret = live ? "▏" : "";
       lines.push({
         text: `${marker} ${label}`,
         star,
@@ -593,9 +622,16 @@ export function formLines(
   return clip(lines, focusAt, maxRows);
 }
 
-/** 文本/数字那种「正在输入」的游标只画在编辑中的那一格上 */
+/** 能打字的那几种（枚举也是字符串，但它的值只能从候选里选） */
+function typing(field: FormFieldView | undefined): boolean {
+  if (field === undefined) return false;
+  if (field.type === "number" || field.type === "integer") return true;
+  return field.type === "string" && field.enum === undefined;
+}
+
+/** 文本/数字那种「正在输入」的游标只画在活着的那一格上 */
 function isTextual(field: FormFieldView): boolean {
-  return field.type === "string" || field.type === "number" || field.type === "integer";
+  return typing(field);
 }
 
 /** 浏览层里一格的值怎么写：枚举写显示名，其余按原样 */

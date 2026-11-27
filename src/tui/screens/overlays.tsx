@@ -193,8 +193,8 @@ export function FormOverlay({
 /**
  * 提示那一行：只印**此刻真能按的键**。
  *
- * 一条固定提示总有一半是错的：编辑文本时「空格勾选」与「↑ ↓ 换选项」都不成立；停在动作行上时
- * 回车执行的是那个动作、不是「编辑」。所以这里先看焦点落在哪一格、那一格是什么类型。
+ * 一条固定的提示总有一半是错的：文本里没有「空格勾选」，也没「换选项」；收起着的枚举上回车是
+ * 「展开」而不是「完成」。所以先看焦点落在哪一格、那一格是什么类型、有没有展开。
  */
 function hintsOf(schema: FormSchemaView, editing: FormEditing): [string, string][] {
   const names = fieldNames(schema);
@@ -202,38 +202,46 @@ function hintsOf(schema: FormSchemaView, editing: FormEditing): [string, string]
   const focused =
     single || editing.focus < names.length ? schema.properties[names[editing.focus]!] : undefined;
 
-  // ↑ ↓ 换选项只对枚举成立；文本/数字里按上下箭头什么都不做
   const choices =
     focused !== undefined &&
     (focused.type === "array" || (focused.type === "string" && focused.enum !== undefined));
-  // 空格只在两种地方有意义：布尔（切）与多选（勾）
-  const toggles = focused?.type === "boolean" || focused?.type === "array";
+  const expanded = editing.mode === "editing";
+  const toggles = focused?.type === "boolean" || (choices && expanded && focused?.type === "array");
 
-  const choiceHints: [string, string][] = choices ? [["↑ ↓", t("ui.form.choose")]] : [];
-  const spaceHints: [string, string][] = toggles ? [["Space", t("ui.form.toggle")]] : [];
+  const out: [string, string][] = [];
+  // 单项表：↑ ↓ 永远在候选里走（整张表就这一格）；其余情况只有展开的枚举才换选项
+  if (single && choices) out.push(["↑ ↓", t("ui.form.choose")]);
+  else if (!single && expanded && choices) out.push(["↑ ↓", t("ui.form.choose")]);
 
-  // 单项表：回车交卷、Esc 关掉，没有浏览层
+  if (toggles) out.push(["Space", t("ui.form.toggle")]);
+
+  // 单项表：回车交卷、Esc 关掉
   if (single) {
-    return [...choiceHints, ...spaceHints, ["Enter", t("ui.form.submit")], ["Esc", t("ui.cancel")]];
+    out.push(["Enter", t("ui.form.submit")], ["Esc", t("ui.cancel")]);
+    return out;
   }
 
-  if (editing.mode === "browsing") {
-    // 浏览层里 ↑ ↓ 永远有意义（换格），回车按焦点落在哪儿说话
-    const onSubmit = editing.focus === names.length;
-    const onCancel = editing.focus === names.length + 1;
-    const enter: [string, string] = [
-      "Enter",
-      onSubmit ? t("ui.form.submit") : onCancel ? t("ui.cancel") : t("ui.form.edit"),
-    ];
-    return [["↑ ↓", t("ui.form.switch")], enter, ...spaceHints, ["Esc", t("ui.cancel")]];
+  if (expanded) {
+    out.push(["Enter", t("ui.form.commit")], ["Esc", t("ui.form.back")]);
+    return out;
   }
 
-  return [
-    ...choiceHints,
-    ...spaceHints,
-    ["Enter", t("ui.form.commit")],
-    ["Esc", t("ui.form.back")],
+  // 收起状态：↑ ↓ 换格，回车按焦点说话
+  const onSubmit = editing.focus === names.length;
+  const onCancel = editing.focus === names.length + 1;
+  const enter: [string, string] = [
+    "Enter",
+    onSubmit
+      ? t("ui.form.submit")
+      : onCancel
+        ? t("ui.cancel")
+        : choices
+          ? t("ui.form.expand")
+          : focused?.type === "boolean"
+            ? t("ui.form.toggle")
+            : t("ui.form.next"),
   ];
+  return [["↑ ↓", t("ui.form.switch")], ...out, enter, ["Esc", t("ui.cancel")]];
 }
 
 /**

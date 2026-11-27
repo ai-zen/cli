@@ -122,37 +122,49 @@ describe("表单：浏览层", () => {
     expect(press(initialEditing(SCHEMA), [prev]).focus).toBe(names.length + 1);
   });
 
-  it("回车落在字段上进编辑层；落在提交项上就是该交卷了", () => {
+  it("回车按焦点说话：文本跳下一格、枚举展开、动作行才执行", () => {
     const names = fieldNames(SCHEMA);
-    const onField = press(initialEditing(SCHEMA), [enter]);
-    expect(onField.mode).toBe("editing");
+
+    // 文本：回车 = 下一格（没有「先进编辑」这一步）
+    const afterText = press(initialEditing(SCHEMA), [enter]);
+    expect(afterText.mode).toBe("browsing");
+    expect(fieldNames(SCHEMA)[afterText.focus]).toBe("body");
+
+    // 枚举：回车 = 展开候选
+    expect(press(focusOn("mode"), [enter]).mode).toBe("editing");
 
     const onSubmit = names.reduce<FormEditing>(
       (current) => press(current, [next]),
       initialEditing(SCHEMA),
     );
     expect(stepOf(onSubmit, enter)).toEqual({ kind: "submit" });
+    expect(stepOf(press(onSubmit, [next]), enter)).toEqual({ kind: "cancel" });
   });
 
-  it("浏览层不认字：敲一下不会顺手改掉某一格", () => {
+  it("浏览层的文本格直接收字（那一格在焦点上就是活的），枚举上敲字什么都不发生", () => {
     const typed = press(initialEditing(SCHEMA), [{ kind: "text", input: "x" }]);
-    expect(typed.values.title).toBe("初稿");
+    expect(typed.values.title).toBe("初稿x");
+
+    // 枚举没有「打字」这回事
+    const atMode = press(focusOn("mode"), [{ kind: "text", input: "z" }]);
+    expect(atMode.values.mode).toBe("self");
   });
 
-  it("Esc：浏览层关掉整张表；编辑层只退一层（值留着）", () => {
+  it("Esc：收起时关掉整张表；枚举展开时只收起（值留着）", () => {
     expect(stepOf(initialEditing(SCHEMA), escape)).toEqual({ kind: "cancel" });
 
-    const inField = press(focusOn("body"), [enter, { kind: "text", input: "a" }]);
-    const back = press(inField, [escape]);
-    expect(back.mode).toBe("browsing");
-    expect(back.values.body).toBe("a");
+    const expanded = press(focusOn("mode"), [enter, next]);
+    expect(expanded.values.mode).toBe("no");
+    const collapsed = press(expanded, [escape]);
+    expect(collapsed.mode).toBe("browsing");
+    expect(collapsed.values.mode).toBe("no");
   });
 });
 
 describe("表单：编辑层", () => {
-  it("文本收字、退格删字；`maxLength` 满了就不再长", () => {
-    const atBody = editing("body");
-    expect(atBody.mode).toBe("editing");
+  it("文本收字、退格删字；`maxLength` 满了就不再长（不必先进编辑）", () => {
+    const atBody = focusOn("body");
+    expect(atBody.mode).toBe("browsing");
 
     const typed = press(atBody, [
       { kind: "text", input: "a" },
@@ -170,7 +182,7 @@ describe("表单：编辑层", () => {
   });
 
   it("数字那两格只收数字、负号与小数点（字母敲不进去）", () => {
-    const typed = press(editing("count"), [
+    const typed = press(focusOn("count"), [
       { kind: "text", input: "1" },
       { kind: "text", input: "a" },
       { kind: "text", input: "." },
@@ -234,11 +246,11 @@ describe("表单：编辑层", () => {
     expect(initialEditing(onlyBool).mode).toBe("editing");
   });
 
-  it("回车退出编辑层（不提交）：值留着，焦点还在这一格", () => {
-    const done = press(editing("body"), [{ kind: "text", input: "a" }, enter]);
+  it("枚举展开后回车收起（不提交）：值留着", () => {
+    const done = press(editing("mode"), [next, enter]);
     expect(done.mode).toBe("browsing");
-    expect(done.values.body).toBe("a");
-    expect(fieldNames(SCHEMA)[done.focus]).toBe("body");
+    expect(done.values.mode).toBe("no");
+    expect(fieldNames(SCHEMA)[done.focus]).toBe("mode");
   });
 
   it("改一下输入就清掉上一次的错误（那句属于上一版草稿）", () => {
@@ -335,7 +347,8 @@ describe("表单：摊成一行行", () => {
     };
     const [first, second] = formLines(required, initialEditing(required), TEXTS);
 
-    expect(lineText(first!)).toBe("❯ 名字 *：（空）");
+    // 有焦点的那一格是活的：只画光标，不写「（空）」
+    expect(lineText(first!)).toBe("❯ 名字 *：▏");
     expect(first!.star).toBe(true);
     expect(lineText(second!)).toBe("  备注：（空）");
     expect(second!.star).toBeUndefined();

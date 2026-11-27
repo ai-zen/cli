@@ -160,33 +160,36 @@ async function key(form: { stdin: { write: (data: string) => void } }, data: str
 describe("FormOverlay", () => {
   // 提交项与空值那两句是文案（走 `t`）：这里按中文断言
   beforeEach(() => setLocale("zh"));
-  it("回车进这一格才收字；退回浏览层、落到提交项再回车才交卷", async () => {
+
+  it("文本直接就能敲；枚举要回车展开；最后落到提交项回车交卷", async () => {
     const form = await mountedForm();
 
-    // 浏览层：敲字不该改到任何一格
-    form.stdin.write("x");
-    await settle();
-    expect(form.frame()).not.toContain("x：");
-
-    await key(form, "\r"); // 进「名字」这一格
-    form.stdin.write("ab");
-    await settle();
+    // 焦点在「名字」上，直接敲 —— 不必先按回车进什么编辑态
+    await key(form, "a");
+    await key(form, "b");
     await until(() => form.frame().includes("ab"), "字上了屏");
+    expect(form.frame()).toContain("▏");
 
-    await key(form, "\r"); // 退回浏览层（不提交）
-    expect(form.answers).toEqual([]);
+    // ↓ 到开关、再 ↓ 到标签（枚举）：回车把候选展开
+    await key(form, "\u001b[B");
+    await key(form, "\u001b[B");
+    await key(form, "\r");
+    await until(() => form.frame().includes("[ ] a"), "候选展开了");
 
-    // ↓ 落到提交项（名字 → 开关 → 标签 → 提交）
-    for (let step = 0; step < 3; step += 1) {
-      await key(form, "\u001b[B");
-    }
+    // ↓ 移项光标到 b，空格勾上，回车收起
+    await key(form, "\u001b[B");
+    await key(form, " ");
+    await until(() => form.frame().includes("[x] b"), "多选勾上了 b");
+    await key(form, "\r");
+
+    // 落到提交项，回车交卷
+    await key(form, "\u001b[B");
     await until(() => form.frame().includes("❯ [提交]"), "焦点落到提交项");
-    form.stdin.write("\r");
-    await settle();
+    await key(form, "\r");
     await until(() => form.answers.length === 1, "提交了一次");
     expect(form.answers[0]).toEqual({
       action: "accept",
-      content: { name: "ab", flag: false, tags: [] },
+      content: { name: "ab", flag: false, tags: ["b"] },
     });
     form.unmount();
   });
@@ -194,12 +197,8 @@ describe("FormOverlay", () => {
   it("必填没填就交卷：不关面板，焦点跳到那一格并在下面说清为什么", async () => {
     const form = await mountedForm();
 
-    // 一路 ↓ 到提交项，直接回车
-    for (let step = 0; step < 3; step += 1) {
-      await key(form, "\u001b[B");
-    }
-    form.stdin.write("\r");
-    await settle();
+    for (let step = 0; step < 3; step += 1) await key(form, "\u001b[B");
+    await key(form, "\r");
 
     await until(() => form.frame().includes("必填"), "错误那一行画出来");
     expect(form.answers).toEqual([]);
@@ -209,40 +208,21 @@ describe("FormOverlay", () => {
   it("Esc 交 cancel（不是替用户填一份）", async () => {
     const form = await mountedForm();
 
-    form.stdin.write("\u001b");
-    await settle();
+    await key(form, "\u001b");
     await until(() => form.cancelled() === 1, "取消了一次");
     expect(form.answers).toEqual([]);
     form.unmount();
   });
 
-  it("布尔回车直接切；多选要进格、上下移项光标再空格勾", async () => {
+  it("布尔回车/空格都能直接切（不用展开）", async () => {
     const form = await mountedForm();
 
-    form.stdin.write("\r"); // 名字：进格
-    await settle();
-    form.stdin.write("x");
-    await settle();
-    await key(form, "\r"); // 退回
-
     await key(form, "\u001b[B"); // ↓ 到开关
-    // 布尔不需要先进编辑层：回车直接切
     await key(form, "\r");
     await until(() => form.frame().includes("[x]"), "布尔被勾上");
+    await key(form, " ");
+    await until(() => form.frame().includes("[ ]"), "空格又切回去");
 
-    await key(form, "\u001b[B"); // ↓ 到标签
-    await key(form, "\r"); // 进格
-    await key(form, "\u001b[B"); // ↓ 项光标到 b
-    form.stdin.write(" ");
-    await settle();
-    await until(() => form.frame().includes("[x] b"), "多选勾上了 b");
-    await key(form, "\r"); // 退回
-
-    await key(form, "\u001b[B"); // ↓ 到提交项
-    form.stdin.write("\r");
-    await settle();
-    await until(() => form.answers.length === 1, "提交了一次");
-    expect(form.answers[0]?.content).toEqual({ name: "x", flag: true, tags: ["b"] });
     form.unmount();
   });
 });
@@ -280,19 +260,21 @@ describe("FormOverlay：提示行", () => {
     await until(() => form.frame().includes("提示"), "面板画出来");
     await settle();
 
-    await key(form, "\r"); // 进「名字」
-    const editingText = form.frame();
-    expect(editingText).toContain("Enter");
-    // 文本里按空格与上下箭头都没有意义，提示里就不该有
-    expect(editingText).not.toContain("Space");
-    expect(editingText).not.toContain("选项");
+    // 焦点在文本上：没有空格提示，也没有「换选项」
+    const onText = form.frame();
+    expect(onText).toContain("Enter");
+    expect(onText).not.toContain("Space");
+    expect(onText).not.toContain("选项");
 
-    await key(form, "\r"); // 退回
-    await key(form, "\u001b[B"); // ↓ 到开关
-    await key(form, "\u001b[B"); // ↓ 到标签
-    await key(form, "\r"); // 进「标签」（多选）
-    await until(() => form.frame().includes("Space"), "多选的提示里有空格");
-    expect(form.frame()).toContain("选项");
+    // ↓ 到开关：布尔才有空格
+    await key(form, "\u001b[B");
+    await until(() => form.frame().includes("Space"), "布尔上的提示里有空格");
+
+    // ↓ 到标签、回车展开：多选既有空格也有换选项
+    await key(form, "\u001b[B");
+    await key(form, "\r");
+    await until(() => form.frame().includes("选项"), "展开后才有换选项");
+    expect(form.frame()).toContain("Space");
     form.unmount();
   });
 
