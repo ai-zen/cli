@@ -33,7 +33,7 @@ The default call is not persisted: on the local path not even a project row is c
 
 ## Nobody to ask
 
-A one-shot call has nobody sitting in front of it, so this path installs no question board: questions from the host (which handoff executor to use, a form requested by an MCP server) stay pending instead of being answered on the user's behalf. For those features, use the interactive interface.
+A one-shot call has no interactive interface, so this path installs no question board: questions from the host (which handoff executor to use, a form requested by an MCP server) stay pending instead of being answered on the user's behalf. For those features, use the interactive interface.
 
 ## Exit codes
 
