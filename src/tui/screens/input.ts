@@ -2,8 +2,6 @@
 import { displayWidth, graphemes, layoutInput, INPUT_PREFIX_WIDTH } from "../text.js";
 import { t } from "../../i18n/index.js";
 
-// ==================== 会话屏布局（吸底）====================
-
 /** 输入区文本折行（不含提示符 `❯ `，交由渲染层补齐）；空输入用占位提示 */
 export function inputLines(text: string, columns: number): string[] {
   const width = Math.max(4, columns - 4);
@@ -17,8 +15,8 @@ export const INPUT_MAX_ROWS = 8;
 /**
  * 输入区可见窗口：总行数 + 光标所在行 → `[from, to)`。
  *
- * 窗口**跟随光标**（而不是固定显示末尾 N 行）：`←` 在行首会退到上一行，光标能一路
- * 退到第一行 —— 钉住末尾的窗口会让光标“消失”在框外。光标所在行恒为窗口**末行**
+ * 窗口跟随光标（而不是固定显示末尾 N 行）：`←` 在行首会退到上一行，光标能一路
+ * 退到第一行 —— 钉住末尾的窗口会让光标“消失”在框外。光标所在行恒为窗口末行
  * （除非已贴底），于是往上走时窗口连续上滚。
  *
  * 三处取同一个值：`computeChatLayout` 的 `inputHeight`、渲染的 `slice(from, to)`、
@@ -38,7 +36,7 @@ export function inputWindow(
  * 计算终端硬件光标坐标（相对 Ink 输出原点），用于让 IME（输入法）候选框
  * 跟随编辑光标。x 为列、y 为行（0 起始，从整帧第一行算起）。
  *
- * y 由输入行**上方渲染的全部行**的行数累加得出，顺序与 `chat.tsx` 的渲染顺序严格一致：
+ * y 由输入行上方渲染的全部行的行数累加得出，顺序与 `chat.tsx` 的渲染顺序严格一致：
  *
  *   会话区（`layout.lines`）→ Agent 栏目 → 通知栏（`noticeLines`）→ 附件提示行
  *   → 斜杠 / `@` 菜单（`hints`）→ 阶段行（生成中那一行）→ 排队区（跑中排着的几句）
@@ -67,7 +65,6 @@ export function computeInputCursorPosition(input: {
    * 所以渲染走 `inboxAreaLines()`、布局走 `inboxLines`、这里走 `inboxCount`，三处同一个值。
    */
   inboxCount?: number;
-  /** 斜杠命令菜单行数 */
   hintCount: number;
   /** 光标在输入框内的行 / 列（列以 code point 计） */
   cursorRow: number;
@@ -96,12 +93,10 @@ export function computeInputCursorPosition(input: {
   };
 }
 
-// ==================== 上下移动光标（↑ / ↓）====================
-
 /**
  * 光标上 / 下一行后的字素簇下标；已在首行按 ↑、或在末行按 ↓ 时返回 `null`。
  *
- * 「行」是**折行后的行**（含软折行），不是按 `\n` 切的物理行 —— 长段落在窄窗口里会被
+ * 「行」是折行后的行（含软折行），不是按 `\n` 切的物理行 —— 长段落在窄窗口里会被
  * 拆成多行，用户看到的就是多行，光标跟着视觉行移动。宽度取与实际渲染相同的算法
  * （`layoutInput` 的 `width`），否则会跨行/落错列。
  *
@@ -119,8 +114,6 @@ export function moveCursorRow(
   const col = Math.min(layout.cursorCol, graphemes(layout.lines[target]!).length);
   return layout.rowStarts[target]! + col;
 }
-
-// ==================== 跨词移动（Ctrl + ← →）====================
 
 /** 是否为「单词字符」：ASCII 下为字母/数字/下划线，非 ASCII（CJK 等）都算单词字符 */
 export function isWordChar(ch: string): boolean {
@@ -147,8 +140,6 @@ export function wordRight(text: string, cursor: number): number {
   while (i < chars.length && isWordChar(chars[i])) i += 1;
   return i;
 }
-
-// ==================== 按词删除（Ctrl+W、Ctrl+Backspace / Ctrl+Delete）====================
 
 /** 光标钳制到 [0, len]（按 code point 计） */
 function clampCursor(chars: string[], cursor: number): number {

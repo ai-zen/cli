@@ -1,11 +1,11 @@
 /**
- * 语法高亮**数据层** —— 只负责产出「带 scope 的 token」，不关心颜色（颜色与 Ink 渲染
+ * 语法高亮数据层 —— 只负责产出「带 scope 的 token」，不关心颜色（颜色与 Ink 渲染
  * 由 UI 层负责）。高亮数据（190+ 语言）由专业库负责，这里只写渲染：自建词法在语言覆盖上
  * 无法与之相比。
  *
- * 数据来源：**highlight.js**（经 **lowlight** 产出 **hast** 树）。
+ * 数据来源：highlight.js（经 lowlight 产出 hast 树）。
  * 这与业界同类 Ink/React TUI（如 Google Gemini CLI 依赖 `highlight.js` + `lowlight`）
- * 的做法一致：库给结构化的 `hljs-*` scope，我们逐段映射成 Ink `<Text>` 颜色。
+ * 的做法一致：库给结构化的 `hljs-*` scope，客户端逐段映射成 Ink `<Text>` 颜色。
  */
 import { createLowlight, common } from "lowlight";
 import type { Root, RootContent } from "hast";
@@ -57,7 +57,7 @@ function memo(key: string, produce: () => HlToken[]): HlToken[] {
  * 按语言把代码切成带 scope 的 token。
  *
  * - 语言已注册：走 highlight.js 词法；
- * - 语言缺失 / 未注册（含 ` ``` ` 无标注）：**原样返回**为单段 `plain`，不做猜测
+ * - 语言缺失 / 未注册（含 ` ``` ` 无标注）：原样返回为单段 `plain`，不做猜测
  *   （`highlightAuto` 在短片段上容易误判，宁可不着色也不误导）。
  */
 export function highlightCode(code: string, lang?: string): HlToken[] {
@@ -81,14 +81,12 @@ export function highlightJson(code: string): HlToken[] {
   return highlightCode(code, "json");
 }
 
-// ==================== 围栏切分 ====================
-
 const FENCE_RE = /^\s*```(.*)$/;
 
 /**
  * 把正文切成「普通文本 / 围栏代码块」两类片段。
  *
- * 围栏行（``` 与 ```lang）本身作为分隔符**不进入片段**，只解析出语言存进 `lang`；
+ * 围栏行（``` 与 ```lang）本身作为分隔符不进入片段，只解析出语言存进 `lang`；
  * 渲染时由 `contentLines` 依据 `lang` 重新画出围栏行（`​```lang` / `​```），
  * 从而既能按语言高亮代码、又能保留围栏边界。
  */

@@ -1,11 +1,11 @@
 // 选择覆盖层 —— 「弹一个、选一个、再关掉」的唯一实现
 //
-// 契约只有一条：调用方给一个 `resolve` 回调，拿到一个 Promise，**用户在选择器上作答后
-// Promise 才结算**。这正是命令处理器能写成 `const picked = await pick(...)` 的原因。
+// 契约只有一条：调用方给一个 `resolve` 回调，拿到一个 Promise，用户在选择器上作答后
+// Promise 才结算。这正是命令处理器能写成 `const picked = await pick(...)` 的原因。
 //
 // 这套 `resolve` 生命周期单独成模块的理由：埋在会话屏里就既没法单测（要从键盘打到命令层
 // 才能碰到），也容易被后加的 `setState` 写出「先清状态、后调 resolve」的竞态。收在这里：
-//   · 关状态与调 resolve 在**同一次**函数式更新里完成，不会读到过期状态；
+//   · 关状态与调 resolve 在同一次函数式更新里完成，不会读到过期状态；
 //   · 已经是 `null` 时重复 resolve 是安全空操作（Esc 连按不会抛错）。
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
 import type { FormAnswerView, FormSchemaView } from "../../session/types.js";

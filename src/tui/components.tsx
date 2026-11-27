@@ -17,13 +17,11 @@ import type { InboxItem } from "../session/types.js";
 /**
  * 状态栏的一块（`../status-blocks.ts` 的 `StatusBlock`）。
  *
- * 块由**客户端**用会话层的活事实拼（`statusBlocksOf`）：宿主只给事实，界面定块名、顺序与
- * 摆法（PRD F-I6）。详见那份文件的文件头。
+ * 块由客户端用会话层的活事实拼（`statusBlocksOf`）：宿主只给事实，界面定块名、顺序与
+ * 摆法。
  */
 import type { StatusBlock } from "../status-blocks.js";
 export type { StatusBlock };
-
-// ==================== Spinner ====================
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -44,13 +42,13 @@ export function Spinner({ label }: { label?: string }) {
 }
 
 /**
- * 阶段行 —— 生成中（或阻塞命令执行中）那**一行**状态，住在输入框上方的分割线之上。
+ * 阶段行 —— 生成中（或阻塞命令执行中）那一行状态，住在输入框上方的分割线之上。
  *
  * 为什么从输入框里搬到分割线之上：它曾经是「输入框整体被 Spinner 顶替」的产物 ——
  * 屏幕得腾一个位置给它，于是把输入框整个换掉，运行过程中就打不了字。挪到分割线之上后
- * 阶段信息只占自己那一行，输入框始终在原位、始终可编辑（PRD 需求 2、3）。
+ * 阶段信息只占自己那一行，输入框始终在原位、始终可编辑。
  *
- * **恒为一行**：`computeChatLayout` 按 `phaseLines: 1` 算高度，标签超宽由 `Spinner` 的
+ * 恒为一行：`computeChatLayout` 按 `phaseLines: 1` 算高度，标签超宽由 `Spinner` 的
  * `truncate` 兜底 —— 折成两行就把输入框顶出屏幕（与状态栏 / 通知栏同一类教训）。
  */
 export function PhaseLine({ label }: { label: string }) {
@@ -61,10 +59,8 @@ export function PhaseLine({ label }: { label: string }) {
   );
 }
 
-// ==================== 选择列表 ====================
-
 /**
- * 选择器 InboxEntry 的形状住在命令层（`commands/types.ts`）—— 命令层**产出**InboxEntry、这里**渲染**它，
+ * 选择器 InboxEntry 的形状住在命令层（`commands/types.ts`）—— 命令层产出InboxEntry、这里渲染它，
  * 所以它是两边共享的词汇而不是本文件的私有类型。这里再转出一遍，是为了让 tui 内的引用
  * 路径保持不变（`../components.js`）；新增字段去那边加。
  */
@@ -87,7 +83,7 @@ export interface SelectListProps<T> {
    *
    * 为什么要有它：候选可以比屏幕高（一家订阅式端点就带进来 19 条模型，`/ws` 也可能有几十个
    * 工作区）。全部画出来的后果不是「被裁掉一截」，而是整块比可用帧还高 —— Ink 会把顶上的行
-   * 挤出终端，状态栏与输入框跟着看不见。给了它之后列表**滚动**：高亮往下走，视窗跟着走，
+   * 挤出终端，状态栏与输入框跟着看不见。给了它之后列表滚动：高亮往下走，视窗跟着走，
    * 装不下的那几行被移出窗口（顶/末行左侧的 `↑` `↓` 说明「还有」）。
    *
    * 传进来的数与布局那份同源（`pickerCapacity` / `usableFrameRows` 算出来的），
@@ -107,7 +103,7 @@ function fitItem<T>(item: SelectItem<T>, columns?: number): SelectItem<T> {
 }
 
 /**
- * 选择列表的视窗：**自顶部锚定**的连续滚动（与底部锚定的 `menuViewport` 相反，这里是自上往下读）。
+ * 选择列表的视窗：自顶部锚定的连续滚动（与底部锚定的 `menuViewport` 相反，这里是自上往下读）。
  *
  * 高亮越过窗口底部就整窗下移，保证选中项留在窗内；`from` 的第二个钳制保证末页贴底时
  * 窗口里仍是连续的一段（不会只露出最后一条）。
@@ -156,7 +152,7 @@ export function SelectList<T>({
         const selected = i === safeIndex;
         /**
          * 首/末行左侧那两格：选中标记优先（`❯ `）；否则若这一行之外还有候选，用 `↑ ` / `↓ `
-         * 说明「上面/下面还有」。**不额外占行** —— 覆盖层的高度由候选条数算出，
+         * 说明「上面/下面还有」。不额外占行 —— 覆盖层的高度由候选条数算出，
          * 多画一行提示就会把输入框顶出一行。
          */
         const marker = selected
@@ -192,14 +188,12 @@ export function SelectList<T>({
   );
 }
 
-// ==================== 状态栏 ====================
-
 /**
- * 状态栏的入参：**块由会话层拼，摆法由这里定**。
+ * 状态栏的入参：块由会话层拼，摆法由这里定。
  *
  * `blocks` 由会话层用活事实拼（`../status-blocks.ts`），顺序就是那里给的顺序。
  * 客户端不再自己算「现在用哪个模型」「思考强度是哪一档」「生成多快」「用了多少 tok」：
- * 前两样是宿主给的**事实**，后两样是会话层的采样与合计（`../session-rate.ts` /
+ * 前两样是宿主给的事实，后两样是会话层的采样与合计（`../session-rate.ts` /
  * `session.ts` 的 `lastTotalTokens` / `totalTokens`），屏幕只决定摆哪几块、怎么说。
  *
  * 速率那一段的取数口径（生成中看实时、结束后看平均）跟着事实走：它由块的 `facts` 带着，
@@ -228,10 +222,10 @@ const INNER_SEPARATOR = " · ";
 /**
  * 一块 → 一段带样式的文本（旧版那三块的样子，见 `cli-old-archive` 的 `statusBarBlocks`）。
  *
- * 块内**不再写块名**：旧版就没写（「模型 AgentDefinition 一」变成「◆ AgentDefinition 一 · agent AgentDefinition 一」），
+ * 块内不再写块名：旧版就没写（「模型 AgentDefinition 一」变成「◆ AgentDefinition 一 · agent AgentDefinition 一」），
  * 身份块自己带着标签（` · agent `、` · 思考 ` 由词条给），用量块每段都是自带单位的数字。
  * 值从 `facts` 里挑，这里不做任何算术 —— 用量那两个数也已经算好了（会话层从消息的 `usage`
- * 上算，见 `../status-blocks.ts` 的文件头）。
+ * 上算）。
  *
  * 返回空数组 = 这块现在没有内容（没有提示可显示），排版时整块不占位。
  */
@@ -241,10 +235,10 @@ function statusBlockSegments(block: StatusBlock, hint: string | undefined): Stat
       const { model, thinking } = block.facts;
       // 身份块：品牌标记 + 模型 · 思考强度，一段紧接一段（分隔符在词条里，旧版如此）。
       //
-      // 模型那一格**只写 id**：宿主这一版不再把「模型名字」当一条事实发下来（配置里的显示名
+      // 模型那一格只写 id：宿主这一版不再把「模型名字」当一条事实发下来（配置里的显示名
       // 是另一处的事），而状态要说的是一个能拿去 `/model` 用的标识 —— 见口径⑥。
       //
-      // 「当前助手」那一格**不在状态栏**：它一整个会话不变，每一帧占着宽度而零信息；
+      // 「当前助手」那一格不在状态栏：它一整个会话不变，每一帧占着宽度而零信息；
       // 要换助手是 `/agent` 的事，换完之后这条会话的模型 / 思考档会随之变化。
       const view = thinkingView(thinking);
       return [
@@ -255,10 +249,10 @@ function statusBlockSegments(block: StatusBlock, hint: string | undefined): Stat
       ];
     }
     case "gates": {
-      // 四件事（PRD 4.4）：闲 / 忙、输入开关、输出开关、会话存活状态。
+      // 四件事：闲 / 忙、输入开关、输出开关、会话存活状态。
       //
       // 忙闲常显（一个字）—— 它是每一秒都在变的那一格，也是用户最关心的；两开关与存活状态只在
-      // **非默认**时出现：它们正常就是「开 / 开 / 活」，把三个「正常」也画上去是每帧占三个词的
+      // 非默认时出现：它们正常就是「开 / 开 / 活」，把三个「正常」也画上去是每帧占三个词的
       // 宽度而零信息。异常时它们各自出自己那一句，不合并成一个「暂停」。
       const { status, inputPaused, outputPaused, alive } = block.facts;
       // 读数还没到：一个字都不说（不借「闲」占位，那是要报给用户的事实）
@@ -279,7 +273,7 @@ function statusBlockSegments(block: StatusBlock, hint: string | undefined): Stat
     }
     case "usage": {
       // 本次 / 累计 tok：数字由会话层从消息的 `usage` 上算（宿主不报用量，但消息上有这个事实，
-      // 见 `../status-blocks.ts` 的文件头）。两个数各自可能「还不知道」—— 那就整段不占位，
+      // 两个数各自可能「还不知道」—— 那就整段不占位，
       // 不写 0 假装。
       const segments: StatusSegment[] = [];
       const pushUsage = (text: string) => {
@@ -317,7 +311,7 @@ function statusBlockSegments(block: StatusBlock, hint: string | undefined): Stat
 }
 
 /**
- * 状态栏的全部信息块 —— **换行以块为单位**：放得下就并排，放不下整块顺延到下一行，
+ * 状态栏的全部信息块 —— 换行以块为单位：放得下就并排，放不下整块顺延到下一行，
  * 而不是把某块劈成两半。块内空的部分直接不占位（`packSegments` 会跳过空块）。
  */
 function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
@@ -325,7 +319,7 @@ function statusBarBlocks(props: StatusBarProps): StatusSegment[][] {
 }
 
 /**
- * 折行后的实际行 —— **行数即状态栏占用的终端行数**。
+ * 折行后的实际行 —— 行数即状态栏占用的终端行数。
  *
  * 调用方（`chat.tsx`）先拿它算行数交给 `computeChatLayout`，再交给 `StatusBar` 渲染，
  * 两处用的是同一个纯函数，测量与渲染不会脱节。
@@ -368,8 +362,6 @@ export function StatusBar(props: StatusBarProps) {
   );
 }
 
-// ==================== 底部锚定菜单（`/` 与 `@` 共用）====================
-
 export interface MenuItem {
   /** React key；同一份候选里唯一（命令取首个别名，路径取相对路径） */
   key: string;
@@ -379,14 +371,14 @@ export interface MenuItem {
 }
 
 /**
- * 菜单视窗：**自底部锚定**的连续滚动。
+ * 菜单视窗：自底部锚定的连续滚动。
  *
  * 菜单长在输入框上方，`items[0]` 紧贴输入框、往后各项依次向上。于是「数据顺序」与
  * 「视觉顺序」相反 —— 换算只发生在渲染层（`slice(from, to).reverse()`），`selected`
- * 始终是**数据下标**：按键、回车、滚动、测试都按数据顺序读，不反转数据。
+ * 始终是数据下标：按键、回车、滚动、测试都按数据顺序读，不反转数据。
  *
  * 高亮一旦越过窗口顶部就整窗上移（`from = selected − size + 1`），保证选中项可见；
- * 装不下的从**顶部**丢弃（即索引大的候选先消失，因为它们离输入框最远）。
+ * 装不下的从顶部丢弃（即索引大的候选先消失，因为它们离输入框最远）。
  */
 function menuViewport(
   total: number,
@@ -403,7 +395,7 @@ function menuViewport(
 export interface BottomMenuProps {
   /** 按数据顺序（`items[0]` 最靠近输入框） */
   items: MenuItem[];
-  /** 高亮项：**数据下标** */
+  /** 高亮项：数据下标 */
   selected: number;
   /**
    * 布局放行的行数 —— 来自 `computeChatLayout().hintRows`，不另算。
@@ -424,7 +416,7 @@ const MENU_GAP = 2;
 const MENU_HINT_MIN = 4;
 
 /**
- * 把一项拆成「标签 + 可选的说明」，**按列宽预算**：
+ * 把一项拆成「标签 + 可选的说明」，按列宽预算：
  *
  *   · 标签优先占满自己的宽度 —— 说明是次要信息，命令名不因说明长而被挤成一截；
  *   · 说明用剩下的宽度（不够就裁，裁到连三个字都放不下就不显示）；
@@ -444,7 +436,7 @@ function menuRow(item: MenuItem, columns: number): { label: string; hint?: strin
 }
 
 /**
- * 底部锚定菜单 —— 斜杠命令与 `@` 文件补全**共用同一套**视窗（各写一份只会漂成两种手感）。
+ * 底部锚定菜单 —— 斜杠命令与 `@` 文件补全共用同一套视窗（各写一份只会漂成两种手感）。
  *
  * 布局契约：整块高度 = `min(候选数 + (topLine ? 1 : 0), maxRows)`，与
  * `computeChatLayout` 回传的 `hintRows` 严格一致。
@@ -471,7 +463,7 @@ export function BottomMenu({ items, selected, maxRows, columns, topLine }: Botto
           const row = menuRow(item, columns);
           return (
             <Box key={item.key}>
-              {/* 整行是**一个** Text 节点：并列的 Text 会被 flex 按内容比例分宽度，
+              {/* 整行是一个 Text 节点：并列的 Text 会被 flex 按内容比例分宽度，
                   说明一长就把命令名挤成一截；嵌套后宽度由 `menuRow` 预先算好，
                   外层 `truncate` 保证恒为一行（折行会把输入框顶出屏幕） */}
               <Text wrap="truncate">
@@ -492,12 +484,10 @@ export function BottomMenu({ items, selected, maxRows, columns, topLine }: Botto
   );
 }
 
-// ==================== 待发送附件 ====================
-
 /**
  * 待发送附件提示行（`Ctrl+V` 粘贴的图片）。
  *
- * **恒为一行**：`computeChatLayout` 按 `attachmentLines: 1` 算高度，内容超宽由
+ * 恒为一行：`computeChatLayout` 按 `attachmentLines: 1` 算高度，内容超宽由
  * `truncate` 兜底 —— 折成两行会把输入框顶出屏幕（同一类教训：状态栏 / 通知栏）。
  */
 export function PastedImagesBar({ count }: { count: number }) {
@@ -509,8 +499,6 @@ export function PastedImagesBar({ count }: { count: number }) {
     </Box>
   );
 }
-
-// ==================== 排队区 ====================
 
 /**
  * 排队区最多占几行（第 3 行留给「还有 N 条」）。
@@ -547,8 +535,8 @@ export function inboxPrefix(source: AgentNS.MessageSource): string {
 }
 
 /**
- * 排队区 —— 还在队列里、没被取走的那几句（`session.state.inbox`），住在阶段行**之后**、
- * 分割线**之上**。
+ * 排队区 —— 还在队列里、没被取走的那几句（`session.state.inbox`），住在阶段行之后、
+ * 分割线之上。
  *
  * 为什么不放进输入框那个 `Box`：那里的行数与 IME 光标定位是耦合的（`computeInputCursorPosition`
  * 按输入行算 y）。放在上面的带子里，它和阶段行走同一套 `phaseLines` 机制 —— 只占自己那几行，
@@ -572,7 +560,7 @@ export function InboxArea({ items }: { items: readonly InboxItem[] }) {
     <Box flexDirection="column">
       {shown.map((item) => (
         <Box key={item.messageId} paddingX={1}>
-          {/* 整行是**一个** Text：并列的 Text 会被 flex 按内容比例分宽度，preview 一长
+          {/* 整行是一个 Text：并列的 Text 会被 flex 按内容比例分宽度，preview 一长
               就把前缀挤成一截；外层 `truncate` 保证恒为一行 */}
           <Text wrap="truncate">
             <Text color={theme.dim}>{item.priority}</Text>
@@ -591,8 +579,6 @@ export function InboxArea({ items }: { items: readonly InboxItem[] }) {
     </Box>
   );
 }
-
-// ==================== 键位提示 ====================
 
 export function KeyHints({ hints }: { hints: [string, string][] }) {
   return (

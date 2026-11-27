@@ -2,14 +2,14 @@
 //
 // ## 这个文件不再「改配置」，它只发起改动
 //
-// 每条改动对应宿主的一条 procedure，而**每个写口都回整份 `AppConfig`**（`config.endpoints.*` /
+// 每条改动对应宿主的一条 procedure，而每个写口都回整份 `AppConfig`（`config.endpoints.*` /
 // `config.models.*` / `config.imageModels.*` / `config.defaults.update` / `config.update` 都是
 // `{ config }`）。于是：
 //
 //   - 本地快照只从返回值换一份整的，不自己拼「改一处、写回全量」；
-//   - 删端点 / 删模型之后**不必再读一次**：宿主顺带改指的默认项就在它回的那一份里
+//   - 删端点 / 删模型之后不必再读一次：宿主顺带改指的默认项就在它回的那一份里
 //     （旧版要 `refreshConfig()` 补一刀，是因为旧写口只回被改的那一条）；
-//   - 一次改动一次调用（PRD F-F9）：默认项走 `config.defaults.update`，上限与中断策略走
+// - 一次改动一次调用：默认项走 `config.defaults.update`，上限与中断策略走
 //     `config.update`，两件事两个口。
 //
 // 两个例外仍然要补读：`agentDefinition.remove` 只回 `{ agentId }`（默认 AgentDefinition 被清掉这件事在
@@ -124,8 +124,6 @@ export interface WizardContext extends WizardEngine {
   props: ConfigWizardProps;
 }
 
-// ==================== 纯小工具 ====================
-
 /** 按 id 换掉一条（不存在则追加） */
 function upsert<T extends { id: string }>(list: readonly T[], item: T): T[] {
   const index = list.findIndex((existing) => existing.id === item.id);
@@ -138,15 +136,13 @@ function upsert<T extends { id: string }>(list: readonly T[], item: T): T[] {
  *
  * 句子归宿主（`ClientError.message` 已按连接语言渲染好、也已把结构化原因写进那句话里：
  * 「端点 x 上还挂着模型 y，先把它们换走或删掉」「交接阈值与防护阈值都必须是数字」…）。
- * 客户端**不再**解析 `detail` 拼第二句：旧版那么做过，是因为旧宿主只回一份结构化原因、
+ * 客户端不再解析 `detail` 拼第二句：旧版那么做过，是因为旧宿主只回一份结构化原因、
  * 句子要客户端拼；这一版回的就是能直接上屏的话，再拼一遍只会得到两处会漂的措辞。
  */
 export function explainFailure(cause: unknown): string {
   const failure = cause as { message?: unknown };
   return typeof failure?.message === "string" && failure.message ? failure.message : String(cause);
 }
-
-// ==================== 引擎 ====================
 
 export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
   const host: WizardHost = props.host;
@@ -205,7 +201,6 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     setPresets(outcome.result.presets);
   };
 
-  // ---------- 端点 ----------
   const addEndpoint: WizardWriters["addEndpoint"] = async (endpoint, message) => {
     const outcome = await attempt(() => api.config.endpoints.create.mutate({ endpoint }));
     if (!outcome.ok) return outcome.message;
@@ -231,7 +226,6 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     return null;
   };
 
-  // ---------- 默认项 / 上限 / 中断策略（一次改动一次调用）----------
   const setDefaults: WizardWriters["setDefaults"] = async (change, message) => {
     const outcome = await attempt(() => api.config.defaults.update.mutate(change));
     if (!outcome.ok) return outcome.message;
@@ -248,7 +242,6 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     return null;
   };
 
-  // ---------- 模型 ----------
   const createModel: WizardWriters["createModel"] = async (model, message) => {
     const outcome = await attempt(() => api.config.models.create.mutate({ model }));
     if (!outcome.ok) return outcome.message;
@@ -305,7 +298,6 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     return null;
   };
 
-  // ---------- AgentDefinition ----------
   /** 换掉清单里的一条（定义清单只由 `agentDefinition.*` 改） */
   const putDefinition = (definition: unknown) => {
     const converted = toDefinition(definition);
@@ -357,7 +349,6 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     return null;
   };
 
-  // ---------- MCP（一次一条）----------
   /** 把宿主写回的那份清单整份换进快照（每条自带 `scope`，不必自己拼层） */
   const putServers = (next: readonly McpEntry[]) => setServers([...next]);
 
@@ -393,15 +384,14 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     return null;
   };
 
-  // ---------- 首启引导 ----------
   /**
    * 密钥 + 首要模型，一次写完。
    *
-   * 首要模型从**当前这份快照**里取（不是写完再读一次）：写密钥不会动模型表，所以快照里那份就是
+   * 首要模型从当前这份快照里取（不是写完再读一次）：写密钥不会动模型表，所以快照里那份就是
    * 写完之后的那份。而取值的时点在 `updateEndpoint` 之后 —— 那一步本身可能失败，失败时不继续
    * 往下写默认项（否则用户改了一个不存在的端点的密钥）。
    *
-   * 默认项写失败时**不隐藏**：密钥已经落盘了（它在 `summary` 里），但「首要模型没设成」是用户要
+   * 默认项写失败时不隐藏：密钥已经落盘了（它在 `summary` 里），但「首要模型没设成」是用户要
    * 知道的一件事，所以把原因回给屏上；按 Esc 退出时 `dirty` 仍然是 true，密钥不丢。
    */
   const saveOnboardingKey: WizardWriters["saveOnboardingKey"] = async (endpointId, apiKey) => {
@@ -433,7 +423,6 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     return null;
   };
 
-  // ---------- 跳转 / 关闭 ----------
   const runWrite = async (
     write: () => Promise<string | null>,
     after: WizardStep | "stay" = "stay",

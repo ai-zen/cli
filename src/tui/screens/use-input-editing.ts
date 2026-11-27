@@ -1,14 +1,14 @@
 // 输入编辑 —— 草稿文本与光标、历史、kill ring、撤销栈、暂存区的唯一实现
 //
 // 单独成模块的理由：这一整块（`input` / `cursor` / `history` / kill ring /
-// undo / stash + 全部编辑动作）是**纯编辑器语义**，与「会话屏」毫无关系 —— 混在会话屏里
+// undo / stash + 全部编辑动作）是纯编辑器语义，与「会话屏」毫无关系 —— 混在会话屏里
 // 时既不能单测，也每次都被误认为「会话的一部分」。
 //
 // 两条贯穿全篇的约定：
 //
-//   1. **按字素簇编辑**：所有位置计算都走 `graphemes()`。`❤️` 是 2 个 code point、
-//      `👨‍👩‍👧` 是 5 个，但它们都是**一个**字符 —— 按 code point 删会切出半个字素簇。
-//   2. **纯函数算、hook 只套用**：具体「删哪个词、删到哪」在 `input.ts` /
+//   1. 按字素簇编辑：所有位置计算都走 `graphemes()`。`❤️` 是 2 个 code point、
+//      `👨‍👩‍👧` 是 5 个，但它们都是一个字符 —— 按 code point 删会切出半个字素簇。
+//   2. 纯函数算、hook 只套用：具体「删哪个词、删到哪」在 `input.ts` /
 //      `input-editing.ts` 里（有独立测试），这里只负责「拿到结果 → 更新状态 + 记撤销」。
 import { useRef, useState } from "react";
 import {
@@ -41,7 +41,7 @@ export interface InputEditingDeps {
   /** 通知出口（暂存 / 取回草稿的提示，走通知通道而不是转录） */
   notify: (text: string, tone?: Notice["tone"]) => void;
   /**
-   * 历史数据源（`↑` / `↓` 翻的就是它）：按发送顺序返回草稿，**最后一条最新**。
+   * 历史数据源（`↑` / `↓` 翻的就是它）：按发送顺序返回草稿，最后一条最新。
    *
    * 由外部注入（`userDrafts(session.messages)`）而不是 hook 自己保管：消息才是真相源，
    * 自带图片；内部再存一份 `string[]` 就只能存文本，`↑` 回到带图消息时图会静默丢失。
@@ -50,8 +50,8 @@ export interface InputEditingDeps {
   /**
    * 把历史里的附件放回输入区（`↑` 回到带图的消息时）：内联图片的字节 + 已经传上去的 Asset id。
    *
-   * 两样一起给：只放回字节的话，走 Asset 上传那种图在 `↑` 时静默丢失（PRD 3.9「带图的那条
-   * 连图一起恢复」）。没有附件时两边都是空数组 —— 那不是「没变化」，是「这一条没有图」。
+   * 两样一起给：只放回字节的话，走 Asset 上传那种图在 `↑` 时静默丢失，即「带图的那条
+   * 连图一起恢复」。没有附件时两边都是空数组 —— 那不是「没变化」，是「这一条没有图」。
    */
   restoreAttachments: (images: readonly ClipboardImage[], assetIds: readonly string[]) => void;
 }
@@ -67,7 +67,7 @@ export interface InputEditing {
   /**
    * 用一段文本替换 `[start, end)` 区间（光标落到插入文本末尾），并记一条撤销。
    *
-   * `@` 文件补全专用：它替换的是**整个 token**（可能是 `@src/tu` 这种半截路径，
+   * `@` 文件补全专用：它替换的是整个 token（可能是 `@src/tu` 这种半截路径，
    * 也可能是光标停在中间、右半边还没删的部分），而不是在光标处插入。
    * 走 `applyEdit` 才有撤销快照 —— 补错一次 `Ctrl+_` 就能退回原样。
    */
@@ -81,7 +81,7 @@ export interface InputEditing {
   /** Ctrl+W：删到前一空白（标点不切分） */
   deletePrevWhitespace: () => void;
   /**
-   * Ctrl+Y：取回 kill ring 里**最近**删掉的那一段。
+   * Ctrl+Y：取回 kill ring 里最近删掉的那一段。
    *
    * 环里更早的那几段没有键位去取了：循环取回曾经是 `Alt+Y`，而 Alt 系在本产品里不作为
    * 快捷键（`tui/screens/common-keys.ts` 的文件头）。环本身留着 —— 它也是 `Ctrl+W/U/K`
@@ -137,8 +137,8 @@ export function useInputEditing({
   /**
    * 取「当前文本 + 钳制后的光标」，所有编辑动作的统一起点。
    *
-   * 钳制防的**不是**「cursor 越界」——`cursor` 的每个写入点都已保证落在 `[0, len]`；
-   * 防的是**文本与光标不同步**：`input` 与 `cursor` 是两个 state，任何一处只改其一
+   * 钳制防的不是「cursor 越界」——`cursor` 的每个写入点都已保证落在 `[0, len]`；
+   * 防的是文本与光标不同步：`input` 与 `cursor` 是两个 state，任何一处只改其一
    * （或将来新增编辑动作忘了同步）都会让 `cp > chars.length` 成立，那时 `slice`
    * 会静默切少、`cp - 1` 会变负。钳一下把后果限制在「本次编辑落点不对」。
    */

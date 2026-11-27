@@ -1,7 +1,7 @@
 // 渲染层 —— 直接以 SDK 的 `AgentNS.Message[]` 为唯一数据源产出 RLine（不经过任何自定义中间模型）
 //
 // 顺序即真相：遍历 messages 数组（跨消息天然有序）；单条 assistant 内恒为
-// `reasoning_content → tool_calls → content`。因此 **不需要** 自定义 Block / LiveAssistant，
+// `reasoning_content → tool_calls → content`。因此 不需要 自定义 Block / LiveAssistant，
 // 也不需要把流式 delta 翻译成中间事件 —— 流式中 SDK 会实时更新「当前那条 message」，
 // 直接读它即可。
 import { AgentNS } from "@ai-zen/agents-core";
@@ -13,7 +13,7 @@ import { imagePlaceholderLines, type ImageSection } from "./message-images.js";
 /**
  * 从消息内容提取纯文本；非文本块（图片 / 文件）以占位文本表示。
  *
- * 图片那一段是**多行的**：终端不内联渲染图片（内联 base64 动辄几十万字符，放进转录会让单行
+ * 图片那一段是多行的：终端不内联渲染图片（内联 base64 动辄几十万字符，放进转录会让单行
  * 宽度失控），但占位不能只说「有图」—— 占位那块把现有的事实逐行说出来（第几张、尺寸、
  * 文件名），手里只有 `__asset_id` 时就写「不知道多大」。这一套在 `message-images.ts`，这里只
  * 负责把它拼进这段文字里。
@@ -52,12 +52,12 @@ export function messageText(content: AgentNS.MessageContent | undefined): string
  * 这条消息会不会进入下一次请求的上下文 —— 与 core `Agent.formatHistory()` 同一判据：
  * `status == undefined || status === Completed`，且未被 `omit`。
  *
- * 策略**不需要**在这里重新推断：`core/Agent.run()` 收尾时已经把策略写进字段里了
+ * 策略不需要在这里重新推断：`core/Agent.run()` 收尾时已经把策略写进字段里了
  * （`reconcileAbortedToolRounds()` + `reconcileAbortedMessages()`）：
  *   - `abortedMessageStrategy: keep` → 有内容的中断消息恢复 `Completed`（进上下文）；
  *     `drop` → 保持 `Aborted`（不进）；
  *   - `abortedToolRoundStrategy: fill` → 整轮恢复 `Completed`；`drop` → 整轮 `omit`（不进）。
- * 所以「进不进」读 `status` / `omit` 就是**结果**，渲染层不重复推导策略。
+ * 所以「进不进」读 `status` / `omit` 就是结果，渲染层不重复推导策略。
  */
 export function entersContext(message: AgentNS.Message): boolean {
   const status = message.status;
@@ -79,7 +79,7 @@ function isInFlight(message: AgentNS.Message): boolean {
  * 单条消息 → 预折行（不可渲染的消息返回空数组）。
  *
  * - `hidden`：渲染层要求彻底不出现（内部注入 / 占位消息）→ 返回空数组；
- * - **不进上下文**（`!entersContext()`，如中断后按 `drop` 处理的消息、`Error`）：
+ * - 不进上下文（`!entersContext()`，如中断后按 `drop` 处理的消息、`Error`）：
  *   照常渲染、整行划删除线 —— 消息凭空消失会让人以为丢了内容，划掉则明确表示
  *   「还在，但没发给模型」。
  */
@@ -91,7 +91,7 @@ export function messageToLines(message: AgentNS.Message, columns: number): RLine
   return lines.map((line) => (line.kind === "gap" ? line : { ...line, struck: true }));
 }
 
-/** 按角色把一条消息折成若干行（不含 `hidden` / `omit` 判定，见 {@link messageToLines}） */
+/** 按角色把一条消息折成若干行（不含 `hidden` / `omit` 判定，见 `messageToLines`） */
 function renderMessageLines(message: AgentNS.Message, columns: number): RLine[] {
   const key = `m${message.id}`;
   const width = innerWidth(columns);
@@ -103,7 +103,7 @@ function renderMessageLines(message: AgentNS.Message, columns: number): RLine[] 
       { key: `${key}-gap`, kind: "gap", text: " " },
       { key: `${key}-h`, kind: "user-header", text: t("msg.userHeader") },
       // 用户的话也走 markdown 着色（围栏代码按语言高亮）：粘贴进来的一段代码、一个表格、一段
-      // `**强调**` 现在与 AI 回答一样看得清结构。只是**着色**，标记符原样留着，不做语义渲染
+      // `强调` 现在与 AI 回答一样看得清结构。只是着色，标记符原样留着，不做语义渲染
       ...contentLines("user-text", `${key}-u`, text, width),
     ];
   }

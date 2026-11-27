@@ -9,8 +9,6 @@ import { Header, WizardFrame, Row, textRows } from "./frame.js";
 import { PromptScreen } from "./prompt.js";
 import { t } from "../../i18n/index.js";
 
-// ==================== 键值编辑屏（MCP env / headers）====================
-
 export interface KvEditorScreenProps {
   columns: number;
   rows: number;

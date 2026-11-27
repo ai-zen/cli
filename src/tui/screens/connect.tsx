@@ -1,7 +1,7 @@
 /**
  * 连接屏 —— 首启与「连不上」共用的一块屏。
  *
- * ## 两种形态只差一行字
+ * 两种形态只差一行字
  *
  * | 形态 | 触发 | 屏上多的那一行 |
  * |---|---|---|
@@ -11,19 +11,19 @@
  * 其余完全一致：` 本机 ` / ` 远程 ` / ` 重试 ` / ` 退出 `。做成两个屏只会让两条路各修各的 bug
  * —— 而它们要修的是同一批。
  *
- * ## 它自己负责「再试一次」（只对远程）
+ * 它自己负责「再试一次」（只对远程）
  *
  * 「提交」= 调 `props.connect()` 试一次：通了就 `exit({kind:"connected"})` 交给宿主；不通就把
- * 原因留在屏上、回到选择（**不重建本屏**）。重试放在屏里而不是宿主那一层重挂一遍，是为了
+ * 原因留在屏上、回到选择（不重建本屏）。重试放在屏里而不是宿主那一层重挂一遍，是为了
  * 不闪屏：一次失败的尝试只该多一行原因。
  *
- * ## 选「本机」不在本屏上试
+ * 选「本机」不在本屏上试
  *
- * 本机那条路上要做的事（拉起宿主，可能要下载）有自己的屏（`host-download.tsx`，PRD D31）：
+ * 本机那条路上要做的事（拉起宿主，可能要下载）有自己的屏（`host-download.tsx`）：
  * 阶段、失败、重试、取消都在那一块上。所以这里选完「本机」只把那份设置交出去
  * （`{kind:"chosen"}`），由连接门接上那块屏 —— 在本屏的 spinner 底下默默下一份宿主是错的。
  *
- * ## 退出只有一条路
+ * 退出只有一条路
  *
  * `Esc` / `Ctrl+C` / 选「退出」三者都调 `onExit()`，宿主据此收摊 farewell。没有「悄悄退化成
  * 本地连接」这条 —— 那正是这套东西要消灭的静默行为。
@@ -44,7 +44,7 @@ import { PromptScreen } from "../config-wizard/index.js";
 
 /** 屏的结局：用户选定了一份设置 / 屏上已经验过（远程）/ 用户放弃 */
 export type ConnectScreenResult =
-  /** 本机：选定但**没验**（拉起与验证在下载屏上） */
+  /** 本机：选定但没验（拉起与验证在下载屏上） */
   | { kind: "chosen"; settings: ConnectionSettings }
   /** 远程：屏上已经试通了 */
   | { kind: "connected"; settings: ConnectionSettings }
@@ -76,10 +76,10 @@ export function ConnectScreen(props: ConnectScreenProps) {
   const [phase, setPhase] = useState<Phase>("choice");
   const [reason, setReason] = useState<string | undefined>(props.reason);
   /**
-   * 最近一次**提交过**的那一份 —— 「重试」的对象与远程表单的预填都用它。
+   * 最近一次提交过的那一份 —— 「重试」的对象与远程表单的预填都用它。
    *
    * 不能直接用 `props.initial`：用户在屏上改成另一个地址、试了一次没通，这时他要重试的是
-   * **刚填的那个**，不是上次盘上那份。
+   * 刚填的那个，不是上次盘上那份。
    */
   const [lastTried, setLastTried] = useState<ConnectionSettings | null>(props.initial);
   const [addressError, setAddressError] = useState<string | null>(null);
@@ -99,7 +99,7 @@ export function ConnectScreen(props: ConnectScreenProps) {
     /**
      * 把拒绝也当成「一句原因」。
      *
-     * `props.connect` 通常不抛（探活已经把错误翻成了人话），但**万一**它抛了，`void submit()`
+     * `props.connect` 通常不抛（探活已经把错误翻成了人话），但万一它抛了，`void submit()`
      * 里那个 promise 就没人接 —— 屏会停在 spinner 上永远转，而进程活着、什么都不说（这个仓里
      * 最讨厌的那种错）。这里接住，它只是多一行原因。
      */
@@ -118,18 +118,17 @@ export function ConnectScreen(props: ConnectScreenProps) {
     setPhase("choice");
   };
 
-  // `Esc` / `Ctrl+C` 在**任何**阶段都是退出（包括输入到一半）：连接屏是启动路径上的最后一道
+  // `Esc` / `Ctrl+C` 在任何阶段都是退出（包括输入到一半）：连接屏是启动路径上的最后一道
   // 门，这里没有「先保存再说」的东西要抢救。结局由宿主（`mount` 的返回值）接住。
   useInput((input, key) => {
     if (key.escape || (key.ctrl && input === "c"))
       exit({ kind: "exit" } satisfies ConnectScreenResult);
   });
 
-  // ---------- 远程：地址 ----------
   if (phase === "address") {
     return (
       <PromptScreen
-        // `key` 不能省：两个阶段渲染的是**同一个组件类型**，React 会复用它的内部 state
+        // `key` 不能省：两个阶段渲染的是同一个组件类型，React 会复用它的内部 state
         // （`value` / `revealed`），于是令牌框里会带着上一屏敲的地址、并且以明文显示。
         // 配置向导那边用的是 `key={`apiKey:${endpoint.id}`}`，同一个理由。
         key="connect-address"
@@ -165,7 +164,6 @@ export function ConnectScreen(props: ConnectScreenProps) {
     );
   }
 
-  // ---------- 远程：凭证 ----------
   if (phase === "token") {
     const address = lastTried?.url ?? "";
     return (
@@ -195,7 +193,6 @@ export function ConnectScreen(props: ConnectScreenProps) {
     );
   }
 
-  // ---------- 选择（含 pending） ----------
   const items: SelectItem<Choice>[] = [
     { value: "local", label: t("connect.local"), hint: t("connect.localHint") },
     { value: "remote", label: t("connect.remote"), hint: t("connect.remoteHint") },

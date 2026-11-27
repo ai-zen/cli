@@ -8,8 +8,6 @@ import { Header, WizardFrame, Row, textRows, padDisplay } from "./frame.js";
 import { ListStep } from "./list.js";
 import { t } from "../../i18n/index.js";
 
-// ==================== 通用详情屏（就地编辑）====================
-
 /** 字段形态；`open` = 按 Enter 进子屏（进的不一定是 key-value 子屏，故不叫 `map`） */
 export type DetailFieldKind = "text" | "secret" | "number" | "enum" | "bool" | "open";
 
@@ -22,16 +20,14 @@ export interface DetailField {
   value: string;
   /** 进入编辑（text/secret/number）时的初值；缺省用 `value` */
   initial?: string;
-  /** enum 选项 */
   options?: { label: string; value: string }[];
   /**
    * 提交文本 / 枚举值：返回错误信息或 `null`（成功）。
    *
-   * **同步校验直接返回字符串即可**：字段构造器里大量「格式不对就报错」的判断本就没有
+   * 同步校验直接返回字符串即可：字段构造器里大量「格式不对就报错」的判断本就没有
    * 异步动作，只为满足签名写成 `Promise.resolve(t(...))` 是纯噪音。
    */
   commit?: (raw: string) => string | null | Promise<string | null>;
-  /** bool 切换（同上：同步可用） */
   toggle?: () => string | null | Promise<string | null>;
   /** `open` 类型：按 Enter 进入子屏（键值编辑 / 权限 / 函数参数） */
   open?: () => void;
@@ -41,7 +37,7 @@ export interface DetailField {
    */
   readOnly?: boolean;
   /**
-   * 写之前先出一次确认（PRD 1.6「二次确认要能先给代价、再真做」）。
+   * 写之前先出一次确认，即「二次确认要能先给代价、再真做」。
    *
    * `title` 是一句问话、`cost` 是要摆出来的那几行事实（影响面）。没有它就直接写 ——
    * 改一个名字、填一个 Base URL 不必每次问一遍。
@@ -56,9 +52,9 @@ export interface DetailAction {
   /** 危险动作（删除）：红色呈现。恢复出厂这类「重置」用它为 `false` */
   danger?: boolean;
   /**
-   * 删之前的「代价」：删它会连累谁（PRD 3.4「删东西之前要说清还有谁指它」）。
+   * 删之前的「代价」：删它会连累谁，即「删东西之前要说清还有谁指它」。
    *
-   * 事实**事前**摆出来，不等宿主拒一次才知道 —— 宿主拒的那句话仍会照原样上屏，那是事后。
+   * 事实事前摆出来，不等宿主拒一次才知道 —— 宿主拒的那句话仍会照原样上屏，那是事后。
    * 每一行只写从手里已有的配置里数得出来的东西，数不出来就不给数字。
    */
   cost?: readonly string[];
@@ -275,7 +271,6 @@ export function DetailStep({
     { isActive: !choosing && confirming === null && pendingWrite === null },
   );
 
-  // ---- 子屏：枚举选择 ----
   const enumOptions = field?.options;
   if (choosing && field && enumOptions) {
     const target = field;
@@ -297,7 +292,6 @@ export function DetailStep({
     );
   }
 
-  // ---- 子屏：字段写入前的确认（代价摆在上面，是 / 否两档） ----
   if (pendingWrite !== null && field?.confirm) {
     const pending = pendingWrite;
     return (
@@ -324,7 +318,6 @@ export function DetailStep({
     );
   }
 
-  // ---- 子屏：动作二次确认 ----
   const target = confirming === null ? undefined : actions?.[confirming];
   if (target) {
     return (
@@ -347,7 +340,6 @@ export function DetailStep({
     );
   }
 
-  // ---- 主屏 ----
   const headerRows: Row[] = [
     ...textRows(title, columns, theme.highlight, true),
     ...(details ?? []).flatMap((detail) => textRows(detail, columns, theme.dim)),

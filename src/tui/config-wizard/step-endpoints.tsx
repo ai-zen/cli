@@ -11,7 +11,6 @@ import { t } from "../../i18n/index.js";
 export function renderEndpointsStep(ctx: WizardContext): ReactNode {
   const { config, notice, activeStep, go, deleteEndpoint, endpointFields, cols, rows } = ctx;
 
-  // ---------- 端点管理（[新建端点] + 端点列表）----------
   if (activeStep.kind === "endpoints") {
     const items: SelectItem<string>[] = [
       {
@@ -43,7 +42,6 @@ export function renderEndpointsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- 端点详情（就地编辑名称 / Base URL / API Key / 描述）----------
   if (activeStep.kind === "endpoint") {
     const endpoint = config.endpoints.find((item) => item.id === activeStep.endpointId)!;
     const name = endpoint.name || endpoint.id;
@@ -53,9 +51,9 @@ export function renderEndpointsStep(ctx: WizardContext): ReactNode {
     );
     const modelCount = hangingModels.length;
     /**
-     * 删之前的「代价」（PRD 3.4）：还有谁指它。
+     * 删之前的「代价」：还有谁指它。
      *
-     * 宿主的拒绝（一句「先把它们换走或删掉」）是**事后**；这里拿 `config.get` 那一份整份配置
+     * 宿主的拒绝（一句「先把它们换走或删掉」）是事后；这里拿 `config.get` 那一份整份配置
      * 事先把它摆出来。名字用 id（模型标题可以重名，id 是配置里的键，删的时候就是认它）。
      */
     const deleteCost = [

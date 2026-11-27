@@ -1,4 +1,3 @@
-// 向导入口（装配引擎 + 分发到各步骤模块）
 import { useWindowSize } from "ink";
 import { useWizardEngine, type WizardContext } from "./engine.js";
 import type { ConfigWizardProps } from "./types.js";
@@ -12,15 +11,9 @@ import { renderSimpleStep } from "./step-simple.js";
 import { renderNewEndpointStep } from "./step-new-endpoint.js";
 import { renderOnboardingStep } from "./step-onboarding.js";
 
-/**
- * 配置向导主体 —— 装配引擎（`useWizardEngine`）后，把当前步骤分发给各 `step-*` 模块渲染。
- *
- * 每个 `renderXxx` 只处理自己负责的 step.kind，未命中时返回 `null`；`??` 串联即为步骤机。
- * 引擎与各步骤模块共享同一个 `WizardContext`（引擎状态 + 尺寸 + props）。
- */
 export function ConfigWizard(props: ConfigWizardProps) {
   const windowSize = useWindowSize();
-  // 优先用注入的尺寸（测试固定帧高），否则按真实窗口尺寸，再退默认 80×24
+  // 注入的尺寸用于测试固定帧高；未注入时按真实窗口尺寸，再退到 80×24
   const cols = props.terminalSize?.columns ?? windowSize.columns ?? 80;
   const rows = props.terminalSize?.rows ?? windowSize.rows ?? 24;
 

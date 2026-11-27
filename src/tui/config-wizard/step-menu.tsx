@@ -1,11 +1,9 @@
-// 配置中心菜单（步骤分发）
 import { ReactNode } from "react";
 import { WizardContext } from "./engine.js";
 import { MenuStep } from "./menu.js";
 
 export function renderMenuStep(ctx: WizardContext): ReactNode {
   const { config, agents, servers, notice, activeStep, snapshot, go, cols, rows, close } = ctx;
-  // ---------- 配置中心菜单 ----------
   if (activeStep.kind === "menu") {
     return (
       <MenuStep

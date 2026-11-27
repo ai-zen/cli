@@ -4,11 +4,11 @@
  * 全部函数都是「(文本, 光标) → (文本, 光标)」的纯变换，便于单测；
  * chat.tsx 只负责把按键映射过来、套用结果、维护 kill ring 与撤销栈。
  *
- * 光标单位是**字素簇**（`graphemes`），不是 code point：`✌️` 是 2 个 code point
+ * 光标单位是字素簇（`graphemes`），不是 code point：`✌️` 是 2 个 code point
  * 但只是 1 个簇，按 code point 删会只删掉半个 emoji、留下孤立的变体选择符。
  *
- * 键位语义依据 Claude Code 官方文档（interactive-mode.md）：
- * - `Ctrl+W` 删到**前一空白**（标点不切分：`src/utils/foo.ts` 一次删掉整条路径）
+ * 键位语义依据 Claude Code 官方文档：
+ * - `Ctrl+W` 删到前一空白（标点不切分：`src/utils/foo.ts` 一次删掉整条路径）
  * - `Ctrl+←/→` 按「词」处理（标点算分隔符：停在 `ts` / `foo` / `utils` / `src`）；
  *   读线那一套 `Alt+B/F/D` 已经不接了（Alt 不参与快捷键，见 `screens/common-keys.ts`）
  */
@@ -60,8 +60,6 @@ export function killedText(before: string, after: string): string {
   return a.slice(prefix, a.length - suffix).join("");
 }
 
-// ==================== kill ring（Ctrl+Y 取回）====================
-
 /** kill ring 最大长度（逐次删除最多留这么多段，`Ctrl+Y` 只取最近一段） */
 export const KILL_RING_SIZE = 5;
 
@@ -82,8 +80,6 @@ export function killAt(ring: string[], index: number): string | undefined {
   if (index < 0 || index >= ring.length) return undefined;
   return ring[index];
 }
-
-// ==================== 撤销栈（Ctrl+_）====================
 
 /** 撤销栈上限：编辑很密，但每条只是一个短字符串，100 条足够 */
 export const UNDO_LIMIT = 100;

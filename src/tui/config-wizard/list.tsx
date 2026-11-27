@@ -6,8 +6,6 @@ import { usableFrameRows } from "../text.js";
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
 import { t } from "../../i18n/index.js";
 
-// ==================== 列表选择屏 ====================
-
 export interface ListStepProps<T> {
   columns: number;
   /** 终端行数（吸底布局用） */

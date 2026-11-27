@@ -1,7 +1,7 @@
 /**
  * 状态栏的折行 —— 输入是「按优先级排好的信息块」，输出是「确定的若干行」
  *
- * 为什么不用 Ink 自己的 wrap：状态栏高度是**确定值**，`computeChatLayout` 要靠它
+ * 为什么不用 Ink 自己的 wrap：状态栏高度是确定值，`computeChatLayout` 要靠它
  * 算出会话区还能占几行（整帧高度恒等于终端行数，输入框才吸得住底）。让 Ink 在渲染时
  * 折行，行数只有渲染完才知道，布局预算就会算错——轻则顶部留白多一行，重则把输入框
  * 顶出屏幕。所以这里先在纯逻辑里折好，渲染层只负责按行铺颜色。
@@ -30,7 +30,7 @@ interface StyledChar {
 function toChars(segments: StatusSegment[]): StyledChar[] {
   const chars: StyledChar[] = [];
   for (const segment of segments) {
-    // 按**字素簇**切，不按 code point：`✌️`（VS16）是两个 code point 但占 2 列，
+    // 按字素簇切，不按 code point：`✌️`（VS16）是两个 code point 但占 2 列，
     // 逐 code point 累加会算成 1 列 → 状态栏行超宽 → Ink 二次折行 → 帧高多一行。
     for (const ch of graphemes(segment.text)) {
       chars.push({ ch, color: segment.color, bold: segment.bold, width: clusterWidth(ch) });
@@ -39,7 +39,6 @@ function toChars(segments: StatusSegment[]): StyledChar[] {
   return chars;
 }
 
-/** 连续同色同粗细的字符合并回一个片段 */
 function toSegments(chars: StyledChar[]): StatusSegment[] {
   const segments: StatusSegment[] = [];
   for (const char of chars) {
@@ -61,7 +60,7 @@ function trimTail(line: StyledChar[]): void {
 /**
  * 把片段流按显示宽度折成若干行。
  *
- * 断行策略与 `wrapText` 一致：优先在**空格**处断（英文单词不被劈开），没有空格可断
+ * 断行策略与 `wrapText` 一致：优先在空格处断（英文单词不被劈开），没有空格可断
  * 时按字符硬断（CJK 本来就能任意断行）。折行后的行首空格会被丢弃，避免出现
  * 「第二行无故缩进两格」。
  */
@@ -124,7 +123,6 @@ export function wrapSegments(segments: StatusSegment[], width: number): StatusSe
   return lines.map(toSegments);
 }
 
-/** 片段流的总显示宽度（宽字符算 2 列） */
 export function segmentsWidth(segments: StatusSegment[]): number {
   let width = 0;
   for (const segment of segments) {
@@ -134,7 +132,7 @@ export function segmentsWidth(segments: StatusSegment[]): number {
 }
 
 /**
- * 以**块**为单位装行：能塞进当前行剩余宽度就并排（用 `separator` 连起来），
+ * 以块为单位装行：能塞进当前行剩余宽度就并排（用 `separator` 连起来），
  * 塞不下就整块挪到下一行；只有单块本身就比一整行还宽时，才退化成块内折行
  * （`wrapSegments`），此时优先在空格 / CJK 边界断，尽量不劈开英文单词。
  *

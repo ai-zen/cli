@@ -9,8 +9,6 @@ import { mcpEntriesOf } from "../../mcp-command.js";
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
 import { t } from "../../i18n/index.js";
 
-// ==================== 配置中心菜单 ====================
-
 export interface MenuStepProps {
   columns: number;
   /** 终端行数（吸底布局用） */

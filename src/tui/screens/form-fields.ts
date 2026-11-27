@@ -1,16 +1,16 @@
 /**
  * 表单的编辑状态机 —— 纯函数，不碰 ink。
  *
- * 面板（`overlays.tsx` 的 `FormOverlay`）只做三件事：把按键翻译成 {@link FormKey}、把状态画出来、
- * 把 {@link answerOf} 的结果交回去。所有「按一下该变成什么」的规矩都在这里，于是它们可以单测，
+ * 面板（`overlays.tsx` 的 `FormOverlay`）只做三件事：把按键翻译成 `FormKey`、把状态画出来、
+ * 把 `answerOf` 的结果交回去。所有「按一下该变成什么」的规矩都在这里，于是它们可以单测，
  * 而不用从键盘打到屏幕上去验。
  *
- * ## 值先按草稿存
+ * 值先按草稿存
  *
- * 文本与数字都按**字符串**存：用户敲到一半的 `3.` 不是一个合法数字，但它要能显示出来。真的转
- * 成数字只在提交那一刻（{@link answerOf}）。
+ * 文本与数字都按字符串存：用户敲到一半的 `3.` 不是一个合法数字，但它要能显示出来。真的转
+ * 成数字只在提交那一刻（`answerOf`）。
  *
- * ## 焦点在哪一格，那一格就是「活的」
+ * 焦点在哪一格，那一格就是「活的」
  *
  * 不再让用户为「文本」多按一次回车 —— 一个只能打字的格子，先按回车才肯收字是纯多余的一步：
  *
@@ -18,13 +18,13 @@
  * |---|---|---|---|
  * | 文本 / 数字 | 敲字、退格（光标就在那儿） | 下一格 | — |
  * | 布尔 | — | 切换 | 切换 |
- * | 单选 / 多选（收起） | — | **展开**候选 | — |
+ * | 单选 / 多选（收起） | — | 展开候选 | — |
  * | 单选 / 多选（展开后） | ↑↓（←→）换候选，多选空格勾 | 收起 | 勾（仅多选） |
  * | `[同意]` / `[拒绝]` / `[取消]` | — | 执行 | — |
  *
- * 于是 `mode: "editing"` 只剩一个含义：**这一格的候选展开了**。文本与布尔永远不进去。
+ * 于是 `mode: "editing"` 只剩一个含义：这一格的候选展开了。文本与布尔永远不进去。
  *
- * 动作那三个按钮指的是**谁做的决定**（MCP elicitation 的三态）：`[同意]` 是带内容交卷、
+ * 动作那三个按钮指的是谁做的决定（MCP elicitation 的三态）：`[同意]` 是带内容交卷、
  * `[拒绝]` 是明确说不、`[取消]` 是没做决定（Esc 同义）。一条表一种形状 —— 没有「只有一个
  * 字段时另走一条路」那种特例：整张表就一格也一样要走到按钮上才交卷。
  *
@@ -45,7 +45,7 @@ export interface FormEditing {
   /** 浏览层在「各个字段 + 三个动作」之间走，编辑层停留在某一个字段上 */
   readonly mode: FormMode;
   /**
-   * 当前焦点落在第几个**项**上（`properties` 的键顺序，最后一项是提交）。
+   * 当前焦点落在第几个项上（`properties` 的键顺序，最后一项是提交）。
    *
    * 动作项的下标从 `fieldNames(schema).length` 起（同意、拒绝、取消各占一格）—— 它们与字段
    * 共用这一个下标，于是上下箭头只需要管一条线。
@@ -74,7 +74,7 @@ export type FormKey =
   | { kind: "escape" };
 
 /**
- * 按一下之后发生在**面板**上的三种事。
+ * 按一下之后发生在面板上的三种事。
  *
  * 为什么不让状态机自己提交：提交要把 `values` 交给 `answerOf`，而校验失败的结果又要回到面板上
  * （焦点跳到那一格、说一句为什么）。于是状态机只说「该交卷了」，由面板去算、再决定回哪一层。
@@ -98,7 +98,7 @@ export function labelOf(name: string, field: FormFieldView): string {
 /**
  * 初始编辑状态：取表里的 `default`，没有就按类型给一个空草稿。
  *
- * 单选枚举给的是**第一项**：面板上它一开始就是高亮的（与选择器一致），用户按回车就是它 —— 这是
+ * 单选枚举给的是第一项：面板上它一开始就是高亮的（与选择器一致），用户按回车就是它 —— 这是
  * 一个界面缺省，不是替用户做决定：改起来只要按一下 ← →。
  */
 export function initialEditing(schema: FormSchemaView): FormEditing {
@@ -159,7 +159,7 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
       case "prev":
         return move(-1);
       // 文本/数字在浏览层就能直接改：光标就在那一格上，没有「先进编辑」这一步。
-      // 枚举是字符串但**不收字** —— 它的值只能从候选里选（`enumValues` 有值就不算能打字）
+      // 枚举是字符串但不收字 —— 它的值只能从候选里选（`enumValues` 有值就不算能打字）
       case "text":
         if (!typing(focusedField)) return { kind: "state", editing: cleared };
         return { kind: "state", editing: type(cleared, focusedName!, focusedField!, key.input) };
@@ -202,7 +202,6 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
     }
   }
 
-  // ---- 编辑层：焦点一定落在某个字段上 ----
   if (names.length === 0) return { kind: "state", editing: { ...cleared, mode: "browsing" } };
   const name = names[Math.min(cleared.focus, names.length - 1)]!;
   const field = schema.properties[name]!;
@@ -229,7 +228,7 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
 /**
  * 编辑层里的 ↑ / ↓：枚举上就是「上一个 / 下一个候选」。
  *
- * 单选换的是**值**；多选换的是**项光标**（要不要勾由空格说）。文本/数字/布尔没有候选可换 ——
+ * 单选换的是值；多选换的是项光标（要不要勾由空格说）。文本/数字/布尔没有候选可换 ——
  * 那三种在编辑层里上下箭头什么都不做：把「↓」解释成「离开这一格」会让正在打字的人莫名其妙
  * 地跳出输入。
  */
@@ -342,7 +341,7 @@ export type SubmitResult =
  * 把草稿收成一份 `accept` 的内容；不合表就说清是哪一格、为什么。
  *
  * 只校验这张表声明过的事（必填、枚举、类型、长度、范围与那四种 `format`），不引入 JSON Schema
- * 引擎 —— 宿主那一侧还会再验一遍，这里的作用是**别让用户提交一份注定被拒的东西**。
+ * 引擎 —— 宿主那一侧还会再验一遍，这里的作用是别让用户提交一份注定被拒的东西。
  */
 export function answerOf(schema: FormSchemaView, values: FormValues): SubmitResult {
   const names = fieldNames(schema);
@@ -430,9 +429,7 @@ function formatProblem(
   }
 }
 
-// ---------------------------------------------------------------------------
 // 画什么：把表和草稿摊成一行行
-// ---------------------------------------------------------------------------
 
 /**
  * 面板上的一行。
@@ -458,10 +455,10 @@ export function lineText(line: FormLine): string {
 }
 
 /**
- * 一个字段占几行（**浏览层**：一行）。
+ * 一个字段占几行（浏览层：一行）。
  *
  * 只有进编辑、而且那一个是枚举时才会展开成「标签 + 每个候选一行」。布局按浏览层预留 ——
- * 展开多出来的那几行由覆盖层自己滚动（见 {@link formLines} 的 `maxRows`）。
+ * 展开多出来的那几行由覆盖层自己滚动（见 `formLines` 的 `maxRows`）。
  */
 export function fieldRows(): number {
   return 1;
@@ -471,7 +468,7 @@ export function fieldRows(): number {
  * 整张表占几行。
  *
  * 每个字段一行 + 空行 + 三个动作（同意/拒绝/取消）。只有枚举展开时会多出候选，那部分由覆盖层
- * 自己滚动（见 {@link formLines} 的 `maxRows`）。
+ * 自己滚动（见 `formLines` 的 `maxRows`）。
  */
 export function schemaRows(schema: FormSchemaView): number {
   return fieldNames(schema).length + ACTION_ROWS + 1;
@@ -495,16 +492,16 @@ export interface FormTexts {
 /**
  * 把表和草稿摊成一行行。
  *
- * ## 两层长得不一样
+ * 两层长得不一样
  *
  * 浏览层一格一行，右边直接写出当前值（`单选：第一项` / `多选：甲、乙`）—— 一眼能扫完；
  * 进了编辑、而且那格是枚举时，才在它下面列一列候选：单选 `(o) 名字`，多选 `[x] 名字`。
  * 两种枚举同一个形状，只差一对括号。
  *
- * 最后是三个动作：**同意**、**拒绝**、**取消**。它们和字段共用同一条焦点线（下标从字段个数起）；
+ * 最后是三个动作：同意、拒绝、取消。它们和字段共用同一条焦点线（下标从字段个数起）；
  * 方括号只画在焦点那一格上，其余用空格占同样的位 —— 选中与没选中占一样宽，换焦点时整行不跳。
  *
- * ## 放不下就滚动
+ * 放不下就滚动
  *
  * 编辑一个候选很多的枚举时整块会顶穿屏幕，所以给 `maxRows` 就只画窗口里那一段：窗口跟着焦点
  * 走，被截掉的头部与尾部各用一句 `…` 说明还有东西 —— 不静默丢行。
@@ -526,7 +523,7 @@ export function formLines(
     const isFocus = index === editing.focus;
     const inEditing = isFocus && editing.mode === "editing";
     if (isFocus) focusAt = lines.length;
-    // 行首只有一格：**这一格能不能展开**（`+` 能、`-` 不能）。
+    // 行首只有一格：这一格能不能展开（`+` 能、`-` 不能）。
     //
     // 焦点不再占一个字符（原来那个右尖括号去掉了）：焦点靠颜色与加粗说，位置靠这一格的标记说。
     // 用户看到 `- 文本` 就知道那一格没有第二层可进，看到 `+ 单选` 就知道可以按回车展开。

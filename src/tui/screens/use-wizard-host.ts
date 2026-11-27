@@ -1,14 +1,14 @@
 // 配置向导宿主 —— 「打开向导 / 读齐快照 / 关闭后让改动生效」的唯一实现
 //
-// 向导本身（`config-wizard/`）是独立状态机，而**宿主**的活儿（读齐快照、按当前状态决定关掉之后
+// 向导本身（`config-wizard/`）是独立状态机，而宿主的活儿（读齐快照、按当前状态决定关掉之后
 // 要不要重启 / 重载会话）既不属于「会话」，也没法单测 —— 单独收在这里，从键盘一路打到向导关闭
 // 才能碰到的路径才会有用例。
 //
-// 依赖方向是**注入**而非 import 会话：宿主要做的事（通知、重启、重载会话）都通过
+// 依赖方向是注入而非 import 会话：宿主要做的事（通知、重启、重载会话）都通过
 // `WizardHostDeps` 传进来，于是 hook 可以在测试里用假依赖跑完整生命周期。
 //
 // 读快照只有三处 procedure（`api.config.get` / `api.config.agents.list` / `api.config.mcp.list`），
-// 写全在向导屏里 —— 它拿的是**同一条** `api`，所以这里不必再有一份「保存」的接口。
+// 写全在向导屏里 —— 它拿的是同一条 `api`，所以这里不必再有一份「保存」的接口。
 import { useRef, useState } from "react";
 import type { AppConfig, McpEntry, ReasoningPresets } from "../../config.js";
 import { agentListOf, type AgentList } from "../../agents-store.js";
@@ -26,7 +26,7 @@ export interface WizardHostDeps {
   /**
    * 这段会话属于哪个项目：`mcp.list` 要它才列得出服务器。
    *
-   * 空串 = 还没有项目上下文（首启那一路在极端情况下会走到）。那时**不问** `mcp.list`
+   * 空串 = 还没有项目上下文（首启那一路在极端情况下会走到）。那时不问 `mcp.list`
    * （宿主会回 `not_found`，而把它当成「配置读不出来」会把整个向导挡在门外），MCP 屏显示空
    * 清单；其它屏一样能用。
    */
@@ -61,7 +61,7 @@ export interface WizardHostState {
   /**
    * 打开向导：先读齐快照再接管整屏（读失败则只报错、不进向导）。
    *
-   * **回来的是它关闭时的事实**（`null` = 没打开 / 用户什么都没做成）：让命令层能写
+   * 回来的是它关闭时的事实（`null` = 没打开 / 用户什么都没做成）：让命令层能写
    * `const r = await openWizard(...)`，与 `pick()` 同一个形状 —— 需要等价「打开、等它关掉、
    * 再按结果决定下一步」的动作（`/model` 切模型前的密钥检查）才写得成一句话。
    *
@@ -94,7 +94,7 @@ export function useWizardHost({
   /**
    * 正在等这块屏关闭的那个人（`openWizard` 的 Promise）。
    *
-   * 向导是**整屏接管**的：命令层把「打开它」交出去之后，唯一能推进下一步的时刻是它关闭。
+   * 向导是整屏接管的：命令层把「打开它」交出去之后，唯一能推进下一步的时刻是它关闭。
    * 所以兑现点只有一个（`closeWizard`）—— 与 `useChatOverlays` 的选择器同一个套路。
    */
   const wizardResolver = useRef<((result: WizardCloseResult | null) => void) | null>(null);
@@ -109,11 +109,11 @@ export function useWizardHost({
   /**
    * 读齐那三份快照（配置 + 档位表 / AgentDefinition / MCP 清单）。
    *
-   * **串行**不并行：三条请求并发时任何一条抛错，报出来的都是同一个 catch，「哪一份读不出来」就
+   * 串行不并行：三条请求并发时任何一条抛错，报出来的都是同一个 catch，「哪一份读不出来」就
    * 没影了。三份全拿到才画得出整屏 —— 向导屏是一个整体（菜单上同时印端点、模型、MCP 两层、AgentDefinition 与默认项），
    * 少一份就只能渲染半块屏。
    *
-   * `config.get` 一次给配置**和**档位表：它们是两个文件，但界面要同时看见（模型上那一格
+   * `config.get` 一次给配置和档位表：它们是两个文件，但界面要同时看见（模型上那一格
    * `reasoningPreset` 指的是表里的键），分两次取的话中间可能夹进另一处改动。
    */
   const readSnapshots = async () => {
@@ -128,10 +128,10 @@ export function useWizardHost({
   /**
    * 每个 AgentDefinition 上挂着几段会话（`workspace.list` → 逐个 `session.list`）。
    *
-   * 只有「删 AgentDefinition」那一处要这个数（PRD 3.4 要删之前说清影响面）。两条都是已有的读 procedure，
+   * 只有「删 AgentDefinition」那一处要这个数（要删之前说清影响面）。两条都是已有的读 procedure，
    * 客户端编排：宿主这一版的 `session.list` 只按工作区列（与 `/load --all` 同一条路）。
    *
-   * 数不出来就往 `null` 走：代价那一句改成一句人话，**不编数字**。也不把这个失败报上去 ——
+   * 数不出来就往 `null` 走：代价那一句改成一句人话，不编数字。也不把这个失败报上去 ——
    * 它只是没有额外的事实可说，不是一次用户要处理的事。
    */
   const countSessionsByAgent = async (): Promise<Record<string, number> | null> => {
@@ -231,7 +231,7 @@ export function useWizardHost({
     // 先兑现再让改动生效：等在 `await openWizard(...)` 那一侧的人（`/model` 的密钥检查）
     // 读到的是自己的结论，而不是一件可能把屏幕重挂载掉的事
     settleWizard(result);
-    // 同一批摘要合成**一条**（多行）：既能全部显示，又只占通知队列的一个槽位。
+    // 同一批摘要合成一条（多行）：既能全部显示，又只占通知队列的一个槽位。
     // 逐条 push 会挤掉更早的进度提示（队列只留最近 MAX_NOTICE_HISTORY 条）。
     const { summary } = result;
     if (summary.length === 1) {

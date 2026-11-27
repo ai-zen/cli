@@ -81,7 +81,6 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
   const { config, agents, error, activeStep, go, setDefaults, setGlobal, setError, cols, rows } =
     ctx;
 
-  // ---------- 默认项子菜单 ----------
   if (activeStep.kind === "defaults") {
     const unset = t("common.unsetPlain");
     const defaultImage = (config.imageModels ?? []).find(
@@ -149,7 +148,6 @@ export function renderDefaultsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- 选择某个默认项的值 ----------
   if (activeStep.kind === "pick-default") {
     const target = activeStep.target;
     const fixed = isFixed(target);

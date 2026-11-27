@@ -18,7 +18,7 @@ function baseColor(kind: LineKind): string | undefined {
       return theme.reasoning;
     case "tool":
       return theme.tool;
-    // 正文**不指定颜色**：用终端默认前景色渲染，避免把近白（如 #e2e8f0）固定写进代码后
+    // 正文不指定颜色：用终端默认前景色渲染，避免把近白（如 #e2e8f0）固定写进代码后
     // 在亮色主题终端里「白底白字」看不见。绝对色只留给需要强调的分段（标题/代码等）。
     case "content":
       return undefined;

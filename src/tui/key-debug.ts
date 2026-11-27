@@ -1,14 +1,14 @@
 /**
  * 按键诊断 —— 不同终端的按键编码差异极大（macOS 的 Option、PageUp/PageDown 尤其），
  * 「某个键在我机器上没反应」这类问题靠猜毫无意义：要么键被 OS / 终端拦走，
- * 要么终端发来的序列和我们认的不一样。两种情况的判定方法是同一个 —— 看日志里有几行。
+ * 要么终端发来的序列与客户端预期的不同。两种情况的判定方法是同一个 —— 看日志里有几行。
  *
  * 用法：
  *   AIZ_DEBUG_KEYS=1 aiz                       → 追加写到 <数据根>/logs/cli/keys.log
  *   AIZ_DEBUG_KEYS=1 AIZ_KEYS_FILE=/path aiz   → 写到指定文件
  *
- * `AIZ_DEBUG_KEYS` 在**模块加载时**读一次就固定（见 `KEY_DEBUG_ENABLED`），所以它要在启动进程前
- * 给 —— 进程跑起来之后再设无效。日志路径相反，**用的时候才算**（见 `keyDebugFile()`）。
+ * `AIZ_DEBUG_KEYS` 在模块加载时读一次就固定（见 `KEY_DEBUG_ENABLED`），所以它要在启动进程前
+ * 给 —— 进程跑起来之后再设无效。日志路径相反，用的时候才算（见 `keyDebugFile()`）。
  *
  * 判读：
  *   - 按了键但日志里没有新增行 → 键根本没到应用（被 OS 快捷键或终端键位映射截走）
@@ -32,11 +32,11 @@ const KEY_DEBUG_FILE_ENV = "AIZ_KEYS_FILE";
 /**
  * 日志落盘路径：`AIZ_KEYS_FILE`，缺省 `<数据根>/logs/cli/keys.log`（CLI 那一格）。
  *
- * **用的时候才算，不在模块顶层求值**：数据根由 `cliEnv()` 给（`applyCliEnv` 在 `CliApp`
+ * 用的时候才算，不在模块顶层求值：数据根由 `cliEnv()` 给（`applyCliEnv` 在 `CliApp`
  * 构造时才钉下），而本模块在 TUI 里被导入的时机可能早于那一下 —— 顶层求值要么撞上「还没
  * 设置」，要么拿到上一次的根。
  *
- * 导出是为了与用例共用**同一个**已解析值（用例要 `stat` 它）。
+ * 导出是为了与用例共用同一个已解析值（用例要 `stat` 它）。
  */
 export function keyDebugFile(): string {
   const override = process.env[KEY_DEBUG_FILE_ENV];
@@ -44,7 +44,7 @@ export function keyDebugFile(): string {
   return join(cliEnv().aiZenDir, "logs", "cli", "keys.log");
 }
 
-/** Ink `useInput` 的 key 对象里我们关心的字段（结构化，避免依赖 ink 的类型导出） */
+/** Ink `useInput` 的 key 对象里客户端用到的字段（结构化，避免依赖 ink 的类型导出） */
 export interface KeyFlags {
   upArrow?: boolean;
   downArrow?: boolean;

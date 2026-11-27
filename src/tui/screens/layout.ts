@@ -12,11 +12,11 @@ export function pickerLines(itemCount: number): number {
 }
 
 /**
- * 一个终端能放下多少条**选择器候选**。
+ * 一个终端能放下多少条选择器候选。
  *
  * 为什么它是渲染层的函数：它由两个渲染事实构成 —— 帧高要预留下末行
  * （`usableFrameRows`）、覆盖层与状态栏各占几行（`pickerLines` / `STATUS_BAR_LINES`）。
- * 命令层（`/load` / `/back`）只需要那个**结果**（`ChatCommandHost.rows`）：把这三条公式
+ * 命令层（`/load` / `/back`）只需要那个结果（`ChatCommandHost.rows`）：把这三条公式
  * 搬到命令层，就是拿一个终端概念去换一个 ink 依赖（它们全在 `tui/` 里）。
  *
  * 这条式子只该有一处，且那一处要在能看到布局的地方：它少扣 2 行，选择器就会把状态栏顶出屏幕。
@@ -44,7 +44,7 @@ export interface ChatLayoutInput {
    */
   attachmentLines?: number;
   /**
-   * 阶段行（生成中那一行「连接中 / 思考中 / 调用工具 X」）的行数：0 或 1，位于分隔线**之上**。
+   * 阶段行（生成中那一行「连接中 / 思考中 / 调用工具 X」）的行数：0 或 1，位于分隔线之上。
    *
    * 它与 `attachmentLines` / `agentTabLines` 同类：多算或少算一行，输入框就会整体位移，
    * 硬件光标（IME）也跟着偏 —— 所以渲染、这里、`computeInputCursorPosition` 用的是
@@ -55,7 +55,7 @@ export interface ChatLayoutInput {
    * 排队区行数（还压在队里、没被取走的那几句，每句一行，上限 `INBOX_MAX_ROWS`；紧贴在阶段行之后、
    * 分割线之上）。
    *
-   * 与 `phaseLines` / `attachmentLines` / `agentTabLines` 用**同一套加法**计入固定高度：
+   * 与 `phaseLines` / `attachmentLines` / `agentTabLines` 用同一套加法计入固定高度：
    * 这几种「输入框之上的带子」只要漏算一行，输入框就整体位移、硬件光标（IME）也跟着偏。
    * 0 条时整块不渲染，也不占行（缺省 0）。
    */
@@ -70,7 +70,7 @@ export interface ChatLayoutInput {
   /**
    * 表单覆盖层里画几行内容（一格一行 + 常驻一行给校验失败那句）。缺省 0。
    *
-   * 错误那行**常驻预留**：它一冒出来就顶高一行，底下的状态栏会被推出屏幕。
+   * 错误那行常驻预留：它一冒出来就顶高一行，底下的状态栏会被推出屏幕。
    */
   formRows?: number;
   /** 视口顶部行索引（相对整个会话行）；null / undefined = 贴底（自动跟随最新） */
@@ -99,10 +99,9 @@ export interface ChatLayout {
   lines: RLine[];
   /** 底部区域（输入 / 覆盖层 + 状态栏）占用行数 */
   bottomLines: number;
-  /** 会话行总行数（未截取前） */
   totalLines: number;
   /**
-   * 菜单**实际**占用的行数（`min(想吃, 剩余空间)`）。
+   * 菜单实际占用的行数（`min(想吃, 剩余空间)`）。
    *
    * 渲染（`BottomMenu.maxRows`）与硬件光标（`computeInputCursorPosition` 的
    * `hintCount`）都从这里取值，不各自另算 —— 三处差一行，输入框与 IME 候选框
@@ -120,7 +119,7 @@ export interface ChatLayout {
 /**
  * 把「想要的视口顶部」钳制成合法值：下限 0、上限 `totalLines - budget`。
  *
- * 返回 `null` 表示**已贴底**（视口顶恰好等于最大顶，或内容不足一屏）—— 调用方据此
+ * 返回 `null` 表示已贴底（视口顶恰好等于最大顶，或内容不足一屏）—— 调用方据此
  * 清掉滚动状态，让视口重新跟随最新内容。所有滚动动作（翻页 / 按行 / 鼠标滚轮）都
  * 走这一个函数，越界的入参由钳制吸收，不会出现「滚过头回不来」的视口。
  */
@@ -142,7 +141,7 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
   const transcript = input.transcript;
 
   // 输入区限高：多出来的折行由窗口滚动，而不是把会话区挤空（窗口跟随光标）。
-  // 它**不随在不在动变化**：生成中输入框照旧在屏上、照旧可编辑（阶段信息住自己那一行，
+  // 它不随在不在动变化：生成中输入框照旧在屏上、照旧可编辑（阶段信息住自己那一行，
   // 见 `phaseLines`），所以草稿多长就占多高。
   const inputHeight = Math.min(inputLines(input.input, input.columns).length, INPUT_MAX_ROWS);
   const overlayHeight =
@@ -168,7 +167,7 @@ export function computeChatLayout(input: ChatLayoutInput): ChatLayout {
     inputHeight +
     statusBarLines;
   /**
-   * 菜单能吃多少行：输入框上方到屏幕顶端的**全部**剩余空间，不设固定行数上限 ——
+   * 菜单能吃多少行：输入框上方到屏幕顶端的全部剩余空间，不设固定行数上限 ——
    * 放不下的候选由 `BottomMenu` 从顶端丢弃（滚动窗口）。
    *
    * 覆盖层（选择器）整块替换输入区时菜单不参与布局，故归零。

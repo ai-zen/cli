@@ -6,19 +6,19 @@
 //   2. 发出那一次写（`config.endpoints.update` / `config.models.update` /
 //      `agentDefinition.update` / `mcp.save`），失败原因原样上交详情屏。
 //
-// **不判断业务规则**：阈值是否越线、策略名是否存在、端点还在不在、模型能不能用，全是宿主的
+// 不判断业务规则：阈值是否越线、策略名是否存在、端点还在不在、模型能不能用，全是宿主的
 // 判断（`invalid_params` / `conflict` 带着一句能直接上屏的话回来，`engine.ts` 的
 // `explainFailure` 负责把它放到屏上）。客户端自己再判一遍只会得到第二套会漂的规则。
 //
 // ## 整体写入的三个例外，都是契约形状决定的
 //
-//   - 端点：`config.endpoints.update` 收的是 `{ id, change }`，`change` 是**合并**语义
+//   - 端点：`config.endpoints.update` 收的是 `{ id, change }`，`change` 是合并语义
 //     （`{...当前, ...change}`），所以改一个字段只发那一个字段；`apiKey` 只在用户真的改了
 //     输入框时出现在 `change` 里 —— 省略 = 保留原值（读回来的是明文，界面只显示掩码）。
 //   - MCP：`mcp.save` 一次只管一条，所以改哪一项就发哪一项（其余字段从当前这一条带上），
 //     层里别的 InboxEntry 不受影响。
-//   - AgentDefinition 的提示词与函数定义：`agentDefinition.update` 对 `messages` 与 `function` 是**整份
-//     替换**（不是深合并），所以那两处的补丁要把整串 / 整个对象带上（`withAgentPrompt` /
+//   - AgentDefinition 的提示词与函数定义：`agentDefinition.update` 对 `messages` 与 `function` 是整份
+//     替换（不是深合并），所以那两处的补丁要把整串 / 整个对象带上（`withAgentPrompt` /
 //     `withAgentFunction`），只发改的那一句会把兄弟字段冲掉；思考档位同理，整份
 //     `modelParams` 一起发（`modelParamsWithLevel`）。
 import type {
@@ -80,7 +80,7 @@ const PERMISSION_DIMENSION_LABEL_KEY: Record<PermissionDimension, string> = {
 };
 
 /**
- * 多行内容在详情屏那一行的**单行摘要**。
+ * 多行内容在详情屏那一行的单行摘要。
  *
  * 详情列表一行一个字段（帧高按行数算），正文里的换行会把吸底布局顶出可视区 —— 所以这里
  * 只说「空 / 多少行 / 是什么」，正文本身进 `agent-text` 屏（`$EDITOR`）看与改。
@@ -150,8 +150,6 @@ export interface FieldBuilders {
 export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
   const { config, presets, writers, go } = deps;
 
-  // ---------- 共享字段 ----------
-
   /**
    * 「名称」字段：端点 / 模型 / 图片模型 / AgentDefinition 四处的形状逐字相同，只有写回目标不同。
    * 空名称被拦下 —— 名称会进提示语与列表，写空等于把这一条「弄丢」。
@@ -186,11 +184,9 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
     commit: (raw) => (raw === currentEndpointId ? null : save(raw, t("field.endpoint"))),
   });
 
-  /** 出厂托管 InboxEntry 的提示后缀：宿主会在写的时候把它转成自定义（PRD F-F3），这里只是告知 */
+  /** 出厂托管 InboxEntry 的提示后缀：宿主会在写的时候把它转成自定义，这里只是告知 */
   const factoryNote = (custom: boolean | undefined) =>
     custom === true ? "" : t("wiz.factoryEditNote");
-
-  // ---------- 端点 ----------
 
   /**
    * 端点详情字段（名称 / Base URL / API Key / 描述）。
@@ -233,8 +229,6 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
       },
     ];
   };
-
-  // ---------- 模型 ----------
 
   /** 模型详情字段；每个字段一次 `config.models.update`（宿主负责打上 `custom: true`） */
   const modelFields = (model: ModelDefinition): DetailField[] => {
@@ -320,8 +314,6 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
     ];
   };
 
-  // ---------- 图片模型 ----------
-
   /** 图片模型详情字段；每次提交都是那一项改动（`config.imageModels.update` 是合并语义） */
   const imageModelFields = (model: ImageModelDefinition): DetailField[] => {
     const name = model.name || model.id;
@@ -372,14 +364,12 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
     ];
   };
 
-  // ---------- MCP ----------
-
   /**
    * MCP 服务器详情字段。
    *
    * `server` 就是 `mcp.list` 给回来的那一条（`McpServerDefinition`），也是 `mcp.save` 收的那一格 ——
    * 所以这里改哪一项就把那一项盖上去发一次写入，一次一条，层里别的 InboxEntry 不受影响
-   * （PRD F-F6：按名字增删改）。未知键不在这里：契约里没有 `extra` 这一格，写回时的保全由
+   * （按名字增删改）。未知键不在这里：契约里没有 `extra` 这一格，写回时的保全由
    * 宿主那侧与磁盘上那一条合并（`McpConfig.save`）。
    */
   const mcpServerFields = (
@@ -506,13 +496,11 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
     return fields;
   };
 
-  // ---------- AgentDefinition ----------
-
   /**
    * Agent / Sub-agent 详情字段。
    *
    * 名称 / 描述 / 模型 / 思考档位 / 权限四维都是单值，改一项就发一项的补丁（宿主按字段合并）。
-   * 提示词与子 Agent 的函数说明 / 参数 schema 是**多行**内容：本屏只印一行摘要（正文换行
+   * 提示词与子 Agent 的函数说明 / 参数 schema 是多行内容：本屏只印一行摘要（正文换行
    * 会让帧高超出可视区），Enter 进 `agent-text` 屏（`$EDITOR`），改完才由 `agentDefinition.update`
    * 写回去。
    */
@@ -624,7 +612,7 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
   /** 四维权限子屏字段（`allow: a, b` / `deny: x`；留空清除该维） */
   const agentPermFields = (agent: AgentDefinition): DetailField[] => {
     const kindName = agentKindLabel(agent);
-    // 权限是**定义**的一部分：改一次，所有用这个 AgentDefinition 的会话都跟着变（PRD 1.6 / 4.2），
+    // 权限是定义的一部分：改一次，所有用这个 AgentDefinition 的会话都跟着变，
     // 所以四维共用一个写前确认 —— 摆的是影响面，不是字段名
     const confirm = { title: t("wiz.agentWrite.confirmTitle"), cost: [t("wiz.agentWrite.cost")] };
     return PERMISSION_DIMENSIONS.map((dim) => ({

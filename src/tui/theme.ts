@@ -2,7 +2,7 @@
  * TUI 主题与视觉元素 —— 颜色、渐变色与 ASCII Logo
  *
  * 设计原则：
- *   - 渐变只产出**每字符的 hex 颜色**，交由 Ink 的 `<Text color>` 渲染；
+ *   - 渐变只产出每字符的 hex 颜色，交由 Ink 的 `<Text color>` 渲染；
  *   - 颜色是否生效由 Ink 依终端能力决定（无色终端自动退化为纯文本）；
  *   - Logo 提供「宽 / 窄」两套，按终端宽度选择，避免折行破坏构图。
  */
@@ -36,13 +36,13 @@ export interface TextStyle {
 
 /**
  * 语法高亮色板 —— 键为 highlight.js 的 scope（`highlight.ts` 已去掉 `hljs-` 前缀），
- * 供工具调用参数（JSON）、围栏代码块与**正文 markdown 源码着色**共用。
+ * 供工具调用参数（JSON）、围栏代码块与正文 markdown 源码着色共用。
  *
  * 约定：
  *   - 近白 / 近黑这类固定值（如 #e2e8f0 / #000000）在亮色或暗色终端之一里会看不见字，色板
- *     里因此没有它们：无颜色的 token 回落到**终端默认前景色**，需要区分时用 `bold` /
- *     `italic` / `dim` 等**终端相对属性**（`strong` / `emphasis` / `quote` 即如此）。
- *   - 绝对色只用于**强调**（关键字、字符串、标题等），且尽量取中间调。
+ *     里因此没有它们：无颜色的 token 回落到终端默认前景色，需要区分时用 `bold` /
+ *     `italic` / `dim` 等终端相对属性（`strong` / `emphasis` / `quote` 即如此）。
+ *   - 绝对色只用于强调（关键字、字符串、标题等），且尽量取中间调。
  */
 export const syntax: Record<string, TextStyle> = {
   keyword: { color: "#c4b5fd", bold: true },
@@ -65,7 +65,6 @@ export const syntax: Record<string, TextStyle> = {
   meta: { color: "#94a3b8" },
   addition: { color: "#86efac" },
   deletion: { color: "#f87171" },
-  // ---- markdown 源码着色（highlight.js 的 markdown 词法）----
   section: { color: "#a78bfa", bold: true }, // 标题（#）
   strong: { bold: true }, // 粗体 **x**（无颜色 → 终端默认前景色 + 加粗）
   emphasis: { italic: true }, // 斜体 *x*
@@ -79,8 +78,6 @@ export const syntax: Record<string, TextStyle> = {
 export function syntaxStyle(scope: string): TextStyle {
   return scope ? (syntax[scope] ?? {}) : {};
 }
-
-// ==================== 颜色工具 ====================
 
 type RGB = [number, number, number];
 
@@ -101,7 +98,6 @@ export function toHex([r, g, b]: RGB): string {
   return `#${c(r)}${c(g)}${c(b)}`;
 }
 
-/** 在两色之间线性插值 */
 export function mixColor(a: string, b: string, t: number): string {
   const [r1, g1, b1] = parseHex(a);
   const [r2, g2, b2] = parseHex(b);
@@ -119,8 +115,6 @@ export function gradientAt(stops: readonly string[], t: number): string {
   return mixColor(stops[i], stops[(i + 1) % n], f);
 }
 
-// ==================== ASCII Logo ====================
-
 /** 宽版 Logo（约 42 列） */
 export const LOGO_WIDE: string[] = [
   " █████╗ ██╗    ███████╗███████╗███╗   ██╗",
@@ -131,7 +125,6 @@ export const LOGO_WIDE: string[] = [
   "╚═╝  ╚═╝╚═╝    ╚══════╝╚══════╝╚═╝  ╚═══╝",
 ];
 
-/** 宽版 Logo 的显示宽度 */
 export const LOGO_WIDE_WIDTH = Math.max(...LOGO_WIDE.map((l) => l.length));
 
 /** 窄版 Logo（单行，用于窄终端） */

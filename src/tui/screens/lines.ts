@@ -3,8 +3,6 @@ import { wrapText, displayWidth, clusterWidth, graphemes } from "../text.js";
 import { theme, syntaxStyle } from "../theme.js";
 import { highlightCode, highlightJson, splitFences, type HlToken } from "../highlight.js";
 
-// ==================== 行模型 ====================
-
 export type LineKind =
   | "gap"
   | "user-header"
@@ -16,7 +14,7 @@ export type LineKind =
   | "notice"
   | "error";
 
-/** 行内**着色分段**：存在则逐段渲染（语法高亮），否则整行按 kind 默认色渲染 */
+/** 行内着色分段：存在则逐段渲染（语法高亮），否则整行按 kind 默认色渲染 */
 export interface Span {
   text: string;
   color?: string;
@@ -49,8 +47,6 @@ export function indentLines(kind: LineKind, key: string, text: string, width: nu
   return wrapText(text, width).map((line, i) => ({ key: `${key}-${i}`, kind, text: `  ${line}` }));
 }
 
-// ==================== 语法高亮 → 分段 ====================
-
 /** scope → 样式覆盖（未知 scope 沿用所在行基础色） */
 function scopeSpan(text: string, scope: string): Span {
   return { text, ...syntaxStyle(scope) };
@@ -73,7 +69,7 @@ function splitTokenLines(tokens: HlToken[]): HlToken[][] {
 }
 
 /**
- * 折行单元：**单字素簇** + 其样式（仅颜色/属性，不含文本）。
+ * 折行单元：单字素簇 + 其样式（仅颜色/属性，不含文本）。
  *
  * 取字素簇而不是 code point：`✌️` 是两个 code point 但占 2 列、`👨‍👩‍👧`
  * 是五个 code point 但只占 2 列。按 code point 建单元会让宽度算错（VS16 序列少算
@@ -128,7 +124,7 @@ function cellsToSpans(cells: SpanCell[]): Span[] {
  * 按显示宽度把分段折行，并合并相邻同样式分段。
  *
  * - `preferSpace=false`（默认，代码块）：逐字符硬断，保留缩进语义；
- * - `preferSpace=true`（散文 / markdown 正文）：优先在**最近的空格处**断行，
+ * - `preferSpace=true`（散文 / markdown 正文）：优先在最近的空格处断行，
  *   避免把英文单词从中间切断。
  */
 function wrapSpans(spans: Span[], limit: number, preferSpace = false): Span[][] {
@@ -172,7 +168,7 @@ function wrapSpans(spans: Span[], limit: number, preferSpace = false): Span[][] 
   return rows.map(cellsToSpans);
 }
 
-/** 按显示宽度把分段裁成**严格单行**，超出补省略号（用于工具调用行） */
+/** 按显示宽度把分段裁成单行，超出补省略号（用于工具调用行） */
 export function clipSpans(spans: Span[], max: number): Span[] {
   const limit = Math.max(1, max);
   const total = spans.reduce((sum, s) => sum + displayWidth(s.text), 0);
@@ -203,7 +199,7 @@ export function spanLine(key: string, kind: LineKind, spans: Span[]): RLine {
 }
 
 /**
- * 工具调用行的分段：`  ⚙ name(args)`，参数按 **JSON** 高亮。
+ * 工具调用行的分段：`  ⚙ name(args)`，参数按 JSON 高亮。
  * 无参数时省略括号；调用方用 `clipSpans` 裁成严格单行。
  */
 export function toolSpans(name: string, args: string): Span[] {
@@ -220,14 +216,14 @@ export function toolSpans(name: string, args: string): Span[] {
 /**
  * 正文 / 思考内容 → 预折行。
  *
- * - **普通文本段**按 **markdown 源码着色**（`highlightCode(text, "markdown")`）：
+ * - 普通文本段按 markdown 源码着色（`highlightCode(text, "markdown")`）：
  *   AI 回答本身就是 markdown，交给 highlight.js 的 markdown 词法上色，标记符（`#`/`**`/`` ` `` 等）
  *   原样保留、只染色（不做语义渲染）；
- * - **围栏代码块**按标注语言做语法高亮，并**保留围栏行**（` ```lang ` 与 ` ``` `，
+ * - 围栏代码块按标注语言做语法高亮，并保留围栏行（` ```lang ` 与 ` ``` `，
  *   以低调的暗灰渲染），不丢弃 —— 便于一眼看出代码块边界与语言。
  *   未标注 / 未知语言则不着色。
  *
- * 正文段用**空格优先**折行，代码段逐字符硬断。
+ * 正文段用空格优先折行，代码段逐字符硬断。
  */
 export function contentLines(kind: LineKind, key: string, text: string, width: number): RLine[] {
   const out: RLine[] = [];

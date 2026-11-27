@@ -1,21 +1,14 @@
 /**
- * `↑` 历史的唯一数据源 —— 直接派生自 `session.messages` 里的用户消息。
+ * `↑` 历史的唯一数据源：直接派生自 `session.messages` 里的用户消息。
  *
- * ## 为什么不另存一份历史
+ * 不另存一份历史的代价是真实的：只存文本的话，`↑` 翻回一条带图片的消息时图片会静默丢失，
+ * 用户回车就把图与文本重发成了纯文本，看起来什么都没少，模型收到的内容却完全不同。
+ * 原始内容本来就在 messages 的内容段里（`Ctrl+V` 粘贴的图会以 `image_url` 的 data URL
+ * 落进用户消息），派生出来即可，不需要第二份会漂移的副本。
  *
- * 不另存一份的代价是真实的：只存文本的话，`↑` 翻回一条**带图片**的消息时图片会静默丢失，
- * 用户直接回车就把「图 + 文」重发成了纯文本 —— 看起来什么都没少，
- * 但模型收到的完全不同。而真相本来就在 messages 的内容段里（`Ctrl+V` 粘贴的图会以
- * `image_url` 的 data URL 落进用户消息），派生出来即可，不需要第二份会漂移的副本。
- *
- * ## 两种图，两种还原
- *
- *   · **剪贴板内联的那种**：段里是 `data:` 的 base64，本地有字节，还原成 `ClipboardImage`
- *     （重发时再传一次，与第一次粘贴同一条路）；
- *   · **已经传上去的那种**：段上留着 Asset id（`__asset_id`），还原成 id —— 重新发不必再传
- *     一遍，本地也不需要一份副本（PRD 1.8：同一张图全机只存一份，按内容认）。
- *
- * 两种都放回输入区，`↑` 回到带图消息时图就不会丢。
+ * 剪贴板内联的图在段里是 `data:` 的 base64，本地有字节，还原成 `ClipboardImage`，
+ * 重发时再传一次，与首次粘贴走同一条路。已经上传的图在段上留着 Asset id（`__asset_id`），
+ * 还原成 id；重发不必再传一遍，本地也不需要副本：同一张图全机只存一份，按内容认。
  */
 import { AgentNS } from "@ai-zen/agents-core";
 import type { ClipboardImage } from "../clipboard.js";
@@ -29,7 +22,7 @@ import { stripCwdNote } from "./text.js";
  */
 const ASSET_ID_KEY = "__asset_id";
 
-/** 一条可再次编辑的草稿：文本 + 附件 */
+/** 可再次编辑的草稿 */
 export interface HistoryEntry {
   text: string;
   /** 粘进消息里的图（内联 base64 那种） */
@@ -38,7 +31,7 @@ export interface HistoryEntry {
   assetIds: readonly string[];
 }
 
-/** `data:<mime>;base64,<data>` → `{ base64, mime }`；不是内联图片（http URL 等）返回 null */
+/** 非内联图片（http URL 等）返回 null */
 function parseDataUrl(url: string): ClipboardImage | null {
   const match = /^data:([^;,]+);base64,(.*)$/s.exec(url);
   if (!match) return null;
@@ -73,9 +66,9 @@ function toDraft(message: AgentNS.Message): HistoryEntry {
 }
 
 /**
- * 用户消息 → 草稿列表（按发送顺序，**最后一条最新**）。
+ * 用户消息 → 草稿列表，按发送顺序，最后一条最新。
  *
- * `↑` 从末尾往回走，与「最近说过的话先翻出来」一致。
+ * `↑` 从末尾往回走，先翻出最近发送的一条。
  */
 export function userDrafts(messages: readonly AgentNS.Message[]): HistoryEntry[] {
   return messages.filter((message) => message.role === AgentNS.Role.User).map(toDraft);

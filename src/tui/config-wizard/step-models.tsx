@@ -18,18 +18,18 @@ import { t } from "../../i18n/index.js";
 /**
  * 新建模型时先填的两条阈值。
  *
- * **宿主不补这两格**：`config.models.create` 收的是整条 `ModelDefinition`，`ModelService` 写前就判「两条阈值
+ * 宿主不补这两格：`config.models.create` 收的是整条 `ModelDefinition`，`ModelService` 写前就判「两条阈值
  * 都是数字」并且「交接线小于防护线」，缺了直接 `invalid_params`。所以「省略、让宿主套出厂默认」
  * 那句话不成立，客户端得给出一个起点；新建完立刻进详情屏，这两个数就在第一屏能改的地方。
  *
  * 取值照 SDK 给新模型定的兜底：`normalize.ts` 的 `DEFAULT_HANDOFF_THRESHOLD = 128_000`（那句
- * 注释写明「与 CLI 新建模型的默认值一致」），`guard` 按同一处的 **2 倍**口径算成 256_000 ——
+ * 注释写明「与 CLI 新建模型的默认值一致」），`guard` 按同一处的 2 倍口径算成 256_000 ——
  * 与出厂模型的比例同源（交接 40% / 阻断 80%，硬线恒在软线的 2 倍处）。模型真实窗口客户端
- * 不知道（那不是配置里的一格），所以这是一个**能就地改的起点**，不是对窗口的判断。
+ * 不知道（那不是配置里的一格），所以这是一个能就地改的起点，不是对窗口的判断。
  */
 const NEW_MODEL_THRESHOLDS: TokenThresholds = { handoff: 128_000, guard: 256_000 };
 
-/** 来源标签：出厂托管 / 自定义（宿主在写的时候会把编辑过的转成自定义，PRD F-F3） */
+/** 来源标签：出厂托管 / 自定义（宿主在写的时候会把编辑过的转成自定义） */
 function kindLabel(custom: boolean | undefined): string {
   return custom === true ? t("wiz.kind.custom") : t("wiz.kind.factory");
 }
@@ -55,12 +55,12 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
   const imageModels = config.imageModels ?? [];
 
   /**
-   * 模型管理是**两级**：先选供应商（端点），再看那一家底下的模型。
+   * 模型管理是两级：先选供应商（端点），再看那一家底下的模型。
    *
    * 为什么不平铺：一家订阅式端点就带十几二十条模型，平铺之后既难找、也看不出「这是哪家的」；
    * 顺序也不用再靠 hint 里那个端点名去认。与 `/model` 的两级同一套读法。
    *
-   * 没有模型的端点在第二级里什么都不显示，所以这里把它们列出来（它们是「你还没给这家具模型」的
+   * 没有模型的端点在第二级里什么都不显示，所以这里把它们列出来（它们是「还没有给这家厂商配上模型」的
    * 事实，也是新建模型该去的地方）；端点顺序就是配置里的顺序。
    */
   if (activeStep.kind === "models") {
@@ -96,7 +96,6 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- 模型管理的第二级：这一家的模型（＋新建）----------
   if (activeStep.kind === "models-of-endpoint") {
     const endpoint = config.endpoints.find((item) => item.id === activeStep.endpointId);
     // 端点在这期间被删了（另一个客户端）：退回第一级，不留一块空屏
@@ -140,16 +139,15 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- 模型详情 ----------
   if (activeStep.kind === "model") {
     const model = config.models.find((item) => item.id === activeStep.modelId)!;
     const name = model.name || model.id;
     const key = endpointKeyState(config, model);
     /**
-     * 删之前的「代价」（PRD 3.4：删模型要把指向它的默认项改指或清空）。
+     * 删之前的「代价」：删模型要把指向它的默认项改指或清空。
      *
      * 宿主就是这么改的：同端点的第一条剩余模型，一条不剩就清空（`ModelService.remove`）。
-     * 这里用 `config.get` 那一份配置把同一件事**事前**算一遍 —— 客户端不新造规则，只把宿主
+     * 这里用 `config.get` 那一份配置把同一件事事前算一遍 —— 客户端不新造规则，只把宿主
      * 那一条摆给人看。
      */
     const remaining = config.models.filter((item) => item.id !== model.id);
@@ -214,7 +212,6 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- 图片模型列表 ----------
   if (activeStep.kind === "image-models") {
     const items: SelectItem<string>[] = [
       {
@@ -250,7 +247,6 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- 图片模型详情 ----------
   if (activeStep.kind === "image-model") {
     const model = imageModels.find((item) => item.id === activeStep.modelId)!;
     const name = model.name || model.id;
@@ -299,7 +295,6 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- 新建模型（名称 → 创建并进入详情）----------
   if (activeStep.kind === "new-model") {
     // 在哪一家下面建的，就绑哪一家（不再默认绑第一个端点）
     const endpoint = config.endpoints.find((item) => item.id === activeStep.endpointId);
@@ -357,7 +352,6 @@ export function renderModelsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- 新建图片模型（名称 → 创建并进入详情）----------
   if (activeStep.kind === "new-image-model") {
     const endpoint = config.endpoints[0];
     return (

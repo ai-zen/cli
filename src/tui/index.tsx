@@ -9,12 +9,12 @@
  *
  * 终端安全：SIGINT / SIGTERM / 未捕获异常均卸载 Ink，恢复 raw mode 与光标。
  *
- * ## 一个进程只有一条连接，一份会话注册表
+ * 一个进程只有一条连接，一份会话注册表
  *
  * `connectHost` 建的那条 `Client` 是本文件唯一的连接：会话层借它说话、配置向导借它读写、
  * 启动预检借它问配置。它住在 `runTui` 的作用域里（重挂载循环之外），退出时由这里关掉。
  *
- * 会话同理，只是多一层：**重挂载换的只是「看哪一段」，会话本身归进程所有**（PRD D4）。
+ * 会话同理，只是多一层：重挂载换的只是「看哪一段」，会话本身归进程所有。
  * 那份注册表（`SessionRegistry`）建在重挂载循环之外，切一段不丢另一段的订阅 —— 于是
  * 「切过去，原来那段继续跑」在客户端也成立，而不只成立在宿主那边。
  */
@@ -55,9 +55,9 @@ import type { AgentNS } from "@ai-zen/agents-core";
 const CLEAR_SCREEN = "\x1b[2J\x1b[H\x1b[?25h";
 
 /**
- * 本进程那**一条**连接 —— 一个 TUI 进程只有一份。
+ * 本进程那一条连接 —— 一个 TUI 进程只有一份。
  *
- * ## 为什么它建在 `runChat` 的重挂载循环之外
+ * 为什么它建在 `runChat` 的重挂载循环之外
  *
  * `/load`、`/new`、`/back` 都是「卸载当前 Ink 实例 → 再 `mount(<Chat/>)`」，而连接如果建在
  * 循环里（或建在组件里），切一次会话就重连一次：宿主那边多一条 driver，客户端这边丢掉全部在飞
@@ -109,10 +109,10 @@ let activeInstance: Instance | null = null;
  *
  * `kittyKeyboard` 刻意取 `disabled`，关闭 Kitty 键盘协议的「自动查询」：
  *
- * - Ink 的 `auto` 模式会在**每个实例创建时**发送一次 `CSI ? u` 查询，终端则回
+ * - Ink 的 `auto` 模式会在每个实例创建时发送一次 `CSI ? u` 查询，终端则回
  *   `CSI ? 0 u`（flags=0，不支持）。本 TUI 会反复挂载（启动界面 → 会话屏 →
  *   配置向导 …），于是应答源源不断；
- * - 应答一旦被**拆包**（前导 ESC 被 Ink 的「待定转义刷新定时器」当作一次独立的
+ * - 应答一旦被拆包（前导 ESC 被 Ink 的「待定转义刷新定时器」当作一次独立的
  *   Escape 键消费），残留在后一个 chunk 里的 `[?0u` 会退化成普通文本被当作输入
  *   插入输入框（已实测重现）；
  * - 而该协议的收益（Ctrl / Alt / Shift + Enter 换行）在本环境本就不生效——
@@ -154,8 +154,6 @@ function mount(
   });
 }
 
-// ==================== 那一条连接 ====================
-
 /**
  * 建一条到宿主的连接（连接门过完之后才调）。
  *
@@ -168,12 +166,10 @@ async function openConnection(env: CliEnv, settings: ConnectionSettings): Promis
   return client;
 }
 
-// ==================== 端点凭据预检 ====================
-
 /**
  * 首启凭据门 —— 还没有可用密钥时，先摆「选服务商 → 填密钥 → 定首要模型」那一条链。
  *
- * 它就是**同一个配置向导**（`ConfigWizard`）的首启形态：读写都走那一条连接（`api`），
+ * 它就是同一个配置向导（`ConfigWizard`）的首启形态：读写都走那一条连接（`api`），
  * 所以「这个屏上写进去的密钥」与「宿主真正拿去发请求的那一份」是同一份。
  *
  * 为什么入口是 `onboarding` 而不是直接跳「填密钥」：旧版拿默认模型反推出一个端点，一上屏就
@@ -220,7 +216,7 @@ function CredentialGate({
  *
  * 三份快照（配置 / AgentDefinition 清单 / 发现视图）只在真要开屏时才读：向导整屏接管要用它们。
  *
- * ## 用户换了服务商，那一段会话的模型也得跟着换
+ * 用户换了服务商，那一段会话的模型也得跟着换
  *
  * 会话行上的 `modelId` 在建行那一刻就写定了（`session.create` 把三级解析的结果落进去），
  * 因此「把所选服务商的首要模型设成默认项」并不能改变这一段会话实际用哪个模型 —— 三级解析里
@@ -232,7 +228,7 @@ async function ensureCredential(
   workspaceId: string,
   session: ChatSessionLike,
 ): Promise<boolean> {
-  // 凭据要从**实际会用它的那一份配置**里取：在宿主，不是本机磁盘
+  // 凭据要从实际会用它的那一份配置里取：在宿主，不是本机磁盘
   const { config, presets } = await connection.api.config.get.query();
   const credential = resolveCredential(config, session.modelId ?? undefined);
   if (!credential || credential.configured) return true;
@@ -266,21 +262,19 @@ async function ensureCredential(
   return Boolean(result?.dirty);
 }
 
-// ==================== 目标解析 ====================
-
 interface ChatTarget {
   agentId?: string;
   /**
    * 这次启动进入的工作区（`enterInitialWorkspace` 定的）：新会话就开在它里面。
    *
-   * 它**不是** `process.cwd()` 推出来的：本机那条用当前目录，远端那条是「上次进入的那个」或
-   * 用户在屏上选的（PRD D30）。
+   * 它不是 `process.cwd()` 推出来的：本机那条用当前目录，远端那条是「上次进入的那个」或
+   * 用户在屏上选的。
    */
   workspaceId: string;
   messages?: AgentNS.Message[];
   sessionId?: string;
   /**
-   * 「接着该工作区上一次的会话」—— 只是**意图**，不带任何数据。
+   * 「接着该工作区上一次的会话」—— 只是意图，不带任何数据。
    *
    * 为什么不由这里读盘：会话根本不在本机磁盘上，读本地存档只会得出「从来没有上次会话」。
    * 哪一段算上一次，交给会话实现去问宿主。
@@ -289,10 +283,10 @@ interface ChatTarget {
 }
 
 /**
- * 这一屏的目标：**哪个 AgentDefinition + 哪个工作区**。
+ * 这一屏的目标：哪个 AgentDefinition + 哪个工作区。
  *
  * 模型不在这里算，也一并不在这里校验 —— 「这段会话实际用哪个模型」只有会话说得准
- * （见 {@link openTargetSession}）。客户端自己拿 AgentDefinition 加全局兜底推一遍，等于把宿主那套
+ * （见 `openTargetSession`）。客户端自己拿 AgentDefinition 加全局兜底推一遍，等于把宿主那套
  * 三级解析（会话级 → AgentDefinition → 全局）抄成两级：会话级覆盖存在时它必然算错，而错的后果不是报错，
  * 是「状态栏显示 A、实发请求 B」。
  */
@@ -310,14 +304,14 @@ async function resolveTarget(connection: HostConnection, workspaceId: string): P
 }
 
 /**
- * 按目标把会话**开好**（`registry.open`：只备好一段会话，先不接听众）。
+ * 按目标把会话开好（`registry.open`：只备好一段会话，先不接听众）。
  *
- * 这一步发生在凭据预检**之前**：预检要知道「这个模型属于哪个端点、有没有 Key」，而模型
+ * 这一步发生在凭据预检之前：预检要知道「这个模型属于哪个端点、有没有 Key」，而模型
  * 只由会话说得准（`SessionView.model.modelId`，宿主在 `session.create` 里按三级解析算出来、
  * 落在会话行上）。先开会话的代价是零：草稿会话不落库（R56），第一条用户消息之前 `session.list`
  * 里看不到它。
  *
- * 开不出来（模型不可解析 / 指向的模型已经不在配置里）**不在这里退出**：宿主已经把那句话说清楚了
+ * 开不出来（模型不可解析 / 指向的模型已经不在配置里）不在这里退出：宿主已经把那句话说清楚了
  * （`error.modelUnresolved`，按连接语言渲染好），交给会话屏的失败分支去报 —— 那里按 `k` 就能
  * 打开配置中心修，启动期直接 farewell 只会让人连修的地方都摸不到。
  */
@@ -338,7 +332,7 @@ async function openTargetSession(
 }
 
 /**
- * 启动时进入工作区（PRD D30）：本机用当前目录；远端用上次进入的那个；都没有 → 摆一块选择屏。
+ * 启动时进入工作区：本机用当前目录；远端用上次进入的那个；都没有 → 摆一块选择屏。
  *
  * `null` = 用户放弃了（屏上按了 Esc）—— 与连接门同一类结局，由 `runTui` 收摊。
  *
@@ -363,7 +357,7 @@ async function enterInitialWorkspace(
 /**
  * 「接着上次」的意图。
  *
- * 这里**只有意图、没有数据**：上一次是哪一段只有会话实现的那一侧知道（服务端存档 /
+ * 这里只有意图、没有数据：上一次是哪一段只有会话实现的那一侧知道（服务端存档 /
  * 本地指针），客户端自己去读一遍就是又一份会漂的真相。窗口层说「接着上次」，
  * 会话层负责找出接哪一段；找不到就当新会话开。
  */
@@ -371,14 +365,12 @@ function resumeLastSession(target: ChatTarget): ChatTarget {
   return { ...target, resume: true };
 }
 
-// ==================== 会话屏 ====================
-
 /**
  * 运行会话屏；`/new`、`/back`、`/load`、`/sessions` 通过重挂载（新 Ink 实例 + 原生清屏）
  * 实现，其余退出直接结束。
  *
  * 重挂载换的只是「这一屏看哪一段」：会话本身归 `sessions`（进程级），所以换屏不会把另一段
- * 正在跑的会话的订阅弄丢（PRD D4）。
+ * 正在跑的会话的订阅弄丢。
  */
 /**
  * `runChat` 只需要「这一屏怎么开」的那两个开关，外加日志出口：`env` 在 `runTui` 里已经变成了
@@ -392,7 +384,7 @@ type ChatRunOptions = Pick<RunTuiOptions, "initialPrompt" | "newSession" | "logg
  *
  * `host-closed` 是「这一屏没有会话可看了」：`/shutdown`（宿主被关掉了，这条连接已经没有对端）
  * 与「这一屏正看着的那一段被删了、哪儿也没有别的会话」两种。两条路的共同点是「重挂载会话屏没
- * 意义」（它得先有一段会话），于是下一屏是回到「连哪台」那一步（{@link runTui} 的循环）。
+ * 意义」（它得先有一段会话），于是下一屏是回到「连哪台」那一步（`runTui` 的循环）。
  */
 type ChatOutcome = { kind: "done" } | { kind: "host-closed"; reason: string };
 
@@ -405,7 +397,7 @@ async function runChat(
   /**
    * 启动期已经知道的那一句失败（开会话那一步宿主回的错）。
    *
-   * 只对**首屏**有效：重挂载（在配置中心改完配置之后）要真的再开一次 —— 那是这条路上唯一的
+   * 只对首屏有效：重挂载（在配置中心改完配置之后）要真的再开一次 —— 那是这条路上唯一的
    * 出口（修完配置回到屏上就该跑起来），所以挂载之后立刻置空。
    */
   bootError?: string,
@@ -419,11 +411,11 @@ async function runChat(
   let initialNotice: string | undefined;
   /**
    * shell 钩子（`ai --tui --new "$@"`）带来的首条消息。
-   * **只发一次**：挂载后置空，否则重挂载（切模型 / `/lang` 等）会反复重发。
+   * 只发一次：挂载后置空，否则重挂载（切模型 / `/lang` 等）会反复重发。
    */
   let initialPrompt = options.initialPrompt;
   /**
-   * 「接着上次」是**一次性**意图：只对首屏有效。
+   * 「接着上次」是一次性意图：只对首屏有效。
    *
    * 重挂载（`/load`、/model 重启）带的是已经拿到手的 `messages` / `sessionId`，
    * 若让 resume 一直跟着，第二次挂载会一边给 id 一边让会话「再找一次上次」，
@@ -445,8 +437,8 @@ async function runChat(
         resume={resume}
         // 启动期就知道开不出来（配置残缺）：首帧直接报它，不再重试一次开会话
         bootError={bootError}
-        // 把**那一条**连接与**那份会话注册表**交给会话屏。两样都没有兜底：屏幕自己造一条连接
-        // 就是一个进程两条到宿主的连接；屏幕自己管会话存活就是切一段丢一段的订阅（PRD D4）。
+        // 把那一条连接与那份会话注册表交给会话屏。两样都没有兜底：屏幕自己造一条连接
+        // 就是一个进程两条到宿主的连接；屏幕自己管会话存活就是切一段丢一段的订阅。
         deps={{ connection, sessions, logger: options.logger, logNotices: options.logNotices }}
         initialInput={initialInput}
         initialAssetIds={initialAssetIds}
@@ -483,8 +475,8 @@ async function runChat(
         return { kind: "host-closed", reason: value.backToConnect };
       }
       if (value.load) {
-        // /load、/new、/sessions 选中：换成**另一段**会话，重挂载会话屏。
-        // 换的只是「这一屏看哪一段」—— 旧那一段的会话留在注册表里继续跑（PRD D4）。
+        // /load、/new、/sessions 选中：换成另一段会话，重挂载会话屏。
+        // 换的只是「这一屏看哪一段」—— 旧那一段的会话留在注册表里继续跑。
         // 工作区跟着那一段会话自己那个（宿主会按 id 回给它）
         current = {
           ...current,
@@ -521,19 +513,17 @@ async function runChat(
   }
 }
 
-// ==================== 入口 ====================
-
 /** `runTui()` 的可选参数 */
 export interface RunTuiOptions {
   /**
-   * 进入会话屏后**自动作为首条消息发送**的内容。
+   * 进入会话屏后自动作为首条消息发送的内容。
    *
    * 来源只有一处：shell 兜底钩子 `ai --tui --new "$@"`（命令不存在时把原命令带进来）。
-   * 不预填到输入框——钩子的语义就是「这条命令跑不了，你帮我处理」，等用户再敲一次回车没有意义。
+   * 不预填到输入框——钩子的语义就是「这条命令执行不了，需要处理」，等用户再敲一次回车没有意义。
    */
   initialPrompt?: string;
   /**
-   * `--new`：**开一条新会话**，跳过「接着该目录上一次的会话」。
+   * `--new`：开一条新会话，跳过「接着该目录上一次的会话」。
    *
    * 默认（不带 `--new`）保持续接意图：`ai` 回到上次的会话是常用预期。
    * 具体接哪一段由会话实现问服务端，客户端不读本地存档。
@@ -542,14 +532,14 @@ export interface RunTuiOptions {
   /**
    * 本进程的事实（配置根 / 显式地址与凭证）—— 由根（`CliApp`）递进来。
    *
-   * **没有缺省**：TUI 不读 `process.env`。上面那两个开关是「这一屏怎么开」，这一项是「连哪台、
+   * 没有缺省：TUI 不读 `process.env`。上面那两个开关是「这一屏怎么开」，这一项是「连哪台、
    * 拿什么进门」—— 两者混成一个可选参数的结果，就是“忘了传”静默地连回本机。
    */
   env: CliEnv;
   /**
    * 日志出口 —— 由根（`CliApp`）递进来。
    *
-   * **没有缺省**：TUI 不读全局日志口。它会一路传给三五处会写日志的地方（界面偏好 / 工作区记忆 /
+   * 没有缺省：TUI 不读全局日志口。它会一路传给三五处会写日志的地方（界面偏好 / 工作区记忆 /
    * 会话续接 / 命令层），每一处都在自己的签名里收它 —— 「这一行是谁写的」不必读实现才知道。
    */
   logger: LogSink;
@@ -569,9 +559,9 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
   keyDebugStart();
 
   /**
-   * 进程级那**一条**连接：一次 `runTui` 只建一次，且**在重挂载循环之外**。
+   * 进程级那一条连接：一次 `runTui` 只建一次，且在重挂载循环之外。
    *
-   * 它等**连接门**过了才建 —— 门里用户可能把目标换掉（从本机改成某台远程），而一条
+   * 它等连接门过了才建 —— 门里用户可能把目标换掉（从本机改成某台远程），而一条
    * 连接是照着那一刻的设置建的。所以它住在门后的那个作用域里；收摊时真正要用的只是「关掉它」
    * 这一个动作，单独记一个函数就够（不在外面留一个可空的对象）。
    */
@@ -598,7 +588,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
        * 连接门：先看上次那台还能不能用，不行就摆一块屏（理由与顺序见 `connection-gate.ts`）。
        *
        * 这一句取代了从前那句「直接 `resolveTarget()`，失败就报一行 `bootFailed` 退出」——
-       * 那时的症状是：服务端不可达时 TUI **没有任何可操作的界面**，用户除了改环境变量没有别的办法。
+       * 那时的症状是：服务端不可达时 TUI 没有任何可操作的界面，用户除了改环境变量没有别的办法。
        */
       const gate = await settleConnection({
         initial: await readConnectPlan(options.env),
@@ -609,7 +599,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
           mount(
             <ConnectScreen initial={input.initial} reason={input.reason} connect={input.connect} />,
           ).then((result) => (result as ConnectScreenResult | undefined) ?? { kind: "exit" }),
-        /** 本机拉起宿主的那块屏（PRD D31）：阶段、真原因、`R` 重试、`Esc` 折回连接屏 */
+        /** 本机拉起宿主的那块屏：阶段、真原因、`R` 重试、`Esc` 折回连接屏 */
         showHostDownloadScreen: (input) =>
           mount(<HostDownloadScreen connect={input.connect} />, { clear: false }).then(
             (result) =>
@@ -641,17 +631,17 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
         options.logger,
       );
       /**
-       * 会话注册表：**建在重挂载循环之外**（{@link runChat} 里那些 `/load` `/back` 只是换屏）。
+       * 会话注册表：建在重挂载循环之外（`runChat` 里那些 `/load` `/back` 只是换屏）。
        *
-       * 它归**连接**所有：一段会话就是这条连接上的那一段，`/shutdown` 之后回到连接门、
+       * 它归连接所有：一段会话就是这条连接上的那一段，`/shutdown` 之后回到连接门、
        * 重开一条连接，上一轮会话的订阅已经没有意义了（它们在 `finally` 里统一关掉）。
        */
       const sessions = new SessionRegistry(connection, options.logger);
       try {
         /**
-         * 进入工作区（PRD D30）：本机用当前目录，远端用上次进入的那个，都没有就摆一块选择屏。
+         * 进入工作区：本机用当前目录，远端用上次进入的那个，都没有就摆一块选择屏。
          *
-         * 它发生在**建会话之前**：会话层只收一个 `workspaceId`，不再拿本机 cwd 去猜
+         * 它发生在建会话之前：会话层只收一个 `workspaceId`，不再拿本机 cwd 去猜
          * —— 猜的后果是把这台机器的路径登记到另一台机器的工作区表上。
          */
         const host = workspaceHost(gate.settings);
@@ -681,7 +671,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
         // 顺序很重要：`--new` 是「我不要上次」的明确表态，这一步不把 resume 加回来
         if (!options.newSession) target = resumeLastSession(target);
 
-        // 开/续接会话在凭据预检**之前**：模型只在开会话那一步才定下来（宿主按
+        // 开/续接会话在凭据预检之前：模型只在开会话那一步才定下来（宿主按
         // 「会话级 → AgentDefinition → 全局」算，写进会话行），客户端自己算不出一模一样的那个值。
         const opened = await openTargetSession(sessions, target);
         let bootError: string | undefined;
@@ -727,7 +717,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
     /**
      * 断掉这条进程级连接。
      *
-     * 它现在**不随界面卸载而消失**（切会话不重连），所以退出时由
+     * 它现在不随界面卸载而消失（切会话不重连），所以退出时由
      * 这里显式关掉 —— 否则进程要等事件循环里的这条 socket 自己超时才能退。
      *
      * 顺序：会话的订阅在这一程结束时已经由 `sessions.disposeAll()` 摘干净了

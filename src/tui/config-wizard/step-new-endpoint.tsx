@@ -21,7 +21,6 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
     rows,
   } = ctx;
   if (activeStep.kind !== "new-endpoint") return null;
-  // ---------- 新建端点（名称 → Base URL → API Key）----------
   const field = activeStep.field;
 
   if (field === "name") {

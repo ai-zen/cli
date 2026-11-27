@@ -1,32 +1,29 @@
-// 会话视口 —— 「翻页 / 按行 / 滚轮 / 回底」的唯一入口
+// 会话视口：「翻页 / 按行 / 滚轮 / 回底」的唯一入口。
 //
-// 视口是**不依赖会话**的独立状态机（一个 `viewTop` 状态加一份最近布局的引用），单独成模块
-// 是为了让「滚动」只有这一个地方能改 —— 混在会话屏里时，任何一个新键位都可能又写一遍。
+// 视口是不依赖会话的独立状态机（一个 `viewTop` 状态加一份最近布局的引用），单独成模块是为了
+// 让滚动只有这一个地方能改：混在会话屏里时，任何一个新键位都可能又写一遍。
 //
-// 关键点：所有动作都走 `scrollTo()` → `clampViewTop()`，因此
-//   · 越界值由钳制吸收，不会出现「滚过头回不来」的视口；
-//   · 回到底部时 `clampViewTop()` 返回 `null`，视口**自动**恢复「跟随最新内容」，
-//     不需要各处手写「滚到底就清空滚动状态」。
+// 所有动作都走 `scrollTo()` → `clampViewTop()`：越界值由钳制吸收，不会出现滚过头回不来的
+// 视口；回到底部时 `clampViewTop()` 返回 `null`，视口自动恢复跟随最新内容，不需要各处
+// 手写「滚到底就清空滚动状态」。
 import { useCallback, useRef, useState, type RefObject } from "react";
 import { WHEEL_STEP } from "../mouse.js";
 import { clampViewTop, type ChatLayout } from "./layout.js";
 
 export interface ChatViewport {
-  /** 视口顶部行索引（相对整个会话行）；`null` = 贴底（自动跟随最新内容） */
+  /** 视口顶部行索引（相对整个会话行）；`null` 表示贴底，即跟随最新内容 */
   viewTop: number | null;
   /**
-   * 最近一帧的布局。**由渲染体在算完布局后写入**（`viewport.layoutRef.current = layout`）：
-   * 键盘回调需要的总行数 / 视口高度只有布局算完才知道，而布局又依赖 `viewTop`
-   * —— 用 ref 传递可避免两个方向互相等待。
+   * 最近一帧的布局，由渲染体在算完布局后写入（`viewport.layoutRef.current = layout`）：
+   * 键盘回调需要的总行数、视口高度只有布局算完才知道，而布局又依赖 `viewTop`，
+   * 用 ref 传递可避免两个方向互相等待。
    */
   layoutRef: RefObject<ChatLayout | null>;
-  /** 翻页：一页 = 视口高度 - 1 行（留一行重叠的上下文） */
+  /** 翻页：一页 = 视口高度 - 1 行，留一行重叠的上下文 */
   scrollByPage: (dir: -1 | 1) => void;
-  /** 按行滚动 */
   scrollByLine: (dir: -1 | 1) => void;
-  /** 鼠标滚轮：一格滚 `WHEEL_STEP` 行（与按行滚动共用一个钳制入口） */
+  /** 鼠标滚轮：一格滚 `WHEEL_STEP` 行 */
   scrollByWheel: (dir: -1 | 1) => void;
-  /** 贴底（恢复跟随最新内容） */
   scrollToBottom: () => void;
 }
 
@@ -36,7 +33,7 @@ export function useChatViewport(): ChatViewport {
 
   // 下面的回调只读 `layoutRef`（布局每帧更新）与 `setViewTop`，没有闭包捕获的旧状态，
   // 所以依赖数组为空即可保持引用稳定（可安全传给 memo 化的子组件）。
-  // `scrollTo` 是下面三个动作的公共实现，**不对外暴露**：调用方只需要「翻页 / 按行 / 滚轮」，
+  // `scrollTo` 是下面三个动作的公共实现，不对外暴露：调用方只需要翻页 / 按行 / 滚轮，
   // 直接设任意顶部值既没必要，也绕过了「以布局实际生效的顶部为基准」这条约束。
   const scrollTo = useCallback((nextTop: number) => {
     const L = layoutRef.current;

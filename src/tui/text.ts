@@ -1,13 +1,13 @@
 /**
- * TUI 文本**排版** —— 折行、输入区光标定位、整帧高度。纯函数（无 React / Ink 依赖）。
+ * TUI 文本排版 —— 折行、输入区光标定位、整帧高度。纯函数（无 React / Ink 依赖）。
  *
  * 住在 `screens/` 与 `config-wizard/` 之外，两侧都从这里 import：它们是兄弟目录，
  * 谁 import 谁都会形成循环依赖。
  *
- * ## 度量原语住在 `src/text.ts`
+ * 度量原语住在 `src/text.ts`
  *
  * `displayWidth` / `clusterWidth` / `graphemes` / `truncate` / `stripCwdNote` 都住在
- * `src/text.ts`（零 UI 依赖，会话层与命令层都要用）。本文件把它们**原样转出**，
+ * `src/text.ts`（零 UI 依赖，会话层与命令层都要用）。本文件把它们原样转出，
  * 于是 `tui/` 内的调用点不必改 import 路径，命令层也不必经过这里 —— 这一层剩下的东西
  * （折行、光标、帧高）都只对渲染有意义。
  */
@@ -21,7 +21,7 @@ export { stripCwdNote, truncate } from "../text.js";
 
 /**
  * 按显示宽度把文本折成多行（保留显式换行）。
- * 拉丁文优先在空格处断行，CJK / 超长词按**字素簇**硬断；保证每行显示宽度 ≤ limit。
+ * 拉丁文优先在空格处断行，CJK / 超长词按字素簇硬断；保证每行显示宽度 ≤ limit。
  */
 export function wrapText(text: string, limit: number): string[] {
   const width = Math.max(1, limit);
@@ -55,27 +55,23 @@ export function wrapText(text: string, limit: number): string[] {
   return out.length > 0 ? out : [""];
 }
 
-// ==================== 单行输入区折行与光标定位 ====================
-
 /** 带光标位置的输入区折行结果 */
 export interface InputLayout {
-  /** 折行后的各行文本（不含提示符） */
   lines: string[];
   /**
-   * 每行首字符的**字素簇下标**（与 `lines` 同长）。
+   * 每行首字符的字素簇下标（与 `lines` 同长）。
    *
    * 上下移动光标要靠它把「第几行 + 行内第几列」换算回文本下标；不能把 `lines` 长度
    * 相加得出 —— 软折行不占字符，硬换行（`\n`）才占一个。
    */
   rowStarts: number[];
-  /** 光标所在行（0 起始） */
   cursorRow: number;
-  /** 光标在该行内的字符偏移（**字素簇**计，不是 code point） */
+  /** 光标在该行内的字符偏移（按字素簇计，不是 code point） */
   cursorCol: number;
 }
 
 /**
- * 把输入文本按显示宽度折行，并定位光标（`cursor` 为**字素簇**索引）。
+ * 把输入文本按显示宽度折行，并定位光标（`cursor` 为字素簇索引）。
  * 折行采用逐簇硬断（不做空格优先），以保证光标映射精确、支持跨行编辑。
  */
 export function layoutInput(text: string, cursor: number, width: number): InputLayout {
@@ -144,14 +140,14 @@ export const INPUT_PREFIX_WIDTH = 3;
  *   - 设备状态报告：`CSI ? <n> n`；
  *   - 鼠标上报（SGR）：`CSI < b ; x ; y M`——滚轮 / 点击 / 拖拽，见 `mouse.ts`。
  *
- * 这类序列本应由 Ink 的解析器整体消费。但当它被**拆包**时（前导 ESC 被 Ink 的
+ * 这类序列本应由 Ink 的解析器整体消费。但当它被拆包时（前导 ESC 被 Ink 的
  * 「待定转义刷新定时器」当作一次独立的 Escape 键消费），残留在后一个 chunk 里的
  * `[?0u` 会退化成普通文本并被当作输入插入输入框（实测重现）。此处做一层护栏；
  * 根因（不再向终端发查询）已在渲染选项里关闭。
  *
- * 鼠标上报是**主动开启**的（`src/tui/mouse.ts`），且 Ink 会把整条序列当作 `char`
+ * 鼠标上报是主动开启的（`src/tui/mouse.ts`），且 Ink 会把整条序列当作 `char`
  * 交给 `useInput`，所以这里兜一道——否则滚一下就往输入框里插一段 `[<64;10;5M`。
- * 注意：需要读滚轮的屏（会话屏）在**处理完滚轮之后**再调用本函数。
+ * 注意：需要读滚轮的屏（会话屏）在处理完滚轮之后再调用本函数。
  */
 export function isTerminalReply(sequence: string): boolean {
   return (
@@ -166,7 +162,7 @@ export function isTerminalReply(sequence: string): boolean {
  * 按显示宽度裁剪文本：超出上限则截断并补省略号（宽字符计 2 列）。
  *
  * 与 `src/text.ts` 的 `truncate` 是两件事：那个是「单行化 + 按簇截断（不保证宽度）」，
- * 这个是「保证**显示宽度** ≤ max」，用于需要精确占列数的排版。
+ * 这个是「保证显示宽度 ≤ max」，用于需要精确占列数的排版。
  */
 export function clipWidth(text: string, max: number): string {
   const limit = Math.max(1, max);
@@ -182,8 +178,6 @@ export function clipWidth(text: string, max: number): string {
   return `${out}…`;
 }
 
-// ==================== 整帧高度 ====================
-
 /**
  * 整帧可用高度 = 终端行数 − 1。
  *
@@ -197,7 +191,7 @@ export function usableFrameRows(terminalRows: number): number {
 }
 
 /**
- * 自底部向上布局时的**顶部留白行数**。
+ * 自底部向上布局时的顶部留白行数。
  *
  * 内容行数不足一帧时，用空白行把内容顶到下方（吸底），而不是让它飘在顶部：
  * 短帧飘在顶部时，从「会话屏整帧」切过来的那一次重绘会因擦除/滚动错位被顶出视口，

@@ -2,17 +2,17 @@
 //
 // ## 这一屏按 `AgentDefinition` 收窄
 //
-// `agentDefinition.list` 回来的是**定义本身**：名称 / 描述 / 模型 / 参数覆盖 / 权限四维 /
+// `agentDefinition.list` 回来的是定义本身：名称 / 描述 / 模型 / 参数覆盖 / 权限四维 /
 // `messages`（提示词）/ `function`（子 Agent 的函数定义）。旧契约那些「宿主算好的视图格」
 // —— `isSubAgent` / `isDefault` / `available` / `thinking` —— 都不在里面：
 //
 //   · `isSubAgent` = `function` 在不在（`agents-store.ts`）；
 //   · `isDefault` = `config.defaultAgent` 指着它；
 //   · `available` 没有对应：「能不能跑」要解析模型、查端点密钥，那是宿主的判断，
-//     客户端不重算（详情屏改为印「端点还没有 API Key」这一条**配置里的事实**）；
+//     客户端不重算（详情屏改为印「端点还没有 API Key」这一条配置里的事实）；
 //   · `thinking` 由 `modelParams` + 档位表现查（`reasoning-effort.ts` 的 `agentThinkingOf`）。
 //
-// 提示词与函数定义是**多行**内容，本屏只负责把它们印成一行摘要（`fields.ts` 的 `agentFields`），
+// 提示词与函数定义是多行内容，本屏只负责把它们印成一行摘要（`fields.ts` 的 `agentFields`），
 // 正文交给 `agent-text` 子屏（`$EDITOR`）。本文件只做一件事：把「哪段文本、写成什么补丁」
 // 摊开写清楚 —— 三个字段三种形状，全在这一个分支里，读一遍就知道每次
 // `agentDefinition.update` 发的是什么。
@@ -60,7 +60,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
   } = ctx;
 
   /**
-   * 改 AgentDefinition**定义**（提示词 / 函数说明 / 参数 schema）之前那一次确认（PRD 1.6 / 4.2）。
+   * 改 AgentDefinition定义（提示词 / 函数说明 / 参数 schema）之前那一次确认。
    *
    * 文案写影响面（正在看的那段回答会断），不写字段名 —— 用户关心的是「我正在看的那个会不会
    * 消失」，不是「哪个字段被改了」。
@@ -70,7 +70,6 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     cost: [t("wiz.agentWrite.cost")],
   };
 
-  // ---------- Agent 定义列表 ----------
   if (activeStep.kind === "agents") {
     const items: SelectItem<string>[] = [
       { label: t("wiz.agents.new"), value: NEW_AGENT, hint: t("wiz.agents.newHint") },
@@ -110,7 +109,6 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- Agent 详情 ----------
   if (activeStep.kind === "agent") {
     const agent = agents.agents.find((item) => item.id === activeStep.agentId)!;
     const kindName = agentKindLabel(agent);
@@ -118,7 +116,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     const model = findModel(config, agent.modelId ?? config.defaultModel);
     const key = model ? endpointKeyState(config, model) : null;
     /**
-     * 删之前摆的代价（PRD 3.4 / 4.2）：改 AgentDefinition 影响的是**所有用它的会话**。
+     * 删之前摆的代价：改 AgentDefinition 影响的是所有用它的会话。
      *
      * 数字只来自手里已数过的那一份（向导宿主用 `workspace.list` + `session.list` 数的）；
      * 数不出来就只说影响面，不编一个数。
@@ -182,7 +180,6 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- Agent 权限子屏 ----------
   if (activeStep.kind === "agent-perms") {
     const agent = agents.agents.find((item) => item.id === activeStep.agentId)!;
     return (
@@ -202,11 +199,10 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- AgentDefinition 的多行文本子屏（提示词 / 函数说明 / 参数 schema）----------
   //
   // 三个字段三种写入形状，都在这里摊开：
-  //   · 提示词：`messages` 是**整串**替换，所以补丁给整串（首条 system 换 content）；
-  //   · 函数说明 / 参数 schema：`function` 是**整份**替换，所以补丁给整个对象
+  //   · 提示词：`messages` 是整串替换，所以补丁给整串（首条 system 换 content）；
+  //   · 函数说明 / 参数 schema：`function` 是整份替换，所以补丁给整个对象
   //     （只发改的那一项会把兄弟字段冲掉）。
   // 空的提示词 / 空的说明是合法写入（清空是用户的正当操作）；参数 schema 非空且为
   // JSON 对象，非法时当场拦下、一次写都不发。
@@ -297,7 +293,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
         confirm={definitionConfirm}
         onSave={(value) => {
           const parsed = parseFunctionParameters(value);
-          // 非法 JSON：**不发请求**，把这句人话交回编辑器屏（它会把改动留住让人接着改）
+          // 非法 JSON：不发请求，把这句人话交回编辑器屏（它会把改动留住让人接着改）
           if (typeof parsed === "string") return Promise.resolve(parsed);
           return updateAgent(
             agent.id,
@@ -310,7 +306,6 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- 新建 Agent（顶层）----------
   if (activeStep.kind === "agent-new") {
     return (
       <PromptScreen

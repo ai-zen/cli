@@ -25,7 +25,7 @@ export interface WizardHost {
 /**
  * `agentDefinition.create` 的写入形状（SDK 的 `AgentDefinition` 去掉宿主自己盖的那两个时间戳）。
  *
- * `messages` 是**一整串**，且至少一条 system（宿主的写前校验）；`function` 有则视为子 Agent。
+ * `messages` 是一整串，且至少一条 system（宿主的写前校验）；`function` 有则视为子 Agent。
  */
 export type AgentDefinitionInput = Omit<AgentDefinition, "createdAt" | "updatedAt">;
 /** `agentDefinition.update` 的局部改动（合并语义：`undefined` = 这一项不动） */
@@ -59,13 +59,11 @@ export interface GlobalChange {
   autoTitle?: boolean;
 }
 
-// ==================== 步骤 ====================
-
 /** 可编辑的端点字段（首启引导 / `/key` 的直达编辑步骤用） */
 export type EndpointField = "apiKey" | "baseUrl";
 
 /**
- * AgentDefinition 详情里那三段**多行文本**（都进同一个 `$EDITOR` 屏）。
+ * AgentDefinition 详情里那三段多行文本（都进同一个 `$EDITOR` 屏）。
  *
  * 它们是三种不同的写入形状：提示词落在 `messages` 上、另外两段落在一个 `function` 对象
  * 的两个字段上。判别值取「字段名」而不是数组下标，是因为 `step-agents` 要按它决定读哪段
@@ -77,8 +75,7 @@ export type AgentTextField = "prompt" | "function-description" | "function-param
  * 「默认项」的可选目标。
  *
  * 前五个是 id 型默认值（从列表里挑一个，或选「不设置」），之后是中断策略的固定几档，
- * 最后是自动命名开关（两档布尔，`dev-docs/prd/01-decisions.md` 1.5 那条注：它是配置项，
- * 不占会话行的 11 格）。一次改动一次调用：id 型走 `config.defaults.update`，其余走 `config.update`。
+ * 最后是自动命名开关（两档布尔，它是配置项，不占会话行的 11 格）。一次改动一次调用：id 型走 `config.defaults.update`，其余走 `config.update`。
  */
 export type DefaultTarget =
   | "defaultAgent"
@@ -94,7 +91,7 @@ export type DefaultTarget =
 export type WizardStep =
   | { kind: "menu" }
   /**
-   * 首启引导的第一步：**选服务商**。
+   * 首启引导的第一步：选服务商。
    *
    * 为什么不直接跳「填密钥」：一上来就要求某个厂商的密钥，等于替用户挑定了一家（用户要换就得先改
    * 配置；旧版就是拿默认模型反推端点）。这一屏把「哪一家」先交给用户，选完才问密钥。
@@ -151,12 +148,10 @@ export interface NewEndpointDraft {
   apiKey: string;
 }
 
-// ==================== 关闭时回传的结果 ====================
-
 /**
  * 向导关闭时回传的变更结果。
  *
- * 全是**事实**，没有判断：每一次写都成功了（宿主那边改完即生效，回的就是新的那一份
+ * 全是事实，没有判断：每一次写都成功了（宿主那边改完即生效，回的就是新的那一份
  * `AppConfig`），所以「要不要重建会话」不再由客户端猜。这里只说两件事：
  *   - 有没有改动落下去（`dirty`）；
  *   - 每一处改动的句子（`summary`，由宿主/屏幕渲染成会话区的一条通知）。
@@ -170,7 +165,7 @@ export interface WizardCloseResult {
   dirty: boolean;
   summary: string[];
   /**
-   * 首启引导选定并**已经写进配置**的那个模型（那家服务商的首要模型）。
+   * 首启引导选定并已经写进配置的那个模型（那家服务商的首要模型）。
    *
    * 为什么不在向导里直接落到会话上：向导只拿得到 `api`（配置那一面），碰不到会话。而首启那一段
    * 会话的模型在建行那一刻就写定了（`session.create` 把三级解析的结果落进会话行），全局兜底的
@@ -181,8 +176,6 @@ export interface WizardCloseResult {
    */
   onboardedModelId?: string;
 }
-
-// ==================== 组件入参 ====================
 
 export interface ConfigWizardProps {
   /** 调 procedure 的那一面（读、写都走它） */
@@ -201,7 +194,7 @@ export interface ConfigWizardProps {
    * 每个 AgentDefinition 上挂着几段会话（`workspace.list` + 逐个 `session.list` 数出来的，向导宿主数）。
    *
    * 只给「删 AgentDefinition」那一处摆代价用：数得出来就说几段，数不出来（`null` / 缺省）就只说影响面
-   * —— **不编数字**。它是读出来的事实，不是第二份状态：数字在向导打开那一刻定下，随后不变。
+   * —— 不编数字。它是读出来的事实，不是第二份状态：数字在向导打开那一刻定下，随后不变。
    */
   sessionsByAgent?: Record<string, number> | null;
   /** 起始步骤（默认配置中心菜单） */
@@ -209,7 +202,7 @@ export interface ConfigWizardProps {
   /**
    * 打开系统编辑器的实现（缺省 `openInSystemEditor`）。
    *
-   * 只有 `agent-text` 屏（提示词 / 函数说明 / 参数 schema）用它。用例注入假实现是为了**不必**
+   * 只有 `agent-text` 屏（提示词 / 函数说明 / 参数 schema）用它。用例注入假实现是为了不必
    * `vi.mock("child_process")` —— 本仓不隔离模块图，按说明符注册的 mock 会串到别的文件。
    */
   openEditor?: OpenEditor;

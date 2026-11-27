@@ -14,8 +14,6 @@ import {
 import { Header, WizardFrame, Row, textRows } from "./frame.js";
 import { t } from "../../i18n/index.js";
 
-// ==================== 输入屏布局（纯函数，便于单测）====================
-
 export interface PromptLayoutInput {
   /** 终端行数 */
   terminalRows: number;
@@ -35,9 +33,7 @@ export interface PromptLayoutInput {
 }
 
 export interface PromptLayout {
-  /** 内容总行数 */
   contentLines: number;
-  /** 顶部留白行数 */
   topPadding: number;
   /** 终端硬件光标坐标（相对整帧原点，供 IME 候选框定位） */
   cursor: { x: number; y: number };
@@ -57,8 +53,6 @@ export function promptLayout(input: PromptLayoutInput): PromptLayout {
     },
   };
 }
-
-// ==================== 文本输入屏 ====================
 
 export interface PromptScreenProps {
   columns: number;

@@ -25,8 +25,6 @@ import { Header, WizardFrame, Row, textRows } from "./frame.js";
 import { ListStep } from "./list.js";
 import { t } from "../../i18n/index.js";
 
-// ==================== 多行文本编辑屏（系统编辑器）====================
-
 /**
  * 打开系统编辑器的实现（默认 `openInSystemEditor`）。
  *
@@ -50,12 +48,12 @@ export interface PromptEditorScreenProps {
    */
   ext?: string;
   notice?: string | null;
-  /** 打开编辑器的实现（缺省 `openInSystemEditor`）；见 {@link OpenEditor} */
+  /** 打开编辑器的实现（缺省 `openInSystemEditor`）；见 `OpenEditor` */
   openEditor?: OpenEditor;
   /**
-   * 写盘之前先出一次确认（PRD 1.6「二次确认要能先给代价、再真做」）。
+   * 写盘之前先出一次确认，即「二次确认要能先给代价、再真做」。
    *
-   * AgentDefinition 的提示词 / 函数说明 / 参数 schema 是**定义**的一部分：改一次，所有用这个 AgentDefinition 的会话都跟
+   * AgentDefinition 的提示词 / 函数说明 / 参数 schema 是定义的一部分：改一次，所有用这个 AgentDefinition 的会话都跟
    * 着变，所以保存之前先把代价摆出来（措辞是「正在看的那段回答会断」）。
    */
   confirm?: { title: string; cost: readonly string[] };
@@ -67,13 +65,13 @@ export interface PromptEditorScreenProps {
 /**
  * 多行文本编辑屏。
  *
- * 屏内只**预览**当前内容；`Enter` 挂起 Ink、用 `$EDITOR`（Windows 默认 notepad）打开临时
+ * 屏内只预览当前内容；`Enter` 挂起 Ink、用 `$EDITOR`（Windows 默认 notepad）打开临时
  * 文件，改完保存后回读、比对、交给 `onSave`；`Esc` 直接返回，一个字段都不改。
  *
  * 两处务实的选择：
- *   - **没改动就不写盘**：编辑器原样退出（`:q`）不该换来一次 `agent.update` ——
+ *   - 没改动就不写盘：编辑器原样退出（`:q`）不该换来一次 `agent.update` ——
  *     那会把出厂 AgentDefinition 静默标成自定义，并多出一条通知；
- *   - **校验失败保留草稿**（`draft`）：参数 schema 不是合法 JSON 时，用户刚打的那几十行还在
+ *   - 校验失败保留草稿（`draft`）：参数 schema 不是合法 JSON 时，用户刚打的那几十行还在
  *     屏上，再按 `Enter` 是在它上面接着改，而不是退回原值重敲。
  */
 export function PromptEditorScreen({
@@ -173,7 +171,6 @@ export function PromptEditorScreen({
     { isActive: !busy && pending === null },
   );
 
-  // ---- 子屏：写盘之前的确认（代价摆在上面，是 / 否两档） ----
   if (pending !== null && confirm) {
     const waiting = pending;
     return (

@@ -27,7 +27,6 @@ export function renderOnboardingStep(ctx: WizardContext): ReactNode {
   /** 这一屏唯一的退出去向：首启引导里 Esc 就是「放弃」（与密钥屏同一套语义） */
   const leave = () => (props.closeOnSave ? props.onClose(ctx.snapshot()) : go({ kind: "menu" }));
 
-  // ---------- 第一步：选服务商 ----------
   if (activeStep.kind === "onboarding") {
     // 没有对话模型的端点不出现：选了它也没有模型可落（与 `/model` 第一级同一口径）
     const endpoints = config.endpoints.filter(
@@ -70,7 +69,6 @@ export function renderOnboardingStep(ctx: WizardContext): ReactNode {
     );
   }
 
-  // ---------- 第二步：那一家服务商的密钥 ----------
   if (activeStep.kind === "onboarding-key") {
     const endpoint = config.endpoints.find((item) => item.id === activeStep.endpointId);
     // 端点在这期间被删了（另一个客户端）：退回第一步，不留一块空屏

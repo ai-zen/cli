@@ -1,7 +1,7 @@
 // 两个输入处理器共用的键位 —— 「滚轮 / 翻页 / ⌘ 习惯键 / Ctrl+D 双击退出」
 //
 // 会话屏有两个 `useInput`：一个是空闲态（编辑输入框），一个是忙碌态（生成 / 迁移中，
-// 只放行中止与回看）。两者对**同一批键**的处理保持一致 —— 否则「生成时能滚、空闲时
+// 只放行中止与回看）。两者对同一批键的处理保持一致 —— 否则「生成时能滚、空闲时
 // 不能滚」这类不一致迟早会出现。所以这一段只写一次：纯函数，不碰 React，键盘回归可以直接断言。
 //
 // ## 这里没有一个 Alt 键位
@@ -10,13 +10,13 @@
 // 抢得太多（Option 在某些终端根本不发 meta、macOS 的 Option+←/→ 变成 `ESC b`），同一个组合在
 // 两台机器上可能是完全不同的两件事。于是：
 //
-//   · 应用级动作全落在 **Ctrl** 上（`Ctrl+X` 清本会话通知、`Ctrl+G` 清全部、`Ctrl+B`/`Ctrl+F` 翻页、
+//   · 应用级动作全落在 Ctrl 上（`Ctrl+X` 清本会话通知、`Ctrl+G` 清全部、`Ctrl+B`/`Ctrl+F` 翻页、
 //     `Ctrl+O` 开图片）；
-//   · 读线编辑那一套 Alt 键位（`Alt+B/F/D/Y`、`Alt+Backspace`、`Alt+Enter`）**全部退场** ——
+//   · 读线编辑那一套 Alt 键位（`Alt+B/F/D/Y`、`Alt+Backspace`、`Alt+Enter`）全部退场 ——
 //     它们各自都有 Ctrl 侧的等价物（`Ctrl+←/→`、`Ctrl+Delete`、`Ctrl+Backspace`、`Ctrl+J`），
 //     重复的一套只会多出「两边行为不一致」的隐患。
 //
-// 于是这个文件里剩下的 `meta` 只剩**判断输入要不要落进输入框**那一处（`isMetaChar` 之类），
+// 于是这个文件里剩下的 `meta` 只剩判断输入要不要落进输入框那一处（`isMetaChar` 之类），
 // 不再有任何「按键执行动作」的 Alt 分支。
 import type { Key } from "ink";
 import { parseWheel } from "../mouse.js";
@@ -35,7 +35,7 @@ export interface ScrollKeyDeps {
  * @returns 是否已消费该键（`true` 时调用方应立即 return）
  */
 export function handleScrollKey(char: string, key: Key, deps: ScrollKeyDeps): boolean {
-  // 滚轮**先于** `isTerminalReply` 判定：后者会把整条鼠标序列当「终端上报」
+  // 滚轮先于 `isTerminalReply` 判定：后者会把整条鼠标序列当「终端上报」
   // 消费掉，排到它后面就永远收不到滚轮。
   const wheel = parseWheel(char);
   if (wheel) {
@@ -92,8 +92,8 @@ export interface ClearNoticesDeps {
  * 为什么是 `Ctrl+X`：`Ctrl` 的空格子里，X 念作「去掉」，且不与 `Ctrl+C`（中断 / 清草稿）、
  * `Ctrl+L`（清屏）、`Ctrl+G`（下面那一档）混淆。不用 Alt —— Alt 系在本产品里不作为快捷键。
  *
- * 「清」有三档粒度（`prd/08-client.md` 的通知那一节）：清一条（补看那条路，`pending-notices.ts`）、
- * 清一段会话的（这一支）、清全部（{@link handleClearAllNoticesKey}）。
+ * 「清」有三档粒度：清一条（补看那条路，`pending-notices.ts`）、
+ * 清一段会话的（这一支）、清全部（`handleClearAllNoticesKey`）。
  *
  * 与其它共用键一样放成纯函数：键位回归不必挂一个 React 渲染。
  *
@@ -118,12 +118,12 @@ export interface ClearAllNoticesDeps {
  * 通知栏的「清全部」键（`Ctrl+G`）。
  *
  * 为什么是这一组：三档粒度要在栏位这一处排得开，而 `Ctrl` 的空格子只剩几个 ——
- * `Ctrl+X` 已经给了「清本会话」，与它成对的 `Ctrl+Shift+X` **不可用**：`kittyKeyboard` 是
+ * `Ctrl+X` 已经给了「清本会话」，与它成对的 `Ctrl+Shift+X` 不可用：`kittyKeyboard` 是
  * 刻意关掉的（`tui/index.tsx` 的 `RENDER_OPTIONS`），不带 kitty 协议时终端把 `Ctrl+Shift+X`
  * 与 `Ctrl+X` 报成同一个字节，两档就变成了一档。所以第二档换字母：`G`（= 「全局」那一档的
  * 首字母）。
  *
- * 这里**不做**任何清除动作：清全部会连全局通知、连别的会话的通知一起抹掉，所以它只开那一问
+ * 这里不做任何清除动作：清全部会连全局通知、连别的会话的通知一起抹掉，所以它只开那一问
  * （`chat.tsx` 的 `clearAllNotices`），用户点头之后才发 `notice.deleteAll`。
  *
  * @returns 是否已消费该键
@@ -149,9 +149,9 @@ export interface OpenImageDeps {
  * 为什么是 Ctrl+O：转录里的图统一折成占位（终端不可能内联渲染），需要一个动作把它交给
  * 本机看图器。`o` = open，而 Ctrl 系里剩下的空格子已经不多了：`Ctrl+C/D/L/U/K/W/Y/S/V/A/E/J/P/N/X/G/B/F`
  * 都有主，`Ctrl+O` 是空的（它不相邻任何一个已有语义，不会被当成「多按一下」的组合）。
- * 不用 Alt 系：本产品里 Alt 不作为快捷键（见文件头）。
+ * 不用 Alt 系：本产品里 Alt 不作为快捷键。
  *
- * 它**只**开那一问：一张图都不在这一段里时也要说一句（不能一声不响，否则用户以为键坏了）。
+ * 它只开那一问：一张图都不在这一段里时也要说一句（不能一声不响，否则用户以为键坏了）。
  *
  * @returns 是否已消费该键
  */
@@ -176,7 +176,7 @@ export interface CtrlDExitDeps {
 /**
  * Ctrl+D 双击退出（空闲态与忙碌态共用同一套判定）。
  *
- * 只认 `Ctrl+D`：草稿非空时删字符是**空闲态独有的语义**，由调用方在调用本函数
+ * 只认 `Ctrl+D`：草稿非空时删字符是空闲态独有的语义，由调用方在调用本函数
  * 之前自己处理，这里不看草稿。
  *
  * @param now 当前时刻，默认 `Date.now()`；测试可注入以避开假定时器
