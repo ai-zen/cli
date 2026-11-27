@@ -208,6 +208,7 @@ function hintsOf(schema: FormSchemaView, mode: FormEditing["mode"]): [string, st
     return [
       ["↑ ↓", t("ui.form.switch")],
       ["Enter", t("ui.form.edit")],
+      ["Space", t("ui.form.toggle")],
       ["Esc", t("ui.cancel")],
     ];
   }

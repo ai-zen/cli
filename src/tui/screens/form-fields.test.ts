@@ -199,13 +199,24 @@ describe("表单：编辑层", () => {
     expect(press(picked, [{ kind: "space" }]).values.tags).toEqual([]);
   });
 
-  it("布尔：浏览层回车直接切换（它没有可编辑的第二层）", () => {
+  it("布尔：浏览层回车与空格都能直接切换（它没有可编辑的第二层）", () => {
     const atFlag = focusOn("flag");
     const on = press(atFlag, [enter]);
     // 还在浏览层：布尔没有第二个状态可进
     expect(on.mode).toBe("browsing");
     expect(on.values.flag).toBe(true);
     expect(press(on, [enter]).values.flag).toBe(false);
+
+    // 空格同义：一个开关要「先进去再按空格」是没道理的
+    expect(press(atFlag, [{ kind: "space" }]).values.flag).toBe(true);
+    expect(press(atFlag, [{ kind: "space" }, { kind: "space" }]).values.flag).toBe(false);
+  });
+
+  it("浏览层的空格只对布尔有意义：别的字段一格都不动", () => {
+    const atTitle = initialEditing(SCHEMA);
+    const after = press(atTitle, [{ kind: "space" }]);
+    expect(after.values.title).toBe("初稿");
+    expect(after.mode).toBe("browsing");
   });
 
   it("只有一个字段的表：打开就进编辑层（先按一次回车才肯收字是白按一下）", () => {

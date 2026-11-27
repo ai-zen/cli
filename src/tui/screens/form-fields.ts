@@ -182,6 +182,15 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
         }
         return { kind: "state", editing: { ...cleared, mode: "editing" } };
       }
+      case "space": {
+        // 布尔在浏览层也能直接切（空格与回车同义）：一个开关要「先进去再按空格」是没道理的。
+        // 其余类型空格什么都不做 —— 文本里打空格是编辑层里的事
+        const field = schema.properties[names[cleared.focus]!];
+        if (field === undefined || field.type !== "boolean") {
+          return { kind: "state", editing: cleared };
+        }
+        return { kind: "state", editing: toggle(cleared, names[cleared.focus]!, field) };
+      }
       default:
         // 浏览层不认字：字要在编辑层里敲（否则「按着说话」会顺手改掉某一格）
         return { kind: "state", editing: cleared };
