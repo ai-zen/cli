@@ -184,7 +184,8 @@ describe("FormOverlay", () => {
 
     // 落到提交项，回车交卷
     await key(form, "\u001b[B");
-    await until(() => form.frame().includes("❯ [提交]"), "焦点落到提交项");
+    // 焦点不再占字符：提交那一行还在，靠颜色与加粗说（这里只断言它被画出来了）
+    await until(() => form.frame().includes("[提交]"), "焦点落到提交项");
     await key(form, "\r");
     await until(() => form.answers.length === 1, "提交了一次");
     expect(form.answers[0]).toEqual({

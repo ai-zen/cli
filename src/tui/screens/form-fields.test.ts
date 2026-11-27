@@ -326,13 +326,14 @@ describe("表单：摊成一行行", () => {
     const lines = formLines(PICKS, initialEditing(PICKS), TEXTS).map(lineText);
 
     expect(lines).toEqual([
-      "❯ 单选：甲",
-      "  多选：（空）",
-      "  备注：（空）",
+      // 行首那一格说的是「能不能展开」：`+` 能、`-` 不能（焦点靠颜色，不占字符）
+      "+ 单选：甲",
+      "+ 多选：（空）",
+      "- 备注：（空）",
       // 动作之前那一行是空的：它们是对整张表做的事，与上面那几格不是同一类
       "",
-      "  [提交]",
-      "  [取消]",
+      "[提交]",
+      "[取消]",
     ]);
   });
 
@@ -348,9 +349,9 @@ describe("表单：摊成一行行", () => {
     const [first, second] = formLines(required, initialEditing(required), TEXTS);
 
     // 有焦点的那一格是活的：只画光标，不写「（空）」
-    expect(lineText(first!)).toBe("❯ 名字 *：▏");
+    expect(lineText(first!)).toBe("- 名字 *：▏");
     expect(first!.star).toBe(true);
-    expect(lineText(second!)).toBe("  备注：（空）");
+    expect(lineText(second!)).toBe("- 备注：（空）");
     expect(second!.star).toBeUndefined();
   });
 
@@ -361,14 +362,14 @@ describe("表单：摊成一行行", () => {
     };
     // 只有一个字段的表打开就是编辑层，光标在那儿
     const lines = formLines(schema, initialEditing(schema), TEXTS).map(lineText);
-    expect(lines[0]).toBe("⌄ 名字：▏");
+    expect(lines[0]).toBe("- 名字：▏");
   });
 
   it("进编辑之后枚举才展开：单选 `(o)`、多选 `[x]`，同一个形状只差一对括号", () => {
     const atMode = editing("mode", PICKS);
     const lines = formLines(PICKS, atMode, TEXTS).map(lineText);
 
-    expect(lines[0]).toBe("⌄ 单选");
+    expect(lines[0]).toBe("+ 单选");
     expect(lines[1]).toBe("     (o) 甲");
     expect(lines[2]).toBe("     ( ) 乙");
     expect(lines[3]).toBe("     ( ) 丙");
@@ -379,7 +380,7 @@ describe("表单：摊成一行行", () => {
       press(focusOn("tags", backToBrowsing, PICKS), [enter], PICKS),
       TEXTS,
     ).map(lineText);
-    expect(multi).toContain("   ❯ [ ] x");
+    expect(multi).toContain("   > [ ] x");
     expect(multi).toContain("     [ ] y");
   });
 
@@ -389,12 +390,13 @@ describe("表单：摊成一行行", () => {
       initialEditing(PICKS),
     );
     const submitted = formLines(PICKS, atSubmit, TEXTS).slice(-2);
-    expect(submitted[0]).toMatchObject({ text: "❯ [提交]", tone: "submit" });
-    expect(submitted[1]).toMatchObject({ text: "  [取消]", tone: "cancel" });
+    expect(submitted[0]).toMatchObject({ text: "[提交]", focused: true, tone: "submit" });
+    expect(submitted[1]).toMatchObject({ text: "[取消]", focused: false, tone: "cancel" });
 
     const atCancel = press(atSubmit, [next], PICKS);
     expect(formLines(PICKS, atCancel, TEXTS).at(-1)).toMatchObject({
-      text: "❯ [取消]",
+      text: "[取消]",
+      focused: true,
       tone: "cancel",
     });
   });
@@ -445,7 +447,7 @@ describe("表单：单项表", () => {
   it("打开就在编辑层、不画动作行（回车就是交卷）", () => {
     const lines = formLines(ONE_CHOICE, initialEditing(ONE_CHOICE), TEXTS).map(lineText);
 
-    expect(lines).toEqual(["⌄ 方式 *", "     (o) 自己", "     ( ) 独立", "     ( ) 不"]);
+    expect(lines).toEqual(["+ 方式 *", "     (o) 自己", "     ( ) 独立", "     ( ) 不"]);
     expect(schemaRows(ONE_CHOICE)).toBe(4);
   });
 

@@ -173,6 +173,8 @@ export function FormOverlay({
             // 行是摊平算出来的，没有稳定 id：位置就是它的身份（内容一变整块重算）
             key={index}
             color={lineColor(line)}
+            // 焦点不再占一个字符：靠颜色与加粗说（`❯` 那一格去掉了）
+            bold={line.focused === true}
             wrap="wrap"
           >
             {line.text}

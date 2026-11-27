@@ -551,9 +551,11 @@ export function formLines(
     const isFocus = index === editing.focus;
     const inEditing = isFocus && editing.mode === "editing";
     if (isFocus) focusAt = lines.length;
-    // 收起的字段用右尖括号 `❯`，展开的用下尖括号 `⌄`：同一个家族的配对，一眼看得出
-    // 「候选开没开」。不用 `▸` —— 那是「小三角」，与 `❯` 不成对，看着像换了一种东西。
-    const marker = isFocus ? (inEditing ? "⌄" : "❯") : " ";
+    // 行首只有一格：**这一格能不能展开**（`+` 能、`-` 不能）。
+    //
+    // 焦点不再占一个字符（原来那个右尖括号去掉了）：焦点靠颜色与加粗说，位置靠这一格的标记说。
+    // 用户看到 `- 文本` 就知道那一格没有第二层可进，看到 `+ 单选` 就知道可以按回车展开。
+    const marker = enumValues(field) === undefined ? "-" : "+";
     const label = labelOf(name, field);
     const options = enumValues(field);
 
@@ -592,8 +594,8 @@ export function formLines(
           : String(editing.values[name] ?? "") === option
             ? "(o)"
             : "( )";
-      // 多选要一个项光标（空格切哪一项）；单选不需要，选中的那个就是光标
-      const pointer = field.type === "array" && at === cursor ? "❯" : " ";
+      // 多选要一个项光标（空格切哪一项）；单选不需要，`(o)` 就是它
+      const pointer = field.type === "array" && at === cursor ? ">" : " ";
       lines.push({ text: `   ${pointer} ${mark} ${labels[at] ?? option}`, focused: true });
     }
   }
@@ -613,7 +615,7 @@ export function formLines(
     const isFocus = editing.mode === "browsing" && editing.focus === index;
     if (isFocus) focusAt = lines.length;
     lines.push({
-      text: `${isFocus ? "❯" : " "} [${label}]`,
+      text: `[${label}]`,
       focused: isFocus,
       tone: offset === 0 ? "submit" : "cancel",
     });
