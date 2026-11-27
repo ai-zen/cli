@@ -1,26 +1,19 @@
 /**
- * 系统剪贴板读取 —— `Ctrl+V` 粘贴图片 / 文本的唯一入口。
+ * 系统剪贴板读取，是 `Ctrl+V` 粘贴图片与文本的唯一入口。
  *
- * ## 为什么必须主动去问系统
+ * 终端协议里没有「剪贴板内容」这一说：`Ctrl+V` 到进程的只是一个按键事件，图片数据不会自己流进来
+ * （终端自身的 `Cmd+V` 也只能贴文本）。所以图片必须主动去问系统剪贴板，问不到再退回粘贴文本 ——
+ * 那才是用户按 `Ctrl+V` 的默认期待。
  *
- * 终端协议里没有「剪贴板内容」这一说：`Ctrl+V` 到进程的**只是一个按键事件**，
- * 图片数据不会自己流进来（终端自身的 `Cmd+V` 也只能贴文本）。所以图片必须去问
- * 系统剪贴板；问不到就退回「粘贴文本」—— 那才是用户按 `Ctrl+V` 的默认期待。
+ * 各平台问法不同：macOS 用 `osascript -e "get the clipboard as «class PNGf»"`（stdout 是
+ * `«data PNGf<HEX>»`）取图片、`pbpaste` 取文本；Linux 用 `wl-paste --type image/png`（Wayland）
+ * 或 `xclip -t image/png -o`（X11）取图片、`wl-paste --no-newline` 或 `xclip -o` 取文本；Windows
+ * 用 PowerShell 的 `Get-Clipboard -Format Image` / `Get-Clipboard -Raw`。三者都一律不落盘：macOS
+ * 给十六进制文本、Linux 给二进制、Windows 给 base64，都能在内存里还原成 base64，而粘贴链路
+ * （`buildUserContent`）把它解成字节经 `content.upload` 交给服务端。
  *
- * ## 各平台怎么问
- *
- * | 平台 | 图片 | 文本 |
- * |---|---|---|
- * | macOS | `osascript -e "get the clipboard as «class PNGf»"`，stdout 是 `«data PNGf<HEX>»` | `pbpaste` |
- * | Linux | `wl-paste --type image/png`（Wayland）→ `xclip -t image/png -o`（X11） | `wl-paste --no-newline` → `xclip -o` |
- * | Windows | PowerShell `Get-Clipboard -Format Image` → PNG → base64 | `Get-Clipboard -Raw` |
- *
- * **一律不落盘**：macOS 那条给的是十六进制文本，Linux 给的是二进制，Windows 给的是
- * base64 —— 三者都能在内存里还原成 base64，而粘贴链路（`buildUserContent`）把它解成字节
- * 经 `content.upload` 交给服务端，于是粘贴一张图片不需要写任何临时文件。
- *
- * 命令不存在 / 退出码非 0 / 输出为空，一律当作「没有」，由调用方回退到文本。
- * 这条约定让「没装 `wl-paste`」「剪贴板是文本」「剪贴板是图片」三种情况不会互相阻塞。
+ * 命令不存在、退出码非 0、输出为空，一律当作「没有」，由调用方回退到文本。这条约定让「没装
+ * `wl-paste`」「剪贴板是文本」「剪贴板是图片」三种情况不会互相阻塞。
  */
 import { execFile } from "node:child_process";
 
@@ -31,11 +24,8 @@ export interface ClipboardImage {
 }
 
 /**
- * 读取结果三态。
- *
- * 为什么要区分「没有」和「太大」：两者都要回退到粘贴文本，但提示不一样 ——
- * 「剪贴板里没有图片」是正常情况（用户就是想贴文本），「图片太大」是真问题
- * （用户以为贴上了，其实没有），不提示会让人莫名其妙。
+ * 「没有」与「太大」都要回退到粘贴文本，但提示不一样：剪贴板里没有图片是正常情况（用户就是想贴
+ * 文本），图片太大是真问题（用户以为贴上了，其实没有）。
  */
 export type ClipboardImageResult =
   | { kind: "image"; image: ClipboardImage }
@@ -43,25 +33,21 @@ export type ClipboardImageResult =
   | { kind: "none" };
 
 /**
- * 单张粘贴图片上限的**兜底值**。
+ * 单张粘贴图片上限的兜底值。
  *
- * ## 它现在**一直**在用（口径⑥）
- *
- * 宿主这一版不再报附件上限（新契约的 `session.open` 里没有 `limits` 那一格），于是
- * `ChatSessionLike.attachmentLimits` 恒为 `null`，粘贴时的预检就落在这个常量上。
- *
- * 代价写在明处：**这一份与宿主真实的上限可能不一致** —— 宿主改了自己的上限，客户端这边
- * 仍然按 20MB 提示与预检，症状是「提示放得下、实际被拒」（或者反过来，白白拒掉一张能发的图）。
- * 留着它而不是「不检查」，是因为不检查的话大图会一路传到宿主才失败，用户等的是几十秒的
- * 上传换一句「太大了」。宿主把上限重新报出来那天，这里改回「读宿主给的那份」。
+ * 宿主这一版不再报附件上限（`session.open` 里没有 `limits` 那一格），于是
+ * `ChatSessionLike.attachmentLimits` 恒为 `null`，粘贴时的预检落在这一格上。代价是这一份可能与宿主
+ * 真实的上限不一致：宿主改了自己的上限，客户端仍按 20MB 提示与预检，症状是提示放得下而实际被拒，
+ * 或者反过来白白拒掉一张能发的图。不改成「不检查」，是因为不检查的话大图会一路传到宿主才失败，用户
+ * 等的是几十秒的上传换一句「太大了」。宿主把上限重新报出来那天，这里改回读宿主给的那份。
  */
 export const MAX_CLIPBOARD_IMAGE_BYTES = 20 * 1024 * 1024;
 
 /**
  * 单次粘贴文本上限 256KB。
  *
- * 超了**报错而不是截断**：半截代码 / 半截 JSON 粘进会话比不粘更坑（用户会以
- * 为粘全了，基于残缺内容提问）。需要大段内容时让他存成文件用 `@` 引用。
+ * 超了报错而不是截断：半截代码或半截 JSON 粘进会话比不粘更糟，用户会以为粘全了并基于残缺内容提问。
+ * 需要大段内容时存成文件用 `@` 引用。
  */
 export const MAX_CLIPBOARD_TEXT_BYTES = 256 * 1024;
 /** 单次命令超时：剪贴板是本机操作，超过这个时间基本就是命令卡住了 */
@@ -90,8 +76,8 @@ function defaultRun(cmd: string, args: string[]): Promise<Buffer | null> {
 /**
  * 解析 osascript 的输出 `«data PNGf89504E47…»`（PNGf 后面全是十六进制）。
  *
- * 格式不符（或没有图片时 osascript 直接非零退出）一律返回 null：
- * 这条路径上「猜」比「放弃」危险得多 —— 猜错就会把半截字节当成图片发出去。
+ * 格式不符（没有图片时 osascript 直接非零退出）一律返回 null：这条路径上猜比放弃危险得多，猜错就会
+ * 把半截字节当成图片发出去。
  */
 export function parseAppleScriptPng(stdout: string): Buffer | null {
   const matched = /«data PNGf([0-9A-Fa-f]+)»/.exec(stdout);
@@ -105,7 +91,6 @@ interface ImageCommand {
   cmd: string;
   args: string[];
   mime: string;
-  /** stdout → 原始字节；格式不符返回 null */
   parse: (stdout: Buffer) => Buffer | null;
 }
 
@@ -207,7 +192,7 @@ function textCommands(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): TextCo
   return [];
 }
 
-/** 读剪贴板里的图片；没有图片时返回 `{ kind: "none" }`（调用方据此回退到文本） */
+/** 没有图片时返回 `{ kind: "none" }`，调用方据此回退到文本 */
 export async function readClipboardImage(
   deps: ClipboardDeps = {},
   maxBytes: number = MAX_CLIPBOARD_IMAGE_BYTES,
@@ -221,7 +206,7 @@ export async function readClipboardImage(
     if (!stdout || stdout.length === 0) continue;
     const bytes = candidate.parse(stdout);
     if (!bytes || bytes.length === 0) continue;
-    // 上限由调用方给（这一版是本地兜底常量：宿主不再报它，见 `MAX_CLIPBOARD_IMAGE_BYTES`）
+    // 上限由调用方给：这一版是本地兜底常量，宿主不再报它（见 `MAX_CLIPBOARD_IMAGE_BYTES`）
     if (bytes.length > maxBytes) return { kind: "too-large", bytes: bytes.length };
     return { kind: "image", image: { base64: bytes.toString("base64"), mime: candidate.mime } };
   }
@@ -229,20 +214,12 @@ export async function readClipboardImage(
 }
 
 /**
- * 读剪贴板文本的结果。
- *
- * 三态分开是因为提示文案各不相同：`unavailable` = 环境缺剪贴板工具，
- * `too-large` = 真问题（用户以为粘上了其实没有），空文本 = 剪贴板确实空着。
+ * 读剪贴板文本的结果：`unavailable` = 环境缺剪贴板工具，`too-large` = 真问题（用户以为粘上了其实
+ * 没有），空文本 = 剪贴板确实空着。三者的提示文案各不相同，所以不合成一格。
  */
 export type ClipboardTextResult =
   { kind: "text"; text: string } | { kind: "too-large"; bytes: number } | { kind: "unavailable" };
 
-/**
- * 读剪贴板里的文本。
- *
- * 返回 `unavailable` = 压根没有可用的剪贴板工具（区别于「剪贴板是空的」= 空文本），
- * 两者在提示上要分开：一个是环境缺依赖，一个是用户剪贴板确实空着。
- */
 export async function readClipboardText(deps: ClipboardDeps = {}): Promise<ClipboardTextResult> {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;

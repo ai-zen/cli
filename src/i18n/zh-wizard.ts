@@ -1,16 +1,14 @@
 /**
- * 中文词条 —— 配置中心（`/config` 向导）专区。
+ * 中文词条中的配置中心（`/config` 向导）专区。
  *
- * 单独成文件的原因：配置中心是 CLI 里文案最密集的一块（字段标签 / 校验消息 / 步骤标题），
- * 塞进 `zh.ts` 会让主词典难以扫读。`index.ts` 会在启动时把它们合并进同一张表，
- * 对 `t()` 来说没有区别。
+ * 单独成文件：配置中心是 CLI 里文案最密集的一块（字段标签 / 校验消息 / 步骤标题），塞进 `zh.ts`
+ * 会让主词典难以扫读。`index.ts` 把它们合并进同一张表，对 `t()` 没有区别。
  *
- * 命名：`field.*` 字段标签、`wiz.*` 向导结构、`err.*` 校验消息、`common.*` 通用小词。
- * 文案口径同 `zh.ts` 文件头：一个概念一个词、括号只放事实、不写内部字段名、不写 markdown。
- * 本区特有的是**字段标签都很短**（详情屏一行一个），所以解释性的话一律放进对应的 `*Hint`。
+ * 命名：`field.*` 字段标签、`wiz.*` 向导结构、`err.*` 校验消息、`common.*` 通用小词。文案口径同
+ * `zh.ts` 文件头：一个概念一个词、括号只放事实、不写内部字段名、不写 markdown。本区特有的是字段
+ * 标签都很短（详情屏一行一个），所以解释性的话放在对应的 `*Hint` 里。
  */
 export const zh: Record<string, string> = {
-  // ---------- 字段名（详情屏 label，大量复用） ----------
   "field.name": "名称",
   "perm.tools": "工具",
   "perm.skills": "技能",
@@ -30,7 +28,6 @@ export const zh: Record<string, string> = {
   "field.functionDescription": "函数说明",
   "field.paramsSchema": "参数 schema",
 
-  // ---------- 通用小词 ----------
   "common.yes": "是",
   "common.no": "否",
   "common.empty": "（空）",
@@ -42,7 +39,6 @@ export const zh: Record<string, string> = {
   "common.linesWithEditor": "{n} 行 · Enter 打开编辑器",
   "common.bodyWithEditor": "{text} · Enter 打开编辑器",
 
-  // ---------- 校验消息 ----------
   "err.nameRequired": "名称不能为空",
   "err.baseUrlScheme": "Base URL 必须以 http:// 或 https:// 开头",
   "err.apiKeyRequired": "API Key 不能为空",
@@ -53,7 +49,6 @@ export const zh: Record<string, string> = {
   "err.paramsSchemaNotObject": "参数 schema 必须是一个 JSON 对象（形如 {}）",
   "err.jsonParseFailed": "JSON 解析失败：{error}",
 
-  // ---------- 更多字段名（MCP / AgentDefinition 详情） ----------
   "field.transport": "传输",
   "field.command": "命令",
   "field.args": "参数",
@@ -68,7 +63,6 @@ export const zh: Record<string, string> = {
   "common.transportMode": "传输方式",
   "common.enabledState": "启用状态",
 
-  // ---------- 落盘反馈（带实体名的整句，必须参数化而非拼接） ----------
   "wiz.endpointUpdated": "端点 {name} 的{label}已更新",
   "wiz.modelUpdated": "模型 {name} 的{label}已更新{suffix}",
   "wiz.imageModelUpdated": "图片模型 {name} 的{label}已更新{suffix}",
@@ -78,7 +72,6 @@ export const zh: Record<string, string> = {
   "wiz.agentPermissionUpdated": "{kind} {id} 的{dim}权限已更新",
   "wiz.presetLevels": "{name}（{levels}）",
 
-  // ---------- 通用按钮 / 操作 ----------
   "ui.save": "保存",
   "ui.cancel": "取消",
   "ui.back": "返回",
@@ -103,7 +96,6 @@ export const zh: Record<string, string> = {
   "ui.delete": "删除",
   "ui.plainOrMasked": "明文/掩码",
 
-  // ---------- 配置中心首页 ----------
   "wiz.menu.title": "◆ 配置中心",
   "wiz.menu.hint": "改动即时生效，无需保存。",
   "wiz.menu.endpoints": "端点管理",
@@ -129,7 +121,6 @@ export const zh: Record<string, string> = {
   "wiz.irreversible": "{title} —— 此操作不可撤销",
   "wiz.confirmAction": "确认{label}",
 
-  // ---------- 列表 / KV 编辑器 / 输入框 ----------
   "wiz.listEmpty": "  （没有可选项）",
   "wiz.truncated": "  （共 {n} 项，只显示前 {m} 项）",
   "wiz.kvTitle": "{title} · {mode}",
@@ -149,7 +140,6 @@ export const zh: Record<string, string> = {
   "common.noUrl": "（未配置 URL）",
   "common.noCommand": "（未配置命令）",
 
-  // ---------- 模型 / 图片模型（列表 · 详情 · 新建） ----------
   "wiz.kind.custom": "自定义",
   "wiz.kind.factory": "出厂内置",
   "wiz.modelKind.visionSuffix": " · 视觉",
@@ -183,7 +173,6 @@ export const zh: Record<string, string> = {
   "wiz.imageModels.createTitle": "新建图片模型 · 名称",
   "wiz.imageModels.created": "已新建图片模型 {name}（{id}，标记为自定义）",
 
-  // ---------- AgentDefinition（列表 · 详情 · 权限 · 文本编辑 · 新建） ----------
   "wiz.agents.new": "＋ 新建助手定义",
   "wiz.agents.newHint": "顶层助手定义（可以设为默认）",
   "wiz.agents.title": "◆ 助手定义",
@@ -201,7 +190,6 @@ export const zh: Record<string, string> = {
   "wiz.agent.newDescAgent": "创建后可在「默认项 → 默认助手定义」中设为默认",
   "wiz.agent.created": "已新建{kind} {name}（{id}）",
 
-  // ---------- 工具输出上限 / 端点字段直达编辑 ----------
   "wiz.maxToolOutput.title": "工具输出上限（字符数）",
   "wiz.currentLine": "当前：{value}",
   "wiz.maxToolOutput.desc": "单次工具输出超过该值时改为写入文件或仅给出警告，以避免上下文溢出",
@@ -216,7 +204,6 @@ export const zh: Record<string, string> = {
   "wiz.apiKey.saveAndEnter": "保存并进入会话",
   "ui.discard": "放弃",
 
-  // ---------- 首启引导（选服务商 → 填密钥 → 定首要模型）----------
   "wiz.onboard.title": "首次配置 · 选择服务商",
   "wiz.onboard.desc":
     "先选择服务商并填写其 API Key；完成后将其标记的首要模型设为默认模型（之后可在 /config 中修改）",
@@ -231,7 +218,6 @@ export const zh: Record<string, string> = {
   "wiz.baseUrl.title": "设置 Base URL · {name}",
   "wiz.baseUrl.hint": "必须以 http:// 或 https:// 开头（OpenAI 兼容端点）",
 
-  // ---------- MCP 服务器 / 默认项 ----------
   "wiz.mcp.switchScope": "⇄ 切到「{scope}」这一层",
   "wiz.mcp.serverCount": "{n} 个服务器",
   "wiz.mcp.newItem": "＋ 新建服务器",
@@ -274,7 +260,6 @@ export const zh: Record<string, string> = {
   "wiz.strategy.dropHint": "中断后已输出的部分不进入上下文（库的默认行为）",
   "wiz.strategy.fillHint": "恢复整轮，并为未完成的结果补充原因；工具调用与结果必须成对",
   "wiz.strategy.toolDropHint": "整轮丢弃：助手的回复与其工具结果均不发送给模型",
-  // ---------- 端点列表 / 新建端点 ----------
   "ui.next": "下一步",
   "common.listSep": "、",
   "wiz.endpoints.newItem": "＋ 新建端点",
@@ -296,12 +281,10 @@ export const zh: Record<string, string> = {
   "wiz.newEndpoint.created": "已添加端点 {name}（{id}）{suffix}",
   "wiz.newEndpoint.keyPending": " · 还没填 API Key",
 
-  // ---------- 写盘失败 / 编辑器 / 残留小词 ----------
   "wiz.agentDeleted": "已删除{kind} {id}",
   "wiz.kvAddRow": "＋ 新增",
   "wiz.plaintextRevealed": "⚠ 当前为明文显示（Tab 切回掩码）",
 
-  // ---------- config-editor 共用：摘要 / 校验 / 传输方式 ----------
   "common.noEndpoints": "无端点",
   "common.kvSummary": "{n} 项（{keys}）",
   "common.permissionSummary": "{n} 维（{dims}）",
@@ -316,10 +299,8 @@ export const zh: Record<string, string> = {
   "vendor.dashscope": "阿里云百炼（DashScope）",
   "vendor.openaiCompatible": "OpenAI 兼容端点",
 
-  // ---------- 配置中心的 AgentDefinition 仓储 ----------
-  // 只在「向导被挂载但没注入 AgentDefinition 仓储」时出现。它不是给用户看的日常提示，而是把
-  // 「你少注入了」说清楚 —— 少注入就会静静写到客户端本机的 ~/.ai-zen/agents/，而真值在宿主。
-  // ---------- 契约词汇 / 生效报告 / 缺口说明 ----------
+  // 只在向导被挂载但没注入 AgentDefinition 仓储时出现。它不是给用户看的日常提示，而是把「少注入了
+  // 仓储」说清楚：少注入会写到客户端本机的 ~/.ai-zen/agents/，而真值在宿主。
   "scope.user": "用户",
   "scope.workspace": "工作区",
   "field.thinking": "思考强度",
@@ -349,8 +330,7 @@ export const zh: Record<string, string> = {
   "wiz.mcp.oauthSecretUnset": "客户端密钥：未配置",
   "wiz.mcp.newItemHint": "默认 stdio；创建后填写命令、参数、环境变量",
 
-  // ---------- 二次确认的「代价」（PRD 1.6：先给代价、再真做） ----------
-  // 每一句只写「从手里已有的那份配置数得出来的事实」：数不出来就不给数字。
+  // 二次确认里的代价：每一句只写从手里已有的那份配置数得出来的事实，数不出来就不给数字
   "wiz.endpoints.deleteCostModels":
     "仍有 {n} 个模型挂在该端点上：{names}。未先迁移或删除这些模型时，宿主会拒绝本次删除",
   "wiz.endpoints.deleteCostImageModels":

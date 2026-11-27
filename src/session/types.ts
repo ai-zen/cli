@@ -1,26 +1,23 @@
 /**
- * 会话层的对外契约 —— 「能读的一段会话、能发话、能作答、能撤回」。
+ * 会话层的对外契约 —— 能读的一段会话、能发消息、能作答、能撤回。
  *
- * 屏幕（`tui/screens/chat.tsx`）与命令层（`commands/handlers.ts`）只认这一面：这是「换源不换屏」
- * 的落点。实现只有 `../session.ts` 一个（**纯客户端**：Agent 在宿主里跑，这里只持有一个会话 id
- * 与它的事实）。
+ * 屏幕（`tui/screens/chat.tsx`）与命令层（`commands/handlers.ts`）只认这一面：换源不换屏的落点
+ * 就在这里。实现只有 `../session.ts` 一个（Agent 在宿主里跑，这里只持有一个会话 id 与它的事实）。
  *
- * ## 形状从哪来（这一刀之后）
- *
- * 消息本体仍然是 core 的 `AgentNS.Message`；**会话行**是宿主 `session.open` 出参里的 `session`
+ * 消息本体仍然是 core 的 `AgentNS.Message`；会话行是宿主 `session.open` 出参里的 `session`
  * （`MirrorSessionRow`：`modelId: string|null`、`thinkingLevel: string|null`，时间都是 epoch
  * 毫秒）。旧契约里那些「一份形状说五六件事」的块 —— `ModelState`（带名字与来源）、
- * `ThinkingState`（带档位表与参数）、`SessionState`（四件事 + 名册 + 交接态） —— 宿主这一版
- * 都不给了。
+ * `ThinkingState`（带档位表与参数）、`SessionState`（四件事 + 名册 + 交接态）—— 宿主这一版都
+ * 不给了。
  *
- * 于是 CLI 自己拼两个**派生**的视图（不是第二份真相，每次读都是现算）：
+ * 于是 CLI 自己拼两个派生视图（不是第二份真相，每次读都是现算）：
  *
- *   · {@link ModelState}：`modelId` 来自会话行；`name` / `vision` 来自 `api.config.get()` 的
- *     模型表；`source` = 会话行上那个 id 与 AgentDefinition 绑的那个是否同一个；
- *   · {@link ThinkingState}：`levels` 是生效模型的 `reasoningPreset` 在 `presets` 里那张表的
- *     键，`selected` 是会话行上的 `thinkingLevel`。
+ *   · `ModelState`：`modelId` 来自会话行；`name` / `vision` 来自 `api.config.get()` 的模型表；
+ *     `source` = 会话行上那个 id 与 AgentDefinition 绑的那个是否同一个；
+ *   · `ThinkingState`：`levels` 是生效模型的 `reasoningPreset` 在 `presets` 里那张表的键，
+ *     `selected` 是会话行上的 `thinkingLevel`。
  *
- * 两样都是「契约里没有、但界面要」的表现（`/model` 的提示、状态栏那一格），算法只有
+ * 两样都是「契约里没有、界面又要」的表现（`/model` 的提示、状态栏那一格），算法只有
  * `../session.ts` 一处。
  */
 
@@ -35,19 +32,15 @@ import type { StatusBlock } from "../status-blocks.js";
 import type { ClipboardImage } from "../clipboard.js";
 import type { RateSample } from "../session-rate.js";
 
-// ---------------------------------------------------------------------------
-// 契约形状
-// ---------------------------------------------------------------------------
-
 /** 一个工作区（`workspace.list` 的一行 + 目录事实） */
 export interface WorkspaceSnapshot {
   id: string;
   name: string;
   /**
-   * 目录事实。`exists` 是 `null` = **宿主这一版不报这一格**（它只报 `cwd`）。
+   * 目录事实。`exists` 为 `null` = 宿主这一版不报这一格（它只报 `cwd`）。
    *
-   * 留着这一格是因为界面上那句「那个目录还在不在」还得有一处可读：`null` 时不说，只有真的
-   * 知道 `false` 时才说「目录已不在」—— 拿 `null` 当 `true` 就是编一个没验过的好消息。
+   * 留着这一格是因为界面上那句「那个目录是否还在」还得有一处可读：`null` 时不说，只有真的知道
+   * `false` 时才说「目录已不在」—— 拿 `null` 当 `true` 就是编一个没验过的好消息。
    */
   folder: { cwd: string; exists: boolean | null };
 }
@@ -100,7 +93,7 @@ export interface ThinkingState {
 /** 忙闲那一格（`working` / `idle`） */
 export type SessionActivity = "working" | "idle";
 
-/** 一条还在队里的话（`session.open` 的 `inbox` 折成界面要的那一行） */
+/** 一条还在队列里的消息（`session.open` 的 `inbox` 折成界面要的那一行） */
 export interface InboxItem {
   messageId: string;
   source: AgentNS.MessageSource;
@@ -126,7 +119,7 @@ export interface SubAgentFact {
 export type AttachmentLimits = { maxAssetBytes: number; maxAssetsPerMessage: number } | null;
 
 /**
- * 一条文件清单 InboxEntry（`@` 补全用）。
+ * 文件清单的一条（`@` 补全用）。
  *
  * 宿主 `workspace.files` 只给相对路径，所以 `kind` 现在恒 `"file"`（目录不进那份清单，见
  * `session.ts` 的 `toFileEntry`）；这一格留着是因为屏幕与 `mention.ts` 都按它决定要不要补尾斜杠。
@@ -152,7 +145,7 @@ export interface WorkspaceFiles {
 /**
  * 一次用户输入：core 的内容形状 + 已上传的 Asset id。
  *
- * 它是 CLI 内部的**载体**（不是出网形状）：`session.send` 把 `assetIds` 折成带 `__asset_id` 的
+ * 它是 CLI 内部的载体（不是出网形状）：`session.send` 把 `assetIds` 折成带 `__asset_id` 的
  * 内容段（`user-content.ts` 的 `contentOfInput`）；`session.rewind`（撤回）回填的也是这一份 ——
  * 那条消息里带的图从段上的标记拆回 `assetIds`，于是「文字进草稿、Asset 挂回输入」是同一件事的
  * 两半。
@@ -172,9 +165,8 @@ export type NoticeTone = "info" | "warn" | "error";
 /**
  * 通知是谁让它出现的。
  *
- * 宿主这一版的通知行上**没有**这一格了（只剩 `level` / `code` / `message` / `sessionId`），
- * 所以 CLI 自己按「谁问来的」分：`log` 只有一个来源 —— 日志上浮那条路（`log-notices.ts`），
- * 其余记作 `app`。
+ * 宿主这一版的通知行上没有这一格了（只剩 `level` / `code` / `message` / `sessionId`），所以 CLI
+ * 按来源自己分：`log` 只有一个来源 —— 日志上浮那条路（`log-notices.ts`），其余记作 `app`。
  */
 export type NoticeOrigin = "log" | "app";
 
@@ -189,7 +181,7 @@ export interface NoticeView {
   createdAt: number;
 }
 
-/** 交接执行者 / 交接之后做什么：宿主这一版只剩 `{ sessionId }`，两个选择器已退场（口径⑧） */
+/** 交接执行者 / 交接之后做什么：宿主这一版只剩 `{ sessionId }`，这两个选择器已退场 */
 export type HandoffMode = "self" | "summary";
 export type HandoffThen = "document_only" | "new_session";
 
@@ -215,22 +207,18 @@ export interface ScopeReloadReport {
   failed: readonly { cwd: string; reason: string }[];
 }
 
-// ---------------------------------------------------------------------------
-// 与连接层之间的那条窄接缝
-// ---------------------------------------------------------------------------
-
 /**
  * 「一条到宿主的连接」在本层眼里的样子。
  *
- * 四样是连接层的（{@link HostClient} 原样），另外几格是 **CLI 自己的**：
+ * 四样是连接层的（`HostClient` 原样），另外几格是 CLI 自己的：
  *
  *   · `language`：本地文案用哪种语言（连接层只说「宿主按哪种语言渲染」）；
- *   · `call`：**旧路**（未搬的域走它，每个方法都抛 `unsupported`，见 `server-client/methods.ts`）；
+ *   · `call`：旧路（未搬的域走它，每个方法都抛 `unsupported`，见 `server-client/methods.ts`）；
  *   · `open` / `resync` / `closeMirror`：一段会话的镜像（由 CLI 自己维护：`session.open` 一次
  *     取全，之后按 `HostEvent` 增量）。
  *
- * 会话层不再有 `onClose` / `onSync` / `sendBinary` / `hello`：断线与补拉由 `subscribe` 那条
- * 流 + 调用方自己编排（`session.ts` 的 `reconnectUntilConnected` 与 `resync`）。
+ * 会话层不再有 `onClose` / `onSync` / `sendBinary` / `hello`：断线与补拉由 `subscribe` 那条流
+ * 加上调用方自己的编排（`session.ts` 的 `reconnectUntilConnected` 与 `resync`）。
  */
 export interface HostConnection {
   /** tRPC 客户端：`connection.api.session.open.query({ sessionId })` */
@@ -286,21 +274,17 @@ export interface MirrorSnapshotLike {
 /** 宿主那一条事件流的一片（形状只有宿主那一份，这里只取类型） */
 export type HostEvent = import("../server-client/index.js").HostEvent;
 
-// ---------------------------------------------------------------------------
-// 会话契约
-// ---------------------------------------------------------------------------
-
 /**
  * 一段会话能做的事。
  *
  * 全部字段与方法都能在宿主的 procedure 面里找到对应（`session.*` / `agent.*`），客户端不在这里
- * 算规则；两处例外写在各自的注释里（阶段那句话、生成速率）—— 它们都是从契约事实**现推**的
- * 表现，不是存下来的第二份状态。
+ * 算规则；两处例外写在各自的注释里（阶段行的文案、生成速率）—— 它们都是从契约事实现推的表现，
+ * 不是存下来的第二份状态。
  */
 export interface ChatSessionLike {
-  /** 这段会话的 AgentDefinition（创建时固定，PRD L7） */
+  /** 这段会话的 AgentDefinition（创建时固定） */
   readonly agentId: string;
-  /** 这段会话的 id（`session.*` 与交接都按它说话） */
+  /** 这段会话的 id（`session.*` 与交接都按它寻址） */
   readonly sessionId: string;
   /** 这段会话属于哪个项目 */
   readonly workspaceId: string;
@@ -308,7 +292,7 @@ export interface ChatSessionLike {
   readonly currentWorkspaceId: string;
   /** 会话名（宿主给的；自动名与改过的名都在这一个字段上） */
   readonly name: string;
-  /** 会话跑在哪个目录、那个目录还在不在（PRD D12） */
+  /** 会话跑在哪个目录、那个目录是否还在 */
   readonly folder: FolderFact;
   /** 附件上限：宿主这一版不报，恒 `null`（本地兜底在 `clipboard.ts`） */
   readonly attachmentLimits: AttachmentLimits;
@@ -317,7 +301,7 @@ export interface ChatSessionLike {
   /** 名册上那些 subagent（客户端现推，见 `server-client/mirror.ts`） */
   readonly subAgents: readonly SubAgentFact[];
 
-  /** 四件事的各一格（PRD 4.4）：忙闲 / 输入开关 / 输出开关 / 存活状态 */
+  /** 四件事各一格：忙闲 / 输入开关 / 输出开关 / 存活状态 */
   readonly status: SessionActivity | null;
   readonly inputPaused: boolean | null;
   readonly outputPaused: boolean | null;
@@ -325,7 +309,7 @@ export interface ChatSessionLike {
   /** 在交接态就是开始时刻；不在就是 `null` */
   readonly handoffSince: string | null;
 
-  /** 状态栏的块（按建议的摆放顺序）。每次读都**现拼**（`status-blocks.ts`） */
+  /** 状态栏的块（按建议的摆放顺序），每次读都现拼（`status-blocks.ts`） */
   readonly blocks: readonly StatusBlock[];
   /** 这段会话现在用的模型（派生视图） */
   readonly model: ModelState;
@@ -335,9 +319,8 @@ export interface ChatSessionLike {
   readonly thinking: ThinkingState;
   /** 宿主给的那份会话行 */
   readonly view: SessionSnapshot;
-  /** 队里还没被取走的 InboxEntry（顺序即取走顺序） */
+  /** 队列里还没被取走的条目（顺序即取走顺序） */
   readonly inbox: readonly InboxItem[];
-  /** 排队**条数** —— 派生自 {@link inbox}（= `inbox.length`），不是第二份真相 */
   readonly inboxPending: number;
   /** 挂在这段会话上的问题 */
   readonly questions: readonly QuestionView[];
@@ -345,71 +328,69 @@ export interface ChatSessionLike {
   readonly rateSample: RateSample;
 
   /**
-   * 发一句（**只投递**，受理即返回，PRD 4.2 / PLAN §5.1）。
+   * 发一条消息（只投递，受理即返回）。
    *
-   * `images` 是这一次**还没上传**的剪贴板图片（发送时先传再发）；`assetIds` 是**已经传上去
-   * 过的**Asset（撤回回填的那几张，见 {@link revert}）—— 后者不再传一遍：同一张图全机只存一份，
-   * 传第二遍既浪费也不是同一份（PRD 1.8）。
+   * `images` 是这一次还没上传的剪贴板图片（发送时先传再发）；`assetIds` 是已经传上去过的 Asset
+   * （撤回回填的那几张，见 `rewind`）—— 后者不再传一遍：同一张图全机只存一份，传第二遍既浪费
+   * 也不是同一份。
    */
   send(
     input: string,
     images?: readonly ClipboardImage[],
     assetIds?: readonly string[],
   ): Promise<void>;
-  /** 复活：**确保这段会话有 agent**（`agent.wake`，PRD 1.2 / PLAN §5.1） */
+  /** 确保这段会话有 `Agent`（`agent.wake`） */
   wake(): Promise<void>;
-  /** 暂停：**只关输出开关**（`agent.pause`，PRD 4.4） */
+  /** 暂停：只关输出开关（`agent.pauseOutput`） */
   pauseOutput(): Promise<void>;
-  /** 继续：**只开输出开关、不投任何东西**（`agent.resume`，PRD 4.4） */
+  /** 继续：只开输出开关，不投递任何内容（`agent.resumeOutput`） */
   resumeOutput(): Promise<void>;
-  /** 等**这一句**有了下文（界面用它包忙碌态，stdio 用它等答案） */
+  /** 等这一条消息有下文（界面用它包忙碌态，stdio 用它等答案） */
   waitForReply(): Promise<void>;
-  /** 中止在途的请求与工具，并把输出开关关上（`agent.abort`，PRD 4.4） */
+  /** 中止在途的请求与工具，并把输出开关关上（`agent.abort`） */
   abort(): void;
-  /**
-   * 换到另一个工作区（`/ws` 选中之后调）。**这一段会话不动**
-   */
+  /** 换到另一个工作区（`/ws` 选中之后调）；这一段会话不动 */
   selectWorkspace(workspaceId: string): void;
   /**
    * 让宿主重新发现能力（`scope.reload`），再把手里那几份事实重取一遍。
    *
-   * 回来的那一份是宿主给的回执：刷了几份 Scope、有没有没刷成的 —— 调用方据此说一句人话。
+   * 回来的那一份是宿主给的回执：刷了几份 Scope、有没有没刷成的 —— 调用方据此报给用户。
    */
   reload(): Promise<ScopeReloadReport>;
-  /** 换**这一段会话**的模型（`session.updateModel`） */
+  /** 换这一段会话的模型（`session.updateModel`） */
   updateModel(modelId: string | null): Promise<void>;
-  /** 改这一段的**名字**（`session.rename`） */
+  /** 改这一段的名字（`session.rename`） */
   rename(name: string): Promise<void>;
-  /** 改**这一段会话**的思考档位（`null` = 跟随 AgentDefinition，`session.updateThinkingLevel`） */
+  /** 改这一段会话的思考档位（`null` = 跟随 AgentDefinition，`session.updateThinkingLevel`） */
   updateThinkingLevel(level: string | null): Promise<void>;
   /** 置顶 / 取消置顶这一段（`session.pin`） */
   pin(pinned: boolean): Promise<void>;
   /**
-   * 撤回到某条用户消息**之前**（`session.rewind`），返回回填给输入框的内容。
+   * 撤回到某条用户消息之前（`session.rewind`），返回回填给输入框的内容。
    *
-   * 回来的 `assetIds` 是那条消息里挂着的 Asset（段上的本地标记拆出来的，按原顺序）——
-   * 输入框把它们一起摆回去，用户提交前看得见自己撤回来了哪几张。
+   * 回来的 `assetIds` 是那条消息里挂着的 Asset（段上的本地标记拆出来的，按原顺序）—— 输入框
+   * 把它们一起摆回去，用户提交前看得见自己撤回来了哪几张。
    */
   rewind(beforeMessageId: string): Promise<MessageInput>;
-  /** 交接（`handoff.start`）：**只回「开始了」**；`mode` 给了才是调用方挑的执行者 */
+  /** 交接（`handoff.start`）：只回「开始了」；`mode` 给了才是调用方挑的执行者 */
   handoff(options?: HandoffOptions): Promise<void>;
   /** `@` 补全的文件清单（`workspace.files`；`query` 交给宿主先筛） */
   listWorkspaceFiles(query?: string): Promise<WorkspaceFiles>;
-  /** 清空这段会话的 inbox（宿主这一版没有这条 procedure，恒回 0） */
+  /** 清空这段会话的排队区（`agent.clearInbox`），回清掉的条数 */
   clearInbox(): Promise<number>;
   /** 某个 subagent 自己的消息（镜像那一栏；镜像里没有时回空数组） */
   listSubAgentMessages(toolCallId: string): Promise<AgentNS.Message[]>;
-  /** 渲染期现取 subagent 的消息（**不发请求**） */
+  /** 渲染期现取 subagent 的消息（不发请求） */
   subAgentMessages(toolCallId: string): AgentNS.Message[];
   /** 释放资源（卸订阅 / 不再往界面上推） */
   dispose(): void;
 }
 
 /**
- * 一段会话上挂着的一道题 = **一张表单**（宿主那侧的形状照抄 MCP elicitation 的 `requestedSchema`：
- * 扁平对象，属性用字符串/数字/布尔/单选枚举，数组只用作「多选枚举」）。
+ * 一段会话上挂着的一道题，就是一张表单（宿主那侧的形状照抄 MCP elicitation 的
+ * `requestedSchema`：扁平对象，属性用字符串/数字/布尔/单选枚举，数组只用作「多选枚举」）。
  *
- * 候选不再是宿主替我们挑好的 `choices`：面板读 `requestedSchema`，自己决定每一格怎么画。
+ * 面板读 `requestedSchema`，自己决定每一格怎么画，不再有一份宿主挑好的候选。
  */
 export interface QuestionView {
   id: string;
@@ -484,7 +465,7 @@ export interface HandoffOptions {
    * `/handoff` 要的是那一份文档，`/migrate` 要的是换手，各自说清，不靠对面的缺省。
    */
   kind?: HandoffKind;
-  /** 已退场（口径⑧）：宿主不再收「交接之后做什么」 */
+  /** 已退场：宿主不再收「交接之后做什么」 */
   then?: HandoffThen;
 }
 
@@ -500,7 +481,7 @@ export type CreateChatSession = (
 ) => Promise<ChatSessionLike>;
 
 /**
- * 一段**已经被宿主删掉**的会话（`session.removed` 那一格的事实 + 找下一段要的那个项目）。
+ * 一段已经被宿主删掉的会话（`session.removed` 那一格的事实 + 找下一段要的那个项目）。
  *
  * 只有两格：那一段已经不存在了，再带一份整行就是发一份读不回来的东西。项目那一格是给
  * 「同项目里还有没有别的会话」用的（`session.list` 的入参要它）。
@@ -518,31 +499,31 @@ export interface ChatSessionNotifier {
   /** 系统级提示走独立栏位，不进 messages */
   onNotice(text: string, tone: NoticeTone, origin?: NoticeOrigin): void;
   /**
-   * 这一段会话**已经被宿主删掉了**（`session.removed`，PRD 4.1 的存活口径：删掉是硬删）。
+   * 这一段会话已经被宿主删掉了（`session.removed`；删掉是硬删）。
    *
-   * 只有正看着这一段的那一屏会收到这一下：后台那几段没人看，注册表把它们从登记里摘掉就够了
-   * （`sessions-registry.ts` 的 `drop`）。收到它的一屏不能再往这一段里发话 —— 换到哪一段去
+   * 只有正看着这一段的那一屏会收到这个事件：后台那几段没人看，注册表把它们从登记里摘掉就够了
+   * （`sessions-registry.ts` 的 `drop`）。收到它的一屏不能再往这一段里发消息 —— 换到哪一段去
    * 由屏幕自己收尾（`commands/handlers.ts` 的 `moveAfterGone` 与 `/delete` 共用一套）。
    *
-   * 可省：不关心这一下的听众（用例里的替身）不必写它。
+   * 可省：不关心这个事件的听众（用例里的替身）不必写它。
    */
   onRemoved?(removed: RemovedSession): void;
 }
 
 /** 开一段会话的入参 */
 export interface ChatSessionOptions {
-  /** 用哪个 AgentDefinition 开新会话（已有 `sessionId` 时以那段会话的为准，PRD L7） */
+  /** 用哪个 AgentDefinition 开新会话（已有 `sessionId` 时以那段会话的为准） */
   agentId?: string;
   /** 按 id 打开一段已存在的会话（`/load` 选中的那段） */
   sessionId?: string;
   /** 已进入的工作区 id（会话层只认它） */
   workspaceId?: string;
-  /** 接着上次聊（PRD F-A6）：这个项目上次打开的那段会话 */
+  /** 续接：这个项目上次打开的那段会话 */
   resume?: boolean;
   /** 要不要把这次打开的那段记成「上次打开的那段」（缺省 `true`） */
   remember?: boolean;
-  /** 宿主问过来一个问题时，界面怎么作答（返回候选里的 `value`；`null` = 界面放弃作答） */
+  /** 宿主提问时界面怎么作答（`null` = 界面放弃作答） */
   onQuestion?: (question: QuestionView) => Promise<FormAnswerView | null>;
-  /** 进程级的那一条连接：会话**不建连接**，只借它说话 */
+  /** 进程级的那一条连接：会话不建连接，只借它说话 */
   connection: HostConnection;
 }

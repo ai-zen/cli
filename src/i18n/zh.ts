@@ -1,28 +1,20 @@
 /**
- * 中文词条（默认兜底语言之外的另一半）。
+ * 中文词条。key 扁平，` 域.语义 ` 分组；`{name}` 是插值占位；`\u00a0`（不换行空格）把数字与单位
+ * 绑成一格，窄屏折行时不会被拆开。
  *
- * 约定：
- * - 扁平 key，` 域.语义 ` 分组；
- * - `{name}` 为插值占位；
- * - `\u00a0`（不换行空格）用于把「数字 + 单位」绑成一格，窄屏折行时不会被拆开。
+ * 文案口径：
  *
- * ## 文案口径（改字之前先读这一段）
- *
- * 1. **一个概念只有一个词**：宿主 / 工作区 / 会话 / AgentDefinition / 模型 / 端点 / 工具 / 技能 /
+ * 1. 一个概念只有一个词：宿主 / 工作区 / 会话 / AgentDefinition / 模型 / 端点 / 工具 / 技能 /
  *    MCP 服务器 / 思考强度。同一个东西在不同屏幕上换着叫，用户会以为是两件事。
- * 2. **括号只放事实**：当前值、可选值、路径、归属哪台机器、做下去的后果。
- *    括号里**不写内部字段名**（`reasoningPreset` / `mcpServers` / `messages` / `keep`）——
- *    那是给改代码的人看的，不是给用的人看的。
- * 3. **命令说明动词开头，越短越好**：斜杠菜单是**单行裁切**（宽度不够时直接切掉），
- *    说明写长了后半截根本看不见。
- * 4. **语气固定**：成功「已…」、失败「…失败：{error}」、要用户动手「请…」。
- *    状态符号只用 `✖`（失败）/ `⚠`（警告），不用 emoji —— 终端里 emoji 宽度不稳，
- *    而且风格一混就显得随手写。
- * 5. **不写 markdown**：终端不渲染 `**加粗**` 与反引号，写进去就是原样的星号和反引号。
- * 6. **可变的数字不要写死**：上限、条数一律走占位符（写死的那天配置一变就骗人）。
+ * 2. 括号只放事实：当前值、可选值、路径、归属哪台机器、做下去的后果。括号里不写内部字段名
+ *    （`reasoningPreset` / `mcpServers` / `messages` / `keep`），那是给改代码的人看的。
+ * 3. 命令说明动词开头且短：斜杠菜单是单行裁切，宽度不够时直接切掉，说明写长了后半截看不见。
+ * 4. 语气固定：成功「已…」、失败「…失败：{error}」、要用户动手「请…」。状态符号只用 `✖`（失败）/
+ *    `⚠`（警告），不用 emoji：终端里 emoji 宽度不稳。
+ * 5. 不写 markdown：终端不渲染 `**加粗**` 与反引号，写进去就是原样的星号和反引号。
+ * 6. 可变的数字不写死：上限、条数走占位符，写死的那天配置一变就骗人。
  */
 export const zh: Record<string, string> = {
-  // ---------- 输入行 ----------
   "input.placeholder": "输入消息，/ 命令，@ 文件…",
   "input.hint.ready": "Enter 发送 · Ctrl+J 换行 · / 命令 · PgUp 看历史",
   "input.hint.paused": "Esc 继续 · Enter 发送 · Ctrl+J 换行 · PgUp 看历史",
@@ -31,11 +23,9 @@ export const zh: Record<string, string> = {
   "mention.scanning": "正在读取工作区文件…",
   "input.pastedImages": "已附加 {n} 张图片 · Ctrl+V 继续添加 · Esc 清空",
 
-  // ---------- 状态栏 ----------
-  // 四块（身份 / 用量 / 速率 / 快捷键）照旧版：身份块的分隔符与标签写在这两条词条里，
-  // 于是中英文各自只有一处定义（英文是 ` · agent ` / ` · thinking `）。
-  // 用量那两个数由客户端从消息的 `usage` 上算（宿主不算、不存、不报），单位用不换行空格绑定，
-  // 窄屏折行时不会被拆成「1284」/「tok」。
+  // 状态栏四块（身份 / 用量 / 速率 / 快捷键）：身份块的分隔符与标签写在这两条词条里，于是中英文
+  // 各自只有一处定义（英文是 ` · agent ` / ` · thinking `）。用量那两个数由客户端从消息的 `usage` 上
+  // 算（宿主不算、不存、不报），单位用不换行空格绑定，窄屏折行时不会被拆成「1284」/「tok」。
   "status.busy": "处理中",
   "status.idle": "空闲",
   "status.inputPaused": "已停止接收",
@@ -47,7 +37,6 @@ export const zh: Record<string, string> = {
   "status.totalTokens": "累计\u00a0{n}\u00a0tok",
   "status.avgRate": "⚡\u00a0均速\u00a0{rate}",
 
-  // ---------- 思考档位 ----------
   "effort.off": "关",
   "effort.none": "关",
   "effort.minimal": "极低",
@@ -60,8 +49,8 @@ export const zh: Record<string, string> = {
   "effort.custom": "自定义",
   "effort.unsupported": "—",
 
-  // ---------- 生成阶段（消息栏 spinner；六阶段在 `src/session-phase.ts`） ----------
-  // 「排队」= 话还在 inbox 里没被取走；「等待首字」= 请求已发出、一条字都还没回来。
+  // 生成阶段（消息栏 spinner）：六阶段在 `src/session-phase.ts`。「排队」指话还在 inbox 里没被
+  // 取走，「等待首字」指请求已发出、一个字都还没回来。
   "phase.working": "处理中…",
   "phase.connecting": "连接中…",
   "phase.waitingFirstToken": "等待首字…",
@@ -73,13 +62,12 @@ export const zh: Record<string, string> = {
   "phase.streaming": "输出中…",
   "phase.handoff": "正在交接…",
 
-  // ---------- 排队区（输入框上方的排队带，`InboxArea`） ----------
-  // 前缀：用户自己排进来的那句。别的来源（`session` 等）直接把来源名上屏，不走词条
+  // 排队区（输入框上方的排队带 `InboxArea`）：前缀是用户自己排进来的那句；别的来源（`session`
+  // 等）直接把来源名上屏，不走词条
   "inbox.pending": "排队中",
-  // 只显示前两行时，最后一行说还剩多少条（填进去的是**没显示出来**的条数）
+  // 只显示前两行时，最后一行说还剩多少条（填进去的是没显示出来的条数）
   "inbox.more": "另有 {n} 条",
 
-  // ---------- 通知 ----------
   "notice.reloaded": "已按新配置重建会话（消息与上下文均保留）",
   "notice.draftSaved": "已暂存输入（Ctrl+S 恢复）",
   "notice.draftRestored": "已恢复暂存的输入",
@@ -93,8 +81,8 @@ export const zh: Record<string, string> = {
   "notice.inputCleared": "已清空输入 · 再次按 Ctrl+C 退出",
   "notice.handoffBlocksInput": "正在交接，该消息未发送。Esc 放弃交接并恢复到交接前状态",
   "notice.handoffAborted": "交接已中断，记忆已恢复到交接前状态",
-  // subagent 结束了要说一句（PRD 3.9）：完成了 / 失败了 / 被叫停了。失败那句里的 {error} 是
-  // 宿主给的原话，照传；宿主没给原因时用不带原因的那一条，不自己编一个
+  // subagent 结束时说一句：完成了 / 失败了 / 被叫停。失败那句里的 {error} 是宿主给的原话，
+  // 照传；宿主没给原因时用不带原因的那一条，不自己编
   "notice.subAgentDone": "子 Agent {name} 已完成",
   "notice.subAgentFailed": "子 Agent {name} 失败",
   "notice.subAgentFailedWhy": "子 Agent {name} 失败：{error}",
@@ -103,14 +91,14 @@ export const zh: Record<string, string> = {
   "notice.resumeFailed": "恢复失败：{error}",
   "notice.pressCtrlDAgain": "再次按 Ctrl+D 退出",
   "notice.languageChanged": "界面语言已切换为中文",
-  // 两个清空入口写在同一行提示里（分隔用「；」而不加装饰：栏位上的句子不加任何前缀）
+  // 两个清空入口写在同一行提示里：分隔用「；」，栏位上的句子不加任何前缀
   "notice.deleteAllHint": "Ctrl+X 清除本会话的通知；Ctrl+G 清除全部",
   "notice.deleteAllFailed": "通知清空失败：{error}",
   "notice.questionsReadFailed": "待答问题读取失败：{error}",
   "notice.noticesCatchupFailed": "通知读取失败：{error}",
   "notice.mentionNoWorkspace": "尚未进入工作区：@ 补全暂不可用",
-  // 三档粒度里的第三档（清全部）：它会把**全局**通知与**别的会话**的通知一起清掉，
-  // 所以这一问必须把这两件事说出来（PRD「清全部要明说，不能顺手全清」）
+  // 三档粒度里的第三档（清全部）：它会把全局通知与别的会话的通知一起清掉，所以这一问要把这两件
+  // 事说出来
   "notice.deleteAllAllTitle": "清空全部 {n} 条通知（含全局通知与其他会话的通知）？不可撤销。",
   "notice.deleteAllAllConfirm": "清空全部",
   "notice.deleteAllAllCancel": "不清除",
@@ -128,7 +116,6 @@ export const zh: Record<string, string> = {
   "notice.imageNoOpener":
     "图片已取回，但本机没有可用的打开命令（已尝试 {command}）：文件位于 {path}",
   "notice.imageOpenFailed": "无法打开（{command} 返回 {code}）：文件位于 {path}",
-  // ---------- 命令说明（/help 与斜杠菜单） ----------
   "cmd.load.desc": "打开已保存的会话（--all 跨工作区）",
   "cmd.sessions.desc": "列出会话并切换（--all 跨工作区）",
   "cmd.ws.desc": "工作区：列出、切换、新建、删除",
@@ -159,8 +146,8 @@ export const zh: Record<string, string> = {
   "cmd.title.unchanged": "模型没给出可用的名字，名字保持不变",
   "cmd.title.failed": "起名失败：{error}",
   "cmd.editor.desc": "使用外部编辑器撰写长消息",
-  // `/clear` 只清屏、`/free` 只清排队区（一条命令一件事）：
-  // 从前「顺手清队列」那一半的说明与提示文案跟着搬到 `cmd.free.*`
+  // `/clear` 只清屏、`/free` 只清排队区，一条命令一件事；原先连带清队列那一半的说明与提示文案
+  // 在 `cmd.free.*`
   "cmd.clear.desc": "清屏（排队区请用 /free）",
   "cmd.free.desc": "清空排队区（尚未发送的消息）",
   "cmd.free.inboxCleared": "已清空排队区 {n} 条待发送消息",
@@ -171,7 +158,7 @@ export const zh: Record<string, string> = {
   "cmd.model.desc": "切换模型：本次会话 / 助手定义 / 全局",
   "cmd.agent.desc": "设置默认助手定义（仅影响新会话）",
   "cmd.reload.desc": "重新加载工具、技能与 MCP 服务器",
-  // `/upgrade`：键名与命令名一致（`registry.ts` 的 `descriptionKey` 就是这几条）
+  // `/upgrade` 的键名与命令名一致（`registry.ts` 的 `descriptionKey` 就是这几条）
   "cmd.upgrade.desc": "选择发布标签中的最高版本并升级宿主",
   "cmd.mcp.desc": "管理 MCP 服务器：增删、编辑、启停",
   "cmd.lang.desc": "切换界面语言",
@@ -180,21 +167,20 @@ export const zh: Record<string, string> = {
   "cmd.handoff.desc": "仅生成交接文档（不切换记忆）",
   "cmd.migrate.desc": "生成交接文档并切换记忆（旧记忆归档）",
   "cmd.help.desc": "显示帮助",
-  // `/kill`：收掉 agent，会话行与历史一个字不动；`/delete`：硬删，不可撤销（PRD 1.2 / 4.1）
+  // `/kill` 收掉 Agent，会话行与历史不动；`/delete` 是硬删，不可撤销
   "cmd.kill.desc": "终止当前会话的 Agent（保留历史）",
   "cmd.delete.desc": "删除当前会话（消息与素材一并删除）",
   "cmd.shutdown.desc": "关闭宿主并返回连接屏",
   "cmd.exit.desc": "退出程序（不关闭宿主）",
   "cmd.running": "正在执行 /{name}…",
-  /** 兜底出口：处理器没自己 catch 的那几条命令，服务端失败时由 `runCommand` 统一说话 */
+  /** 处理器没有自己 catch 的那几条命令，失败文案由 `runCommand` 统一给出 */
   "cmd.failed": "命令 /{name} 失败：{error}",
 
-  // ---------- 命令交互文案（通知 / 选择器） ----------
   "common.current": "（当前）",
   /** 列举多个名字时的分隔符（如「等待 edit、exec 返回…」） */
   "common.listSeparator": "、",
   "cmd.model.noModels": "配置中暂无模型，请用 /config 添加端点与模型",
-  // 三档共用同一个选择器：标题说「这次改哪一档」+「当前生效的是哪一档」
+  // 三档共用同一个选择器：标题说这次改哪一档，以及当前生效的是哪一档
   "cmd.model.title": "切换模型 · {scope} · {endpoint}（当前生效：{level}）",
   "cmd.model.endpointTitle": "选择供应商 · {scope}（当前生效：{level}）",
   "cmd.model.endpointHint": "{count} 个模型",
@@ -216,7 +202,7 @@ export const zh: Record<string, string> = {
    * 调宿主之前那一问：三件事一次说清（目标是哪一版 / 宿主做哪一半 / 会踢掉谁）。
    *
    * `{installing}` 与 `{starting}` 是 `host-stage.ts` 里那两句阶段文案（与拉起宿主那块下载屏
-   * 同一批词）—— 装包与拉起归启动方式，不在这里另造进度词。
+   * 同一批词）：装包与拉起归启动方式，不在这里另造进度词。
    */
   "cmd.upgrade.confirmTitle":
     "升级宿主：v{current} → v{target}。宿主先确认该版本可用并记录下次启动的版本，随后以升级为由退出；之后由启动方式接管：{installing}{starting}。本机连接的其他客户端（含桌面端）将断开。",
@@ -234,7 +220,7 @@ export const zh: Record<string, string> = {
   "cmd.think.followDefault": "跟随模型默认",
   // 参数跟着「模型来自哪一级」走：模型是本段会话换的时，参数也写在这一段
   "cmd.think.clearHintSession": "清除本会话的思考参数",
-  // AgentDefinition 级那一项清的是**定义文件**里的思考参数（影响所有用这个 AgentDefinition 的会话）
+  // AgentDefinition 级那一项清的是定义文件里的思考参数（影响所有用这个 AgentDefinition 的会话）
   "cmd.think.clearHintAgent": "清除助手定义上的思考参数",
   "cmd.think.cancelled": "已取消思考强度切换",
   "cmd.think.unchanged": "思考强度未变更",
@@ -242,7 +228,7 @@ export const zh: Record<string, string> = {
   "cmd.new.started": "已新建会话",
   "cmd.load.none": "暂无已保存的会话",
   "cmd.load.titleReplacing": "选择要打开的会话（当前会话将在后台继续运行）",
-  // `--all`：不限当前项目，每一条的 hint 上带它属于哪个工作区（`SessionSummary.workspaceId`）
+  // `--all`：不限当前工作区，每一条的 hint 上带它属于哪个工作区（`SessionSummary.workspaceId`）
   "cmd.load.titleAll": "选择要打开的会话 · 所有工作区（当前会话将在后台继续运行）",
   "cmd.load.hintAll": "工作区 {workspace} · {id}",
   "cmd.load.cancelled": "已取消打开",
@@ -273,7 +259,7 @@ export const zh: Record<string, string> = {
   "cmd.ws.createFailed": "工作区创建失败：{error}",
   "cmd.ws.unknownArg":
     "未知参数：{arg}（用法：/ws，或 /ws new [绝对路径]，或 /ws delete <项目名或 ID>）",
-  // 删项目：连带它名下的会话（PRD 1.5），目录一个字不动。两件事都得说清，否则用户会以为删项目等于删那个目录
+  // 删工作区：连带它名下的会话，目录不动。两件事都说清，否则用户会以为删工作区等于删那个目录
   "cmd.ws.deleteUsage": "用法：/ws delete <项目名或 ID>（/ws 里列着现有的那些）",
   "cmd.ws.deleteUnknown": "未找到名为「{arg}」的工作区：/ws 列出当前工作区，名称或 ID 均可",
   "cmd.ws.deleteTitle":
@@ -281,7 +267,7 @@ export const zh: Record<string, string> = {
   "cmd.ws.deleteConfirm": "删掉这个项目",
   "cmd.ws.deleteCancel": "取消",
   "cmd.ws.deleteCancelled": "未删除：工作区仍保留",
-  /** 上屏的那个数是回执里的（宿主删之前数的那一份） */
+  /** 上屏的数字来自宿主回执：这是它删除之前数的那一份 */
   "cmd.ws.deleteDone":
     "已删除工作区「{name}」，其下 {sessions} 段会话一并删除；{path} 目录内容未做任何修改",
   "cmd.ws.deleteFailed": "工作区删除失败：{error}",
@@ -291,7 +277,7 @@ export const zh: Record<string, string> = {
   "cmd.back.empty": "暂无可撤回的消息",
   "cmd.back.title": "选择撤回点（其后的消息将被删除）",
   "cmd.back.cancelled": "已取消撤回",
-  // 撤回之后的两件事实：删掉了几条、内容已经回填进输入框（旧实现只把消息变短，一句话都没有）
+  // 撤回之后的两件事实：删掉了几条、内容已回填进输入框。旧实现只把消息变短，一句话都不给
   "cmd.back.done": "已撤回：删除 {n} 条消息，被撤回的消息已回填到输入框",
   "cmd.pin.unknown": "未知参数：{value}（可选 on / off；不带参数则切换）",
   "cmd.pin.done": "已置顶「{name}」",
@@ -300,18 +286,17 @@ export const zh: Record<string, string> = {
   "cmd.shutdown.confirm": "关闭宿主并断开其他客户端",
   "cmd.shutdown.cancel": "取消",
   "cmd.shutdown.cancelled": "已取消关闭宿主",
-  // 杀 Agent：先摆代价（排队区里那几条会作废）再问一次；历史与这一段会话本身都保留
-  // （PRD 1.2「死的路只有三条」、4.1「中断不是杀死」那张表）
+  // 杀 Agent：先摆代价（排队区那几条会作废）再问一次；历史与这段会话都保留（中断不是杀死）
   "cmd.kill.title":
     "终止「{name}」？排队区中 {pending} 条待处理消息将被作废，进行中的请求将被中断；会话与历史均保留，仅 Agent 被终止，下次发送消息时会自动重新启动。",
   "cmd.kill.confirm": "终止该会话的 Agent",
   "cmd.kill.cancel": "取消",
   "cmd.kill.cancelled": "未终止：会话与其 Agent 均保留",
-  /** 杀完不换屏、不清历史：只说「现在没有 agent 了」这一件事 */
+  /** 杀完不换屏、不清历史：只说现在没有 Agent 这一件事 */
   "cmd.kill.done":
     "已终止「{name}」：Agent 已停止，排队区已清空；会话与历史仍保留，下次发送消息时会自动重新启动",
   "cmd.kill.failed": "终止失败：{error}",
-  /** 已经死了的那一段：宿主那边的 kill 是空操作，所以不说「N 条会作废」，并指到真正能清排队区的命令 */
+  /** 已经死了的那一段：宿主那边 kill 是空操作，所以不说「N 条会作废」，并指到真正能清排队区的命令 */
   "cmd.kill.alreadyDead": "「{name}」当前没有运行中的 Agent，无需终止；排队区请用 /free 清空",
   "cmd.kill.unknown":
     "未找到名为「{arg}」的会话：/sessions 列出当前工作区的会话，名称或 ID 前缀均可",
@@ -322,10 +307,10 @@ export const zh: Record<string, string> = {
   "cmd.delete.confirm": "删除该会话",
   "cmd.delete.cancel": "取消",
   "cmd.delete.cancelled": "未删除：会话仍保留",
-  /** 上屏的两个数是宿主回执里的（它删之前数的那一份） */
+  /** 上屏的两个数来自宿主回执：这是它删除之前数的那一份 */
   "cmd.delete.done": "已删除该会话：{messages} 条消息、{assets} 份素材一并删除",
   "cmd.delete.failed": "会话删除失败：{error}",
-  /** 删完就换到同一个项目里最近的那一段（旧屏的通知栏跟着卸载，所以跟上一句一起带过去） */
+  /** 删完就换到同一个工作区里最近的那一段（旧屏的通知栏跟着卸载，所以跟上一句一起带过去） */
   "cmd.delete.switched": "已切换到「{name}」",
   "cmd.delete.noOtherSession": "当前工作区已无其他会话，请用 /new 新建",
   "cmd.shutdown.done": "宿主已关闭，本机连接均已断开 · 返回连接屏，可重新启动或改连其他宿主",
@@ -346,7 +331,7 @@ export const zh: Record<string, string> = {
   "cmd.reload.failed": "重新加载失败：{error}",
   "cmd.think.notAdjustable": "模型 {id} 无可用思考档位，无法调整",
   "cmd.think.unknown": "未知强度：{level}（可选 {options} / default）",
-  // 两档各一个标题：`/think` 与 `/think -a` 的选择器长得一样，标题是唯一说清「改的是哪一层」的地方
+  // 两档各一个标题：`/think` 与 `/think -a` 的选择器外观相同，标题是唯一说清改哪一层的地方
   "cmd.think.titleSession": "思考强度 · 本会话（当前：{level}）",
   "cmd.think.titleAgent": "思考强度 · 该助手定义（影响之后新建的会话；当前：{level}）",
   "cmd.think.failed": "思考强度切换失败：{error}",
@@ -359,8 +344,7 @@ export const zh: Record<string, string> = {
   "cmd.editor.failed": "编辑器打开失败：{error}",
   "cmd.unknown": "未知命令：{cmd}（输入 /help 查看可用命令）",
 
-  // ---------- 子任务通知 / 启动屏 / 消息占位 ----------
-  // 交接那三个选项的文案不在这里了：题由宿主出（`HandoffService.startAsked`），措辞在
+  // 交接那三个选项的文案不在这里：题由宿主出（`HandoffService.startAsked`），措辞在
   // `agents/packages/host/src/modules/handoff/service.ts` 那一处，与阈值撞线共用同一份。
   "agentTabs.main": "主助手",
   "chat.configReadFailed": "配置读取失败：{error}",
@@ -371,7 +355,7 @@ export const zh: Record<string, string> = {
   "chat.sessionReloadFailed": "会话重建失败：{error}",
   "chat.subAgentMessagesFailed": "读取子 Agent 消息失败：{error}",
   "chat.bootFailed": "✖ 无法启动会话：{error}",
-  // 别处（另一台终端 / 桌面端）把这一屏正看着的那一段删了：说一句，然后换到同项目里最近的一段
+  // 别处（另一台终端 / 桌面端）把这一屏正看着的那一段删了：说一句，然后换到同工作区里最近的一段
   "chat.sessionRemoved": "本会话已被删除",
   "chat.bootHint": "按 k 打开配置中心（设置 API Key 与端点地址）· Enter 返回",
   "welcome.tagline": "终端 AI 协作台",
@@ -389,7 +373,6 @@ export const zh: Record<string, string> = {
   "msg.userHeader": "❯ 你",
   "msg.aiHeader": "✦ AI",
 
-  // ---------- 业务模块返回的 summary / 报错（思考档位 / 切模型 / 切 AgentDefinition / 交接） ----------
   "effort.followDefault": "跟随模型默认",
   "effort.quoted": "「{label}」",
   "effort.summary": "思考强度已设为 {label} · 写入助手定义「{id}」（模型 {model}）",
@@ -400,14 +383,12 @@ export const zh: Record<string, string> = {
   "agentSwitch.err.agentMissing": "助手定义「{id}」不存在",
   "agentSwitch.summary": "已切换主助手：{name}（{id}）· 模型 {model}（{modelId}）",
 
-  // ---------- 入口 / 退出 / 时间格式 ----------
   "app.goodbye": "\n 已退出。\n",
   "app.noAgents": "无可用助手定义，请先在配置中心新建",
   "app.bootFailed": "✖ 无法启动会话：{error}",
   "app.unexpected": "✖ 意外错误：{error}",
   "app.modelSwitchFailed": "✖ 本会话未能切换到所选模型：{error}",
 
-  // ---------- 连接屏（首启 / 连不上） ----------
   "connect.title": "连接宿主",
   "connect.firstRunHint": "首次使用：请先选择宿主（本机或远程）",
   "connect.local": "本机",
@@ -427,7 +408,7 @@ export const zh: Record<string, string> = {
   "connect.back": "返回",
   "connect.connect": "连接",
 
-  // ---------- 工作区屏（启动时远端没有「上次进入的那个」；PRD D30） ----------
+  // 工作区屏：启动时远端没有上次进入的那一个
   "ws.folderMissing": "（目录已不在）",
   "ws.title": "选择一个工作区",
   "ws.hint": "宿主运行在另一台机器上：下方列表与填写的路径均位于该机器",
@@ -440,9 +421,7 @@ export const zh: Record<string, string> = {
   "ws.exit": "退出",
   "ws.keys": "↑↓ 选择 · Enter 确认 · Esc 退出",
 
-  // ---------- 下载屏（本机拉起宿主，PRD D31） ----------
-  //
-  // 进度是**不确定**的：只报「走到哪一步」，不报百分比（不解析 npm 的输出）
+  // 下载屏（本机拉起宿主）：进度是不确定的，只报走到哪一步，不报百分比（不解析 npm 的输出）
   "download.title": "准备本机宿主",
   "download.stage.resolving": "查询要下载的版本…",
   "download.stage.installing": "下载并安装宿主（首次较慢）…",
@@ -451,7 +430,7 @@ export const zh: Record<string, string> = {
   "download.keysRunning": "Esc / Ctrl+C 取消，回连接屏改连远程",
   "download.keysFailed": "R 重试 · Esc 回连接屏改连远程",
 
-  // ---------- `ai --help`（在 TUI 之外打印，故单独在 help 分支初始化语言） ----------
+  // `ai --help` 在 TUI 之外打印，故单独在 help 分支初始化语言
   "cli.help.title": "ai — AI-Zen CLI v{version}",
   "cli.help.usage":
     "\n 用法:\n  ai                      进入交互式界面（TUI，需 stdin/stdout 为 TTY）\n  ai <提示词>              以纯 stdio 模式提问，结果写入 stdout\n  cat 文件 | ai “总结要点”  通过管道传入内容，参数作为指令\n  ai hook install         安装 shell 兜底钩子（命令不存在时转发给 AI）\n  ai hook uninstall       卸载 shell 兜底钩子",
@@ -460,7 +439,7 @@ export const zh: Record<string, string> = {
   "cli.help.notes":
     "\n 说明:\n  stdio 模式无任何交互，结果走 stdout、日志走 stderr，成功退出码 0。\n  远端令牌用 AI_ZEN_SERVER_TOKEN 传，不写命令行（argv 会出现在 ps 输出与 shell 历史里）。",
 
-  // ---------- `ai hook install / uninstall`（非 TUI 输出，同 help 一样在分支内先初始化语言） ----------
+  // `ai hook install / uninstall` 非 TUI 输出，同 help 一样在分支内先初始化语言
   "cli.hookUsage": "用法: ai hook install|uninstall",
   "cli.hookUnknownAction": "未知子命令：{action}",
   "hook.unsupportedShell": "✖ 不支持的 shell（仅支持 bash / zsh）",

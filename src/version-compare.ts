@@ -1,18 +1,15 @@
 /**
- * 版本号比较 —— 只回答「谁更新」这一个问题。
+ * 版本号比较：只回答谁更新这一个问题。
  *
- * 语义照 semver 2.0 的比较规则（`X.Y.Z[-pre][+build]`）：
- *   - 核心段按数字比，缺省补 0；
- *   - **有预发布标识的更小**（`1.0.0-alpha.23 < 1.0.0`）；
- *   - 预发布标识逐个比：纯数字比数值、数字**小于**非数字、非数字按 ASCII 比；
- *     前缀全相同则标识少的更小（`1.0.0-alpha < 1.0.0-alpha.1`）；
- *   - 构建元数据（`+xxx`）不参与比较。
+ * 语义照 semver 2.0 的比较规则（`X.Y.Z[-pre][+build]`）：核心段按数字比，缺省补 0；有预发布标识的更
+ * 小（`1.0.0-alpha.23 < 1.0.0`）；预发布标识逐个比，纯数字比数值、数字小于非数字、非数字按 ASCII
+ * 比，前缀全相同则标识少的更小（`1.0.0-alpha < 1.0.0-alpha.1`）；构建元数据（`+xxx`）不参与比较。
  *
- * 为什么不引 `semver` 包：CLI 只在这一处比版本号（`/upgrade` 从 registry 的多个
- * dist-tag 里挑最高的那个），为它多挂一份依赖不划算；而这段规则稳定、可穷举测试。
+ * 不引 `semver` 包：CLI 只在这一处比版本号（`/upgrade` 从 registry 的多个 dist-tag 里挑最高的那个），
+ * 为它多挂一份依赖不划算，而这段规则稳定、可穷举测试。
  *
- * 无法解析的版本号一律返回 `null`（调用方跳过），绝不抛错——版本号来自网络，
- * 不该因为 registry 上有个畸形 tag 就让命令崩掉。
+ * 无法解析的版本号一律返回 `null`，由调用方跳过，不抛错：版本号来自网络，不该因为 registry 上有个
+ * 畸形 tag 就让命令崩掉。
  */
 
 export interface ParsedVersion {
@@ -33,7 +30,7 @@ export function parseVersion(version: string): ParsedVersion | null {
   // 构建元数据不参与比较
   const plus = trimmed.indexOf("+");
   const noBuild = plus >= 0 ? trimmed.slice(0, plus) : trimmed;
-  // 预发布段从**第一个** `-` 开始（`1.0.0-alpha-beta` 的预发布标识是 `alpha-beta`）
+  // 预发布段从第一个 `-` 开始（`1.0.0-alpha-beta` 的预发布标识是 `alpha-beta`）
   const dash = noBuild.indexOf("-");
   const coreText = dash >= 0 ? noBuild.slice(0, dash) : noBuild;
   const preText = dash >= 0 ? noBuild.slice(dash + 1) : "";
@@ -43,7 +40,6 @@ export function parseVersion(version: string): ParsedVersion | null {
   return { core: parts.map(Number), pre: preText ? preText.split(".") : [] };
 }
 
-/** 单个预发布标识比较：数字按数值，数字 < 非数字，非数字按 ASCII */
 function compareIdentifier(a: string, b: string): number {
   const aNumeric = NUMERIC.test(a);
   const bNumeric = NUMERIC.test(b);
@@ -88,13 +84,11 @@ export function compareVersions(a: string, b: string): number | null {
 }
 
 /**
- * 从一组版本号里挑最新的（忽略无法解析的 InboxEntry）；全都不合法时返回 `undefined`。
+ * 从一组版本号里挑最新的（忽略无法解析的条目）；全都不合法时返回 `undefined`。
  *
- * `/upgrade` 用它把 registry 上**所有** dist-tag 折叠成一个目标版本（PRD 2.3「升级挑版本 =
- * 在所有发布标签里挑版本最高的」）：只认 `latest` 会漏掉「alpha 比正式版更新」的实际发布状态
- * （曾经 `latest = 0.9.0`、`alpha = 1.0.0-alpha.23`），只认 `alpha` 又会在正式版追上后装旧版。
- *
- * 跳过畸形 InboxEntry 而不是抛错：版本号来自网络，registry 上有个乱七八糟的 tag 不该让命令崩掉。
+ * `/upgrade` 用它把 registry 上所有 dist-tag 折叠成一个目标版本：只认 `latest` 会漏掉「alpha 比正式
+ * 版更新」的实际发布状态（曾经 `latest = 0.9.0`、`alpha = 1.0.0-alpha.23`），只认 `alpha` 又会在正式
+ * 版追上后装旧版。
  */
 export function pickNewest(versions: Iterable<string>): string | undefined {
   let newest: string | undefined;

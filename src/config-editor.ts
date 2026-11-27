@@ -1,21 +1,18 @@
 /**
- * 配置中心 / 凭据屏要的**纯函数**：挑字段、派生 id、把用户的输入文本变成契约里的值。
+ * 配置中心与凭据屏要的纯函数：挑字段、派生 id、把用户的输入文本变成契约里的值。
  *
- * ## 这里不写配置
+ * 这里不写配置。写入全部走 procedure，一次改动一次调用：默认项走 `config.defaults.update`，上限与中断
+ * 策略走 `config.update`，端点 / 模型 / 图片模型各走 `config.endpoints.*` / `config.models.*` /
+ * `config.imageModels.*`，AgentDefinition 走 `agentDefinition.*`，MCP 走 `mcp.save` / `mcp.remove`。
+ * 每个写口都回整份 `AppConfig`，所以这一层连「改完拼一份新的」都不需要：宿主已经是那个落点。
  *
- * 写入全部走 procedure，而且**一次改动一次调用**：默认项走 `config.defaults.update`，上限与中断策略
- * 走 `config.update`，端点 / 模型 / 图片模型各走 `config.endpoints.*` / `config.models.*` /
- * `config.imageModels.*`，AgentDefinition 走 `agentDefinition.*`，MCP 走 `mcp.save` / `mcp.remove`。而且每个
- * 写口都回**整份** `AppConfig`，所以这一层连「改完拼一份新的」都不需要：宿主已经是那个落点。
+ * 于是剩下来的都是不碰真相的事：在宿主给的形状上挑字段（`AppConfig` / `AgentDefinition` 里找一条）；
+ * 由名称派生 id（`config.models.create` / `config.endpoints.create` 的 id 由客户端定，宿主只负责落
+ * 盘）；把用户敲进去的文本解析成契约里的值（argv、`KEY=VALUE`、权限策略、函数参数 schema）；把「改了
+ * 这一处」拼成一次 procedure 的入参（如提示词 → `agentDefinition.update` 的 `messages`）。
  *
- * 于是剩下来的都是**不碰真相**的事：
- *   - 在宿主给的形状上挑字段（`AppConfig` / `AgentDefinition` 里找一条）；
- *   - 由名称派生 id（`config.models.create` / `config.endpoints.create` 的 id 由客户端定，宿主只负责落盘）；
- *   - 把用户敲进去的文本解析成契约里的值（argv、`KEY=VALUE`、权限策略、函数参数 schema）；
- *   - 把「改了这一处」拼成一次 procedure 的入参（如提示词 → `agentDefinition.update` 的 `messages`）。
- *
- * 一条底线：**不在这里推导业务判断**。MCP 层谁盖住谁、现在第几档思考 —— 宿主已经算好放在形状里
- * （或由档位表现查，见 `reasoning-effort.ts`），这里只显示。
+ * 一条底线：不在这里推导业务判断。MCP 层谁盖住谁、现在第几档思考 —— 宿主已经算好放在形状里（或由档位
+ * 表现查，见 `reasoning-effort.ts`），这里只显示。
  */
 
 import { AgentNS, Message } from "@ai-zen/agents-core";
@@ -23,14 +20,12 @@ import type { AgentDefinition, AppConfig, EndpointDefinition, ModelDefinition } 
 import { t } from "./i18n/index.js";
 
 /**
- * 工具输出上限的**缺省值**（SDK `AppConfig.maxToolOutput` 的缺省：32768 字符）。
+ * 工具输出上限的缺省值（SDK `AppConfig.maxToolOutput` 的缺省：32768 字符）。
  *
- * 配置里没写这一格时，屏上要有个能读能改的起点；「没写」不等于 0，而这一格只有客户端看得见
- * （宿主读它的时候自己也有同样的缺省）。想改成别的数就在这里改一处。
+ * 配置里没写这一格时，屏上要有个能读能改的起点：「没写」不等于 0，而这一格只有客户端看得见（宿主读它
+ * 的时候自己也有同样的缺省）。要改成别的数就在这里改一处。
  */
 export const DEFAULT_MAX_TOOL_OUTPUT = 32768;
-
-// ==================== 查询（在宿主给的形状上挑）====================
 
 /** 按 id 查找模型（只要给得出模型表就够 —— 档位派生那一层手上没有整份配置） */
 export function findModel(
@@ -56,14 +51,14 @@ export function modelsUsingEndpoint(config: AppConfig, endpointId: string): Mode
 }
 
 /**
- * 某个端点的**首要模型**（`ModelDefinition.primary`），没有就是 `undefined`。
+ * 某个端点的首要模型（`ModelDefinition.primary`），没有就是 `undefined`。
  *
- * 它是「首启只选服务商时，该把这个端点的哪个模型设成默认」这个问题的答案：标记由 SDK 带着走
- * （出厂清单每个端点一条），客户端只读、不猜。同端点多条 `primary` 的收敛在 SDK 的
- * `normalizePrimaryModels` 里（一处实现）—— 所以这里按清单顺序取第一条就与那一处一致。
+ * 它是「首启只选服务商时，该把这个端点的哪个模型设成默认」这个问题的答案：标记由 SDK 带着走（出厂清单
+ * 每个端点一条），客户端只读、不猜。同端点多条 `primary` 的收敛在 SDK 的 `normalizePrimaryModels` 里，
+ * 所以这里按清单顺序取第一条就与那一处一致。
  *
- * 没有首要模型是**合法状态**（用户自建端点常常如此）：那时调用方应当退化为让用户自己选
- * （CLI 是 `/model`），而不是替他从清单里挑一条。
+ * 没有首要模型是合法状态（用户自建端点常常如此）：那时调用方应当退化为让用户自己选（CLI 是
+ * `/model`），而不是替他从清单里挑一条。
  */
 export function primaryModelOf(config: AppConfig, endpointId: string): ModelDefinition | undefined {
   return config.models.find((model) => model.endpointId === endpointId && model.primary === true);
@@ -80,13 +75,13 @@ export function endpointHasKey(config: AppConfig, endpointId: string): boolean {
 }
 
 /**
- * 一串密钥的**掩码**：只留头三尾四，中间一个省略号（`sk-…9f3a`）。
+ * 一串密钥的掩码：只留头三尾四，中间一个省略号（`sk-…9f3a`）。
  *
- * `config.get` 回的是**明文** `apiKey`（宿主不再掩码），于是「显示时掩码」这件事落在客户端：
- * 明文可以显示在屏上，但它不该整串留在一个人正对着的终端里，也不该出现在任何一条日志里。
- * 少了中间那几个字符，用户仍然认得出「是不是我上个月那把」；要核对就整串重填一次。
+ * `config.get` 回的是明文 `apiKey`（宿主不再掩码），于是「显示时掩码」落在客户端：明文可以显示在屏上，
+ * 但它不该整串留在一个人正对着的终端里，也不该出现在任何一条日志里。少了中间那几个字符，用户仍然认得
+ * 出「是不是我上个月那把」；要核对就整串重填一次。
  *
- * 太短的串（≤ 8 位）连头尾都不留 —— 3 + 4 就等于把它印出来了。
+ * 太短的串（≤ 8 位）连头尾都不留：3 + 4 就等于把它印出来了。
  */
 export function maskSecret(secret: string): string {
   if (!secret) return "";
@@ -97,10 +92,9 @@ export function maskSecret(secret: string): string {
 /**
  * 一次「凭据检查」的结果：某模型绑定的端点及其密钥状态。
  *
- * 密钥在配置里是**明文**（宿主这一版不再掩码）：`configured` = 「这一格非空」，
- * `apiKeyMasked` 是 {@link maskSecret} 现算的显示值。掩码只用于显示 —— 回写掩码会把掩码
- * 当成密钥存下来，所以「换密钥」只能在用户真的改了输入框时发出（`update` 省略 `apiKey`
- * = 保留原值）。
+ * 密钥在配置里是明文（宿主这一版不再掩码）：`configured` 表示「这一格非空」，`apiKeyMasked` 是
+ * {@link maskSecret} 现算的显示值。掩码只用于显示 —— 回写掩码会把掩码当成密钥存下来，所以换密钥只能
+ * 在用户真的改了输入框时发出（`update` 省略 `apiKey` 等于保留原值）。
  */
 export interface CredentialInfo {
   modelId: string;
@@ -150,9 +144,9 @@ export function summarizeEndpoints(config: AppConfig): string {
 /**
  * 某模型的端点密钥状态（给「这个模型现在能不能真的跑」那一格提示用）。
  *
- * 它是**配置里两格的事实**（模型的 `endpointId` + 那端点的 `apiKey` 空不空），不是宿主的
- * 「可用性」判断：旧契约曾把 `available` / `unavailableReason` 算好放在模型与 AgentDefinition 上，这一版
- * 没有了。所以这里只说得出「端点还在不在、密钥填没填」—— 而这也正是用户当下能改的那两件事。
+ * 它是配置里两格的事实（模型的 `endpointId` 与那端点的 `apiKey` 空不空），不是宿主的「可用性」判断：
+ * 旧契约曾把 `available` / `unavailableReason` 算好放在模型与 AgentDefinition 上，这一版没有了。所以
+ * 这里只说得出「端点还在不在、密钥填没填」—— 而这也正是用户当下能改的那两件事。
  */
 export interface EndpointKeyState {
   /** 端点显示名；端点不在配置里时是 `null`（模型指着一个不存在的端点） */
@@ -202,8 +196,6 @@ export function apiKeyGuide(baseUrl: string | undefined): ApiKeyGuide {
   return { vendor: t("vendor.openaiCompatible") };
 }
 
-// ==================== 由名称派生 id ====================
-
 /** 由名称派生唯一 id：小写、非字母数字折叠为 `-`，冲突时追加序号 */
 function deriveUniqueId(taken: Set<string>, name: string, fallback: string): string {
   const base =
@@ -242,8 +234,6 @@ export function uniqueImageModelId(config: AppConfig, name: string): string {
 export function uniqueAgentId(taken: Iterable<string>, name: string, fallback = "agent"): string {
   return deriveUniqueId(new Set(taken), name, fallback);
 }
-
-// ==================== argv / KEY=VALUE 文本 ====================
 
 /**
  * 解析参数串为 argv：支持单 / 双引号包裹，以及反斜杠转义空白。
@@ -326,8 +316,6 @@ export function kvSummary(map: Record<string, string> | undefined): string {
   return t("common.kvSummary", { n: keys.length, keys: keys.join(", ") });
 }
 
-// ==================== 权限四维 ====================
-
 /** Agent 四维权限的维度顺序 */
 export const PERMISSION_DIMENSIONS = ["tools", "skills", "mcps", "subagents"] as const;
 export type PermissionDimension = (typeof PERMISSION_DIMENSIONS)[number];
@@ -379,7 +367,7 @@ export function summarizePermissions(permissions: AgentDefinition["permissions"]
 }
 
 /**
- * 改写某一维权限（`policy` 为 null 时删掉该维），返回**要交给 `agent.update` 的那份**。
+ * 改写某一维权限（`policy` 为 null 时删掉该维），返回要交给 `agent.update` 的那份。
  *
  * 浅合并的活归宿主：这里给出的是「这一版权限四维应该长成的样子」，而 `agent.update` 收的
  * 就是 `permissions` 的完整值。
@@ -394,8 +382,6 @@ export function patchPermission(
   else delete next[dim];
   return next;
 }
-
-// ==================== AgentDefinition 提示词 / 函数定义 ====================
 
 /**
  * 一条 AgentDefinition 的函数定义。
@@ -420,7 +406,7 @@ export function agentPromptText(messages: AgentDefinition["messages"] | null | u
 }
 
 /**
- * 编辑后的文本 → `agent.update` 的 `messages` 补丁（**整串**）。
+ * 编辑后的文本 → `agent.update` 的 `messages` 补丁（整串）。
  *
  * 宿主对 `messages` 是整份替换（`requireMessages`：非空且至少一条 system），所以每次都要给
  * 全串：换掉首条 system 的 `content`，其余消息连同它们自己的 id 原样带上；没有 system 时在
@@ -441,7 +427,7 @@ export function withAgentPrompt(
 /**
  * 改写函数定义的若干项。
  *
- * 宿主对 `function` 是**整份替换**（`definedOnly` 只把 `undefined` 当「这一项不改」，不做深
+ * 宿主对 `function` 是整份替换（`definedOnly` 只把 `undefined` 当「这一项不改」，不做深
  * 合并），所以每次都在这条定义现有的那份上盖一项 —— 只发 `{ description }` 会把
  * `parameters` 一起冲掉，反过来也一样。
  */
@@ -450,7 +436,7 @@ export function withAgentFunction(fn: AgentFunction, patch: Partial<AgentFunctio
 }
 
 /**
- * 参数 schema 文本 → 契约里的 JSON 对象；有格式问题就返回**一句人话**。
+ * 参数 schema 文本 → 契约里的 JSON 对象；有格式问题就返回一句人话。
  *
  * 与 `parsePermission` 同一个口径：能当场判的格式（空 / 不是 JSON / 不是对象）在客户端判，
  * 「这份 schema 语义上是否成立」归宿主 —— 这里再实现一套只会漂的规则。

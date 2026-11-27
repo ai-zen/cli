@@ -1,15 +1,12 @@
 /**
  * shell 钩子：往用户的 rc 文件（`~/.bashrc` / `~/.zshrc`）里增删一段 `command_not_found_*`。
  *
- * ## rc 是**用户内容**，不是我们的缓存
+ * rc 是用户内容，不是本工具的缓存：那个文件是用户手工编辑过的，没有资格猜它里面是什么。所以读它只有
+ * 一种正常结局，即文件不存在（还没装过）；其余失败（`EACCES`、`EISDIR`…）一律原样抛出，命令失败并
+ * 说清原因。
  *
- * 那个文件是用户手工编辑过的，我们没有资格猜它里面是什么。所以读它只有一种正常结局：
- * 「文件不存在」（= 还没装过）；其余失败（`EACCES`、`EISDIR`…）一律**原样抛**，命令失败并
- * 说清原因 —— 判据与 `host-version.ts` 同一套。
- *
- * 这一条不是洁癖：`installHook` 的写回是「读到的内容 → 去掉钩子块 → 写回去」，一旦把
- * 「读不出来」当成「文件是空的」，写回去的就只剩一段钩子 —— 用户的整个 rc 被抹掉。
- * 宁可命令失败，也不许替用户删配置。
+ * 这一条不是洁癖：`installHook` 的写回是「读到的内容 → 去掉钩子块 → 写回去」，一旦把读不出来当成
+ * 文件是空的，写回去的就只剩一段钩子，用户的整个 rc 被抹掉。
  */
 
 import { homedir } from "node:os";
@@ -17,10 +14,12 @@ import { join } from "node:path";
 import { promises as fs } from "node:fs";
 import { t } from "./i18n/index.js";
 
-/** 当前标记
+/**
+ * 当前标记。
  *
- * **不得翻译**：这两行是写进 rc 文件的代码块标记，靠它识别「哪段是本工具的」；
- * 翻了字面串就再也找不到旧块，用户会冒出一堆重复 hook。 */
+ * 不得翻译：这两行是写进 rc 文件的代码块标记，靠它识别哪段是本工具的；翻了字面串就再也找不到旧块，
+ * 用户会冒出一堆重复 hook。
+ */
 const MARKER_START = "# === ai hook (开始) ===";
 const MARKER_END = "# === ai hook (结束) ===";
 
@@ -40,13 +39,10 @@ function detectShell(): { rcFile: string; hookFn: string } | null {
 /**
  * 生成被写入 rc 文件的钩子函数体。
  *
- * 关键：必须带 `--tui`。钩子的发起场景是「人坐在交互终端前把命令敲错了」，
- * 不是脚本调用——所以要把原命令带进 TUI 当首条消息（`ai --tui --new "$@"`），
- * 而不是落到管道模式吐一段字就退出（那样没有历史、不能追问）。
- *
- * 另带 `--new`：钩子**总是开一条新会话**，不续接该目录上一次的会话。
- * 敲错一次命令就把内容追加进原有的长会话里，上下文和会话名都会被打乱。
- * `"$@"` 保留分词，避免原本带空格的参数被拼坏。
+ * 必须带 `--tui`：钩子的发起场景是人坐在交互终端前把命令敲错了，不是脚本调用，所以要把原命令带进
+ * TUI 当首条消息（`ai --tui --new "$@"`），而不是落到管道模式吐一段字就退出 —— 那样没有历史，也不
+ * 能追问。另带 `--new`：钩子总是开一条新会话，不续接该目录上一次的会话，否则敲错一次命令就把内容
+ * 追加进原有的长会话，上下文与会话名都会被打乱。`"$@"` 保留分词，避免原本带空格的参数被拼坏。
  */
 function hookCode(hookFn: string): string {
   return ["", MARKER_START, `${hookFn}() {`, '  ai --tui --new "$@"', "}", MARKER_END, ""].join(
@@ -54,7 +50,6 @@ function hookCode(hookFn: string): string {
   );
 }
 
-/** 规范化钩子块（去空行、逐行 trim），用于判断已安装的内容是否就是当前版本 */
 function normalizeBlock(block: string): string {
   return block
     .split("\n")
@@ -64,10 +59,10 @@ function normalizeBlock(block: string): string {
 }
 
 /**
- * 取出文件中**全部**已安装的钩子块（含首尾标记），按出现顺序。
+ * 取出文件中全部已安装的钩子块（含首尾标记），按出现顺序。
  *
- * 这里刻意返回数组而不是第一块：rc 里可能残留多个块（老版本 + 新版本各写了一次），
- * 只看第一块会出现「第一块恰好是最新版 → 判定为已安装 → 后面的旧块永远留着」。
+ * 这里刻意返回数组而不是第一块：rc 里可能残留多个块（老版本与新版本各写了一次），只看第一块会出现
+ * 「第一块恰好是最新版 → 判定为已安装 → 后面的旧块永远留着」。
  */
 function readHookBlocks(content: string): string[] {
   const lines = content.split("\n");
@@ -88,10 +83,6 @@ function readHookBlocks(content: string): string[] {
   return blocks;
 }
 
-/**
- * 移除文件中所有钩子块（含首尾标记），返回清理后的内容；
- * `removed` 表示是否确有块被移除。
- */
 function stripHookBlocks(content: string): { content: string; removed: boolean } {
   const lines = content.split("\n");
   const kept: string[] = [];
@@ -133,7 +124,7 @@ export async function installHook(): Promise<void> {
 
   const desired = hookCode(shell.hookFn);
 
-  // 已安装的判定条件是「**恰好一块**且内容与当前版本一致」。
+  // 已安装的判定条件是「恰好一块」且内容与当前版本一致。
   // 内容不一致（如升级后给钩子加了 `--new`）或残留多块（老版本 + 新版本各写过一次）
   // 都要走重写路径，否则用户升不上去、或者旧块永远留在 rc 里。
   const installedBlocks = readHookBlocks(current);
@@ -146,7 +137,6 @@ export async function installHook(): Promise<void> {
   }
   const refreshed = installedBlocks.length > 0;
 
-  // 统一走「先清掉所有已装块，再写入当前版本」
   const { content: cleaned } = stripHookBlocks(current);
   const base = cleaned.replace(/\n+$/, "");
   await fs.writeFile(shell.rcFile, base + "\n" + desired, "utf-8");

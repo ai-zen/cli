@@ -1,24 +1,24 @@
 /**
  * 生成过程的 token 速率统计 —— 纯逻辑，不依赖 React / Ink / SDK
  *
- * 需求是「每秒接收多少 token」，而 SDK 只在**每个请求的最后一个 chunk** 才给出
+ * 需求是「每秒接收多少 token」，而 SDK 只在每个请求的最后一个 chunk 才给出
  * `usage`（`stream_options.include_usage`），拿不到逐 token 的用量。所以这里分两路：
  *
- *   - **实时速率**：按增量字符估算 token，用 2 秒滑动窗口算（`live`）。它必须靠估算，
- *     否则要等整次回答结束才有数字，就谈不上「实时」；
- *   - **平均速率**：停下来时优先用真实的 `completion_tokens`（多次工具调用一起累加），
- *     除以「首字 → 末字」的时间跨度（`average`）。这段时间不含开头的等待首字。
+ *   - 实时速率：按增量字符估算 token，用 2 秒滑动窗口算（`live`）。它必须靠估算，否则要等整次
+ *     回答结束才有数字，就谈不上实时；
+ *   - 平均速率：停下来时优先用真实的 `completion_tokens`（多次工具调用一起累加），除以
+ *     「首字 → 末字」的时间跨度（`average`）。这段时间不含开头的等待首字。
  *
- * 两者口径不同，展示上也分开（生成中显示实时，停下来后显示平均）——把估算值
- * 和精确值混成一个数字才是真的误导。
+ * 两者口径不同，展示上也分开（生成中显示实时，停下来后显示平均）—— 把估算值和精确值混成一个
+ * 数字才是真的误导。
  *
- * 两个输入都由调用方从**已有的事实**上取：增量文本来自正在拼的那条消息（`content` /
+ * 两个输入都由调用方从已有的事实上取：增量文本来自正在拼的那条消息（`content` /
  * `reasoning_content`），真实用量是消息上 `usage.completion_tokens` 的合计（core 不给求和函数，
- * 合计由调用方加）。这里不认识 chunk 的形状，
- * 也不接受「服务端算好的一份增量」—— 那类摘录就是同一个概念的第二个定义。
+ * 合计由调用方加）。这里不认识 chunk 的形状，也不接受「服务端算好的一份增量」—— 那类摘录就是
+ * 同一个概念的第二个定义。
  */
 
-/** 实时速率的滑动窗口：取值越小越「跳」，越大越迟钝 */
+/** 实时速率的滑动窗口：取值越小波动越大，越大越迟钝 */
 export const LIVE_WINDOW_MS = 2000;
 
 /** 计算速率的最小时间跨度：太短会把「首包爆发」放大成离谱的高速率 */
@@ -30,9 +30,9 @@ const CJK = /[\u2e80-\u9fff\u3000-\u303f\uff00-\uffef\uac00-\ud7af]/;
 /**
  * 按字符估算 token 数（浮点，调用方决定何时取整）。
  *
- * 权重取值依据：中文/全角约 0.7 token 一个字（DeepSeek / GLM 系分词器实测区间
- * 0.6~0.8），其余非空白字符约 0.25（≈4 字符一个 token），空白约 0.1（多半与前词
- * 合并，但不为零）。这是**估算**，用于实时速率；精确值一律以 `usage` 为准。
+ * 权重取值依据：中文/全角约 0.7 token 一个字（DeepSeek / GLM 系分词器实测区间 0.6~0.8），其余
+ * 非空白字符约 0.25（≈4 字符一个 token），空白约 0.1（多半与前词合并，但不为零）。这是估算，
+ * 用于实时速率；精确值一律以 `usage` 为准。
  */
 export function estimateTokens(text: string): number {
   if (!text) return 0;
@@ -67,8 +67,8 @@ interface Sample {
 /**
  * 速率统计器。
  *
- * 生命周期由调用方驱动：`begin()`（一次回答开始）→ 若干个 `addDelta()` → `setExact()`
- * → `finish()`（一次回答结束）。时间一律可注入，便于单测不依赖真实时钟。
+ * 生命周期由调用方驱动：`begin()`（一次回答开始）→ 若干个 `addDelta()` → `setExact()` →
+ * `finish()`（一次回答结束）。时间一律可注入，便于单测不依赖真实时钟。
  */
 export class TokenRateMeter {
   private samples: Sample[] = [];
@@ -109,8 +109,8 @@ export class TokenRateMeter {
   /**
    * 这一批的真实产物 token 数（`completion_tokens`）。
    *
-   * 参数是**累计**而不是增量：调用方把消息上的用量加起来就能得到，幂等，不必自己逐次累加
-   * （逐次累加要求调用方记住上一次是多少 —— 又一份要跟上服务端的东西）。
+   * 参数是累计而不是增量：调用方把消息上的用量加起来就能得到，幂等，不必自己逐次累加（
+   * 逐次累加要求调用方记住上一次是多少 —— 又一份要跟上服务端的东西）。
    */
   setExact(completionTokens: number | undefined | null): void {
     if (typeof completionTokens !== "number" || !Number.isFinite(completionTokens)) return;
@@ -159,8 +159,8 @@ export class TokenRateMeter {
   /** 最近窗口的估算速率；窗口内没动静时返回 0（停顿本来就该显示 0，而不是上一秒的高值） */
   private liveRate(now: number): number | null {
     if (this.samples.length === 0) return null;
-    // 跨度从**首字**算起：把等首字的排队时间算进来会把速率稀释成端到端吞吐，
-    // 首字之后才开始计时间，同时也顺手挡掉了「首包爆发」被放大成离谱高值的问题。
+    // 跨度从首字算起：把等首字的排队时间算进来会把速率稀释成端到端吞吐，首字之后才开始计
+    // 时间，同时也挡掉了「首包爆发」被放大成离谱高值的问题。
     const from = this.firstOutputAt ?? this.startedAt!;
     const windowStart = Math.max(from, now - LIVE_WINDOW_MS);
     const spanMs = now - windowStart;

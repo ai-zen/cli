@@ -1,37 +1,24 @@
 /**
- * 纯 stdio 模式运行器 —— 一次性调用，但**跑在宿主里**。
+ * 纯 stdio 模式运行器：一次性调用，但跑在宿主里。
  *
- * 约定：
- *   - 不进入交互循环、不显示横幅、不等待任何按键；
- *   - 仅把**最终 assistant 文本**写入 stdout（零 ANSI、零 emoji 前缀、零 spinner）；
- *   - 日志 / 进度 / 通知一律走 stderr；
- *   - 成功退出码 0，失败非 0。
+ * 约定：不进入交互循环、不显示横幅、不等待任何按键；只把最终的 assistant 文本写入 stdout（零 ANSI、
+ * 零 emoji 前缀、零 spinner）；日志、进度、通知一律走 stderr；成功退出码 0，失败非 0。
  *
- * ## 两条路（这一刀的口径见任务书第 4 条）
+ * 两条路。默认（不带 `--save`）走 `runtime.agent.runOnce`：一次性管道调用不属于任何会话，无 id、不落
+ * 库、不进列表，本机这条连项目行都不建；远端那条要给那个项目的 `cwd`，因为一次性会话需要一个目录去装
+ * 配 Scope，而那台机器上的目录只有项目行知道，没有项目就先让用户去 `ai` 里挑一个。带 `--save` 则走
+ * `session.create` + `agent.wake` + `agent.send`，再 `session.open` 跟读：用户明说要留下这一段，那就
+ * 得是一段真会话。
  *
- * | 情形 | 走哪条 | 为什么 |
- * |---|---|---|
- * | 默认（不带 `--save`），本机 | `runtime.agent.runOnce({ cwd: process.cwd(), agentId, content })` | 一次性管道调用不属于任何会话：无 id、不落库、不进列表（PRD F-A2 / D3）。本机这条**连项目行都不建** |
- * | 默认，远端 | `runtime.agent.runOnce` + **那个项目的 `cwd`** | 一次性会话要的是一个目录去装配 Scope；远端那台机器上的目录只有项目行知道。没有项目就先让用户去 `ai` 里挑一个 |
- * | `--save` | `session.create` + `agent.wake` + `agent.send`，再 `session.open` 跟读 | 用户明说要留下这一段，那就得是一段真会话 |
+ * 三条刻意保持的旧行为：默认不落盘（`runOnce` 跑完即弃，会话列表一条都不会多）；`--save` 不挪「上次
+ * 打开」（写完 stderr 那一行 id，但会话层「上次打开的那段」记忆不动）；stdout 只有答案。
  *
- * ## 三条被**刻意保持**的旧行为（都是文档与用例锁着的）
+ * 一次性调用没有人可以问，所以这条路上都不给 `onQuestion`：宿主的题会一直挂着，它不替用户选一个选项
+ * —— 交接去哪是产品决定，不是客户端的。
  *
- *   1. **默认不落盘**：`runtime.agent.runOnce` 跑完即弃，用户的会话列表一条都不会多；
- *   2. **`--save` 不挪「上次打开」**：写完 stderr 那一行 id，但会话层的「上次打开的那段」记忆
- *      不动（`remember: false`）；
- *   3. **stdout 只有答案**：其余一切（含宿主推来的通知）走 stderr。
- *
- * ## 提问没人答
- *
- * 一次性调用没有人可以问，所以这条路上都不给 `onQuestion`：宿主的题会一直挂着，它不会替用户
- * 选一个选项 —— 交接去哪是产品决定，不是客户端的。
- *
- * ## 一个不能碰的时序
- *
- * 本文件被 `index.ts` **静态** import，而 `index.ts` 里 `process.env.NODE_ENV ||= "production"`
- * 那一行要等模块体求值才执行。所以这条 import 链上**不许出现 React / Ink**（判据是产物图：
- * `node scripts/check-imports.mjs dist/stdio.js --forbid tui/`）。
+ * 一个不能碰的时序：本文件被 `index.ts` 静态 import，而 `index.ts` 里
+ * `process.env.NODE_ENV ||= "production"` 那一行要等模块体求值才执行。所以这条 import 链上不许出现
+ * React / Ink（判据是产物图：`node scripts/check-imports.mjs dist/stdio.js --forbid tui/`）。
  */
 
 import { AgentNS } from "@ai-zen/agents-core";
@@ -45,38 +32,27 @@ import { toCoreMessages } from "./server-client/index.js";
 import { enterWorkspace, workspaceHost, type WorkspaceHost } from "./workspace.js";
 
 export interface StdioRunOptions {
-  /** 位置参数拼接而成的指令（可空，此时全部内容来自 stdin） */
   instruction: string;
-  /** 是否把这一次调用留成一段真会话（默认 false：一次性会话，跑完即散） */
   save: boolean;
-  /** 本进程的事实（配置根 / 显式地址与凭证）—— 由根（`CliApp`）递进来 */
   env: CliEnv;
-  /** 日志出口 —— 同样由根递进来 */
   logger: LogSink;
 }
 
 /**
  * 注入点（生产全用缺省值，测试喂一条假的连接与几个字符串出口）。
  *
- * `writeOut` / `writeErr` / `readInput` 单独留口子而不是让测试去 patch `process.*`：
- * 「stdout 只含答案」是本模式的全部契约，它必须能被直接断言。
+ * `writeOut` / `writeErr` / `readInput` 单独留口子而不是让测试去 patch `process.*`：「stdout 只含答
+ * 案」是本模式的全部契约，它必须能被直接断言。
  */
 export interface StdioRunDeps {
-  /** 那**一条**连接。缺省由本入口自己 `connectHost(options.env, …)` 连一条 */
   connection?: HostConnection;
-  /** 读 stdin；缺省 {@link readStdin}（TTY 时返回空串） */
   readInput?: () => Promise<string>;
-  /** 结果出口；缺省 `process.stdout.write` */
   writeOut?: (text: string) => void;
-  /** 日志出口；缺省 `process.stderr.write` */
   writeErr?: (line: string) => void;
-  /** 连那一条连接（缺省 {@link connectHost}）；用例喂一个会失败的假件 */
   connect?: (options: ConnectHostOptions) => Promise<ConnectedHost>;
-  /** 这次连的那台宿主的身份（是不是本机 + 记忆键） */
   host?: WorkspaceHost;
 }
 
-/** 向 stderr 写一行（stdlib 日志统一出口） */
 function logStderr(line: string): void {
   process.stderr.write(line.endsWith("\n") ? line : line + "\n");
 }
@@ -88,7 +64,7 @@ function writeStdout(text: string): void {
 /**
  * 读取全部 stdin 文本。
  *
- * stdin 为 TTY（没有管道）时返回空串 —— 那是「这次没管道内容」，不是失败。**读出错则原样抛**。
+ * stdin 为 TTY（没有管道）时返回空串：那是这次没管道内容，不是失败。读出错则原样抛。
  */
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return "";
@@ -112,7 +88,6 @@ export function mergePrompt(instruction: string, stdin: string): string {
   return body;
 }
 
-/** 从内容块中提取纯文本；非文本块（图片/文件）以占位文本表示 */
 export function extractText(content: AgentNS.MessageContent | undefined): string {
   if (content == null) return "";
   if (typeof content === "string") return content;
@@ -127,12 +102,10 @@ export function extractText(content: AgentNS.MessageContent | undefined): string
   return parts.join("\n");
 }
 
-/** 一条消息能不能当答案：不是空的、也不是失败的那条 */
 function isUsableAnswer(message: AgentNS.Message | undefined): message is AgentNS.Message {
   return message !== undefined && message.status !== AgentNS.MessageStatus.Error;
 }
 
-/** 最后一次跑出来的 AgentDefinition 消息 */
 function lastAnswer(messages: readonly AgentNS.Message[]): AgentNS.Message | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i]!;
@@ -142,10 +115,10 @@ function lastAnswer(messages: readonly AgentNS.Message[]): AgentNS.Message | und
 }
 
 /**
- * 等到这一段闲下来、且最后一条 AgentDefinition 消息不再「还在写」。
+ * 等到这一段闲下来、且最后一条 AgentDefinition 消息不再还在写。
  *
- * 事件是主要来路（每一条都重新看一眼），定时重查是「万一漏了一脚」的兜底 —— 与
- * `session.ts` 的 `waitForReply` 同一个口径：**没有「一轮」这个概念**，判据只有忙闲与消息状态。
+ * 事件是主要来路（每一条都重新看一眼），定时重查是兜底。与 `session.ts` 的 `waitForReply` 同一个口
+ * 径：没有「一轮」这个概念，判据只有忙闲与消息状态。
  */
 async function waitForAnswer(
   connection: HostConnection,
@@ -188,11 +161,10 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
   const writeOut = deps.writeOut ?? writeStdout;
 
   /**
-   * 这一台是怎么选的：显式地址 / 环境变量 > 落盘那份 `<aiZenDir>/cli/connection.json`。
+   * 这一台是怎么选的：显式地址 / 环境变量优先，其次落盘那份 `<aiZenDir>/cli/connection.json`。
    *
-   * 两样都没有 = **没配过** → 直接失败，**绝不**替用户拉起一个本地宿主。
-   *
-   * 判定放在**读 stdin 之前**：`cat 大文件 | ai "…"` 这种情况下没必要先把管道读完再报错。
+   * 两样都没有等于没配过，直接失败，不替用户拉起一个本地宿主。判定放在读 stdin 之前：
+   * `cat 大文件 | ai "…"` 这种情况下没必要先把管道读完再报错。
    */
   const settings = deps.connection ? null : await readConnectPlan(options.env);
   if (!deps.connection && !settings) {
@@ -234,9 +206,9 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
 
     if (!save) {
       /**
-       * 默认这条路**连会话都不建**：`runtime.agent.runOnce` 就是「投一句、跑到头、跑完即散」。
+       * 默认这条路连会话都不建：`runtime.agent.runOnce` 就是「投一句、跑到头、跑完即散」。
        *
-       * 本机可以直接给当前目录（**不登记项目**：一次管道调用不该往宿主的项目列表里塞东西）；
+       * 本机可以直接给当前目录（不登记项目：一次管道调用不该往宿主的项目列表里塞东西）；
        * 远端只能用「上次进入的那个项目」的目录 —— 那台机器上的目录只有用户知道。
        */
       const cwd = host.local ? process.cwd() : await remoteCwd(client, host, options.logger);
@@ -328,9 +300,9 @@ export async function runStdio(options: StdioRunOptions, deps: StdioRunDeps = {}
     return 1;
   } finally {
     /**
-     * 收尾两步的顺序不能反：**先卸会话、后断连接**。
+     * 收尾两步的顺序不能反：先卸会话、后断连接。
      *
-     * 连接**一定要**断（自己造的那条）：一条活 socket 会把进程钉在事件循环里。
+     * 连接一定要断（自己造的那条）：一条活 socket 会把进程钉在事件循环里。
      */
     session?.dispose();
     if (!deps.connection && client) await client.close();

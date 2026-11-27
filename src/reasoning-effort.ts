@@ -1,18 +1,15 @@
 /**
- * 思考档位 —— CLI 侧的**文案**，外加一处「读表」：AgentDefinition 上现在算哪一档。
+ * 思考档位在 CLI 侧的文案，外加一处「读表」：AgentDefinition 上现在算哪一档。
  *
- * ## 划分
+ * 会话级的档位现状由会话行给（`session.open` 的 `thinkingLevel`）：`session.setThinking` 写它、宿主
+ * 展开成参数，`session.ts` 的派生视图拼成 `ThinkingState`。AgentDefinition 级存的是展开后的参数
+ * （`AgentDefinition.modelParams`，配置即事实），所以「它现在算哪一档」只能由客户端拿档位表反查，
+ * 那就是 {@link agentThinkingOf}，与旧版 `reasoning-effort.ts` 的 `matchLevel` 是同一套算法。文案
+ * （` 低 ` / ` 跟随模型默认 ` / `—`）与状态栏那一格在 {@link thinkingView}。
  *
- *   - **会话级**的档位现状由会话行给（`session.open` 的 `thinkingLevel`）：
- *     `session.setThinking` 写它、宿主展开成参数，`session.ts` 的派生视图拼成 `ThinkingState`；
- *   - **AgentDefinition 级**的档位存的是**展开后的参数**（`AgentDefinition.modelParams`，这才是「配置即
- *     事实」），所以「它现在算哪一档」只能由客户端拿档位表反查 —— {@link agentThinkingOf}
- *     就是那一处，与旧版 `reasoning-effort.ts` 的 `matchLevel` 是同一套算法；
- *   - **文案**（` 低 ` / ` 跟随模型默认 ` / `—`）与状态栏那一格在 {@link thinkingView}。
- *
- * 档位表的**定义、出厂内容、读写**都在宿主（`config.get` 的 `presets`）。这里只「利用」它：
- * 列出可选档位、把现有参数反查成档位名、把选中的档位展开成参数交给
- * `agentDefinition.update`。不碰文件，也不认识哪家厂商。
+ * 档位表的定义、出厂内容与读写都在宿主（`config.get` 的 `presets`）。这里只利用它：列出可选档位、
+ * 把现有参数反查成档位名、把选中的档位展开成参数交给 `agentDefinition.update`。不碰文件，也不认识
+ * 哪家厂商。
  */
 
 import type { AgentDefinition, AppConfig, ReasoningPreset, ReasoningPresets } from "./config.js";
@@ -23,8 +20,8 @@ import { t } from "./i18n/index.js";
 /**
  * 已知档位名清单。
  *
- * 不设成穷举映射：档位名由宿主那侧的策略表定义（用户可以自建策略、自定档位名），
- * 未收录的名字直接显示原文，比显示「?」有用得多。文案本身在 i18n 词典的 `effort.<档位名>` 里。
+ * 不做穷举映射：档位名由宿主那侧的策略表定义（用户可以自建策略、自定档位名），未收录的名字直接显示
+ * 原文，比显示「?」有用。文案本身在 i18n 词典的 `effort.<档位名>` 里。
  */
 export const KNOWN_EFFORT_LEVELS: readonly string[] = [
   "off",
@@ -37,7 +34,6 @@ export const KNOWN_EFFORT_LEVELS: readonly string[] = [
   "max",
 ];
 
-/** 档位 → 显示文案（未收录的档位名原样显示） */
 export function effortLabel(level: string): string {
   return KNOWN_EFFORT_LEVELS.includes(level) ? t(`effort.${level}`) : level;
 }
@@ -45,8 +41,8 @@ export function effortLabel(level: string): string {
 /**
  * 档位的显示名（如「高」/「跟随模型默认」）。
  *
- * 汇总文案与选择器都得说同一个词，所以收在这里：命令层的 summary 各拼一句不同的句子，
- * 但里面那个档位名必须是同一个函数算出来的。
+ * 汇总文案与选择器都得说同一个词，所以收在这里：命令层的 summary 各拼一句不同的句子，但里面那个档位
+ * 名必须是同一个函数算出来的。
  */
 export function effortLabelText(effort: string | null): string {
   return effort === null
@@ -54,7 +50,6 @@ export function effortLabelText(effort: string | null): string {
     : t("effort.quoted", { label: effortLabel(effort) });
 }
 
-/** 这个模型能不能调档（不可调档时 `/think` 与状态栏都不该给出档位） */
 export function isAdjustable(thinking: ThinkingState): boolean {
   return thinking.source !== "not_adjustable" && thinking.levels.length > 0;
 }
@@ -72,7 +67,7 @@ function isOffLevel(level: string): boolean {
  *   - `manual`：现在就是某一档 → 档位名；`off` / `none` 置灰；
  *   - `following_default`：没设过档位，跟着模型默认走 → 「默认」，不置灰。
  *
- * 合成一个对象返回，是为了让调用方**一次取全** —— 分成两个函数容易出现「文案更新了、
+ * 合成一个对象返回，是为了让调用方一次取全 —— 分成两个函数容易出现「文案更新了、
  * 置灰没跟上」这种漂移。
  */
 export function thinkingView(thinking: ThinkingState): { text: string; dimmed: boolean } {
@@ -81,12 +76,10 @@ export function thinkingView(thinking: ThinkingState): { text: string; dimmed: b
     return { text: effortLabel(thinking.selected), dimmed: isOffLevel(thinking.selected) };
   }
   // 定义上带着属于这个策略的键、却凑不成任何一档 = 有人手写过参数。
-  // 它**不是**「默认」：说成默认会让用户以为那份没生效，或者再设一次把手写值覆盖掉。
+  // 它不是默认：说成默认会让用户以为那份没生效，或者再设一次把手写值覆盖掉。
   if (thinking.source === "custom") return { text: t("effort.custom"), dimmed: false };
   return { text: t("effort.default"), dimmed: false };
 }
-
-// ==================== 档位表（只「利用」，不定义） ====================
 
 /** 安全取自有属性（策略名来自用户配置，可能是 `constructor` / `__proto__`） */
 function own<T>(bag: Record<string, T> | undefined, key: string): T | undefined {
@@ -94,7 +87,6 @@ function own<T>(bag: Record<string, T> | undefined, key: string): T | undefined 
   return bag[key];
 }
 
-/** 模型引用的策略（没写 `reasoningPreset`、或表里没有那个名字 → `undefined`） */
 export function presetOf(
   presets: ReasoningPresets,
   name: string | null | undefined,
@@ -103,12 +95,11 @@ export function presetOf(
   return own(presets, name);
 }
 
-/** 某策略的全部档位（= `levels` 的键，顺序即声明顺序；空数组 = 不可调档） */
+/** 某策略的全部档位（`levels` 的键，顺序即声明顺序；空数组 = 不可调档） */
 export function levelsOf(preset: ReasoningPreset | undefined): string[] {
   return preset ? Object.keys(preset.levels ?? {}) : [];
 }
 
-/** 某策略某档的参数补丁 */
 export function patchOf(
   preset: ReasoningPreset | undefined,
   level: string,
@@ -117,9 +108,9 @@ export function patchOf(
 }
 
 /**
- * 整张表出现过的参数键 —— 「哪些键属于思考」由表自己声明，代码零硬编码。
+ * 整张表出现过的参数键：「哪些键属于思考」由表自己声明，代码零硬编码。
  *
- * 换档时按此剔除旧值：`max` → `off` 不会残留上一档的 `reasoning_effort`，而「表里没有的键」
+ * 换档时按此剔除旧值：`max` → `off` 不会残留上一档的 `reasoning_effort`，而表里没有的键
  * （`temperature` 之类）一律当普通参数原样留着。
  */
 export function ownedKeys(presets: ReasoningPresets): Set<string> {
@@ -132,7 +123,6 @@ export function ownedKeys(presets: ReasoningPresets): Set<string> {
   return keys;
 }
 
-/** 结构化相等 —— 补丁是纯 JSON，逐层比对即可 */
 function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
@@ -147,9 +137,7 @@ function sameValue(a: unknown, b: unknown): boolean {
 }
 
 /**
- * 反查：现有参数命中哪个档位（多张补丁同时命中取最具体的）。
- *
- * 纯展示用途 —— 界面要显示「定义上现在是第几档」。命中不了返回 `undefined`。
+ * 反查：现有参数命中哪个档位（多张补丁同时命中取最具体的）。纯展示用途，命中不了返回 `undefined`。
  */
 export function matchLevel(
   preset: ReasoningPreset | undefined,
@@ -169,16 +157,14 @@ export function matchLevel(
 }
 
 /**
- * 一条 AgentDefinition**现在**的思考档位现状（派生视图，与 `session/types.ts` 的 `ThinkingState` 同形）。
+ * 一条 AgentDefinition 现在的思考档位现状（派生视图，与 `session/types.ts` 的 `ThinkingState` 同形）。
  *
- * 生效模型按三级解析的第二、三级算（`definition.modelId` → `config.defaultModel`）—— 定义上
- * 那一层写的是什么，决定的就是「用这个 AgentDefinition 新开的会话」会拿到哪一档，而会话级覆盖另有一格。
+ * 生效模型按三级解析的第二、三级算（`definition.modelId` → `config.defaultModel`）：定义上那一层写的
+ * 是什么，决定用这个 AgentDefinition 新开的会话会拿到哪一档，而会话级覆盖另有一格。
  *
- * 四个 `source` 的含义：
- *   · `not_adjustable`：模型没有策略，或策略里一档都没有；
- *   · `following_default`：定义上没有任何思考参数（跟随模型 `defaultParams`）；
- *   · `manual`：定义上的参数正好凑成某一档；
- *   · `custom`：定义了思考参数，但凑不成任何一档（有人手写过）。
+ * 四个 `source` 的含义：`not_adjustable` = 模型没有策略，或策略里一档都没有；`following_default` =
+ * 定义上没有任何思考参数（跟随模型 `defaultParams`）；`manual` = 定义上的参数正好凑成某一档；
+ * `custom` = 定义了思考参数但凑不成任何一档（有人手写过）。
  */
 export function agentThinkingOf(
   definition: AgentDefinition,
@@ -201,13 +187,13 @@ export function agentThinkingOf(
 }
 
 /**
- * 「定义上的 `modelParams` 应该长成什么」—— 换一档（或清掉）之后的那一份。
+ * 定义上的 `modelParams` 换成某一档（或清掉）之后应该长成什么。
  *
- * 先剔除整张表出现过的键（新旧档位不混），再合并新档的补丁；`level === null` 就是只剔除。
- * 不思考的那些参数（`temperature` 之类）原样留着 —— 那一格不归这一层管。
+ * 先剔除整张表出现过的键（新旧档位不混），再合并新档的补丁；`level === null` 就是只剔除。不思考的
+ * 参数（`temperature` 之类）原样留着，那一格不归这一层管。
  *
- * 空的返回值保持 `{}` 而不是删掉这一格：`agentDefinition.update` 是合并语义（`undefined` =
- * 不改这一项），所以「清掉思考参数」在 wire 上就是一份剔干净的参数表。
+ * 空的结果保持 `{}` 而不是删掉这一格：`agentDefinition.update` 是合并语义（`undefined` = 不改这一
+ * 项），所以「清掉思考参数」在 wire 上就是一份剔干净的参数表。
  */
 export function modelParamsWithLevel(
   current: Record<string, unknown> | undefined,

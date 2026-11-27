@@ -1,12 +1,11 @@
 /**
- * English entries — Configuration center (`/config` wizard).
+ * English entries for the configuration center (`/config` wizard).
  *
- * Kept separate from `en.ts`: the wizard is the densest text area in the CLI. `index.ts`
- * merges both tables, so `t()` sees one map. Copy rules follow the header of `zh.ts`:
- * one word per concept, parentheses carry facts only, no field names, no markdown.
+ * Kept separate from `en.ts` because the wizard is the densest text area in the CLI; `index.ts`
+ * merges both tables, so `t()` sees one map. The copy rules are the ones listed in the `zh.ts`
+ * header: one word per concept, parentheses carry facts only, no field names, no markdown.
  */
 export const en: Record<string, string> = {
-  // ---------- Field labels (reused heavily) ----------
   "field.name": "Name",
   "perm.tools": "Tools",
   "perm.skills": "Skills",
@@ -26,7 +25,6 @@ export const en: Record<string, string> = {
   "field.functionDescription": "Function description",
   "field.paramsSchema": "Params schema",
 
-  // ---------- Common ---------------------------------------------------
   "common.yes": "Yes",
   "common.no": "No",
   "common.empty": "(empty)",
@@ -38,7 +36,6 @@ export const en: Record<string, string> = {
   "common.linesWithEditor": "{n} lines · Enter to edit",
   "common.bodyWithEditor": "{text} · Enter to edit",
 
-  // ---------- Validation messages ----------
   "err.nameRequired": "Name cannot be empty",
   "err.baseUrlScheme": "The base URL must start with http:// or https://",
   "err.apiKeyRequired": "The API key cannot be empty",
@@ -49,7 +46,6 @@ export const en: Record<string, string> = {
   "err.paramsSchemaNotObject": "Params schema must be a JSON object (like {})",
   "err.jsonParseFailed": "Failed to parse JSON: {error}",
 
-  // ---------- More field labels (MCP / agent detail) ----------
   "field.transport": "Transport",
   "field.command": "Command",
   "field.args": "Arguments",
@@ -64,7 +60,7 @@ export const en: Record<string, string> = {
   "common.transportMode": "Transport type",
   "common.enabledState": "Enabled state",
 
-  // ---------- Persist feedback (full sentences — parameterised, never concatenated) ----------
+  // Persist feedback: full sentences, parameterised rather than concatenated
   "wiz.endpointUpdated": "Endpoint {name}: {label} updated",
   "wiz.modelUpdated": "Model {name}: {label} updated{suffix}",
   "wiz.imageModelUpdated": "Image model {name}: {label} updated{suffix}",
@@ -74,7 +70,6 @@ export const en: Record<string, string> = {
   "wiz.agentPermissionUpdated": "{kind} {id}: {dim} permission updated",
   "wiz.presetLevels": "{name} ({levels})",
 
-  // ---------- Shared buttons / actions ----------
   "ui.save": "Save",
   "ui.cancel": "Cancel",
   "ui.back": "Back",
@@ -99,7 +94,6 @@ export const en: Record<string, string> = {
   "ui.delete": "Delete",
   "ui.plainOrMasked": "Plain / masked",
 
-  // ---------- Config center home ----------
   "wiz.menu.title": "◆ Configuration",
   "wiz.menu.hint": "Changes apply immediately — nothing to save.",
   "wiz.menu.endpoints": "Endpoints",
@@ -125,7 +119,6 @@ export const en: Record<string, string> = {
   "wiz.irreversible": "{title} — this cannot be undone",
   "wiz.confirmAction": "Confirm {label}",
 
-  // ---------- Lists / KV editor / prompt ----------
   "wiz.listEmpty": "  (no options)",
   "wiz.truncated": "  ({n} total, showing the first {m})",
   "wiz.kvTitle": "{title} · {mode}",
@@ -145,7 +138,6 @@ export const en: Record<string, string> = {
   "common.noUrl": "(no URL set)",
   "common.noCommand": "(no command set)",
 
-  // ---------- Models / image models (list · detail · create) ----------
   "wiz.kind.custom": "custom",
   "wiz.kind.factory": "factory",
   "wiz.modelKind.visionSuffix": " · vision",
@@ -179,7 +171,6 @@ export const en: Record<string, string> = {
   "wiz.imageModels.createTitle": "New image model · name",
   "wiz.imageModels.created": "Created image model {name} ({id}, marked as custom)",
 
-  // ---------- Agent definitions (list · detail · permissions · text editing · create) ----------
   "wiz.agents.new": "+ New agent",
   "wiz.agents.newHint": "top-level agent (can become the default)",
   "wiz.agents.title": "◆ Agents",
@@ -197,7 +188,6 @@ export const en: Record<string, string> = {
   "wiz.agent.newDescAgent": "After creating, pick it as the default under Defaults → Default agent",
   "wiz.agent.created": "Created {kind} {name} ({id})",
 
-  // ---------- Tool output limit / direct endpoint field editing ----------
   "wiz.maxToolOutput.title": "Tool output limit (characters)",
   "wiz.currentLine": "Current: {value}",
   "wiz.maxToolOutput.desc":
@@ -213,7 +203,6 @@ export const en: Record<string, string> = {
   "wiz.apiKey.saveAndEnter": "Save & enter",
   "ui.discard": "Discard",
 
-  // ---------- 首启引导（选服务商 → 填密钥 → 定首要模型）----------
   "wiz.onboard.title": "First-time setup · pick a provider",
   "wiz.onboard.desc":
     "Pick a provider and enter its API key; its primary model is then set as the default model (change it later in /config)",
@@ -228,7 +217,6 @@ export const en: Record<string, string> = {
   "wiz.baseUrl.title": "Set the base URL · {name}",
   "wiz.baseUrl.hint": "Must start with http:// or https:// (OpenAI-compatible endpoint)",
 
-  // ---------- MCP servers / defaults ----------
   "wiz.mcp.switchScope": '⇄ Switch to the "{scope}" layer',
   "wiz.mcp.serverCount": "{n} server(s)",
   "wiz.mcp.newItem": "+ New server",
@@ -278,7 +266,6 @@ export const en: Record<string, string> = {
     "Restore the whole round and give unfinished results a reason; tool calls must pair with results",
   "wiz.strategy.toolDropHint":
     "Drop the whole round: neither the assistant message nor its tool results are sent",
-  // ---------- Endpoints list / new endpoint ----------
   "ui.next": "Next",
   "common.listSep": ", ",
   "wiz.endpoints.newItem": "+ New endpoint",
@@ -302,12 +289,10 @@ export const en: Record<string, string> = {
   "wiz.newEndpoint.created": "Added endpoint {name} ({id}){suffix}",
   "wiz.newEndpoint.keyPending": " · no API key yet",
 
-  // ---------- Write failures / editor / leftovers ----------
   "wiz.agentDeleted": "Deleted {kind} {id}",
   "wiz.kvAddRow": "+ Add",
   "wiz.plaintextRevealed": "⚠ Showing plaintext (Tab goes back to masked)",
 
-  // ---------- config-editor shared: summaries / validation / transports ----------
   "common.noEndpoints": "no endpoints",
   "common.kvSummary": "{n} entries ({keys})",
   "common.permissionSummary": "{n} dimension(s) ({dims})",
@@ -322,8 +307,6 @@ export const en: Record<string, string> = {
   "vendor.dashscope": "Alibaba Cloud Bailian (DashScope)",
   "vendor.openaiCompatible": "OpenAI-compatible endpoint",
 
-  // ---------- config wizard: agent store ----------
-  // ---------- contract vocabulary / apply reports / gap notes ----------
   "scope.user": "user",
   "scope.workspace": "workspace",
   "field.thinking": "Reasoning effort",
@@ -356,8 +339,8 @@ export const en: Record<string, string> = {
   "wiz.mcp.oauthSecretUnset": "Client secret: not set",
   "wiz.mcp.newItemHint": "stdio by default; fill in command, args and env afterwards",
 
-  // ---------- The cost shown before a destructive action (PRD 1.6) ----------
-  // Every line states a fact countable from the config already in hand; no number when it can't be counted.
+  // The cost shown before a destructive action: every line states a fact countable from the config
+  // already in hand, and gives no number when it cannot be counted
   "wiz.endpoints.deleteCostModels":
     "{n} model(s) still hang on it: {names} — the host refuses this delete until they are moved or removed",
   "wiz.endpoints.deleteCostImageModels":

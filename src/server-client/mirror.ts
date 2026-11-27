@@ -1,22 +1,20 @@
 /**
- * 一段会话的**客户端镜像** —— `session.open` 一次取全，之后按 `HostEvent` 增量。
+ * 一段会话的客户端镜像：`session.open` 一次取全，之后按 `HostEvent` 增量。
  *
- * ## 为什么镜像回到 CLI 这一侧
+ * 镜像放在 CLI 这一侧，因为新契约里没有增量事件：流式期间宿主每片都推一条 `message.changed`，
+ * 载荷是整条消息，于是「攒」不需要任何规则 —— 一条消息一个 `id`，来了就整条替换。旧连接层自己
+ * 维护镜像，是因为它认得 `message.delta` 怎么折进消息，那套规则已经不存在。剩下的判断只有一条：
+ * 这条事件是不是这一段会话的。
  *
- * 旧连接层自己维护镜像（`SessionMirror` + `Client.open/resync`），因为它认得那套
- * 「`message.delta` 怎么折进消息」的增量规则。新契约里**没有增量事件**：流式期间宿主每片都推
- * 一条 `message.changed`，载荷是**整条消息**。于是「攒」这件事不需要任何规则 —— 一条消息一个
- * `id`，来了就整条替换。剩下的判断只有一条：这条是不是这一段会话的。
+ * `HostConnection.open(sessionId)` 打一次 `session.open`，把 `session` / `live` / `messages` /
+ * `inbox` 四格一次铺好；之后每来一条 `HostEvent` 就按它改一格。
  *
- * 所以镜像搬回 CLI：`HostConnection.open(sessionId)` 打一次 `session.open`，把 `session` /
- * `live` / `messages` / `inbox` 四格一次铺好；之后每来一条 `HostEvent` 就按它改一格。
+ * 三处容易读错的地方：
  *
- * ## 钉住的三件事
- *
- * 1. **死活不等事件**：`live !== null` 就是 `alive: true`，`live === null` 就是 `alive: false`
- *    （口径⑥：没有 Agent 就是死的，这是打开那一刻的事实，不必等 `agent.alive`）；
- * 2. **subagent 的话单独一栏**：`subagent.message` 带 `toolCallId`，它不进主转录；
- * 3. **inbox 只是读数的副本**：宿主只在 `agent.inbox` 里报它，所以打开时取一次、之后按事件换。
+ * 1. 死活不等事件：`live !== null` 就是 `alive: true`，它等于 `false` 就是死的 —— 这是打开那一刻
+ *    的事实，不必等 `agent.alive`；
+ * 2. subagent 的话单独一栏：`subagent.message` 带 `toolCallId`，它不进主转录；
+ * 3. inbox 只是宿主报出来的读数副本：打开时取一次，之后按事件换。
  */
 
 import { AgentNS } from "@ai-zen/agents-core";
@@ -24,9 +22,8 @@ import type { HostEvent } from "./index.js";
 import type { InboxItem, SessionActivity, SubAgentFact } from "../session/types.js";
 
 /**
- * 一条事件属于哪一段会话（不属于任何一段的就是 `null`）。
+ * 一条事件属于哪一段会话，不属于任何一段时是 `null`。
  *
- * 两格是可省的（`notice.cleared` 不带就是「全部」；`session.changed` 把整行带在 `session` 上）。
  * 写成函数是因为 `"sessionId" in event` 这种写法在联合上会窄化成 `string | undefined`。
  */
 export function sessionIdOf(event: HostEvent): string | null {
@@ -36,13 +33,12 @@ export function sessionIdOf(event: HostEvent): string | null {
   return event.sessionId;
 }
 
-/** `session.open` 回来的那一份（出参原样，只改名字） */
 /**
- * `session.open` 回来的那一份（出参原样，只改名字）。
+ * `session.open` 回来的那一份，出参原样，只改名字。
  *
- * 消息与排队区的类型写 `unknown[]` 是**故意的**：它们过了一条 JSON 通道，字段一个不少，但类实例
- * 上的方法（`AgentError.toJSON` 之类）不在了 —— 而 `AgentNS.Message` 是**类实例的形状**。
- * 两边只在同一个进程内读字段，所以进镜像时用 {@link toCoreMessages} 一次收成 core 的类型。
+ * 消息与排队区的类型写 `unknown[]` 是故意的：它们过了一条 JSON 通道，字段一个不少，但类实例上的
+ * 方法（`AgentError.toJSON` 之类）不在了，而 `AgentNS.Message` 是类实例的形状。进镜像时用
+ * {@link toCoreMessages} 收成 core 的类型。
  */
 export interface SessionOpenView {
   session: MirrorSessionRow;
@@ -59,19 +55,19 @@ export interface SessionOpenView {
 /**
  * wire 上的消息 → core 的 `Message`。
  *
- * 只是把「过了 JSON 通道之后只剩字段」这件事说一次（见 {@link SessionOpenView}）：调用方读的
- * 全是字段（`role` / `content` / `status` / `usage`），一个方法都不调。
+ * 转换只是把「过了 JSON 通道之后只剩字段」这件事说一次：调用方读的全是字段（`role` / `content` /
+ * `status` / `usage`），一个方法都不调。
  */
 export function toCoreMessages(messages: readonly unknown[]): AgentNS.Message[] {
   return messages as AgentNS.Message[];
 }
 
-/** 同上：排队 InboxEntry → core 的 `InboxEntry` */
+/** 排队 InboxEntry → core 的 `InboxEntry`，同一个理由 */
 function toInboxEntries(entries: readonly unknown[]): AgentNS.InboxEntry[] {
   return entries as AgentNS.InboxEntry[];
 }
 
-/** 会话行（宿主 `session.open` 出参里的 `session`，字段一个不改） */
+/** 宿主 `session.open` 出参里的 `session`，字段一个不改 */
 export interface MirrorSessionRow {
   id: string;
   workspaceId: string;
@@ -90,13 +86,13 @@ export interface MirrorSessionRow {
   updatedAt: number;
 }
 
-/** 一栏 subagent 的话（`toolCallId` 是它挂在哪次工具调用上） */
+/** 一路 subagent 说过的话，按它挂在的那次工具调用分组 */
 export interface SubAgentColumn {
   toolCallId: string;
   messages: AgentNS.Message[];
 }
 
-/** 镜像快照（每次读都现拼，不是第二份状态） */
+/** 每次读都现拼，不是第二份状态 */
 export interface MirrorSnapshot {
   sessionId: string;
   session: MirrorSessionRow;
@@ -110,13 +106,12 @@ export interface MirrorSnapshot {
   inbox: InboxItem[];
 }
 
-/** 一段会话的镜像 */
 export class SessionMirror {
   readonly sessionId: string;
   session: MirrorSessionRow;
 
   private messagesValue: AgentNS.Message[] = [];
-  /** subagent 那一栏：`toolCallId` → 它说过的话（顺序即到达顺序） */
+  /** `toolCallId` → 它说过的话（顺序即到达顺序） */
   private readonly columns = new Map<string, AgentNS.Message[]>();
   private statusValue: SessionActivity | null = null;
   private inputPausedValue: boolean | null = null;
@@ -137,12 +132,10 @@ export class SessionMirror {
     return this.messagesValue;
   }
 
-  /** 名册（从主体里那些工具调用、各栏、以及委派工具那条结果消息推出来，见 {@link rosterOf}） */
   get roster(): SubAgentFact[] {
     return rosterOf(this.messagesValue, this.columns);
   }
 
-  /** 某一路 subagent 说过的话（没有那一栏就是空数组） */
   subAgent(toolCallId: string): readonly AgentNS.Message[] {
     return this.columns.get(toolCallId) ?? [];
   }
@@ -160,7 +153,6 @@ export class SessionMirror {
     this.statusValue = view.live?.state ?? null;
     this.inputPausedValue = view.live?.inputPaused ?? null;
     this.outputPausedValue = view.live?.outputPaused ?? null;
-    // 口径⑥：有 Agent 才是活的，没有就是死的 —— 这是打开那一刻的事实
     this.aliveValue = view.live !== null;
     this.handingOffValue = view.live?.handingOff ?? false;
     this.opened = true;
@@ -233,7 +225,7 @@ export class SessionMirror {
     };
   }
 
-  /** 主转录里那条（同 id 就地替换，新的追加在后面） */
+  /** 主转录里那条：同 id 就地替换，新的追加在后面 */
   private putMessage(message: AgentNS.Message): void {
     const index = this.messagesValue.findIndex((item) => item.id === message.id);
     if (index < 0) {
@@ -245,7 +237,6 @@ export class SessionMirror {
     this.messagesValue = next;
   }
 
-  /** subagent 那一栏里那条（同上：同 id 就地替换） */
   private putSubAgentMessage(toolCallId: string, message: AgentNS.Message): void {
     const column = this.columns.get(toolCallId) ?? [];
     const index = column.findIndex((item) => item.id === message.id);
@@ -259,33 +250,31 @@ export class SessionMirror {
 /**
  * 名册：主体里每一次 `subagent` 委派 → 一行。
  *
- * 宿主这一版**不再报名册**（旧 `session.state.subAgents` 那一格没了），能读的只有事实：
+ * 宿主这一版不报名册（旧 `session.state.subAgents` 那一格没了），能读的只有事实：
  *
  *   · `toolCallId` —— 那些 `subagent.message` 事件带过来的；
- *   · 工具名 —— 主体里那次委派的 `tool_calls[].function.name`（真事实，不是猜的）；
- *   · 状态 —— **那次委派的工具结果消息定型了没有**：`role: "tool"` 且 `tool_call_id` 就是
- *     这个 `toolCallId` 的那条，状态不再是 `pending` / `writing` 就是「这一趟真的回来了」，
- *     否则 `working`。一条话都没有时也按 `working`（它刚被派出去）。
+ *   · 工具名 —— 主体里那次委派的 `tool_calls[].function.name`；
+ *   · 状态 —— 那次委派的工具结果消息定型了没有：`role: "tool"` 且 `tool_call_id` 就是这个
+ *     `toolCallId` 的那条，状态不再是 `pending` / `writing` 就是这一趟真的回来了，否则 `working`。
+ *     一条话都没有时也按 `working`（它刚被派出去）。
  *
- * ## 为什么不看「那一栏最后一条消息定型了没有」
+ * 为什么不看「那一栏最后一条消息定型了没有」：那是早先的判据，错在把「它说完了这一句」当成了
+ * 「它干完了这趟活」。core 里 assistant 消息定型（`status = completed` + `responseFinished`）发生在
+ * 工具开跑之前（`core/src/Agent.ts` 的 `runTurn`：定型 → `runTools`），而 ReActLoop 的常态正是
+ * 「说一句带 tool_calls 的话，去跑一个可能几分钟的工具，再说一句」。按那个判据，subagent 吐出第一句
+ * 话的那一刻它就被判成 `ended`，屏幕上的圆点变灰、`notice.subAgentDone` 直接弹「已完成」，而它其实
+ * 正卡在工具里。
  *
- * 那是早先的判据，错在把「它说完了这一句」当成了「它干完了这趟活」：core 里 assistant 消息
- * 定型（`status = completed` + `responseFinished`）发生在**工具开跑之前**
- * （`core/src/Agent.ts` 的 `runTurn`：定型 → `runTools`），而 ReActLoop 的常态正是「说一句带
- * tool_calls 的话 → 去跑一个可能几分钟的工具 → 再说一句」。按那个判据，subagent 吐出第一句话
- * 的那一刻它就被判成 `ended`，屏幕上那个圆点变灰、`notice.subAgentDone` 直接弹「已完成」，
- * 而它其实正卡在工具里。
- *
- * 委派工具自己那条 tool 消息没有这个问题：`AgentToolLazy.exec` 是 `runOnce()` 返回**之后**才
- * 交回结果的，所以那条消息定型 ⇔ 这个 subagent 这一趟结束。它还有两个好处：是主转录里的事实
- *（不是推的），并且随消息入库 —— 重开一段会话也读得到。
+ * 委派工具自己那条 tool 消息没有这个问题：`AgentToolLazy.exec` 是 `runOnce()` 返回之后才交回结果
+ * 的，所以那条消息定型等价于这个 subagent 这一趟结束。它还有两个好处：是主转录里的事实而不是推的，
+ * 并且随消息入库，重开一段会话也读得到。
  */
 function rosterOf(
   messages: readonly AgentNS.Message[],
   columns: ReadonlyMap<string, AgentNS.Message[]>,
 ): SubAgentFact[] {
   const names = new Map<string, string>();
-  /** 这一趟真的回来了的那些工具调用（判据见上） */
+  /** 委派工具的结果消息已定型的那些调用 */
   const returned = new Set<string>();
   for (const message of messages) {
     for (const call of message.tool_calls ?? []) {
@@ -315,8 +304,8 @@ function rosterOf(
  *
  * 旧版这一行是宿主拼好的（`InboxItem.preview`）；新契约给的是 core 的 `InboxEntry` 原样，所以
  * 摘要由这里现拼：文本段按顺序拼接、空白折叠、超 120 字截断加 `…`，非文本段记 `[图片]` /
- * `[文件]`。**没有正文的 InboxEntry（「钥匙」）直接丢掉**：它不是一句话，排队区说的是「还有几句没
- * 送出去」。
+ * `[文件]`。没有正文的 InboxEntry 直接丢：它不是一句话，排队区说的是「还有几句没送
+ * 出去」。
  */
 function inboxItemOf(entry: AgentNS.InboxEntry): InboxItem[] {
   if (entry.content === undefined) return [];
@@ -326,14 +315,13 @@ function inboxItemOf(entry: AgentNS.InboxEntry): InboxItem[] {
       messageId: id,
       source: entry.source ?? { kind: "system", label: "" },
       createdAt: entry.createdAt,
-      // 优先级原样带出去：界面上要说清「它为什么还没被取走」（`high` 在工具边界就取、`low` 等这一批跑完）
+      // 优先级原样带出去：界面要说清它为什么还没被取走（`high` 在工具边界就取、`low` 等这一批跑完）
       priority: entry.priority,
       preview: previewOf(entry.content),
     },
   ];
 }
 
-/** 一段内容 → 一行摘要（口径见 {@link inboxItemOf}） */
 function previewOf(content: AgentNS.MessageContent): string {
   const text =
     typeof content === "string"

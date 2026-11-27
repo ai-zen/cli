@@ -1,13 +1,12 @@
 /**
- * English entries — the fallback language.
+ * English entries: the fallback language.
  *
- * 约定与 `zh.ts` 一致（不做复数变体：数量词直接写 `(s)`），文案口径也照 `zh.ts` 文件头：
- * 一个概念一个词（host / workspace / session / agent / model / endpoint / tool /
- * skill / MCP server / reasoning effort）、括号只放事实、命令说明动词开头且尽量短、
- * 状态符号只用 `✖` / `⚠`、不写 markdown。
+ * Keys, placeholders and copy rules match `zh.ts`: one word per concept (host / workspace / session /
+ * agent / model / endpoint / tool / skill / MCP server / reasoning effort), parentheses carry facts
+ * only, command descriptions start with a verb and stay short, status symbols are `✖` / `⚠` only, no
+ * markdown, and no plural variants (quantities are written with `(s)`).
  */
 export const en: Record<string, string> = {
-  // ---------- Input row ----------
   "input.placeholder": "Type a message, / commands, @ files…",
   "input.hint.ready": "Enter send · Ctrl+J newline · / commands · PgUp history",
   "input.hint.paused": "Esc resume · Enter send · Ctrl+J newline · PgUp history",
@@ -16,12 +15,10 @@ export const en: Record<string, string> = {
   "mention.scanning": "Reading workspace files…",
   "input.pastedImages": "{n} attached · Ctrl+V add more · Esc to clear",
 
-  // ---------- Status bar ----------
-  // Four blocks (identity / usage / rate / keys): the identity separators and
-  // labels live in these entries so each language defines them once.
-  // The two usage numbers are summed by the client from each message's `usage`
-  // (the host neither counts nor stores nor reports them); NBSP keeps the number
-  // and its unit on one line when the bar wraps.
+  // Status bar: four blocks (identity / usage / rate / keys). The identity separators and labels live
+  // in these entries, so each language defines them once. The two usage numbers are summed by the
+  // client from each message's `usage` (the host neither counts nor stores nor reports them); NBSP keeps
+  // the number and its unit on one line when the bar wraps.
   "status.busy": "working",
   "status.idle": "idle",
   "status.inputPaused": "input paused",
@@ -33,7 +30,6 @@ export const en: Record<string, string> = {
   "status.totalTokens": "total\u00a0{n}\u00a0tok",
   "status.avgRate": "⚡\u00a0avg\u00a0{rate}",
 
-  // ---------- Reasoning effort ----------
   "effort.off": "off",
   "effort.none": "off",
   "effort.minimal": "minimal",
@@ -46,9 +42,9 @@ export const en: Record<string, string> = {
   "effort.custom": "custom",
   "effort.unsupported": "—",
 
-  // ---------- Generation phases (message-area spinner; the six phases live in `src/session-phase.ts`) ----------
-  // "Waiting in queue" = your words are still in the inbox; "awaiting first token" = the request is out
-  // and not a single character has come back yet.
+  // Generation phases (message-area spinner; the six phases live in `src/session-phase.ts`): "waiting in
+  // queue" means the words are still in the inbox, "awaiting first token" means the request is out and
+  // not a single character has come back yet.
   "phase.working": "Working…",
   "phase.connecting": "Connecting…",
   "phase.waitingFirstToken": "Awaiting first token…",
@@ -60,13 +56,12 @@ export const en: Record<string, string> = {
   "phase.streaming": "Streaming…",
   "phase.handoff": "Handing off…",
 
-  // ---------- Inbox band (the pending lines above the input, `InboxArea`) ----------
-  // Prefix for lines the user posted themselves; other sources (`session` …) show their name as-is
+  // Inbox band: the pending lines above the input (`InboxArea`). The prefix is for lines the user
+  // posted; other sources (`session` …) show their name as-is
   "inbox.pending": "pending",
   // When only the first two lines fit, the last line says how many are left (the hidden count)
   "inbox.more": "{n} more waiting",
 
-  // ---------- Notices ----------
   "notice.reloaded": "Session rebuilt with the new config (messages and context kept)",
   "notice.draftSaved": "Draft saved (Ctrl+S to restore)",
   "notice.draftRestored": "Draft restored",
@@ -81,8 +76,8 @@ export const en: Record<string, string> = {
   "notice.handoffBlocksInput":
     "Handing off, so this message was not sent. Esc aborts the handoff and rolls back to the state before it",
   "notice.handoffAborted": "Handoff aborted, memory rolled back",
-  // A sub-agent finished / failed / was stopped (PRD 3.9). {error} is the host's own wording,
-  // passed through verbatim; when the host gives no reason the variant without one is used
+  // A sub-agent finished / failed / was stopped. {error} is the host's own wording, passed through
+  // verbatim; when the host gives no reason the variant without one is used
   "notice.subAgentDone": "Sub-agent {name} finished",
   "notice.subAgentFailed": "Sub-agent {name} failed",
   "notice.subAgentFailedWhy": "Sub-agent {name} failed: {error}",
@@ -116,7 +111,6 @@ export const en: Record<string, string> = {
     "The image came back, but this machine has no usable open command (tried {command}): the file is at {path}",
   "notice.imageOpenFailed":
     "The system could not open it ({command} exited {code}): the file is at {path}",
-  // ---------- Command descriptions (/help & slash menu) ----------
   "cmd.load.desc": "Open a saved session (--all: all workspaces)",
   "cmd.sessions.desc": "List sessions and switch (--all crosses workspaces)",
   "cmd.ws.desc": "Workspace: list, pick, create, delete",
@@ -147,8 +141,8 @@ export const en: Record<string, string> = {
   "cmd.title.unchanged": "The model offered no usable name; the name is unchanged",
   "cmd.title.failed": "Naming failed: {error}",
   "cmd.editor.desc": "Compose a long message in your editor",
-  // `/clear` clears the screen only, `/free` drops the queue only (one command, one job);
-  // the old "drops queued messages" half moved to `cmd.free.*`
+  // `/clear` clears the screen only, `/free` drops the queue only (one command, one job); the half that
+  // used to clear the queue as a side effect moved to `cmd.free.*`
   "cmd.clear.desc": "Clear the screen (queue: /free)",
   "cmd.free.desc": "Drop queued messages not sent yet",
   "cmd.free.inboxCleared": "Dropped {n} queued message(s)",
@@ -168,21 +162,20 @@ export const en: Record<string, string> = {
   "cmd.handoff.desc": "Write the handoff document only (no memory swap)",
   "cmd.migrate.desc": "Write the document and swap now (old one archived)",
   "cmd.help.desc": "Show this help",
-  // `/kill` removes the agent, the session row and history stay; `/delete` is a hard delete (PRD 1.2 / 4.1)
+  // `/kill` removes the agent and keeps the session row and its history; `/delete` is a hard delete
   "cmd.kill.desc": "Kill this session's agent (history stays)",
   "cmd.delete.desc": "Delete this session: messages and assets go too",
   "cmd.shutdown.desc": "Shut the host down, back to the connect screen",
   "cmd.exit.desc": "Quit the CLI (the host keeps running)",
   "cmd.running": "Running /{name}…",
-  /** Catch-all outlet: commands that don't catch themselves report server failures here */
+  /** Commands that do not catch their own failures report server failures here, through `runCommand` */
   "cmd.failed": "Command /{name} failed: {error}",
 
-  // ---------- Command interaction text (notices / pickers) ----------
   "common.current": " (current)",
   /** Separator when listing several names (e.g. "Waiting for edit, exec…") */
   "common.listSeparator": ", ",
   "cmd.model.noModels": "No models configured yet — use /config to add endpoints and models",
-  // One picker for all three levels: title says which level you edit **and** which one is in effect
+  // One picker for all three levels: the title says which level is edited and which one is in effect
   "cmd.model.title": "Switch model · {scope} · {endpoint} (in effect: {level})",
   "cmd.model.endpointTitle": "Choose a provider · {scope} (in effect: {level})",
   "cmd.model.endpointHint": "{count} models",
@@ -223,9 +216,11 @@ export const en: Record<string, string> = {
   "cmd.upgrade.backToConnect":
     "The host is being relaunched as v{version}; reconnect once it is back",
   "cmd.think.followDefault": "Follow the model default",
-  // 参数跟着「模型来自哪一级」走：模型是本段会话换的时，参数也写在这一段
+  // The params follow the level the model comes from: when the model was switched for this session, the
+  // params are written to this session too
   "cmd.think.clearHintSession": "Remove this session's reasoning params",
-  // AgentDefinition 级那一项清的是**定义文件**里的思考参数（影响所有用这个 AgentDefinition 的会话）
+  // The AgentDefinition-level entry clears the params in the definition file, which affects every session
+  // that uses this AgentDefinition
   "cmd.think.clearHintAgent": "Remove the agent's reasoning params",
   "cmd.think.cancelled": "Reasoning effort change cancelled",
   "cmd.think.unchanged": "Reasoning effort unchanged",
@@ -268,8 +263,8 @@ export const en: Record<string, string> = {
   "cmd.ws.createFailed": "Could not create the workspace: {error}",
   "cmd.ws.unknownArg":
     "Unknown argument: {arg} (usage: /ws, or /ws new [absolute path], or /ws delete <name or id>)",
-  // Deleting a workspace: its sessions go with it (PRD 1.5) and the directory itself is never touched.
-  // Both facts have to be said out loud, or the user will read "/ws delete" as "delete that directory".
+  // Deleting a workspace takes its sessions with it and leaves the directory untouched. Both facts have
+  // to be said, or the user reads "/ws delete" as "delete that directory".
   "cmd.ws.deleteUsage": "Usage: /ws delete <name or id> (/ws lists the ones that exist)",
   "cmd.ws.deleteUnknown":
     'No workspace called "{arg}": /ws lists the ones that exist, and both name and id work',
@@ -298,8 +293,8 @@ export const en: Record<string, string> = {
   "cmd.shutdown.confirm": "Shut down, disconnecting other clients",
   "cmd.shutdown.cancel": "Cancel",
   "cmd.shutdown.cancelled": "Host shutdown cancelled",
-  // Killing the executor: show the cost (queued entries are voided) first; the session and its history stay
-  // (PRD 1.2 "only three ways to die", 4.1 "interrupt is not kill")
+  // Killing the executor: show the cost (queued entries are voided) first; the session and its history
+  // stay, because an interrupt is not a kill
   "cmd.kill.title":
     'Kill "{name}"? {pending} entries still waiting in the inbox get voided and the in-flight request is cut; this session and its history stay — only the agent is gone, and the next message brings it back.',
   "cmd.kill.confirm": "Kill this session's agent",
@@ -315,7 +310,8 @@ export const en: Record<string, string> = {
   "cmd.kill.unknown":
     'No session called "{arg}": /sessions lists the ones in this workspace — a name or an ID prefix both work',
   "cmd.kill.ambiguous": '"{arg}" matches {n} sessions — write more of the ID prefix: {ids}',
-  // Deleting a session: show what it costs (two numbers) first. A hard delete — its notices go too (the host does that with a foreign key)
+  // Deleting a session: show what it costs (two numbers) first. It is a hard delete, and its notices go
+  // too (the host does that with a foreign key)
   "cmd.delete.title":
     'Delete "{name}"? This session has {messages} messages and references {assets} assets — none of it comes back, and its notices go too.',
   "cmd.delete.confirm": "Delete this session",
@@ -346,7 +342,8 @@ export const en: Record<string, string> = {
   "cmd.reload.failed": "Reload failed: {error}",
   "cmd.think.notAdjustable": "Model {id} has no usable reasoning levels, so it cannot be adjusted",
   "cmd.think.unknown": "Unknown effort: {level} (available: {options} / default)",
-  // One title per level: `/think` and `/think -a` look identical otherwise, and the title is the only place that says which level is being edited
+  // One title per level: `/think` and `/think -a` look identical otherwise, and the title is the only place
+  // that says which level is being edited
   "cmd.think.titleSession": "Reasoning effort · this session (current: {level})",
   "cmd.think.titleAgent":
     "Reasoning effort · this agent, affects sessions started later (current: {level})",
@@ -361,9 +358,8 @@ export const en: Record<string, string> = {
   "cmd.editor.failed": "Could not open the editor: {error}",
   "cmd.unknown": "Unknown command: {cmd} (type /help to see them all)",
 
-  // ---------- Sub-task notices / welcome block / message placeholders ----------
-  // The three handoff options are not here any more: the host asks (`HandoffService.startAsked`)
-  // and owns the wording, so the threshold path and the manual path show the same question.
+  // The three handoff options are not here any more: the host asks (`HandoffService.startAsked`) and owns
+  // the wording, so the threshold path and the manual path show the same question.
   "agentTabs.main": "MAIN",
   "chat.configReadFailed": "Could not read the config: {error}",
   "chat.modelNoEndpoint": "Model {id} has no usable endpoint bound — check the config with /config",
@@ -372,8 +368,8 @@ export const en: Record<string, string> = {
   "chat.sessionReloadFailed": "Could not rebuild the session: {error}",
   "chat.subAgentMessagesFailed": "Could not read that sub-agent's messages: {error}",
   "chat.bootFailed": "✖ Cannot start the session: {error}",
-  // Somebody else (another terminal / the desktop app) deleted the session this screen is showing:
-  // say so, then move to the newest session left in the same workspace
+  // Somebody else (another terminal / the desktop app) deleted the session this screen is showing: say
+  // so, then move to the newest session left in the same workspace
   "chat.sessionRemoved": "This session was deleted elsewhere",
   "chat.bootHint":
     "Press k to open the configuration center (set the API key and endpoint URL) · Enter to go back",
@@ -391,11 +387,11 @@ export const en: Record<string, string> = {
   "msg.userHeader": "❯ You",
   "msg.aiHeader": "✦ AI",
 
-  // ---------- Summaries / errors returned by business modules ----------
   "effort.followDefault": "follow the model default",
   "effort.quoted": '"{label}"',
   "effort.summary": 'Reasoning effort set to {label} · written to agent "{id}" (model {model})',
-  // 会话级那条路写的是会话存档（不碰 AgentDefinition），所以文案不提 AgentDefinition
+  // The session-level path writes the session archive (it never touches an AgentDefinition), so the copy
+  // does not mention AgentDefinition
   "effort.summarySession":
     "Reasoning effort set to {label} · written to this session (model {model})",
   "modelSwitch.resetHint": " · reasoning effort reset to the model default",
@@ -403,14 +399,12 @@ export const en: Record<string, string> = {
   "agentSwitch.err.agentMissing": 'Agent "{id}" does not exist',
   "agentSwitch.summary": "Switched the primary agent: {name} ({id}) · model {model} ({modelId})",
 
-  // ---------- Entry / exit ----------
   "app.goodbye": "\nSession closed.\n",
   "app.noAgents": "No usable agent — create one in the configuration center first",
   "app.bootFailed": "✖ Cannot start the session: {error}",
   "app.unexpected": "✖ Unexpected error: {error}",
   "app.modelSwitchFailed": "✖ This session could not switch to the chosen model: {error}",
 
-  // ---------- Connection screen (first run / unreachable) ----------
   "connect.title": "Connect to a host",
   "connect.firstRunHint": "First run: pick a host — this machine or a remote one",
   "connect.local": "This machine",
@@ -431,7 +425,7 @@ export const en: Record<string, string> = {
   "connect.back": "Back",
   "connect.connect": "Connect",
 
-  // ---------- Workspace screen (remote host with no remembered workspace; PRD D30) ----------
+  // Workspace screen: a remote host with no remembered workspace
   "ws.folderMissing": " (folder is gone)",
   "ws.title": "Pick a workspace",
   "ws.hint":
@@ -445,9 +439,8 @@ export const en: Record<string, string> = {
   "ws.exit": "Quit",
   "ws.keys": "↑↓ select · Enter confirm · Esc quit",
 
-  // ---------- Download screen (starting the local host; PRD D31) ----------
-  //
-  // Indeterminate on purpose: it reports the step, never a percentage (npm's output is not parsed)
+  // Download screen (starting the local host). Indeterminate on purpose: it reports the step, never a
+  // percentage (npm's output is not parsed)
   "download.title": "Preparing the local host",
   "download.stage.resolving": "Looking up the version to download…",
   "download.stage.installing": "Downloading and installing the host (slow the first time)…",
@@ -456,7 +449,7 @@ export const en: Record<string, string> = {
   "download.keysRunning": "Esc / Ctrl+C to cancel and connect to a remote host instead",
   "download.keysFailed": "R to retry · Esc to go back and use a remote host",
 
-  // ---------- `ai --help` (printed outside the TUI, hence the locale init in the help branch) ----------
+  // `ai --help` prints outside the TUI, hence the locale init in the help branch
   "cli.help.title": "ai — AI-Zen CLI v{version}",
   "cli.help.usage":
     '\nUsage:\n  ai                              Start the interactive UI (TUI; stdin/stdout must be a TTY)\n  ai <prompt>                     Ask in pure stdio mode; the result goes to stdout\n  cat file | ai "summarize it"   Pipe content in; the argument is the instruction\n  ai hook install                 Install the shell fallback hook (route unknown commands to the AI)\n  ai hook uninstall               Uninstall the shell fallback hook',
@@ -465,7 +458,7 @@ export const en: Record<string, string> = {
   "cli.help.notes":
     "\nNotes:\n  stdio mode is non-interactive: the result goes to stdout, logs to stderr, exit code 0 on success.\n  A remote token goes in AI_ZEN_SERVER_TOKEN, never on the command line (argv shows up in ps and shell history).",
 
-  // ---------- `ai hook install / uninstall` (outside the TUI, locale initialised in that branch) ----------
+  // `ai hook install / uninstall` prints outside the TUI, and initialises the locale in that branch too
   "cli.hookUsage": "Usage: ai hook install|uninstall",
   "cli.hookUnknownAction": "Unknown subcommand: {action}",
   "hook.unsupportedShell": "✖ Unsupported shell (bash / zsh only)",

@@ -1,24 +1,17 @@
 /**
- * subagent 那一格的**结局** —— 名册只说「还在动 / 还挂着 / 已经散场」，更细的那两格从它自己的
- * 消息上推。
+ * subagent 那一格的结局：名册只说还在动 / 还挂着 / 已经散场，更细的那两格从它自己的消息上推。
  *
- * ## 名册给什么、不给什么
- *
- * `session.state.subAgents[].state` 只有三格：`working` / `idle` / `ended`（`wire/states.ts` 的
- * `SubAgentFact`）。「出错」与「被叫停」名册不报 —— 但那**不等于没法知道**：那个 subagent
- * 自己那条消息上带着 `status`（`error` / `aborted`）与 `error`，而它的话本来就在镜像里那一栏
+ * 名册（`session.state.subAgents[].state`）只有三格：`working` / `idle` / `ended`（`wire/states.ts`
+ * 的 `SubAgentFact`）。出错与被叫停名册不报，但那不等于没法知道：那个 subagent 自己那条消息上带着
+ * `status`（`error` / `aborted`）与 `error`，而它的话本来就在镜像里那一栏
  * （`SessionMirror.subAgent(toolCallId)`，由带 `toolCallId` 的事件攒出来）。
  *
- * 于是「失败必须显示失败」（`PRD 3.9`）这一条靠客户端自己算回来：
+ * 于是「失败必须显示失败」这一条靠客户端自己算回来：名册说还在动，就是「在跑」（它是现读的观测值，
+ * 比消息更近）；名册说散场或还挂着，就看它栏里最后一条消息 —— `error` 是失败，`aborted` 是被叫停，
+ * 其余是完成。
  *
- *   · 名册说还在动 → 就是「在跑」（它是现读的观测值，比消息更近）；
- *   · 名册说散场 / 还挂着 → 看它栏里**最后一条消息**：`error` → 失败，`aborted` → 被叫停，
- *     其余 → 完成（散场）。
- *
- * ## 算不出来的那一半
- *
- * 它栏里一条消息都没有（更早派出去、本客户端打开时就已经散场：`subagent` 不入库，重开之后只有
- * 名册、没有话）→ 保持名册那一格（`ended`）。**不猜**：没有事实的地方不编一个「失败」出来。
+ * 算不出来的那一半：它栏里一条消息都没有（更早派出去、本客户端打开时就已经散场：`subagent` 不入库，
+ * 重开之后只有名册、没有话），此时保持名册那一格（`ended`）。没有事实的地方不编一个「失败」出来。
  */
 
 import { AgentNS } from "@ai-zen/agents-core";
@@ -27,15 +20,15 @@ import type { SubAgentFact } from "./session/types.js";
 /**
  * subagent 此刻那一个圆点说的是什么。
  *
- * 前三格是名册本来就有的（`AgentNS.AgentState` + `ended`）；后两格是从它自己的消息上推出来的
- * 结局 —— `aborted`（被叫停）与 `error`（出错）不是一回事（PRD D14），所以它们不是同一个别名。
+ * 前三格是名册本来就有的（`AgentNS.AgentState` + `ended`）；后两格是从它自己的消息上推出来的结局，
+ * `aborted`（被叫停）与 `error`（出错）不是一回事，所以它们不是同一个别名。
  */
 export type SubAgentStatus = AgentNS.AgentState | "ended" | "error" | "aborted";
 
 /**
- * 名册那一行 + 它自己的消息 → 那一格状态。
+ * 名册那一行加它自己的消息，得出那一格状态。
  *
- * `messages` 传它那一栏（`session.subAgentMessages(toolCallId)`）；空数组是正常的（见文件头）。
+ * `messages` 传它那一栏（`session.subAgentMessages(toolCallId)`）；空数组是正常的，见文件头。
  */
 export function subAgentStatusOf(
   fact: SubAgentFact,
@@ -55,18 +48,16 @@ export function subAgentStatusOf(
 /**
  * 「这一条有结局了」的三种说法（`idle` / `working` 不是结局，没有话说）。
  *
- * `ended` 与 `aborted` 分开：被叫停不是坏掉，失败也不是被叫停（PRD D14）。
+ * `ended` 与 `aborted` 分开：被叫停不是坏掉，失败也不是被叫停。
  */
 export type SubAgentEnding = "ended" | "error" | "aborted";
 
-/** 一条要说的结局：说哪一种、为什么（原话）、以及「说过了没有」按什么认 */
 export interface SubAgentEndingFact {
   ending: SubAgentEnding;
   /**
-   * 失败时**宿主给的原话**（那一条消息上的 `error.message`）：照传，不另编一句。
+   * 失败时宿主给的原话（那一条消息上的 `error.message`）：照传，不另编一句。
    *
-   * 宿主没给就没有这一格 —— 那时只说「失败」，不猜原因（编一句「可能是网络问题」正是
-   * PRD 3.9 要拦的那种假话）。
+   * 宿主没给就没有这一格，那时只说「失败」，不猜原因；编一句「可能是网络问题」正是要拦的那种假话。
    */
   reason?: string;
   /**
@@ -78,10 +69,10 @@ export interface SubAgentEndingFact {
 }
 
 /**
- * 名册那一行 + 它自己的消息 → 要不要说一句「它结束了」。
+ * 名册那一行加它自己的消息，得出要不要说一句「它结束了」。
  *
- * 返回 `null` = 还在跑 / 还挂着 —— 那时没有结局可说。这条与 {@link subAgentStatusOf} 同一个
- * 判据：两处说的必须是同一件事，否则圆点是红的、通知却说「完成」。
+ * 返回 `null` = 还在跑或还挂着，那时没有结局可说。这条与 {@link subAgentStatusOf} 同一个判据：两处
+ * 说的必须是同一件事，否则圆点是红的、通知却说「完成」。
  */
 export function subAgentEndingOf(
   fact: SubAgentFact,
@@ -99,16 +90,14 @@ export function subAgentEndingOf(
 }
 
 /**
- * 「这个结局已经说过了」的记账 —— 头一次返回 `true`（调用方该说一句），之后一律 `false`。
+ * 「这个结局已经说过了」的记账：头一次返回 `true`（调用方该说一句），之后一律 `false`。
  *
- * ## 为什么记账在模块里，而不是屏幕的内存里
+ * 记账放在模块里而不是屏幕的内存里：名册与它栏里的话活在会话层（`server-client/mirror.ts` 的镜像，
+ * 切屏、重开都不丢），而屏幕会被重建（`/model`、`/lang` 这些重挂载）。只按屏幕记「说过没」的话，
+ * 重建之后同一条失败会被再说一遍，用户看到的是同一个子 AgentDefinition 又失败了一次。
  *
- * 名册与它栏里的话活在**会话层**（`server-client/mirror.ts` 的镜像，切屏、重开都不丢），而屏幕
- * 会被重建（`/model`、`/lang` 这些重挂载）。只按屏幕记「说过没」的话，重建之后同一条失败会被
- * 再说一遍 —— 用户看到的是「同一个子 AgentDefinition 又失败了一次」。
- *
- * 键取**那一条结局消息的 id**：同一条结局只说一次；下一次委派是另一条消息、另一个 id，照说。
- * 只活在本进程（与 `user-content.ts` 的 Asset 事实同一档：重启即清空，不落盘）。
+ * 键取那一条结局消息的 id：同一条结局只说一次；下一次委派是另一条消息、另一个 id，照说。记账只活在
+ * 本进程（与 `user-content.ts` 的 Asset 事实同一档：重启即清空，不落盘）。
  */
 const spokenEndings = new Set<string>();
 

@@ -1,17 +1,12 @@
 /**
- * CLI 本地偏好 —— 语言等「只属于本机 CLI」的设置。
+ * CLI 本地偏好：语言等只属于本机 CLI 的设置。
  *
- * ## 为什么不塞进 `config.json`
+ * 这些偏好不放进 `config.json`：那个文件的类型是 SDK 的 `AppConfig`，CLI 与 Desktop 共享同一份
+ * 契约，往里加 `ui.language` 等于把 CLI 的偏好写进跨端配置，桌面端读到时既无法理解，又可能在回写
+ * 时丢掉。偏好单独放在 `~/.ai-zen/cli/preferences.json`，与 `cli/` 下其它运行时数据同级。
  *
- * `config.json` 的类型是 SDK 的 `AppConfig`，CLI 与 Desktop 共享同一份契约；
- * 往里加 `ui.language` 等于把 CLI 的偏好写进跨端配置，桌面端读到时既无法理解、
- * 又可能在回写时丢掉。因此单独放 `~/.ai-zen/cli/preferences.json`：
- * 落点与 `cli/` 下其它运行时数据同级，都是「CLI 运行时数据」。
- *
- * ## 日志口是从参数上收的
- *
- * 读不出来 / 写不进去都要报一句（见下面的 `broken` 与 `writePreferences`），出口是调用方递进来
- * 的 `LogSink`（根造、入口传）。本模块**没有**全局日志口可读 —— 一句话写到哪，签名里写着。
+ * 日志出口从参数上收：读不出来、写不进去都要报一句，出口是调用方递进来的 `LogSink`（根造、入口
+ * 传）。本模块没有全局日志口可读。
  */
 
 import { mkdir, rename, writeFile } from "node:fs/promises";
@@ -24,15 +19,14 @@ import { detectLocale, setLocale, getLocale, normalizeLocale, type Locale } from
 /**
  * 偏好文件路径；`AIZ_PREFERENCES_FILE` 可覆盖（调试与特殊部署用）。
  *
- * 根从 `cliEnv()` 取，**不**在这里再拼一遍 `AI_ZEN_DIR` / `HOME`：那份拼法以前在本文件与
- * `config.ts` 各有一份，两份的**时机**还不一样（一个每次调用重算、一个模块求值时算一次），
- * 症状是「设了 `AI_ZEN_DIR` 有个文件跟着走、另一个不跟」。现在解析只有 `env.ts` 一处。
+ * 根从 `cliEnv()` 取，不在这里再拼一遍 `AI_ZEN_DIR` / `HOME`：那份拼法以前在本文件与 `config.ts`
+ * 各有一份，两份的时机还不一样（一个每次调用重算，一个模块求值时算一次），症状是设了
+ * `AI_ZEN_DIR` 之后有个文件跟着走、另一个不跟。现在解析只有 `env.ts` 一处。
  */
 function preferencesFile(): string {
   return process.env.AIZ_PREFERENCES_FILE || join(cliEnv().aiZenDir, "cli", "preferences.json");
 }
 
-/** CLI 本地偏好 */
 export interface CliPreferences {
   /** 界面语言；缺失表示「还没选过」，由系统语言识别决定 */
   language?: Locale;
@@ -41,9 +35,8 @@ export interface CliPreferences {
 /**
  * 读取偏好。
  *
- * 判据与 `local-memory.ts` 同一套：文件不存在 = 还没选过（第一次启动，正常路径）；
- * 读不出来 / 不是 JSON → 报一句后按「没设置」继续，但**不写回**（`initLocale` 见 `broken`
- * 就不落盘：那份坏文件里的东西我们没读到，写下去等于把它抹掉）。
+ * 判据与 `local-memory.ts` 同一套：文件不存在表示还没选过（第一次启动，正常路径）；读不出来或不是
+ * JSON 时报一句、按「没设置」继续，但不写回 —— 那份坏文件里的东西没有读到，写下去等于把它抹掉。
  */
 export async function readPreferences(
   logger: LogSink,
@@ -52,7 +45,7 @@ export async function readPreferences(
   return preferencesOf(await readMemoryFile(file, logger));
 }
 
-/** 一份记忆文件 → 偏好；`absent` / `broken` 都按「没设置」算（后者已经报过一句） */
+/** `absent` / `broken` 都按「没设置」算，后者已经报过一句 */
 function preferencesOf(read: MemoryRead): CliPreferences {
   if (read.kind !== "value") return {};
   const language = read.entries.language;
@@ -61,10 +54,10 @@ function preferencesOf(read: MemoryRead): CliPreferences {
 }
 
 /**
- * 写入偏好（先写临时文件再 rename，避免半个 JSON 留在磁盘上）。
+ * 写入偏好：先写临时文件再 rename，避免半个 JSON 留在磁盘上。
  *
- * 写不进去不阻塞（这一屏的语言已经换了），但**不许静默丢**：写不进去 = 下次启动语言变回去，
- * 而用户只会以为是自己记错了。报一句。
+ * 写不进去不阻塞（这一屏的语言已经换了），但不能静默丢：写不进去等于下次启动语言变回去，而用户
+ * 只会以为是自己记错了。
  */
 export async function writePreferences(
   next: CliPreferences,
@@ -85,13 +78,13 @@ export async function writePreferences(
 }
 
 /**
- * 启动时初始化语言：有偏好用偏好，没有则按系统语言识别并**落盘**。
+ * 启动时初始化语言：有偏好用偏好，没有则按系统语言识别并落盘。
  *
- * 落盘这一步是有意的：识别结果只算一次，用户之后改了系统语言也不会让界面语言
- * 悄悄漂移——想换就 `/lang`。
+ * 落盘这一步是有意的：识别结果只算一次，用户之后改了系统语言也不会让界面语言自己漂走，想换就
+ * `/lang`。
  *
- * 例外：偏好文件**读不出来**（不是「不存在」）时不落盘 —— 那份文件里的东西我们没读到，
- * 写下去等于把它抹掉。这一次按识别结果用，报的那一句在 `readMemoryFile` 里。
+ * 例外：偏好文件读不出来（不是不存在）时不落盘 —— 那份文件里的东西没有读到，写下去等于把它抹掉。
+ * 这一次按识别结果用，报的那一句在 `readMemoryFile` 里。
  */
 export async function initLocale(
   logger: LogSink,
@@ -107,7 +100,7 @@ export async function initLocale(
   return locale;
 }
 
-/** 切换语言并落盘（`/lang` 用） */
+/** 切换语言并落盘，`/lang` 用 */
 export async function persistLocale(
   locale: Locale,
   logger: LogSink,
@@ -120,27 +113,25 @@ export async function persistLocale(
 /**
  * 宿主那份语言的读写口。
  *
- * 形状给得这么窄，是为了让本模块只认「读一格 / 写一格」：拼 `config.get` / `config.update`
- * 是调用方的事，这一层不 import 连接层。
+ * 形状给得这么窄，是为了让本模块只认「读一格 / 写一格」：拼 `config.get` / `config.update` 是调用
+ * 方的事，这一层不 import 连接层。
  */
 export interface HostLocaleSource {
-  /** 宿主配置里的 `language`（没有这一格就是 `undefined`） */
   read(): Promise<string | undefined>;
-  /** 写宿主配置里的 `language` */
   write(locale: Locale): Promise<void>;
 }
 
 /**
- * 连上之后把**本机语言同步给宿主**：语言只有一个方向，客户端 → 宿主。
+ * 连上之后把本机语言同步给宿主。语言只有一个方向：客户端到宿主。
  *
  * 语言存在两处：本机偏好（`preferences.json`）管界面文案，宿主配置的 `language` 管宿主自己渲染的
- * 句子（题、通知、错误）。出场时两处都是出厂值（`en`），而界面那一份在首次启动时按系统语言识别过
- * —— 不对齐就会看到「界面是中文、交接那道题与宿主通知是英文」。
+ * 句子（题、通知、错误）。出场时两处都是出厂值（`en`），而界面那一份在首次启动时按系统语言识别
+ * 过，不对齐就会看到界面是中文、交接那道题与宿主通知是英文。
  *
- * **反方向永远不做**：宿主的语言不会覆盖本机偏好。界面语言是本机用户的选择（`/lang`），
- * 它不该被另一台机器上、或被出厂值抹掉。`/lang` 本来就会两边一起写，所以这一次之后不会再漂。
+ * 反方向不做：宿主的语言不会覆盖本机偏好。界面语言是本机用户的选择（`/lang`），它不应被另一台
+ * 机器上的值或出厂值抹掉。`/lang` 本来就会两边一起写，所以这一次之后不会再漂。
  *
- * 读不到 / 写不进去都只报一句、保持现状：界面已经能用，语言不是拦路的事。
+ * 读不到或写不进去都只报一句、保持现状：界面已经能用，语言不是拦路的事。
  */
 export async function syncLocaleToHost(host: HostLocaleSource, logger: LogSink): Promise<void> {
   let hostLanguage: Locale | null;
@@ -161,7 +152,6 @@ export async function syncLocaleToHost(host: HostLocaleSource, logger: LogSink):
   }
 }
 
-/** 错误对象 → 一句能放进日志的话 */
 function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

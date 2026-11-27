@@ -1,74 +1,39 @@
 /**
- * `CliApp` —— CLI 进程的**根**。
+ * `CliApp`：CLI 进程的根。
  *
- * ## 它是什么
+ * 一个进程里「这次调用要做什么、拿什么事实去做、最后退出码是几」的唯一持有者：路由结果
+ * （`Invocation`）、本进程的事实（`CliEnv`）、终端能力（`TtyState`），以及出口（stdout / stderr /
+ * 退出码）。`index.ts` 因此只剩两件事：在求值 React 之前把 `NODE_ENV` 钉成 production、把 EPIPE 当成
+ * 正常结束，然后 `process.exitCode = await new CliApp().run()`。
  *
- * 一个进程里「这次调用要做什么、拿什么事实去做、最后退出码是几」的**唯一持有者**：路由结果
- * （`Invocation`）、本进程的事实（`CliEnv`）、终端能力（`TtyState`），以及出口（stdout /
- * stderr / 退出码）。
+ * 这一层以前是没有名字的：那些东西全在 `index.ts` 的 `main()` 里，而「本进程事实」散在三个文件
+ * （`config.ts` 的 `export let AI_ZEN_DIR` 在模块求值时算一次、`config.ts` 的 `serverUrlFlag` 由
+ * `setServerUrlFlag()` 往模块里塞值、`i18n/preferences.ts` 里又抄了一遍 `HOME` 拼法且每次调用重算）。
+ * 于是「根在哪」有两个答案、两种时机，「`--server` 什么时候写进 messages」要靠读 `main()` 那 90 行才
+ * 知道。这就是松散全局变量加松散模块那一类：每个值单独看都有理由，合起来没人能回答谁是主人。
  *
- * `index.ts` 因此只剩两件事：在求值 React 之前把 `NODE_ENV` 钉成 production、把 EPIPE 当成
- * 正常结束；然后 `process.exitCode = await new CliApp().run()`。
+ * 边界有三条。其一，只有本文件读 `process.argv` / `process.env` / `process.stdin.isTTY`、写
+ * `process.stdout`、定 `process.exitCode`；别的模块要这些事实就读 `cliEnv()`（本类钉进去的那一份），
+ * 或者由本类当参数递进去。其二，这里不写业务：能出现的只有接线（把事实递给某条路径）与退出码映射 ——
+ * 一次性调用怎么跑在 `stdio.ts`，界面怎么渲染在 `tui/`，钩子怎么装写在 `hook.ts`。其三，依赖单向：
+ * `stdio.ts` / `tui/` / `hook.ts` 都不认识 `CliApp`，它们只收参数。
  *
- * ## 为什么这一层以前是「没有名字的」
+ * `t()` 不在本类的管辖内：它是进程级单例（同 `console` 那一类），全仓三十多个文件在用，收进本类等于把
+ * 整个 TUI 改成一切都要从 Props 里取 `t`，成本极高、换不到任何保证 —— 语言没有第二个真相。本类对它的
+ * 职责只有时机：需要人话的路径（`help` / `hook` / `tui`）在说话之前先 `initLocale()`。日志是反过来的：
+ * 实例由本类造（`cli-log.ts` 的 {@link createCliLog}）、由本类关，读到日志的各层从参数上收一个
+ * `LogSink`，于是哪一行是谁写的在签名里就看得见。
  *
- * 改动前这些全在 `index.ts` 的 `main()` 里，而「本进程事实」散在三个文件：
- * `config.ts` 的 `export let AI_ZEN_DIR`（模块求值时算一次）、`config.ts` 的
- * `serverUrlFlag`（一个 `setServerUrlFlag()` 往模块里塞值的注入点）、
- * `i18n/preferences.ts` 里**又抄了一遍**的 `HOME` 拼法（每次调用重算）。于是「根在哪」有两个
- * 答案、两种时机，「`--server` 什么时候写进 messages」要靠读 `main()` 那 90 行才知道。
+ * 退出码只有一个出口：{@link CliApp.run} 返回数字，映射关系摆在一个 `switch` 里 —— `help` /
+ * `version` / `hook`（含只看用法）是 0；`hook` 的未知子动作是 1；`server-status` 在跑 0、不在跑 1
+ * （脚本据此判断）；`stdio` 用它自己的返回值（没有输入 2、模型报错 1、成功 0）；`tui` 是 0；
+ * `tui-rejected`（`--tui` 但非 TTY）与宿主地址拼错都是 2。脚本依赖这条分界：1 留给已经跑起来之后的
+ * 失败，2 留给命令本身用错了。
  *
- * 这就是「松散全局变量 + 松散模块」那一类：每个值单独看都有理由，合起来没人能回答
- * 「谁是主人」。现在主人是这个类。
- *
- * ## 三条纪律（判据，不是口号）
- *
- * 1. **只有本文件读 `process.argv` / `process.env` / `process.stdin.isTTY` / 写
- *    `process.stdout` / 定 `process.exitCode`。** 别的模块要这些事实就读 `cliEnv()`（由本类
- *    钉进去的那一份），或者由本类当参数递进去。判据：`grep -c "process.argv"
- *    src/**\/*.ts` 应当只有本文件与 `index.ts` 的 prelude。
- * 2. **不写业务。** 这里能出现的只有「接线」（把事实递给某条路径）与「退出码映射」。
- *    一次性调用怎么跑在 `stdio.ts`，界面怎么渲染在 `tui/`，钩子怎么装写在 `hook.ts`。
- *    要在这里写 `if` 判断业务，先问：这条判定换一个入口（将来的 `ai --json`）还成立吗？
- * 3. **依赖单向。** `stdio.ts` / `tui/` / `hook.ts` 都不认识 `CliApp`，它们只收参数。
- *    本类 import 它们，它们不知道本类存在。
- *
- * ## 边界：它**不**吞掉 i18n
- *
- * `t()` 是进程级单例（同 `console` 那一类），全仓 30 多个文件在用；把它收进本类等于把整个
- * TUI 改成「一切都要从 Props 里取 `t`」，成本极高、换不到任何保证 —— 语言**没有第二个真相**，
- * 它的问题从来不是「谁是主人」。本类对它的职责只有**时机**：需要人话的路径（`help` / `hook` /
- * `tui`）在说话之前先 `initLocale()`。
- *
- * 日志是**反过来**的：实例由本类造（`cli-log.ts` 的 {@link createCliLog}）、由本类关，读到日志
- * 的各层从参数上收一个 `LogSink` —— 于是「哪一行是谁写的」在签名里就看得见。
- *
- * ## 退出码只有一个出口
- *
- * 改动前 `process.exitCode` 被写在 5 处，`process.exit(0)` 还被 EPIPE 处理器用了一次。
- * 现在 {@link CliApp.run} 返回数字，映射关系完整地摆在一个 `switch` 里：
- *
- * | 路由 | 退出码 |
- * |---|---|
- * | `help` / `version` / `hook`（含「只看用法」） | 0 |
- * | `hook` 的未知子动作 | 1 |
- * | `server-status` | 在跑 0 / 不在跑 1（脚本据此判断） |
- * | `stdio` | 它自己的返回值（没有输入 2、模型报错 1、成功 0） |
- * | `tui` | 0（`farewell()` 直接 `process.exit(0)`） |
- * | `tui-rejected`（`--tui` 但非 TTY） | 2 |
- * | 宿主地址拼错 | 2（命令本身用错了） |
- *
- * 「1 留给已经跑起来之后失败，2 留给命令本身用错了」这条分界是**脚本**在用的，别改。
- *
- * ## 为什么值得存在（收益不是美观）
- *
- * 改动前 `main()` 直接读 `process.argv`、直接写 `process.stdout`、直接设 `process.exitCode`
- * —— 于是五条分支**一条都验不了**，只能靠 `src/__tests__/e2e.test.ts` 起真进程
- * （`AGENTS.md` 里那句「组装根改了……只有真跑才看得见」就是这条的代价）。
- *
- * 现在 argv / env / tty / 三个出口 / 四条重路径全是注入项，`app.test.ts` 用假件就能把路由、
- * 地址校验、退出码、以及「哪条路径拿到了哪份事实」逐条咬死。真进程 e2e 仍然保留 —— 它验的是
- * 另一个东西（`dist/index.js` 装出来的产物能不能跑），不是路由逻辑。
+ * 收益不是美观：改动前 `main()` 直接读 argv、直接写 stdout、直接设 `process.exitCode`，五条分支一条都
+ * 验不了，只能靠 `src/__tests__/e2e.test.ts` 起真进程。现在 argv / env / tty / 三个出口 / 四条重路径全
+ * 是注入项，`app.test.ts` 用假件就能把路由、地址校验、退出码、以及哪条路径拿到了哪份事实逐条咬死；真进
+ * 程 e2e 仍然保留，它验的是另一个东西（`dist/index.js` 装出来的产物能不能跑）。
  */
 
 import { createCliLog, cliLogFile, type CliLog, type CliLogOptions } from "./cli-log.js";
@@ -80,17 +45,17 @@ import { initLocale } from "./i18n/preferences.js";
 import { LogNotices } from "./log-notices.js";
 import { resolveInvocation, type Invocation, type TtyState } from "./mode.js";
 import { runStdio, type StdioRunOptions } from "./stdio.js";
-// 类型**只**为「注入点的形状」而取：`RunTuiOptions` 的定义仍在 `tui/index.tsx` 一处，
-// 不在这里抄第二份。`import type` 在编译期擦除，所以它不会把 Ink 拖进 `dist/index.js`
-// 的运行期依赖图（真正的求值是 `run()` 里那句动态 import）。
+// 类型只为「注入点的形状」而取：`RunTuiOptions` 的定义仍在 `tui/index.tsx` 一处，不在这里抄第二份。
+// `import type` 在编译期擦除，所以它不会把 Ink 拖进 `dist/index.js` 的运行期依赖图（真正的求值是
+// `run()` 里那句动态 import）。
 import type { RunTuiOptions } from "./tui/index.js";
 import { CLI_VERSION } from "./version.js";
 
 /**
  * 注入点（生产全用缺省值；用例喂假件）。
  *
- * 分出这几组是为了让「路由」与「重路径」分开验：`argv` / `env` / `tty` / 出口决定**去哪**，
- * 下面四条 `run*` / `hook*` 决定**去了之后干什么**。
+ * 分出这几组是为了让路由与重路径分开验：`argv` / `env` / `tty` / 出口决定去哪，四条 `run*` / `hook*`
+ * 决定去了之后干什么。
  */
 export interface CliAppDeps {
   /** 启动参数（不含 `node` 与脚本路径）；缺省 `process.argv.slice(2)` */
@@ -140,17 +105,17 @@ export class CliApp {
   private readonly createLog: (options: CliLogOptions) => CliLog;
   private readonly version: string;
   /**
-   * 本进程的日志（{@link openLog} 造**一次**，{@link closeLog} 收尾）。
+   * 本进程的日志（{@link openLog} 造一次，{@link closeLog} 收尾）。
    *
-   * 可空是因为它只有 `run()` 造：`--version` 那种一行都不写的路由不该在磁盘上留一个空文件，
-   * 而 `FileLogger` 本身也是懒开流的。读它走 {@link log} 那一格 —— 没造就抛，不兜静默实现。
+   * 可空是因为它只有 `run()` 造：`--version` 那种一行都不写的路由不该在磁盘上留一个空文件，而
+   * `FileLogger` 本身也是懒开流的。读它走 {@link log} 那一格 —— 没造就抛，不兜静默实现。
    */
   private cliLog: CliLog | null = null;
   /**
    * 日志转成通知的那一格（{@link openLog} 随日志一起造）。
    *
-   * 它自己不知道写流：`warn` / `error` 的每一条由 {@link CliLogOptions.onRecord} 送到这里，
-   * 去重 / 封顶 / 界面未起时攒几条都在它那边（`log-notices.ts`）。
+   * 它自己不知道写流：`warn` / `error` 的每一条由 {@link CliLogOptions.onRecord} 送到这里，去重、封顶、
+   * 界面未起时攒几条都在它那边（`log-notices.ts`）。
    */
   private noticeRelay: LogNotices | null = null;
   /** 显式地址的早期校验结果（`null` = 没问题或压根没给） */
@@ -165,10 +130,10 @@ export class CliApp {
     this.invocation = resolveInvocation(deps.argv ?? process.argv.slice(2), this.tty);
     this.env = resolveCliEnv({ env, serverUrlFlag: serverUrlFlagOf(this.invocation) });
     /**
-     * 钉下去 —— 本进程的事实从这一刻起就是这一份。
+     * 钉下去：本进程的事实从这一刻起就是这一份。
      *
-     * 放在构造函数里而不是 `run()`：`run()` 之前的任何代码（将来某个模块的顶层）都可能读
-     * `cliEnv()`，而「根什么时候成立」有一个答案比有两个好。
+     * 放在构造函数里而不是 `run()`：`run()` 之前的任何代码（将来某个模块的顶层）都可能读 `cliEnv()`，
+     * 而「根什么时候成立」有一个答案比有两个好。
      */
     applyCliEnv(this.env);
 
@@ -190,12 +155,12 @@ export class CliApp {
     this.createLog = deps.createLog ?? createCliLog;
     this.version = deps.version ?? CLI_VERSION;
 
-    // 只对三条**会连宿主**的路径校验：`--help` / `--version` / `hook` 不连宿主，不该被一个
-    // 与本命令无关的 `AI_ZEN_SERVER_URL` 拖住（写错时帮助仍须能出来）
+    // 只对三条会连宿主的路径校验：`--help` / `--version` / `hook` 不连宿主，不该被一个与本命令无关的
+    // `AI_ZEN_SERVER_URL` 拖住（写错时帮助仍须能出来）
     this.badServerUrl = needsHost(this.invocation) ? serverUrlError(this.env) : null;
   }
 
-  /** 本进程的日志口。**没造就抛**：不兜一个静默实现，那会让「日志去哪了」又要读实现才知道 */
+  /** 本进程的日志口。没造就抛：不兜一个静默实现，那会让「日志去哪了」又要读实现才知道 */
   private get log(): CliLog {
     if (this.cliLog === null) {
       throw new Error("日志实例还没造：CliApp.run() 开头造它（见 cli-log.ts）");
@@ -204,10 +169,10 @@ export class CliApp {
   }
 
   /**
-   * 造这一次进程的日志实例（**只造一次**）。
+   * 造这一次进程的日志实例（只造一次）。
    *
-   * 落不落盘由路由定：`stdio` 那一档不落盘（PRD 439：管道模式日志走 stderr，不建文件），
-   * 其余落 `<dataRoot>/logs/cli/cli.log`。
+   * 落不落盘由路由定：`stdio` 那一档不落盘（管道模式的日志走 stderr，不建文件），其余落
+   * `<dataRoot>/logs/cli/cli.log`。
    */
   private openLog(): CliLog {
     if (this.cliLog === null) {
@@ -228,10 +193,10 @@ export class CliApp {
   }
 
   /**
-   * 收尾：**日志最后关**（{@link CliApp.run} 的 finally 里就这一句）。
+   * 收尾：日志最后关（{@link CliApp.run} 的 finally 里就这一句）。
    *
-   * 幂等（`CliLog.close()` 自己幂等），而且从没跑过 {@link CliApp.run} 时是 no-op ——
-   * 一件没造过的东西收尾时不该报错，那只是把「退出路径」变成一个会抛错的地方。
+   * 幂等（`CliLog.close()` 自己幂等），而且从没跑过 {@link CliApp.run} 时是 no-op —— 一件没造过的东西
+   * 收尾时不该报错。
    */
   async closeLog(): Promise<void> {
     if (this.cliLog === null) return;
@@ -241,8 +206,8 @@ export class CliApp {
   /**
    * 日志转发来的那几条通知的投递位（界面注册 sink，见 `tui/screens/chat.tsx`）。
    *
-   * 与 {@link log} 同一口径：**没造就抛**。它随日志一起造，所以「日志还没造就有人要投递位」
-   * 只可能是一个接错线的调用。
+   * 与 {@link log} 同一口径：没造就抛。它随日志一起造，所以「日志还没造就有人要投递位」只可能是一个
+   * 接错线的调用。
    */
   get logNotices(): LogNotices {
     if (this.noticeRelay === null) {
@@ -252,11 +217,11 @@ export class CliApp {
   }
 
   /**
-   * 跑这一次调用，返回退出码（**不**自己设 `process.exitCode`，也不 `process.exit` ——
-   * 调用方是一次性的入口，退出码只有一个出口）。
+   * 跑这一次调用，返回退出码（不自己设 `process.exitCode`，也不 `process.exit` —— 调用方是一次性的入
+   * 口，退出码只有一个出口）。
    *
-   * 日志在这一层有两个固定的时机：**开头造**、**收尾关**（`finally`：无论走哪条路由、
-   * 有没有抛，排队的行都要写完）。
+   * 日志在这一层有两个固定的时机：开头造、收尾关（`finally`：无论走哪条路由、有没有抛，排队的行都要
+   * 写完）。
    */
   async run(): Promise<number> {
     this.openLog();
@@ -288,11 +253,10 @@ export class CliApp {
         return 0;
 
       case "server-status": {
-        // 连一次、问一句 `host.version`，**不**拉起宿主：这个命令是用来诊断的，顺手拉一个起来会让
-        // 答案失去意义。输出 JSON 供脚本消费（无需 i18n）。
-        //
-        // 这一次的事实（配置根 + 显式地址 + 显式凭证）整份递进去：远程场景下本机根本没有发现文件，
-        // 不递就永远答「没有发现文件」—— 一句既不是「没在跑」也不是「连不上」的话。
+        // 连一次、问一句 `host.version`，不拉起宿主：这个命令是用来诊断的，附带拉一个起来会让答案失去
+        // 意义。输出 JSON 供脚本消费（无需 i18n）。这一次的事实（配置根 + 显式地址 + 显式凭证）整份递
+        // 进去：远程场景下本机根本没有发现文件，不递就永远答「没有发现文件」—— 一句既不是「没在跑」也
+        // 不是「连不上」的话。
         const status = await this.readStatusImpl(this.env);
         this.writeOut(`${JSON.stringify(status, null, 2)}\n`);
         return status.running ? 0 : 1;
@@ -358,18 +322,16 @@ function needsHost(invocation: Invocation): boolean {
 }
 
 /**
- * `--server <url>` 的写进 messages：**只**从这三条会连宿主的路由上取。
+ * `--server <url>` 写进 messages：只从这三条会连宿主的路由上取。
  *
- * 其它路由没有这个字段，`undefined` 于是正确地表示「这次没给 `--server`」—— 地址退回
- * `AI_ZEN_SERVER_URL`，与改动前 `setServerUrlFlag()` 的调用条件逐字一致。
+ * 其它路由没有这个字段，`undefined` 于是正确地表示这次没给 `--server` —— 地址退回
+ * `AI_ZEN_SERVER_URL`。
  */
 function serverUrlFlagOf(invocation: Invocation): string | undefined {
   return needsHost(invocation) && "serverUrl" in invocation ? invocation.serverUrl : undefined;
 }
 
-/**
- * 帮助文本按当前语言现拼（**不能**写成模块级常量：那会把「模块求值那一刻的语言」定死）。
- */
+/** 帮助文本按当前语言现拼：写成模块级常量会把模块求值那一刻的语言定死 */
 function helpText(version: string): string {
   return (
     [
