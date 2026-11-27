@@ -341,9 +341,9 @@ describe("表单：摊成一行行", () => {
       "- 备注：（空）",
       // 动作之前那一行是空的：它们是对整张表做的事，与上面那几格不是同一类
       "",
-      "[同意]",
-      "[拒绝]",
-      "[取消]",
+      " 同意 ",
+      " 拒绝 ",
+      " 取消 ",
     ]);
   });
 
@@ -400,9 +400,11 @@ describe("表单：摊成一行行", () => {
       initialEditing(PICKS),
     );
     const actions = formLines(PICKS, atSubmit, TEXTS).slice(-3);
+    // 方括号只画在焦点那一格；其余用空格占同样的位（换焦点时整行不跳）
     expect(actions[0]).toMatchObject({ text: "[同意]", focused: true, tone: "accept" });
-    expect(actions[1]).toMatchObject({ text: "[拒绝]", focused: false, tone: "decline" });
-    expect(actions[2]).toMatchObject({ text: "[取消]", focused: false, tone: "cancel" });
+    expect(actions[1]).toMatchObject({ text: " 拒绝 ", focused: false, tone: "decline" });
+    expect(actions[2]).toMatchObject({ text: " 取消 ", focused: false, tone: "cancel" });
+    expect(actions.map((line) => lineText(line).length)).toEqual([4, 4, 4]);
 
     // 焦点走到「拒绝」上，颜色不变（颜色说的是会发生什么，焦点只改加粗）
     const atDecline = press(atSubmit, [next], PICKS);
@@ -466,7 +468,7 @@ describe("表单：只有一格的表也走同一条路", () => {
   it("打开在浏览层第一格，动作行照画（三态一个不少）", () => {
     const lines = formLines(ONE_CHOICE, initialEditing(ONE_CHOICE), TEXTS).map(lineText);
 
-    expect(lines).toEqual(["+ 方式 *：自己", "", "[同意]", "[拒绝]", "[取消]"]);
+    expect(lines).toEqual(["+ 方式 *：自己", "", " 同意 ", " 拒绝 ", " 取消 "]);
     expect(schemaRows(ONE_CHOICE)).toBe(5);
   });
 

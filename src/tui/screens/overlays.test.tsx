@@ -216,12 +216,14 @@ describe("FormOverlay", () => {
 
   it("三个动作各一行：同意 / 拒绝 / 取消，前面留一个空行", async () => {
     const form = await mountedForm();
-    await until(() => form.frame().includes("[同意]"), "同意按钮画出来");
+    await until(() => form.frame().includes("同意"), "三个动作画出来");
 
     const rows = form.frame().split("\n");
-    const acceptAt = rows.findIndex((row) => row.includes("[同意]"));
-    expect(rows[acceptAt + 1]).toContain("[拒绝]");
-    expect(rows[acceptAt + 2]).toContain("[取消]");
+    const acceptAt = rows.findIndex((row) => row.includes("同意"));
+    expect(rows[acceptAt + 1]).toContain("拒绝");
+    expect(rows[acceptAt + 2]).toContain("取消");
+    // 都没聚焦：整行不带方括号
+    expect(rows[acceptAt]).not.toContain("[同意]");
 
     // 上一行去掉边框与两侧空白之后应当是空的
     // （Ink 里空的 `<Text>` 高度是 0，那一行得写一个空格才画得出来）
@@ -232,7 +234,7 @@ describe("FormOverlay", () => {
 
   it("[拒绝] 上回车：交 decline（带不动内容）", async () => {
     const form = await mountedForm();
-    await until(() => form.frame().includes("[拒绝]"), "拒绝按钮画出来");
+    await until(() => form.frame().includes("拒绝"), "拒绝按钮画出来");
 
     // ↓ 越过三个字段（名字、开关、标签），再 ↓ 一次越过「同意」落在「拒绝」上
     for (let step = 0; step < 4; step += 1) await key(form, "\u001b[B");

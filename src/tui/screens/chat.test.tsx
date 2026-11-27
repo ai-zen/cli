@@ -1591,9 +1591,11 @@ describe("问题对象（到交接线时宿主提问）", () => {
     // 一张表只有一种形状：打开在浏览层、焦点落在那一格，三个动作按钮照画
     await waitFor(() => (lastFrame() ?? "").includes("上下文已用 92%，要交接吗？"));
     await flush(40);
-    expect(lastFrame() ?? "").toContain("[同意]");
-    expect(lastFrame() ?? "").toContain("[拒绝]");
-    expect(lastFrame() ?? "").toContain("[取消]");
+    // 三个动作都在，但此刻焦点在字段上：谁都不带方括号
+    expect(lastFrame() ?? "").toContain("同意");
+    expect(lastFrame() ?? "").toContain("拒绝");
+    expect(lastFrame() ?? "").toContain("取消");
+    expect(lastFrame() ?? "").not.toContain("[同意]");
 
     // 回车展开候选（枚举的第二层）
     stdin.write("\r");

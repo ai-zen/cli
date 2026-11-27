@@ -441,7 +441,7 @@ function formatProblem(
  * `error` 决定那是不是校验失败那一句。样式与折行交给 Ink，这里不碰终端宽度。
  */
 export interface FormLine {
-  /** 星号之前那一段（通常是 `标记 + 标签`）；动作行是 `[提交]` 这种整块 */
+  /** 星号之前那一段（通常是 `标记 + 标签`）；动作行是整块（选中的带方括号，其余用空格占位） */
   readonly text: string;
   /** 必填标记：这一行在 `text` 后面跟一个红色的 `*` */
   readonly star?: boolean;
@@ -501,7 +501,8 @@ export interface FormTexts {
  * 进了编辑、而且那格是枚举时，才在它下面列一列候选：单选 `(o) 名字`，多选 `[x] 名字`。
  * 两种枚举同一个形状，只差一对括号。
  *
- * 最后是三个动作：**同意**、**拒绝**、**取消**。它们和字段共用同一条焦点线（下标从字段个数起）。
+ * 最后是三个动作：**同意**、**拒绝**、**取消**。它们和字段共用同一条焦点线（下标从字段个数起）；
+ * 方括号只画在焦点那一格上，其余用空格占同样的位 —— 选中与没选中占一样宽，换焦点时整行不跳。
  *
  * ## 放不下就滚动
  *
@@ -582,8 +583,9 @@ export function formLines(
     const index = acceptAt + offset;
     const isFocus = editing.mode === "browsing" && editing.focus === index;
     if (isFocus) focusAt = lines.length;
+    // 方括号只说「现在是这一格」：没选中的用空格占同样的位，换焦点时整行不跳
     lines.push({
-      text: `[${label}]`,
+      text: isFocus ? `[${label}]` : ` ${label} `,
       focused: isFocus,
       tone: offset === 0 ? "accept" : offset === 1 ? "decline" : "cancel",
     });
