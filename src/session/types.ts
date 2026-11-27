@@ -8,7 +8,7 @@
  * ## 形状从哪来（这一刀之后）
  *
  * 消息本体仍然是 core 的 `AgentNS.Message`；**会话行**是宿主 `session.open` 出参里的 `session`
- * （`MirrorSessionRow`：`modelId: string|null`、`thinkingLevel: string|null`，时间一律 epoch
+ * （`MirrorSessionRow`：`modelId: string|null`、`thinkingLevel: string|null`，时间都是 epoch
  * 毫秒）。旧契约里那些「一份形状说五六件事」的块 —— `ModelState`（带名字与来源）、
  * `ThinkingState`（带档位表与参数）、`SessionState`（四件事 + 名册 + 交接态） —— 宿主这一版
  * 都不给了。
@@ -107,7 +107,7 @@ export interface InboxItem {
   createdAt: string;
   /**
    * 这一条进来的优先级（core 的 `InboxEntry.priority`，原样上屏）：`high` 在内循环的工具边界就会
-   * 被取走，`low` 要等手上这一批跑完。界面上据此说清「为什么它还没被取走」—— 两个值都是协议用词，
+   * 被取走，`low` 要等本轮跑完。界面上据此说清「为什么它还没被取走」—— 两个值都是协议用词，
    * 不进翻译表。
    */
   priority: AgentNS.InboxEntry["priority"];
@@ -174,7 +174,7 @@ export type NoticeTone = "info" | "warn" | "error";
  *
  * 宿主这一版的通知行上**没有**这一格了（只剩 `level` / `code` / `message` / `sessionId`），
  * 所以 CLI 自己按「谁问来的」分：`log` 只有一个来源 —— 日志上浮那条路（`log-notices.ts`），
- * 其余一律 `app`。
+ * 其余记作 `app`。
  */
 export type NoticeOrigin = "log" | "app";
 
@@ -225,7 +225,7 @@ export interface ScopeReloadReport {
  * 四样是连接层的（{@link HostClient} 原样），另外几格是 **CLI 自己的**：
  *
  *   · `language`：本地文案用哪种语言（连接层只说「宿主按哪种语言渲染」）；
- *   · `call`：**旧路**（未搬的域走它，一律抛 `unsupported`，见 `server-client/methods.ts`）；
+ *   · `call`：**旧路**（未搬的域走它，每个方法都抛 `unsupported`，见 `server-client/methods.ts`）；
  *   · `open` / `resync` / `closeMirror`：一段会话的镜像（由 CLI 自己维护：`session.open` 一次
  *     取全，之后按 `HostEvent` 增量）。
  *
@@ -237,7 +237,7 @@ export interface HostConnection {
   readonly api: HostClient["api"];
   /** 订阅宿主那一条事件流；返回退订函数（幂等） */
   subscribe(onEvent: (event: HostEvent) => void, onError?: (error: unknown) => void): Unsubscribe;
-  /** 等到一次调通（断线之后的「再敲一次门」） */
+  /** 等到一次调通（断线之后的一次重新连接） */
   reconnect(): Promise<void>;
   /** 关掉这条连接；幂等 */
   close(): Promise<void>;
@@ -298,7 +298,7 @@ export type HostEvent = import("../server-client/index.js").HostEvent;
  * 表现，不是存下来的第二份状态。
  */
 export interface ChatSessionLike {
-  /** 这段会话的 AgentDefinition（创建时定死，PRD L7） */
+  /** 这段会话的 AgentDefinition（创建时固定，PRD L7） */
   readonly agentId: string;
   /** 这段会话的 id（`session.*` 与交接都按它说话） */
   readonly sessionId: string;
@@ -317,7 +317,7 @@ export interface ChatSessionLike {
   /** 名册上那些 subagent（客户端现推，见 `server-client/mirror.ts`） */
   readonly subAgents: readonly SubAgentFact[];
 
-  /** 四件事的各一格（PRD 4.4）：忙闲 / 输入开关 / 输出开关 / 死活 */
+  /** 四件事的各一格（PRD 4.4）：忙闲 / 输入开关 / 输出开关 / 存活状态 */
   readonly status: SessionActivity | null;
   readonly inputPaused: boolean | null;
   readonly outputPaused: boolean | null;
@@ -407,7 +407,7 @@ export interface ChatSessionLike {
 
 /**
  * 一段会话上挂着的一道题 = **一张表单**（宿主那侧的形状照抄 MCP elicitation 的 `requestedSchema`：
- * 扁平对象，属性只能是字符串/数字/布尔/单选枚举，数组只允许「多选枚举」）。
+ * 扁平对象，属性用字符串/数字/布尔/单选枚举，数组只用作「多选枚举」）。
  *
  * 候选不再是宿主替我们挑好的 `choices`：面板读 `requestedSchema`，自己决定每一格怎么画。
  */
@@ -453,7 +453,7 @@ export type FormFieldView =
       maxItems?: number;
     };
 
-/** 一张表：扁平对象 + 哪几格必须填 */
+/** 一张表：扁平对象 + 哪几格是必填项 */
 export interface FormSchemaView {
   type: "object";
   properties: Readonly<Record<string, FormFieldView>>;
@@ -515,10 +515,10 @@ export interface RemovedSession {
 export interface ChatSessionNotifier {
   /** 转录可能已变化（内容以 `session.messages` 为准）；`immediate=true` 表示应立即上屏 */
   onChange(immediate: boolean): void;
-  /** 系统级提示，走独立栏位，绝不进 messages */
+  /** 系统级提示走独立栏位，不进 messages */
   onNotice(text: string, tone: NoticeTone, origin?: NoticeOrigin): void;
   /**
-   * 这一段会话**已经被宿主删掉了**（`session.removed`，PRD 4.1 的死活：删掉是硬删）。
+   * 这一段会话**已经被宿主删掉了**（`session.removed`，PRD 4.1 的存活口径：删掉是硬删）。
    *
    * 只有正看着这一段的那一屏会收到这一下：后台那几段没人看，注册表把它们从登记里摘掉就够了
    * （`sessions-registry.ts` 的 `drop`）。收到它的一屏不能再往这一段里发话 —— 换到哪一段去

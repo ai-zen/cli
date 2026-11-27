@@ -18,10 +18,10 @@
  * 那条消息的正文与推理长度与上一帧比，多出来的那一段就是要计的字数（`sampleRate`）。收尾
  * 仍然用消息上的 `usage` 差值定格成平均（`finishRate`）。
  *
- * ## 这一层不攒的东西
+ * ## 这一层不保存的东西
  *
- * 消息与四件事都不在这里攒：它们在镜像里（宿主的整条消息直接 replace，没有「折 chunk」这一步）。
- * 这一层只订阅事件去**催帧、采样、放行等结局的人**。
+ * 消息与四件事都存在镜像里（宿主的整条消息直接 replace，没有「折 chunk」这一步）。
+ * 这一层只订阅事件，用它做三件事：催一帧、采一次速率、放行在等下文的人。
  */
 
 import { AgentNS, addUsage, sumUsage } from "@ai-zen/agents-core";
@@ -40,7 +40,7 @@ import {
 import type { ClipboardImage } from "./clipboard.js";
 import { statusBlocksOf, type StatusBlock } from "./status-blocks.js";
 import { cliEnv } from "./env.js";
-// 会话层自己要说的话只有一两句（「未能叫起来」），它们也得跟着界面语言走
+// 会话层自己要说的只有一两句话（如「会话启动失败」），这些句子同样取自界面语言
 import { t } from "./i18n/index.js";
 import { readMemoryFile } from "./local-memory.js";
 import { flushPendingNotices } from "./pending-notices.js";
@@ -124,11 +124,11 @@ export class RemoteChatSession implements ChatSessionLike {
   private readonly reportedProblems = new Set<string>();
   /** 正在问的那道题（同一道题只问一次） */
   private readonly asking = new Set<string>();
-  /** 速率表正在计的这一批 */
+  /** 速率表正在计的那一轮回答 */
   private rateRunning = false;
   /** 速率采样游标：上一帧读到的那条消息正文 / 推理各多长 */
   private rateCursor = { text: 0, reasoning: 0 };
-  /** 这一批开始时整段会话的累计 `completion_tokens`（收尾用差值得到真实产出） */
+  /** 本轮开始时整段会话的累计 `completion_tokens`（收尾时用差值得到真实产出） */
   private rateBaseline = 0;
   /** `/ws` 选中的那个工作区：下一个新开的会话落在它里面 */
   private nextWorkspaceId: string | null = null;
@@ -189,7 +189,7 @@ export class RemoteChatSession implements ChatSessionLike {
   /**
    * 附件上限：宿主这一版**不报**（`hello` 那一帧没有 limits 了），恒 `null`。
    *
-   * 于是粘贴的本地预检只能用 `clipboard.ts` 的兜底常量 —— 那与宿主真实的上限**可能不一致**
+   * 于是粘贴的本地预检落在 `clipboard.ts` 的兜底常量上 —— 那与宿主真实的上限**可能不一致**
    * （见那个文件的注释）。
    */
   get attachmentLimits(): ChatSessionLike["attachmentLimits"] {
@@ -244,14 +244,14 @@ export class RemoteChatSession implements ChatSessionLike {
    * 状态栏的块：**读的时候才拼**（`status-blocks.ts` 的 `statusBlocksOf`）。
    *
    * 这里刻意不缓存一份拼好的副本：缓存的副本没有刷新通道，于是聊天过程中模型名、思考档会全部
-   * 冻在打开会话那一刻 —— 那正是这一层以前的表现。
+   * 停在打开会话那一刻的值 —— 那正是这一层以前的表现。
    */
   get blocks(): StatusBlock[] {
     const snapshot = this.mirror.snapshot();
     return statusBlocksOf({
       model: this.model,
       thinking: this.thinking,
-      // 速率是客户端自己的采样（`session-rate.ts`）：生成中读实时、手上没活时读这一批的平均
+      // 速率是客户端自己的采样（`session-rate.ts`）：生成中读实时值、手上没活时读本轮的平均
       rate: this.rate.snapshot(),
       working: snapshot.status === "working",
       // 四件事各一格（PRD 4.4）：直取镜像，不推算、不合成
@@ -335,31 +335,32 @@ export class RemoteChatSession implements ChatSessionLike {
   }
 
   /**
-   * 发一句（**死/不知道就先叫起来，再投递**；受理即回）；等它真的有了下文用 {@link waitForReply}。
+   * 发一句（**Agent 未启动或存活状态未知时先唤醒、再投递**；受理即回）；等这一句有了下文用 {@link waitForReply}。
    *
-   * ## 发之前先判死活
+   * ## 发之前先判存活状态
    *
-   * PRD 4.1「生死」的第三条起跑路：「客户端点发送时先判这段是死是活，死的就调接口复活、再投递」。
+   * PRD 4.1「生死」的第三条起跑路径，原文是「客户端点发送时先判这段是死是活，死的就调接口
+   * 复活、再投递」。
    * 宿主那一侧 **不做** 这一步：带 `sessionId` 而这一段没有 Agent 时，`agent.send` 只回
    * `not_found`（「先唤醒再投递是客户端的编排」就写在 `modules/api/agent.ts` 里）。
    *
-   * 所以判在**这一层**：所有发话入口共用它，而不是每个入口各写一遍。判据是**镜像里死活那一格
-   * 现读**（`alive`：打开时 `session.open` 报一次，之后按 `agent.alive` 换）：
+   * 所以判据落在**这一层**：所有发话入口共用同一处判断，不在每个入口各写一遍。判据是**镜像里
+   * 存活那一格现读**（`alive`：打开时 `session.open` 报一次，之后按 `agent.alive` 换）：
    *
-   *   · `true` —— 已有 Agent，那一次 `wake` 是白跑的往返，**不打**；
-   *   · `false` —— 打开那一刻 `live` 就是 `null`（宿主口径：没有 Agent 即是死），先叫再投；
-   *   · `null` —— 还没读到，不当成「活」，也先叫一声（有 Agent 时宿主的 `wake` 是空操作）。
+   *   · `true` —— 已有 Agent，那一次 `wake` 只是一次没有产出的往返，**不发**；
+   *   · `false` —— 打开那一刻 `live` 就是 `null`（宿主口径：没有 Agent 即视为未启动），先唤醒再投递；
+   *   · `null` —— 还没读到，不当作「已启动」，同样先唤醒一次（有 Agent 时宿主的 `wake` 是空操作）。
    *
    * 唤醒或投递没成，就到这里为止：**不重试、不兜底**（与全仓「不重试」同一条口径），宿主原话
-   * 照传。唤醒那一句额外缀上「未能叫起来」的上下文，投递被拒（比如中间那一段被杀掉）只报原话。
-   * 没叫起来就**不投递** —— 发出去半句比没发更糟。
+   * 照传。唤醒失败那一句额外缀上「会话启动失败」的上下文，投递被拒（比如中间那一段已被终止）
+   * 只报原话。唤醒失败时**不投递** —— 只发出半句比完全不发更糟。
    *
    * ## 其余三件不在这里
    *
    * **不开开关**（「用户点发送就是继续」那一手是 {@link resume}）、**不判阶段**、**不替宿主兜底**：
-   * 忙不忙不是判据 —— 活着就收下入队，什么时候取走是它自己的事。
+   * 忙不忙不是判据 —— 会话活着就收下入队，什么时候取走由宿主决定。
    *
-   * 同步拒绝（有问题挡着 / 目标已死 / 连接已断）不进事件通道：那是「这句没发出去」，报进通知栏，
+   * 同步拒绝（有未答的题挡着 / 目标未运行 / 连接已断）不进事件通道：那是「这句没发出去」，报进通知栏，
    * promise 照常 resolve。抛出去只会让调用方变成未处理的 rejection。
    */
   async send(
@@ -371,20 +372,20 @@ export class RemoteChatSession implements ChatSessionLike {
       const built = await buildMessageInput({
         text: input,
         images,
-        // 上传必须发生在 `agent.send` **之前**：段上的 `__asset_id` 指的是「已经传上去的那几张」
+        // 上传发生在 `agent.send` **之前**：段上的 `__asset_id` 指的是「已经传上去的那几张」
         upload: (sources: readonly AssetSource[]) => uploadAssets(this.connection, sources),
       });
       for (const warning of built.warnings) this.notifier.onNotice(warning, "info");
       // 撤回带回来的 Asset 已经传上去过了（id 就是那一次上传的凭证），不再传一遍
       const content = withRestoredAssets(built.input, assetIds);
 
-      // ① 先判死活（镜像里那一格，现读）：死 / 还没读到就先叫一声，再投递。
+      // ① 先判存活状态（镜像里那一格，现读）：未启动或还没读到就先唤醒一次，再投递。
       // 确知活着就跳过这一步 —— `agent.wake` 往返一次只为得到「本来就有」这个答案不值。
       if (this.alive !== true) {
         try {
           await this.wake();
         } catch (error: unknown) {
-          // 叫不起来就不投：不重试、不兜底（本机装配真的失败时重叫多少次都一样）
+          // 唤醒失败就不投递：不重试、不兜底（本机装配真的失败时重唤醒多少次都一样）
           this.sentBaseline = null;
           this.notifier.onNotice(t("notice.startFailed", { error: messageOf(error) }), "error");
           return;
@@ -403,7 +404,7 @@ export class RemoteChatSession implements ChatSessionLike {
         sessionId: this.sessionIdValue,
       });
 
-      // 速率表从这里起算：它的分子是「这一批产出的 token」，分母是真正在收内容的那段时间
+      // 速率表从这里起算：它的分子是「本轮产出的 token」，分母是真正在收内容的那段时间
       this.rate.begin();
       this.rateRunning = true;
       this.rateCursor = { text: 0, reasoning: 0 };
@@ -556,17 +557,17 @@ export class RemoteChatSession implements ChatSessionLike {
    * 定 —— 与这一格加进来之前的每一趟一致（`handoff.start` 收的是可选 `mode`）。「之后接什么」
    * （旧 `then`）仍然没有：宿主这一版没有那一格。
    *
-   * ## 死会话先叫起来
+   * ## 没有 Agent 的会话先唤醒
    *
    * 宿主那四条判据的第一条就是「这一段**有活着的 Agent**」，而刚打开、还没说过话的那一段
    * （宿主重启之后每一段都是这一种）一条 Agent 都没有 —— 直接发只会拿回一句「没有运行中的Agent，
-   * 无法交接」，用户看到的是「我什么都没做，它凭什么交接不了」。
+   * 无法交接」，用户看到的是一句与他刚才的动作无关的拒绝。
    *
    * 唤醒是**客户端的编排**（`modules/api/agent.ts` 里写着「先唤醒再投递」是客户端的事，宿主不做
-   * 兜底），所以判据放在这里，与 {@link send} 同一套：镜像里死活那一格不是 `true` 就先
-   * {@link wake}（`null` 也算「没读到」，叫一声；有 Agent 时宿主的 `wake` 是空操作）。
+   * 兜底），所以判据放在这里，与 {@link send} 同一套：镜像里存活那一格不是 `true` 就先
+   * {@link wake}（`null` 也算「没读到」，同样唤醒一次；有 Agent 时宿主的 `wake` 是空操作）。
    *
-   * 叫不起来就**不交接**：装配真的失败时（模型不可解析、缺凭证），错的原文照旧往上抛，由
+   * 唤醒失败就**不交接**：装配真的失败时（模型不可解析、缺凭证），错的原文照旧往上抛，由
    * `/handoff` 那一层报成「交接失败：<原话>」—— 不重试、不兜底。
    */
   async handoff(options: HandoffOptions = {}): Promise<void> {
@@ -582,7 +583,7 @@ export class RemoteChatSession implements ChatSessionLike {
   /**
    * `@` 补全的文件清单（`workspace.files`）：项目 `cwd` 下的相对路径，正斜杠、字典序、上限 500 条。
    *
-   * 清单必须来自**会话真正跑在哪个目录** —— 那目录属于宿主，客户端在远端读不到那台机器的盘。
+   * 清单来自**会话真正跑在哪个目录** —— 那目录属于宿主，客户端在远端读不到那台机器的盘。
    * `workspaceId` 就取**这一段会话自己的那一个**（`session.open` 回来的会话行，见
    * {@link workspaceId}），不取 `/ws` 之后那个「下一段落在哪」：`@` 列的是这一段读得到的文件。
    *
@@ -663,7 +664,7 @@ export class RemoteChatSession implements ChatSessionLike {
    *
    * 流式期间宿主**每吐一小段就推一条 `message.changed`**（一次回答可以几十上百条），而每一条
    * 都触发一次 React 重渲染就等价于「每个 delta 一次全量布局重算 + 整帧重建」—— SSH 弱网下会
-   * 把 pty 缓冲填满、把界面拖死（`tui/screens/frame-buffer.ts` 的文件头就是这件事）。
+   * 把 pty 缓冲填满、把界面拖到失去响应（`tui/screens/frame-buffer.ts` 的文件头就是这件事）。
    *
    * 所以：**内容变化进合帧缓冲**（`immediate: false`，由屏幕按 `STREAM_FRAME_MS` 批量上屏），
    * 而**其余事件立即上屏** —— 用户按了发、回答结束了、出错了、通知到了，这几类让人等 60ms 就是
@@ -823,7 +824,7 @@ export class RemoteChatSession implements ChatSessionLike {
     );
   }
 
-  /** 等下一脚（事件为主，定时重评估兜底；`dispose` 之后一律放行，不把人挂死） */
+  /** 等下一个信号（事件为主，定时重评估兜底；`dispose` 之后照旧放行，不让等待方一直挂着） */
   private nextSignal(): Promise<void> {
     return new Promise<void>((resolve) => {
       const timer = setTimeout(() => finish(), WAIT_RECHECK_MS);
@@ -852,7 +853,7 @@ export class RemoteChatSession implements ChatSessionLike {
    * 生成中采样一次速率。
    *
    * 数据源是**镜像里那条消息**：它的正文与推理就地增长，这一帧比上一帧多出来的那一段就是要计
-   * 的字数。新契约没有增量事件，所以「这一片多了什么」只能这样量 —— 而且屏幕上的字本来就来
+   * 的字数。新契约没有增量事件，所以「这一帧比上一帧多了什么」由这个方法量出来 —— 而且屏幕上的字本来就来
    * 自这条消息。
    */
   private sampleRate(message: AgentNS.Message): void {
@@ -867,7 +868,7 @@ export class RemoteChatSession implements ChatSessionLike {
     this.rateCursor = { text: text.length, reasoning: reasoning.length };
   }
 
-  /** 手上这一批跑完：速率定格成「平均」（真实 `completion_tokens` 的差值） */
+  /** 本轮跑完：速率定格成「平均」（真实 `completion_tokens` 的差值） */
   private finishRate(): void {
     if (!this.rateRunning) return;
     this.rateRunning = false;
@@ -899,7 +900,7 @@ export class RemoteChatSession implements ChatSessionLike {
 
   /**
    * 整段会话累计的 token：**消息上的两格一次求和**（`usage` + `subAgentUsage`，用 core 的
-   * `sumUsage()`）。还在跑的那几次委派只能拿栏里消息上的 `usage` 现加。
+   * `sumUsage()`）。还在跑的那几次委派则取栏里消息上的 `usage` 现加。
    */
   private totalTokens(): number | null {
     const main = this.mirror.messages;
@@ -963,7 +964,7 @@ export class RemoteChatSession implements ChatSessionLike {
     }
   }
 
-  /** 把宿主此刻还挂着的通知补上屏（启动 / 重连之后各一次）；失败一律吞掉（尽力而为） */
+  /** 把宿主此刻还挂着的通知补上屏（启动 / 重连之后各一次）；失败不上报（尽力而为） */
   private async flushNotices(): Promise<void> {
     if (this.disposed) return;
     try {
@@ -1010,7 +1011,7 @@ export class RemoteChatSession implements ChatSessionLike {
     this.questionsValue = [...others, question];
   }
 
-  /** 「屏幕该重画了」；卸载之后一律不再推 */
+  /** 「屏幕该重画了」；卸载之后不再推 */
   private notifyChange(immediate: boolean): void {
     if (this.disposed) return;
     this.notifier.onChange(immediate);
@@ -1019,7 +1020,7 @@ export class RemoteChatSession implements ChatSessionLike {
 
 /**
  * 通知的来源：宿主这一版**不报**这一格（只剩 `level` / `code` / `message`），于是只有一条判据
- * —— 日志上浮那批的 `code` 由 `log-notices.ts` 发出来的那几个键值，其余一律 `app`。
+ * —— 日志上浮那批的 `code` 由 `log-notices.ts` 发出来的那几个键值，其余记作 `app`。
  */
 function noticeOrigin(notice: NoticeView): "log" | "app" {
   return notice.code.startsWith("log.") ? "log" : "app";
@@ -1078,7 +1079,7 @@ async function openSession(
 
   const workspaceId = input.workspaceId;
   if (workspaceId === undefined) {
-    // 走到这里说明入口没先进入工作区：远端宿主上那条路必须由用户选（`/ws`）
+    // 走到这里说明入口没先进入工作区：远端宿主上那条路要由用户选（`/ws`）
     throw new Error("还没有进入工作区：先用 /ws 选一个（远端宿主上的目录只有你知道）");
   }
   if (input.resume) {
@@ -1096,7 +1097,7 @@ async function openSession(
   const agentId = input.agentId ?? (await defaultAgentId(connection));
   /**
    * 建一段新会话 —— `session.create` 只写库：不唤醒 Agent，也不投递任何东西。于是刚建出来的
-   * 这一段是一段没有 Agent 的会话，第一次发话时 {@link RemoteChatSession.send} 会先叫起来再投。
+   * 这一段是一段没有 Agent 的会话，第一次发话时 {@link RemoteChatSession.send} 会先唤醒再投递。
    */
   const { session } = await connection.api.session.create.mutate({ workspaceId, agentId });
   return await loadSession(connection, session.id);
