@@ -283,12 +283,16 @@ describe("FormOverlay：提示行", () => {
     await key(form, "\r"); // 进「名字」
     const editingText = form.frame();
     expect(editingText).toContain("Enter");
+    // 文本里按空格与上下箭头都没有意义，提示里就不该有
     expect(editingText).not.toContain("Space");
+    expect(editingText).not.toContain("选项");
 
     await key(form, "\r"); // 退回
+    await key(form, "\u001b[B"); // ↓ 到开关
     await key(form, "\u001b[B"); // ↓ 到标签
     await key(form, "\r"); // 进「标签」（多选）
     await until(() => form.frame().includes("Space"), "多选的提示里有空格");
+    expect(form.frame()).toContain("选项");
     form.unmount();
   });
 

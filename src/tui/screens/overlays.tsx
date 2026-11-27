@@ -191,43 +191,46 @@ export function FormOverlay({
 }
 
 /**
- * 提示那一行：按**此刻能按的键**给，而不是按「在哪一层」给。
+ * 提示那一行：只印**此刻真能按的键**。
  *
- * 一条固定的提示总有一半是错的：编辑文本时没有「空格勾选」这回事，停在提交按钮上时回车也不是
- * 「编辑」。所以这里先找焦点落在哪个字段上，再决定印哪几条。
+ * 一条固定提示总有一半是错的：编辑文本时「空格勾选」与「↑ ↓ 换选项」都不成立；停在动作行上时
+ * 回车执行的是那个动作、不是「编辑」。所以这里先看焦点落在哪一格、那一格是什么类型。
  */
 function hintsOf(schema: FormSchemaView, editing: FormEditing): [string, string][] {
   const names = fieldNames(schema);
   const single = names.length === 1;
   const focused =
     single || editing.focus < names.length ? schema.properties[names[editing.focus]!] : undefined;
-  // 空格只在两种地方有意义：布尔（切）与多选（勾）
-  const space = focused?.type === "boolean" || focused?.type === "array";
-  const spaceHint: [string, string][] = space ? [["Space", t("ui.form.toggle")]] : [];
 
+  // ↑ ↓ 换选项只对枚举成立；文本/数字里按上下箭头什么都不做
+  const choices =
+    focused !== undefined &&
+    (focused.type === "array" || (focused.type === "string" && focused.enum !== undefined));
+  // 空格只在两种地方有意义：布尔（切）与多选（勾）
+  const toggles = focused?.type === "boolean" || focused?.type === "array";
+
+  const choiceHints: [string, string][] = choices ? [["↑ ↓", t("ui.form.choose")]] : [];
+  const spaceHints: [string, string][] = toggles ? [["Space", t("ui.form.toggle")]] : [];
+
+  // 单项表：回车交卷、Esc 关掉，没有浏览层
   if (single) {
-    return [
-      ["↑ ↓", t("ui.form.choose")],
-      ...spaceHint,
-      ["Enter", t("ui.form.submit")],
-      ["Esc", t("ui.cancel")],
-    ];
+    return [...choiceHints, ...spaceHints, ["Enter", t("ui.form.submit")], ["Esc", t("ui.cancel")]];
   }
 
   if (editing.mode === "browsing") {
-    // 停在动作行上时，回车执行的是那一个动作，不是「编辑」
+    // 浏览层里 ↑ ↓ 永远有意义（换格），回车按焦点落在哪儿说话
     const onSubmit = editing.focus === names.length;
     const onCancel = editing.focus === names.length + 1;
-    const enterHint: [string, string] = [
+    const enter: [string, string] = [
       "Enter",
       onSubmit ? t("ui.form.submit") : onCancel ? t("ui.cancel") : t("ui.form.edit"),
     ];
-    return [["↑ ↓", t("ui.form.switch")], enterHint, ...spaceHint, ["Esc", t("ui.cancel")]];
+    return [["↑ ↓", t("ui.form.switch")], enter, ...spaceHints, ["Esc", t("ui.cancel")]];
   }
 
   return [
-    ["↑ ↓", t("ui.form.choose")],
-    ...spaceHint,
+    ...choiceHints,
+    ...spaceHints,
     ["Enter", t("ui.form.commit")],
     ["Esc", t("ui.form.back")],
   ];
