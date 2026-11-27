@@ -10,7 +10,7 @@
  * 键位语义依据 Claude Code 官方文档（interactive-mode.md）：
  * - `Ctrl+W` 删到**前一空白**（标点不切分：`src/utils/foo.ts` 一次删掉整条路径）
  * - `Ctrl+←/→` 按「词」处理（标点算分隔符：停在 `ts` / `foo` / `utils` / `src`）；
- *   读线那一套 `Alt+B/F/D` 已经不接了（Alt 一概不当快捷键，见 `screens/common-keys.ts`）
+ *   读线那一套 `Alt+B/F/D` 已经不接了（Alt 不参与快捷键，见 `screens/common-keys.ts`）
  */
 
 import { graphemes } from "./text.js";
@@ -26,9 +26,9 @@ function clampCursor(chars: string[], cursor: number): number {
 }
 
 /**
- * 删到前一空白（Ctrl+W）：先吃掉光标前的空白，再吃掉一整段非空白。
+ * 删到前一空白（Ctrl+W）：先删光标前的空白，再删一整段非空白。
  *
- * 与 `deleteWordLeft` 的区别在于标点：本函数只认空白为边界，
+ * 与 `deleteWordLeft` 的区别在于标点：本函数以空白为边界，
  * 因此 `src/utils/foo.ts` 会被整段删除，而不是只删 `foo.ts`。
  */
 export function deleteToPrevWhitespace(text: string, cursor: number): EditState {

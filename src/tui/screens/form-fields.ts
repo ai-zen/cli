@@ -5,9 +5,9 @@
  * 把 {@link answerOf} 的结果交回去。所有「按一下该变成什么」的规矩都在这里，于是它们可以单测，
  * 而不用从键盘打到屏幕上去验。
  *
- * ## 值一律先当草稿存
+ * ## 值先按草稿存
  *
- * 文本与数字都按**字符串**存：用户敲到一半的 `3.` 不是一个合法数字，但它必须能显示出来。真的转
+ * 文本与数字都按**字符串**存：用户敲到一半的 `3.` 不是一个合法数字，但它要能显示出来。真的转
  * 成数字只在提交那一刻（{@link answerOf}）。
  *
  * ## 焦点在哪一格，那一格就是「活的」
@@ -120,7 +120,7 @@ export function initialEditing(schema: FormSchemaView): FormEditing {
         break;
     }
   }
-  // 一律从浏览层、第一格开始 —— 一张表只有一种形状，字段几个都一样
+  // 初始状态落在浏览层、第一格 —— 一张表只有一种形状，字段几个都一样
   return { values, mode: "browsing", focus: 0, cursors: {} };
 }
 
@@ -197,7 +197,7 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
         return { kind: "state", editing: toggle(cleared, names[cleared.focus]!, field) };
       }
       default:
-        // 浏览层不认字：字要在编辑层里敲（否则「按着说话」会顺手改掉某一格）
+        // 浏览层不处理字符输入：字符只在编辑层里敲（否则浏览时敲的字会写进某一格）
         return { kind: "state", editing: cleared };
     }
   }

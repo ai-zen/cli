@@ -75,10 +75,10 @@ function splitTokenLines(tokens: HlToken[]): HlToken[][] {
 /**
  * 折行单元：**单字素簇** + 其样式（仅颜色/属性，不含文本）。
  *
- * 必须是字素簇而不是 code point：`✌️` 是两个 code point 但占 2 列、`👨‍👩‍👧`
+ * 取字素簇而不是 code point：`✌️` 是两个 code point 但占 2 列、`👨‍👩‍👧`
  * 是五个 code point 但只占 2 列。按 code point 建单元会让宽度算错（VS16 序列少算
  * → 行超宽 → Ink 渲染期二次折行 → 整帧高出一行，把输入框顶出屏幕；ZWJ 序列多算
- * → 提前折行）。宽度一律取 `clusterWidth()`，与 Ink 排版用的是同一把尺子。
+ * → 提前折行）。宽度统一取 `clusterWidth()`，与 Ink 排版用的是同一套度量。
  */
 interface SpanCell {
   ch: string;

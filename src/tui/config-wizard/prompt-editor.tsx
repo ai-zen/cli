@@ -30,7 +30,7 @@ import { t } from "../../i18n/index.js";
 /**
  * 打开系统编辑器的实现（默认 `openInSystemEditor`）。
  *
- * 用例注入假实现：真起一个 `vi` 会把用例挂住，而本仓禁 `vi.mock`（`vitest.config.ts` 的
+ * 用例注入假实现：真起一个 `vi` 会把用例挂住，而本仓不用 `vi.mock`（`vitest.config.ts` 的
  * `isolate: false`：按模块说明符注册的 mock 会串到别的文件）。
  */
 export type OpenEditor = (editor: string, file: string) => void | Promise<void>;
@@ -56,7 +56,7 @@ export interface PromptEditorScreenProps {
    * 写盘之前先出一次确认（PRD 1.6「二次确认要能先给代价、再真做」）。
    *
    * AgentDefinition 的提示词 / 函数说明 / 参数 schema 是**定义**的一部分：改一次，所有用这个 AgentDefinition 的会话都跟
-   * 着变。所以保存之前要先把代价说清（说人话：正在看的那段回答会断）。
+   * 着变，所以保存之前先把代价摆出来（措辞是「正在看的那段回答会断」）。
    */
   confirm?: { title: string; cost: readonly string[] };
   /** 保存：`null` = 写成，字符串 = 要上屏的失败原因 */
@@ -72,7 +72,7 @@ export interface PromptEditorScreenProps {
  *
  * 两处务实的选择：
  *   - **没改动就不写盘**：编辑器原样退出（`:q`）不该换来一次 `agent.update` ——
- *     那会把出厂 AgentDefinition 悄悄标成自定义，也白白多一条通知；
+ *     那会把出厂 AgentDefinition 静默标成自定义，并多出一条通知；
  *   - **校验失败保留草稿**（`draft`）：参数 schema 不是合法 JSON 时，用户刚打的那几十行还在
  *     屏上，再按 `Enter` 是在它上面接着改，而不是退回原值重敲。
  */
@@ -202,7 +202,7 @@ export function PromptEditorScreen({
     ...(hint ? textRows(`· ${hint}`, columns, theme.dim) : []),
     ...(error ? textRows(`✖ ${error}`, columns, theme.error) : []),
   ];
-  // 预览按剩余行数截断：正文再长也不能把吸底布局顶出可视区（与各详情屏同一条规矩）
+  // 预览按剩余行数截断：正文再长也不能把吸底布局顶出可视区（与各详情屏同一处约束）
   const previewBudget = Math.max(3, usableFrameRows(rows) - headerRows.length - 3);
   const preview = current
     ? wrapText(current, Math.max(8, columns - 4)).slice(0, previewBudget)

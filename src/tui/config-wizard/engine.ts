@@ -49,7 +49,7 @@ import { t } from "../../i18n/index.js";
  * 名字与 procedure 一一对应，读一遍就知道每一屏调了契约里的哪一条。
  */
 export interface WizardWriters extends FieldWriters {
-  /** 新建端点（`config.endpoints.create`；`apiKey` 必须给，空串 = 先不配） */
+  /** 新建端点（`config.endpoints.create`；`apiKey` 占一格，空串 = 先不配） */
   addEndpoint: (endpoint: EndpointDefinition, message: string) => Promise<string | null>;
   deleteEndpoint: (endpointId: string, message: string) => Promise<string | null>;
   /** 默认项五格（`config.defaults.update`；`null` = 清空那一项） */
@@ -186,7 +186,7 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
     setNotice(message);
   };
 
-  /** 调一次 procedure：失败收敛成一句人话，不往外抛（屏上显示，不崩） */
+  /** 调一次 procedure：失败收敛成一句能直接上屏的话，不往外抛（屏上显示，不崩） */
   const attempt = async <T>(
     write: () => Promise<T>,
   ): Promise<{ ok: true; result: T } | { ok: false; message: string }> => {
@@ -398,10 +398,10 @@ export function useWizardEngine(props: ConfigWizardProps): WizardEngine {
    * 密钥 + 首要模型，一次写完。
    *
    * 首要模型从**当前这份快照**里取（不是写完再读一次）：写密钥不会动模型表，所以快照里那份就是
-   * 写完之后的那份。而它必须在 `updateEndpoint` 之后取 —— 那一步可能是失败的那个（失败就不该
-   * 继续往下写默认项，否则用户改了一个不存在的端点的密钥）。
+   * 写完之后的那份。而取值的时点在 `updateEndpoint` 之后 —— 那一步本身可能失败，失败时不继续
+   * 往下写默认项（否则用户改了一个不存在的端点的密钥）。
    *
-   * 默认项写失败时**不吞**：密钥已经落盘了（它在 `summary` 里），但「首要模型没设成」是用户要
+   * 默认项写失败时**不隐藏**：密钥已经落盘了（它在 `summary` 里），但「首要模型没设成」是用户要
    * 知道的一件事，所以把原因回给屏上；按 Esc 退出时 `dirty` 仍然是 true，密钥不丢。
    */
   const saveOnboardingKey: WizardWriters["saveOnboardingKey"] = async (endpointId, apiKey) => {

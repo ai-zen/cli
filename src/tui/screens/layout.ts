@@ -52,7 +52,7 @@ export interface ChatLayoutInput {
    */
   phaseLines?: number;
   /**
-   * 排队区行数（还压在队里、没被取走的那几句，每句一行，上限 3；紧贴在阶段行之后、
+   * 排队区行数（还压在队里、没被取走的那几句，每句一行，上限 `INBOX_MAX_ROWS`；紧贴在阶段行之后、
    * 分割线之上）。
    *
    * 与 `phaseLines` / `attachmentLines` / `agentTabLines` 用**同一套加法**计入固定高度：
@@ -105,7 +105,7 @@ export interface ChatLayout {
    * 菜单**实际**占用的行数（`min(想吃, 剩余空间)`）。
    *
    * 渲染（`BottomMenu.maxRows`）与硬件光标（`computeInputCursorPosition` 的
-   * `hintCount`）都必须从这里取，不许自己另算 —— 三处差一行，输入框与 IME 候选框
+   * `hintCount`）都从这里取值，不各自另算 —— 三处差一行，输入框与 IME 候选框
    * 就会整体偏移（通知栏最容易被漏算）。
    */
   hintRows: number;
@@ -122,7 +122,7 @@ export interface ChatLayout {
  *
  * 返回 `null` 表示**已贴底**（视口顶恰好等于最大顶，或内容不足一屏）—— 调用方据此
  * 清掉滚动状态，让视口重新跟随最新内容。所有滚动动作（翻页 / 按行 / 鼠标滚轮）都
- * 走这一个函数，越界方向自然被吃掉，不会出现「滚过头回不来」。
+ * 走这一个函数，越界的入参由钳制吸收，不会出现「滚过头回不来」的视口。
  */
 export function clampViewTop(totalLines: number, budget: number, nextTop: number): number | null {
   const maxTop = Math.max(0, totalLines - budget);

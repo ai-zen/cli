@@ -11,13 +11,13 @@
  *     按会话那一档，见 `pending-notices.ts` 的 `clearSessionNotices`，入参是 `sessionId`）——
  *     不给 `sessionId` 就是「清整个宿主库」，会把别的会话还没上屏的通知一起抹掉。
  *   · `Ctrl+G`（`handleClearAllNoticesKey`）：「清全部」。它自己不发任何请求，只开一次
- *     确认，并在那一问里明说会连**全局通知、别的会话的通知**一起清掉 —— 清全部要明说，
- *     不能顺手全清。
+ *     确认，并在那一问里连**全局通知、别的会话的通知**一起点名 —— 这一档列出的是全部
+ *     受影响的范围，不是一次静默的全清。
  *
  * 为什么不能塞进 `session.messages`：那份数组会被 `formatHistory()` **原样发给模型**，
  * 把「配置已更新 / 已中止 / 保存失败」这类 UI 提示写进去，等于往上下文里灌噪声，
  * 甚至带偏模型行为。所以 notice / error 走这条独立通道，由会话屏订阅后渲染到
- * 输入框上方的独立栏位，**绝不进入 messages**。
+ * 输入框上方的独立栏位，不进 messages。
  *
  * ## 为什么是队列，而不是「只留最新一条」
  *
@@ -41,7 +41,7 @@ import { wrapText } from "../text.js";
  * 通知语气：info 普通提示 / warn 警告（不影响使用但需看一眼）/ error 错误。
  *
  * 定义在 `session/types.ts` —— 会话层要把宿主的四档（`NoticeLevel`）映到这三档，而 `tui/` 是
- * 叶子（别处不许 import 它），所以词定义在上层、这里只转出。
+ * 叶子（其它地方不 import 它），所以词定义在上层、这里只转出。
  */
 export type { NoticeTone };
 

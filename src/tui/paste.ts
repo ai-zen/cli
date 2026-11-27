@@ -10,26 +10,26 @@
  *
  * 括号粘贴是终端侧的解决办法：应用先发 `CSI ? 2004 h` 声明「我认得，请把粘贴包起来」，终端于是
  * 用 `CSI 200 ~ … CSI 201 ~` 把整段包住。认出这一对标记之后，里面的内容就是**一段文本**，
- * 一段都不该被当按键解释。
+ * 不再逐段当按键解释。
  *
  * ## 两条形状都要认
  *
- * 实测（与 `mouse.ts` 文件头记的是同一件事）：Ink 会把序列**开头的 ESC 吃掉**，`useInput` 的
+ * 实测（与 `mouse.ts` 文件头记的是同一件事）：Ink 会去掉序列**开头的 ESC**，`useInput` 的
  * `char` 拿到的是 `[<64;10;5M`、`[200~` 这种去掉 ESC 的样子；但整段一起到达时也可能带着 ESC。
  * 两种都收。
  *
  * ## 归一（{@link normalizePastedText}）
  *
- *   - `\r\n` 与单独的 `\r` → `\n`（草稿只认 `\n` 折行）；
+ *   - `\r\n` 与单独的 `\r` → `\n`（草稿按 `\n` 折行）；
  *   - 去掉其余 C0 控制字符（`\t` 留着：它是文本里的缩进，默认宽度计 1 列、不破坏折行）；
- *   - 去掉末尾的换行：剪贴板与终端选区几乎总带一个尾换行，留着会让光标白跳一行。
+ *   - 去掉末尾的换行：剪贴板与终端选区几乎总带一个尾换行，留着会让光标多跳一行。
  *
  * 纯逻辑、不依赖 React / ink，可独立单测。
  */
 
 /** 开启括号粘贴的上报（与 `mouse.ts` 的 `MOUSE_ENABLE` 同一处下发） */
 export const PASTE_ENABLE = "\u001b[?2004h";
-/** 关闭。任何退出路径都要下发，否则 shell 里的粘贴会继续被包着 */
+/** 关闭。每条退出路径都下发一次，否则 shell 里的粘贴会继续被包着 */
 export const PASTE_DISABLE = "\u001b[?2004l";
 
 /**
@@ -41,7 +41,7 @@ export function enableBracketedPaste(stream: NodeJS.WriteStream = process.stdout
   stream.write(PASTE_ENABLE);
 }
 
-/** 关闭（幂等）。退出 / 信号 / 异常路径都要调用，否则 shell 里的粘贴会继续被包着 */
+/** 关闭（幂等）。退出 / 信号 / 异常路径各调用一次，否则 shell 里的粘贴会继续被包着 */
 export function disableBracketedPaste(stream: NodeJS.WriteStream = process.stdout): void {
   stream.write(PASTE_DISABLE);
 }
@@ -87,7 +87,7 @@ export type PasteFeed =
  * 括号粘贴的**拼装器**：一段粘贴可能被拆成好几块（终端按缓冲区分片写），
  * 这里负责把它们拼回去，并在结束标记处一次交出整段。
  *
- * 用法（每一段输入都喂一次）：
+ * 用法（每一块输入调用一次 `feed`）：
  *
  * ```ts
  * const feed = assembler.feed(char);
@@ -114,14 +114,14 @@ export class PasteAssembler {
       return this.close(joined);
     }
 
-    // ② 新的开始：标记前面可能还跟着别的东西（极少见），只认标记之后的部分
+    // ② 新的开始：标记前面可能还跟着别的东西（极少见），取标记之后的部分
     const started = afterStart(chunk);
     if (started !== null) return this.close(started);
 
     return { kind: "none" };
   }
 
-  /** 找到结束标记就交出整段，否则继续攒着 */
+  /** 找到结束标记就交出整段，否则把这部分留在缓冲里 */
   private close(payload: string): PasteFeed {
     const end = payload.indexOf(PASTE_END);
     if (end === -1) {

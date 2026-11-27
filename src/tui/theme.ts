@@ -39,9 +39,9 @@ export interface TextStyle {
  * 供工具调用参数（JSON）、围栏代码块与**正文 markdown 源码着色**共用。
  *
  * 约定：
- *   - **不写死近白 / 近黑**（如 #e2e8f0 / #000000）——在亮色或暗色终端之一里会看不见字；
- *     无颜色的 token 一律回落到**终端默认前景色**，需要区分时用 `bold` / `italic` / `dim` 等
- *     **终端相对属性**（`strong` / `emphasis` / `quote` 即如此）。
+ *   - 近白 / 近黑这类固定值（如 #e2e8f0 / #000000）在亮色或暗色终端之一里会看不见字，色板
+ *     里因此没有它们：无颜色的 token 回落到**终端默认前景色**，需要区分时用 `bold` /
+ *     `italic` / `dim` 等**终端相对属性**（`strong` / `emphasis` / `quote` 即如此）。
  *   - 绝对色只用于**强调**（关键字、字符串、标题等），且尽量取中间调。
  */
 export const syntax: Record<string, TextStyle> = {

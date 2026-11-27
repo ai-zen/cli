@@ -84,7 +84,7 @@ export function ConnectScreen(props: ConnectScreenProps) {
   const [lastTried, setLastTried] = useState<ConnectionSettings | null>(props.initial);
   const [addressError, setAddressError] = useState<string | null>(null);
 
-  /** 卸载之后不许再 setState（探活是异步的，用户可能已经按 Esc 走了） */
+  /** 卸载之后不再 setState（探活是异步的，用户可能已经按 Esc 走了） */
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;

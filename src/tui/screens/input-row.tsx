@@ -1,12 +1,12 @@
 /**
- * 可测量的输入行 —— 让**渲染器自己**告诉我们虚拟光标在第几列、第几行
+ * 可测量的输入行 —— 由**渲染器本身**给出虚拟光标所在的列与行
  *
  * ## 为什么要测量，而不是算
  *
  * 真实光标 = (x, y)。y 是行号，不依赖宽度计算；x 取决于「光标前那段文本占几列」再加上
- * 这一行前面所有祖先的偏移（padding / 提示符 / 折行）。宽度那一半已有同一把尺子
- *（`displayWidth()` 就是 Ink 用的 `string-width`），但祖先偏移只能靠复现 Ink 的排版去算，
- * 而那个模型会和 Ink 一起漂。既然这一行**已经渲染出来了**，最可靠的来源就是渲染器本身：
+ * 这一行前面所有祖先的偏移（padding / 提示符 / 折行）。宽度的另一半由 `displayWidth()`
+ * 给出（它就是 Ink 用的 `string-width`），但祖先偏移只能靠复现 Ink 的排版去算，
+ * 而那个模型会与 Ink 一起漂移。既然这一行**已经渲染出来了**，最可靠的来源就是渲染器本身：
  * Ink 7 的 `measureElement()` 返回元素的布局坐标 `{ x, y, width, height }`（内部累加
  * 所有祖先 offset），拿到的就是帧内绝对列 / 行。
  *
@@ -90,7 +90,7 @@ export function CursorInputRow({ firstLine, before, at, after, onMeasure }: Curs
           <Text>{"  "}</Text>
         )}
       </Box>
-      {/* 邻段可收缩可截断：超宽时由它们吃掉溢出，保证这一行恒为一行高 */}
+      {/* 邻段可收缩可截断：超宽时由它们承接溢出，保证这一行恒为一行高 */}
       <Box flexShrink={1} minWidth={0}>
         <Text wrap="truncate">{before}</Text>
       </Box>

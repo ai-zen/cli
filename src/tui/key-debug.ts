@@ -1,13 +1,13 @@
 /**
  * 按键诊断 —— 不同终端的按键编码差异极大（macOS 的 Option、PageUp/PageDown 尤其），
- * 「某个键在我机器上没反应」这类问题靠猜毫无意义：要么键被 OS/终端吞掉，
+ * 「某个键在我机器上没反应」这类问题靠猜毫无意义：要么键被 OS / 终端拦走，
  * 要么终端发来的序列和我们认的不一样。两种情况的判定方法是同一个 —— 看日志里有几行。
  *
  * 用法：
  *   AIZ_DEBUG_KEYS=1 aiz                       → 追加写到 <数据根>/logs/cli/keys.log
  *   AIZ_DEBUG_KEYS=1 AIZ_KEYS_FILE=/path aiz   → 写到指定文件
  *
- * `AIZ_DEBUG_KEYS` 在**模块加载时**读一次就固定（见 `KEY_DEBUG_ENABLED`），所以必须在启动进程前
+ * `AIZ_DEBUG_KEYS` 在**模块加载时**读一次就固定（见 `KEY_DEBUG_ENABLED`），所以它要在启动进程前
  * 给 —— 进程跑起来之后再设无效。日志路径相反，**用的时候才算**（见 `keyDebugFile()`）。
  *
  * 判读：
@@ -103,7 +103,7 @@ const FLAG_NAMES: (keyof KeyFlags)[] = [
  * 把一次按键格式化成单行记录。
  *
  * `input` 用 JSON.stringify 转义（控制字符会变成 `\u001b` 这类可读形式），
- * `raw` 表示按下时 stdin 是否仍在 raw mode —— 为 false 时键会被终端自己吃掉。
+ * `raw` 表示按下时 stdin 是否仍在 raw mode —— 为 false 时键会被终端自己消费。
  */
 export function formatKeyEvent(input: string, key: KeyFlags, raw: boolean): string {
   const flags = FLAG_NAMES.filter((name) => key[name]).join(",");
@@ -132,7 +132,7 @@ function keyDebugLog(line: string): void {
     mkdirSync(dirname(file), { recursive: true });
     appendFileSync(file, `${new Date().toISOString()} ${line}\n`);
   } catch {
-    /* 诊断失败绝不能影响主流程 */
+    /* 诊断失败不影响主流程 */
   }
 }
 
@@ -143,7 +143,7 @@ export function keyDebugStart(): void {
   try {
     keyDebugLog(`=== start ${terminalSummary()} file=${keyDebugFile()} ===`);
   } catch {
-    /* 求路径本身也可能失败（根还没钉）：诊断不该拦住主流程 */
+    /* 求路径本身也可能失败（根还没钉）：诊断不拦住主流程 */
   }
 }
 

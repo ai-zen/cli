@@ -117,7 +117,7 @@ export function renderNewEndpointStep(ctx: WizardContext): ReactNode {
                 id,
                 name: draft.name,
                 baseUrl: draft.baseUrl,
-                // `add` 收的是整条 `EndpointDefinition`：密钥这一格必须给，留空就是空串（= 还没配）
+                // `add` 收的是整条 `EndpointDefinition`：密钥这一格照给，留空就是空串（= 还没配）
                 apiKey,
               },
               t("wiz.newEndpoint.created", {

@@ -57,14 +57,14 @@ const CLEAR_SCREEN = "\x1b[2J\x1b[H\x1b[?25h";
 /**
  * 本进程那**一条**连接 —— 一个 TUI 进程只有一份。
  *
- * ## 为什么它必须建在 `runChat` 的重挂载循环之外
+ * ## 为什么它建在 `runChat` 的重挂载循环之外
  *
  * `/load`、`/new`、`/back` 都是「卸载当前 Ink 实例 → 再 `mount(<Chat/>)`」，而连接如果建在
  * 循环里（或建在组件里），切一次会话就重连一次：宿主那边多一条 driver，客户端这边丢掉全部在飞
  * 事件（还包括「刚断线」的误报）。
  *
  * 但「在循环之外」不等于「在模块里」：它需要的事实（`CliEnv` + 连接门选定的那份设置）由根
- * （`CliApp`）递进来、由连接门定下。放在模块级就只能去全局拿 —— 那样「这个 TUI 连的是哪台」
+ * （`CliApp`）递进来、由连接门定下。放在模块级就得去全局拿 —— 那样「这个 TUI 连的是哪台」
  * 又要读实现才知道，而它是本文件最该一眼看出来的一件事。
  */
 
@@ -131,7 +131,7 @@ export const RENDER_OPTIONS = {
  * 挂一个 Ink 实例，返回它的结局（`useApp().exit(payload)` 那一份）。
  *
  * `clear: false` 只有下载屏用：它在启动路径上、而且多数时候一个字节都不画（本机「有就上」那条
- * 快路），此时擦一下屏反而是一次白闪。
+ * 快路），此时擦一下屏反而多一次闪屏。
  */
 function mount(
   node: Parameters<typeof render>[0],
@@ -282,7 +282,7 @@ interface ChatTarget {
   /**
    * 「接着该工作区上一次的会话」—— 只是**意图**，不带任何数据。
    *
-   * 为什么不由这里读盘：会话根本不在本机磁盘上，读本地存档只会得出「永远没有上次」。
+   * 为什么不由这里读盘：会话根本不在本机磁盘上，读本地存档只会得出「从来没有上次会话」。
    * 哪一段算上一次，交给会话实现去问宿主。
    */
   resume?: boolean;
@@ -312,7 +312,7 @@ async function resolveTarget(connection: HostConnection, workspaceId: string): P
 /**
  * 按目标把会话**开好**（`registry.open`：只备好一段会话，先不接听众）。
  *
- * 这一步必须发生在凭据预检**之前**：预检要知道「这个模型属于哪个端点、有没有 Key」，而模型
+ * 这一步发生在凭据预检**之前**：预检要知道「这个模型属于哪个端点、有没有 Key」，而模型
  * 只由会话说得准（`SessionView.model.modelId`，宿主在 `session.create` 里按三级解析算出来、
  * 落在会话行上）。先开会话的代价是零：草稿会话不落库（R56），第一条用户消息之前 `session.list`
  * 里看不到它。
@@ -415,7 +415,7 @@ async function runChat(
   let initialInput: string | undefined;
   /** 撤回回填的那几张 Asset（与 `initialInput` 同一次回填的两半，见 `CommandExitValue`） */
   let initialAssetIds: string[] | undefined;
-  /** 重挂载后要展示一次的系统提示（如 `/model` 的写入结果，旧实例已卸载，只能传给新屏） */
+  /** 重挂载后要展示一次的系统提示（如 `/model` 的写入结果；旧实例已卸载，新屏是它唯一的去处） */
   let initialNotice: string | undefined;
   /**
    * shell 钩子（`ai --tui --new "$@"`）带来的首条消息。
@@ -446,7 +446,7 @@ async function runChat(
         // 启动期就知道开不出来（配置残缺）：首帧直接报它，不再重试一次开会话
         bootError={bootError}
         // 把**那一条**连接与**那份会话注册表**交给会话屏。两样都没有兜底：屏幕自己造一条连接
-        // 就是一个进程两条到宿主的连接；屏幕自己管会话生死就是切一段丢一段的订阅（PRD D4）。
+        // 就是一个进程两条到宿主的连接；屏幕自己管会话存活就是切一段丢一段的订阅（PRD D4）。
         deps={{ connection, sessions, logger: options.logger, logNotices: options.logNotices }}
         initialInput={initialInput}
         initialAssetIds={initialAssetIds}
@@ -504,7 +504,7 @@ async function runChat(
         initialAssetIds = value.initialAssetIds;
         initialNotice = value.notice;
         /**
-         * 会话 id 跟着一起换：会话侧可能已经换过 id（`/new` 开了新的、自动迁移搬了家、
+         * 会话 id 跟着一起换：会话侧可能已经换过 id（`/new` 开了新的、自动迁移换了位置、
          * `/save <名字>` 改了名字），而这里手上那个还是首次挂载时的。带旧 id 重挂载会
          * 接回另一段会话，或撞 `session-missing`。
          */
@@ -542,27 +542,27 @@ export interface RunTuiOptions {
   /**
    * 本进程的事实（配置根 / 显式地址与凭证）—— 由根（`CliApp`）递进来。
    *
-   * **必填**：TUI 不读 `process.env`。上面那两个开关是「这一屏怎么开」，这一项是「连哪台、
+   * **没有缺省**：TUI 不读 `process.env`。上面那两个开关是「这一屏怎么开」，这一项是「连哪台、
    * 拿什么进门」—— 两者混成一个可选参数的结果，就是“忘了传”静默地连回本机。
    */
   env: CliEnv;
   /**
    * 日志出口 —— 由根（`CliApp`）递进来。
    *
-   * **必填**：TUI 不读全局日志口。它会一路传给三五处会写日志的地方（界面偏好 / 工作区记忆 /
+   * **没有缺省**：TUI 不读全局日志口。它会一路传给三五处会写日志的地方（界面偏好 / 工作区记忆 /
    * 会话续接 / 命令层），每一处都在自己的签名里收它 —— 「这一行是谁写的」不必读实现才知道。
    */
   logger: LogSink;
   /**
    * 日志转成通知的那一格（根造的，与日志同一份）：会话屏注册自己的通知栏作它的入口，
-   * `warn` / `error` 于是上屏（去重 / 封顶 / 界面未起时攒几条在 `log-notices.ts`）。
+   * `warn` / `error` 于是上屏（去重 / 封顶 / 界面未起时先留几条在 `log-notices.ts`）。
    */
   logNotices: LogNotices;
 }
 
 export async function runTui(options: RunTuiOptions): Promise<void> {
   const uninstallSignals = installSignalSafety();
-  // 界面语言必须在任何渲染之前定下来：首次启动按系统语言识别并落盘，
+  // 界面语言在任何渲染之前定下来：首次启动按系统语言识别并落盘，
   // 之后以 preferences.json 为准（`/lang` 可随时改）。
   await initLocale(options.logger);
   // 按键诊断：AIZ_DEBUG_KEYS=1 时把终端环境 + 每次按键写进日志（默认关闭，零开销）
@@ -571,7 +571,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
   /**
    * 进程级那**一条**连接：一次 `runTui` 只建一次，且**在重挂载循环之外**。
    *
-   * 它必须等**连接门**过了才能建 —— 门里用户可能把目标换掉（从本机改成某台远程），而一条
+   * 它等**连接门**过了才建 —— 门里用户可能把目标换掉（从本机改成某台远程），而一条
    * 连接是照着那一刻的设置建的。所以它住在门后的那个作用域里；收摊时真正要用的只是「关掉它」
    * 这一个动作，单独记一个函数就够（不在外面留一个可空的对象）。
    */
@@ -598,7 +598,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
        * 连接门：先看上次那台还能不能用，不行就摆一块屏（理由与顺序见 `connection-gate.ts`）。
        *
        * 这一句取代了从前那句「直接 `resolveTarget()`，失败就报一行 `bootFailed` 退出」——
-       * 那时的症状是：服务端不可达时 TUI **没有任何可操作的界面**，用户只能去改环境变量。
+       * 那时的症状是：服务端不可达时 TUI **没有任何可操作的界面**，用户除了改环境变量没有别的办法。
        */
       const gate = await settleConnection({
         initial: await readConnectPlan(options.env),
@@ -644,14 +644,14 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
        * 会话注册表：**建在重挂载循环之外**（{@link runChat} 里那些 `/load` `/back` 只是换屏）。
        *
        * 它归**连接**所有：一段会话就是这条连接上的那一段，`/shutdown` 之后回到连接门、
-       * 重开一条连接，上一批会话的订阅已经没有意义了（那一批在 `finally` 里统一关掉）。
+       * 重开一条连接，上一轮会话的订阅已经没有意义了（它们在 `finally` 里统一关掉）。
        */
       const sessions = new SessionRegistry(connection, options.logger);
       try {
         /**
          * 进入工作区（PRD D30）：本机用当前目录，远端用上次进入的那个，都没有就摆一块选择屏。
          *
-         * 它必须发生在**建会话之前**：会话层只收一个 `workspaceId`，不再拿本机 cwd 去猜
+         * 它发生在**建会话之前**：会话层只收一个 `workspaceId`，不再拿本机 cwd 去猜
          * —— 猜的后果是把这台机器的路径登记到另一台机器的工作区表上。
          */
         const host = workspaceHost(gate.settings);
@@ -678,7 +678,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
           farewell();
           return;
         }
-        // 顺序很重要：`--new` 是「我不要上次」的明确表态，绝不能在这一步又把 resume 加回来
+        // 顺序很重要：`--new` 是「我不要上次」的明确表态，这一步不把 resume 加回来
         if (!options.newSession) target = resumeLastSession(target);
 
         // 开/续接会话在凭据预检**之前**：模型只在开会话那一步才定下来（宿主按
@@ -716,7 +716,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
       } finally {
         // 这一程到此为止（正常退出 / 宿主被关掉）：每一段会话的订阅先摘干净，再断连接。
         // 从前这一步是「最后一代屏幕卸载时 dispose 自己那一段」—— 而现在只有当前那一段会
-        // 被卸（切走的那几段留在后台跑），所以收摊只能由持有全部会话的这一层做。
+        // 被卸（切走的那几段留在后台跑），所以收摊由持有全部会话的这一层做。
         sessions.disposeAll();
       }
     }
@@ -727,7 +727,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
     /**
      * 断掉这条进程级连接。
      *
-     * 它现在**不随界面卸载而消失**（切会话不重连），所以退出时必须由
+     * 它现在**不随界面卸载而消失**（切会话不重连），所以退出时由
      * 这里显式关掉 —— 否则进程要等事件循环里的这条 socket 自己超时才能退。
      *
      * 顺序：会话的订阅在这一程结束时已经由 `sessions.disposeAll()` 摘干净了
@@ -748,7 +748,7 @@ function installSignalSafety(): () => void {
     } catch {
       /* 忽略 */
     }
-    // 任何异常退出路径都要把终端鼠标上报关掉，否则终端会持续把滚轮写成转义序列
+    // 每条异常退出路径都把终端鼠标上报关掉，否则终端会持续把滚轮写成转义序列
     try {
       disableMouseTracking();
     } catch {

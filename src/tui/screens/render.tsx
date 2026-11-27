@@ -1,7 +1,7 @@
 // 行渲染（Ink 组件）—— RLine → <Text>
 //
 // 纯文本度量（`truncate` / `graphemes` / `clusterWidth`）在 `src/text.ts`：它零 UI 依赖，
-// 所以命令层直接吃 `text.js`。本文件第一行就是 `import { Text } from "ink"`，只要有一个
+// 所以命令层直接引用 `text.js`。本文件第一行就是 `import { Text } from "ink"`，只要有一个
 // 命令层模块走本文件，`dist/commands/*.js` 的图上就会多出 ink 与 react/jsx-runtime。
 import { Text } from "ink";
 import { theme } from "../theme.js";
@@ -18,7 +18,7 @@ function baseColor(kind: LineKind): string | undefined {
       return theme.reasoning;
     case "tool":
       return theme.tool;
-    // 正文**不指定颜色**：用终端默认前景色渲染，避免写死近白（如 #e2e8f0）后
+    // 正文**不指定颜色**：用终端默认前景色渲染，避免把近白（如 #e2e8f0）固定写进代码后
     // 在亮色主题终端里「白底白字」看不见。绝对色只留给需要强调的分段（标题/代码等）。
     case "content":
       return undefined;

@@ -39,7 +39,7 @@ export interface WorkspacePickScreenProps {
   /** 只用到「问一句」那一面（与 `/ws` 拿的是同一条连接的同一个面） */
   connection: Pick<HostConnection, "api">;
   /**
-   * 结局出口（缺省 `useApp().exit`，由挂载处 `mount()` 的返回值接住；用例喂一个假的）。
+   * 结局出口（缺省 `useApp().exit`，由挂载处 `mount()` 的返回值接住；用例传入一个假的）。
    */
   onResult?: (result: WorkspacePickResult) => void;
   /** 测试用的固定尺寸（缺省按真实窗口） */
@@ -54,7 +54,7 @@ export function WorkspacePickScreen(props: WorkspacePickScreenProps) {
   const columns = props.terminalSize?.columns ?? windowSize.columns ?? 80;
   const rows = props.terminalSize?.rows ?? windowSize.rows ?? 24;
   const { exit } = useApp();
-  /** 结局出口：生产走 ink 的退出通道（`tui/index.tsx` 的 `mount()` 接住），用例喂一个假的 */
+  /** 结局出口：生产走 ink 的退出通道（`tui/index.tsx` 的 `mount()` 接住），用例传入一个假的 */
   const finish = props.onResult ?? exit;
 
   const [phase, setPhase] = useState<Phase>("loading");
@@ -63,7 +63,7 @@ export function WorkspacePickScreen(props: WorkspacePickScreenProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pathError, setPathError] = useState<string | null>(null);
 
-  /** 卸载之后不许再 setState / exit（列表与新建都是异步的，用户可能已经按 Esc 走了） */
+  /** 卸载之后不再 setState / exit（列表与新建都是异步的，用户可能已经按 Esc 走了） */
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -78,7 +78,7 @@ export function WorkspacePickScreen(props: WorkspacePickScreenProps) {
         const listed = await listWorkspaces(props.connection);
         if (!alive.current) return;
         setWorkspaces(listed);
-        // 一个都没有 → 唯一能做的事就是新建一个（远端必须由用户给路径）
+        // 一个都没有 → 唯一能做的事就是新建一个（远端路径由用户给出）
         setPhase(listed.length === 0 ? "path" : "list");
       } catch (error) {
         if (!alive.current) return;

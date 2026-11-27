@@ -16,7 +16,7 @@ import type { OpenEditor } from "./prompt-editor.js";
  *
  * 每一条读写都是一次 procedure 调用（`api.config.get.query()` / `api.config.models.create.mutate(…)`
  * / `api.config.agents.update.mutate(…)` / `api.config.mcp.update.mutate(…)`），所以这里收窄成
- * 「一个有 `api` 的对象」：屏幕与用例都只认这一面，不必认识 `HostConnection` 上别的格子。
+ * 「一个有 `api` 的对象」：屏幕与用例只用到这一面，不必认识 `HostConnection` 上别的格子。
  */
 export interface WizardHost {
   readonly api: HostClient["api"];
@@ -25,7 +25,7 @@ export interface WizardHost {
 /**
  * `agentDefinition.create` 的写入形状（SDK 的 `AgentDefinition` 去掉宿主自己盖的那两个时间戳）。
  *
- * `messages` 必须是**一整串**且至少一条 system（宿主的写前校验）；`function` 有则视为子 Agent。
+ * `messages` 是**一整串**，且至少一条 system（宿主的写前校验）；`function` 有则视为子 Agent。
  */
 export type AgentDefinitionInput = Omit<AgentDefinition, "createdAt" | "updatedAt">;
 /** `agentDefinition.update` 的局部改动（合并语义：`undefined` = 这一项不动） */
@@ -49,7 +49,7 @@ export interface DefaultsChange {
 /**
  * `config.update` 的四格：工具输出上限 + 中断策略两项 + 自动命名开关。
  *
- * `autoTitle` 只认布尔：这一格关掉只省下每段新会话那一次起名请求，手工改名（`/rename`）照旧。
+ * `autoTitle` 取布尔：这一格关掉只省下每段新会话那一次起名请求，手工改名（`/rename`）照旧。
  * 契约里没有「清回缺省」那一档，所以屏上只给两档，没有「不设置」。
  */
 export interface GlobalChange {
@@ -96,8 +96,8 @@ export type WizardStep =
   /**
    * 首启引导的第一步：**选服务商**。
    *
-   * 为什么不直接跳「填密钥」：一上来就要求某个厂商的密钥，等于替用户挑了他只能改的那一家
-   * （旧版就是拿默认模型反推端点）。这一屏把「哪一家」先交给用户，选完才问密钥。
+   * 为什么不直接跳「填密钥」：一上来就要求某个厂商的密钥，等于替用户挑定了一家（用户要换就得先改
+   * 配置；旧版就是拿默认模型反推端点）。这一屏把「哪一家」先交给用户，选完才问密钥。
    */
   | { kind: "onboarding" }
   /** 首启引导的第二步：那一家服务商的密钥（保存后定首要模型并关闭） */
@@ -164,7 +164,7 @@ export interface NewEndpointDraft {
  * 旧版还有一个 `restartRequired`（来自 `ConfigApplyReport.restartRequired`）：新契约的写口
  * 只回 `{ config }`，没有「这份改动要重启才生效」这一格，所以它随报告一起退场 ——
  * 「会话还没建好就先重启一次」那条判据留在 `use-wizard-host.ts` 里（那是本地事实：草稿会话
- * 之前改配置只能重来一遍）。
+ * 之前改配置要重来一遍）。
  */
 export interface WizardCloseResult {
   dirty: boolean;
@@ -174,7 +174,7 @@ export interface WizardCloseResult {
    *
    * 为什么不在向导里直接落到会话上：向导只拿得到 `api`（配置那一面），碰不到会话。而首启那一段
    * 会话的模型在建行那一刻就写定了（`session.create` 把三级解析的结果落进会话行），全局兜底的
-   * `defaultModel` 盖不住它 —— 于是「用户改了服务商」这件事必须由持有会话的调用方补一手，
+   * `defaultModel` 盖不住它 —— 于是「用户改了服务商」这件事由持有会话的调用方补一手，
    * 这里只回答「该落到哪个模型上」。
    *
    * `undefined` = 没选（用户没走完引导，或那家端点没有标记首要模型）。
@@ -200,7 +200,7 @@ export interface ConfigWizardProps {
   /**
    * 每个 AgentDefinition 上挂着几段会话（`workspace.list` + 逐个 `session.list` 数出来的，向导宿主数）。
    *
-   * 只给「删 AgentDefinition」那一处摆代价用：数得出来就说几段，数不出来（`null` / 缺省）就只说一句人话
+   * 只给「删 AgentDefinition」那一处摆代价用：数得出来就说几段，数不出来（`null` / 缺省）就只说影响面
    * —— **不编数字**。它是读出来的事实，不是第二份状态：数字在向导打开那一刻定下，随后不变。
    */
   sessionsByAgent?: Record<string, number> | null;

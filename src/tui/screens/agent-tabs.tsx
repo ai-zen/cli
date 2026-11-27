@@ -26,7 +26,7 @@ export interface AgentTab {
 }
 
 /**
- * subagent 的执行状态 —— 名册那两格（`working` / `idle`）加「已经散场」（`ended`），再加上
+ * subagent 的执行状态 —— 名册那两格（`working` / `idle`）加「已结束」（`ended`），再加上
  * **从它自己的消息上推出来**的结局（`error` / `aborted`，见 `../../subagent-status.ts`）。
  *
  * 名册不报「出错 / 被叫停」，但那不等于没法知道：那些事实就在它栏里那条消息的 `status` /
@@ -35,7 +35,7 @@ export interface AgentTab {
 export type AgentTabStatus = SubAgentStatus;
 
 /**
- * 状态符号：五种状态**同形不同色**（在动蓝 / 散场绿 / 还挂着灰 / 被叫停淡 / 出错红）。
+ * 状态符号：五种状态**同形不同色**（在动蓝 / 已结束绿 / 还挂着灰 / 被叫停淡 / 出错红）。
  *
  * 用 `◈`（U+25C8）：比 `•` 更像个「状态指示符」，又不像 `●` 那样把一行密集文本撑得松散。
  * 符号位于标签**之前**，使各标签的文字起始位置对齐。
@@ -45,7 +45,7 @@ export const AGENT_STATUS_DOT = "◈";
 /**
  * 状态圆点的颜色 —— 状态的**唯一视觉真相**。
  *
- * `working` 在「亮蓝 ↔ 暗」之间交替（闪烁）；`ended` 恒绿（散场了）；`error` 恒红（失败必须
+ * `working` 在「亮蓝 ↔ 暗」之间交替（闪烁）；`ended` 恒绿（已结束）；`error` 恒红（失败必须
  * 看得出失败）；`aborted` 恒淡（被叫停不是坏掉）；`idle` 恒暗（还挂着、没在动）。抽成纯函数是
  * 因为颜色没法在测试里断言（`ink-testing-library` 的 stdout 不是 TTY，Ink 不输出 ANSI）。
  *
@@ -94,7 +94,7 @@ export function agentTabStyle(active: boolean): {
   return {
     color: active ? theme.assistant : theme.faint,
     bold: active,
-    // 背景色块比改字色更能一眼看出「现在看的是谁」；非活动项必须没有背景，否则整条都是高亮
+    // 背景色块比改字色更能一眼看出「现在看的是谁」；非活动项不设背景，否则整条都是高亮
     backgroundColor: active ? theme.border : undefined,
   };
 }

@@ -26,7 +26,7 @@
  *
  * ## 结局为什么能注入
  *
- * 缺省走 `useApp().exit`（与连接屏同一个出口，挂载处 `mount()` 的返回值接住它）；用例喂一个假的
+ * 缺省走 `useApp().exit`（与连接屏同一个出口，挂载处 `mount()` 的返回值接住它）；用例传入一个假的
  * `onResult` 就能验 `Esc` / `R` 的语义，不必去动 ink 的退出通道。
  */
 
@@ -55,7 +55,7 @@ export interface HostLaunchHooks {
 export interface HostDownloadScreenProps {
   /** 拉一次；返回 `null` = 连上了，否则是能直接上屏的原因 */
   connect: (hooks: HostLaunchHooks) => Promise<string | null>;
-  /** 结局出口（缺省 `useApp().exit`；用例喂一个假的） */
+  /** 结局出口（缺省 `useApp().exit`；用例传入一个假的） */
   onResult?: (result: HostDownloadScreenResult) => void;
 }
 
@@ -70,7 +70,7 @@ export function HostDownloadScreen(props: HostDownloadScreenProps) {
 
   /** 手上正在跑的那一次（按 Esc / Ctrl+C 时 abort 它，子进程随之被杀） */
   const running = useRef<AbortController | null>(null);
-  /** 卸载之后不许再 setState、也不许再报结局 */
+  /** 卸载之后不再 setState、也不再报结局 */
   const alive = useRef(true);
 
   /** 拉一次（首次挂载与每次按 R 都走它） */

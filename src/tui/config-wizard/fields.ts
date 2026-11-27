@@ -154,7 +154,7 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
 
   /**
    * 「名称」字段：端点 / 模型 / 图片模型 / AgentDefinition 四处的形状逐字相同，只有写回目标不同。
-   * 空名称一律拦下 —— 名称会进提示语与列表，写空等于把这一条「弄丢」。
+   * 空名称被拦下 —— 名称会进提示语与列表，写空等于把这一条「弄丢」。
    */
   const nameField = (
     id: string,
@@ -182,7 +182,7 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
       label: endpoint.name || endpoint.id,
       value: endpoint.id,
     })),
-    // 选回原端点不算改动：否则会白白发一次写
+    // 选回原端点不算改动：否则会多发一次写
     commit: (raw) => (raw === currentEndpointId ? null : save(raw, t("field.endpoint"))),
   });
 
@@ -405,7 +405,7 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
           const nextId = raw.trim();
           if (!nextId) return t("err.nameRequired");
           if (nextId === server.id) return null;
-          // `mcp.save` 对已有的名字是「改那一条」，所以撞名只能在这里拦：否则会把那一条改掉
+          // `mcp.save` 对已有的名字是「改那一条」，所以撞名在这里拦：否则会把那一条改掉
           if (siblingIds.includes(nextId)) return t("err.mcpNameTaken", { name: nextId });
           return (async () => {
             // 改名 = 新名字建一条 + 旧名字删一条（`id` 就是 mcpServers 里的键）
@@ -513,7 +513,7 @@ export function createFieldBuilders(deps: FieldBuilderDeps): FieldBuilders {
    *
    * 名称 / 描述 / 模型 / 思考档位 / 权限四维都是单值，改一项就发一项的补丁（宿主按字段合并）。
    * 提示词与子 Agent 的函数说明 / 参数 schema 是**多行**内容：本屏只印一行摘要（正文换行
-   * 会把吸底帧撑破），Enter 进 `agent-text` 屏（`$EDITOR`），改完才由 `agentDefinition.update`
+   * 会让帧高超出可视区），Enter 进 `agent-text` 屏（`$EDITOR`），改完才由 `agentDefinition.update`
    * 写回去。
    */
   const agentFields = (agent: AgentDefinition): DetailField[] => {

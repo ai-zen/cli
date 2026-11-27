@@ -18,7 +18,7 @@
  *
  * `@` 只把**相对路径**写进草稿，消息本身仍是普通文本，模型用 `read` 工具自己去读。
  * 这样消息契约（core 的 `Message`）一点不动、插入可撤销、超大文件也不会把一条消息
- * 撑成巨型 payload —— 代价是多一次工具调用，这是刻意的取舍。
+ * 变成巨型 payload —— 代价是多一次工具调用，这是刻意的取舍。
  *
  * ## 判据落在字符事实上
  *
@@ -27,7 +27,7 @@
  *
  *   · `a@b.com` 不算（`@` 前是 `a`）—— 邮箱不会突然弹出文件列表；
  *   · `@src/tui` 算，query 为 `src/tui`；
- *   · 光标停在 token 中间（`@src|/foo.ts`）也算，且 `end` 会**向后吃掉整个 token**：
+ *   · 光标停在 token 中间（`@src|/foo.ts`）也算，且 `end` 会**向后覆盖整个 token**：
  *     补全要替换的是整段，只替换到光标会留下半截残字。
  */
 import type { FileEntry } from "../session/types.js";
@@ -62,7 +62,7 @@ const BOUNDARY = new Set([
   "：",
   ";",
   "；",
-  // 中文行文的标点：`@src/x。这里有问题 ` 里的 `。` 必须收住 token，否则补全会把
+  // 中文行文的标点：`@src/x。这里有问题 ` 里的 `。` 收住 token，否则补全会把
   // 后面整句一起替换掉，用户写句子时菜单也会一直弹着不走
   "。",
   "、",
@@ -122,11 +122,11 @@ export function extractMention(text: string, cursor: number): Mention | null {
   if (i === 0) return null; // 一路扫到开头也没有 `@`
   const start = i - 1; // `@` 的下标
 
-  // 2) 边界：`@` 前的字符必须是行首 / 空白 / 分隔符，否则当普通字符（邮箱里的 `@`）
+  // 2) 边界：`@` 前的字符是行首 / 空白 / 分隔符才算，否则当普通字符（邮箱里的 `@`）
   const prev = start > 0 ? chars[start - 1]! : "";
   if (prev && !isSpace(prev) && !BOUNDARY.has(prev)) return null;
 
-  // 3) 右端：向后扫到空白或分隔符。光标停在 token 中间时也要吃掉整段
+  // 3) 右端：向后扫到空白或分隔符。光标停在 token 中间时也要覆盖整段
   let end = cp;
   while (end < chars.length) {
     const ch = chars[end]!;

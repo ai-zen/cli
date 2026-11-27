@@ -1,9 +1,9 @@
 // 会话屏（screens）—— 对外统一出口
 //
-// 本目录按职责分成多个模块，此处只做 re-export —— 本目录只有这一个出口，外部
-// （`tui/index.tsx` 等）一律写 `from "./screens/index.js"`。
+// 本目录按职责分成多个模块，此处只做 re-export：本目录只有这一个出口，外部的 import
+// （`tui/index.tsx` 等）全部写 `from "./screens/index.js"`。
 
-// 文本度量 / 折行 / 整帧高度住在 ../text.js（纯函数、无 React 依赖），此处转发。
+// 文本度量 / 折行 / 整帧高度在 ../text.js（纯函数、无 React 依赖），此处转发。
 export {
   displayWidth,
   wrapText,

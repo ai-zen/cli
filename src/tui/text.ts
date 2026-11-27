@@ -144,14 +144,14 @@ export const INPUT_PREFIX_WIDTH = 3;
  *   - 设备状态报告：`CSI ? <n> n`；
  *   - 鼠标上报（SGR）：`CSI < b ; x ; y M`——滚轮 / 点击 / 拖拽，见 `mouse.ts`。
  *
- * 这类序列本应由 Ink 的解析器整体吞掉。但当它被**拆包**时（前导 ESC 被 Ink 的
+ * 这类序列本应由 Ink 的解析器整体消费。但当它被**拆包**时（前导 ESC 被 Ink 的
  * 「待定转义刷新定时器」当作一次独立的 Escape 键消费），残留在后一个 chunk 里的
  * `[?0u` 会退化成普通文本并被当作输入插入输入框（实测重现）。此处做一层护栏；
  * 根因（不再向终端发查询）已在渲染选项里关闭。
  *
  * 鼠标上报是**主动开启**的（`src/tui/mouse.ts`），且 Ink 会把整条序列当作 `char`
- * 交给 `useInput`，所以这里必须兜住——否则滚一下就往输入框里插一段 `[<64;10;5M`。
- * 注意：需要读滚轮的屏（会话屏）必须**在处理完滚轮之后**再调用本函数。
+ * 交给 `useInput`，所以这里兜一道——否则滚一下就往输入框里插一段 `[<64;10;5M`。
+ * 注意：需要读滚轮的屏（会话屏）在**处理完滚轮之后**再调用本函数。
  */
 export function isTerminalReply(sequence: string): boolean {
   return (
@@ -166,7 +166,7 @@ export function isTerminalReply(sequence: string): boolean {
  * 按显示宽度裁剪文本：超出上限则截断并补省略号（宽字符计 2 列）。
  *
  * 与 `src/text.ts` 的 `truncate` 是两件事：那个是「单行化 + 按簇截断（不保证宽度）」，
- * 这个是「保证**显示宽度** ≤ max」，用于必须精确占列数的排版。
+ * 这个是「保证**显示宽度** ≤ max」，用于需要精确占列数的排版。
  */
 export function clipWidth(text: string, max: number): string {
   const limit = Math.max(1, max);

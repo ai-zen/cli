@@ -79,7 +79,7 @@ export interface SelectListProps<T> {
    * 终端列数：提供时把每项裁成严格单行。
    *
    * 「吸底」布局的顶部留白是按行数算的，任一 InboxEntry 折行都会多占一行、把整帧顶高一格，
-   * 故列表类屏幕必须传它。
+   * 故列表类屏幕都传它。
    */
   columns?: number;
   /**
@@ -90,7 +90,7 @@ export interface SelectListProps<T> {
    * 挤出终端，状态栏与输入框跟着看不见。给了它之后列表**滚动**：高亮往下走，视窗跟着走，
    * 装不下的那几行被移出窗口（顶/末行左侧的 `↑` `↓` 说明「还有」）。
    *
-   * 传进来的数必须与布局那份同源（`pickerCapacity` / `usableFrameRows` 算出来的），
+   * 传进来的数与布局那份同源（`pickerCapacity` / `usableFrameRows` 算出来的），
    * 否则「渲染几行」与「布局留几行」对不上，输入框会整体位移。
    */
   maxRows?: number;
@@ -109,7 +109,7 @@ function fitItem<T>(item: SelectItem<T>, columns?: number): SelectItem<T> {
 /**
  * 选择列表的视窗：**自顶部锚定**的连续滚动（与底部锚定的 `menuViewport` 相反，这里是自上往下读）。
  *
- * 高亮越过窗口底部就整窗下移，保证选中项永远在窗内；`from` 的第二个钳制保证末页贴底时
+ * 高亮越过窗口底部就整窗下移，保证选中项留在窗内；`from` 的第二个钳制保证末页贴底时
  * 窗口里仍是连续的一段（不会只露出最后一条）。
  */
 function listViewport(
@@ -156,7 +156,7 @@ export function SelectList<T>({
         const selected = i === safeIndex;
         /**
          * 首/末行左侧那两格：选中标记优先（`❯ `）；否则若这一行之外还有候选，用 `↑ ` / `↓ `
-         * 说明「上面/下面还有」。**不额外占行** —— 覆盖层的高度是按候选条数算死的，
+         * 说明「上面/下面还有」。**不额外占行** —— 覆盖层的高度由候选条数算出，
          * 多画一行提示就会把输入框顶出一行。
          */
         const marker = selected
@@ -207,7 +207,7 @@ export function SelectList<T>({
  */
 export interface StatusBarProps {
   blocks: readonly StatusBlock[];
-  /** 快捷键提示（客户端自己的话，宿主不给）；优先级最低，被挤掉的永远是它 */
+  /** 快捷键提示（客户端自己的话，宿主不给）；优先级最低，被挤掉的就是它 */
   hint?: string;
   /** 终端列数（用于折行与行数测量）；缺省 80 */
   columns?: number;
@@ -245,7 +245,7 @@ function statusBlockSegments(block: StatusBlock, hint: string | undefined): Stat
       // 是另一处的事），而状态要说的是一个能拿去 `/model` 用的标识 —— 见口径⑥。
       //
       // 「当前助手」那一格**不在状态栏**：它一整个会话不变，每一帧占着宽度而零信息；
-      // 要换助手是 `/agent` 的事，换完之后这条会话的模型/思考档会自己变。
+      // 要换助手是 `/agent` 的事，换完之后这条会话的模型 / 思考档会随之变化。
       const view = thinkingView(thinking);
       return [
         { text: "◆ ", color: theme.brand[0] },
@@ -255,11 +255,11 @@ function statusBlockSegments(block: StatusBlock, hint: string | undefined): Stat
       ];
     }
     case "gates": {
-      // 四件事（PRD 4.4）：闲 / 忙、输入开关、输出开关、死活。
+      // 四件事（PRD 4.4）：闲 / 忙、输入开关、输出开关、会话存活状态。
       //
-      // 忙闲常显（一个字）—— 它是每一秒都在变的那一格，也是用户最关心的；两开关与死活只在
+      // 忙闲常显（一个字）—— 它是每一秒都在变的那一格，也是用户最关心的；两开关与存活状态只在
       // **非默认**时出现：它们正常就是「开 / 开 / 活」，把三个「正常」也画上去是每帧占三个词的
-      // 宽度而零信息。异常时它们各自说自己那一句，绝不压成一个「暂停」。
+      // 宽度而零信息。异常时它们各自出自己那一句，不合并成一个「暂停」。
       const { status, inputPaused, outputPaused, alive } = block.facts;
       // 读数还没到：一个字都不说（不借「闲」占位，那是要报给用户的事实）
       if (status === null) return [];
@@ -297,7 +297,7 @@ function statusBlockSegments(block: StatusBlock, hint: string | undefined): Stat
     case "rate": {
       // 速率这一段只管速率：用量那两个数在上一块（同一个数字摆两处就必然会漂）。
       //
-      // 生成中只认实时值（没有就整块留白）；手上没活时展示这一批的平均。
+      // 生成中取实时值（没有就整块留白）；不在生成中时展示本次会话的平均。
       // 用块里的 `working`（会话的忙闲那一格）而不是 `rate.running` 做门开关：`/update` 这类阻塞
       // 命令也会让界面转圈，但那不是生成，没有速率可说。
       const { rate, working } = block.facts;
@@ -353,7 +353,7 @@ export function StatusBar(props: StatusBarProps) {
     <Box flexDirection="column" flexShrink={0} width="100%">
       {rows.map((row, index) => (
         <Box key={index} paddingX={1} width="100%">
-          {/* `truncate` 是兜底：折行已在 statusBarRows 里算好，万一有出入也不允许 Ink
+          {/* `truncate` 是兜底：折行已在 statusBarRows 里算好，万一有出入，Ink 也不会
               再折出第 N+1 行（多一行就把输入框顶出屏幕）。 */}
           <Text wrap="truncate">
             {row.map((segment, i) => (
@@ -385,7 +385,7 @@ export interface MenuItem {
  * 「视觉顺序」相反 —— 换算只发生在渲染层（`slice(from, to).reverse()`），`selected`
  * 始终是**数据下标**：按键、回车、滚动、测试都按数据顺序读，不反转数据。
  *
- * 高亮一旦越过窗口顶部就整窗上移（`from = selected − size + 1`），保证选中项永远可见；
+ * 高亮一旦越过窗口顶部就整窗上移（`from = selected − size + 1`），保证选中项可见；
  * 装不下的从**顶部**丢弃（即索引大的候选先消失，因为它们离输入框最远）。
  */
 function menuViewport(
@@ -406,7 +406,7 @@ export interface BottomMenuProps {
   /** 高亮项：**数据下标** */
   selected: number;
   /**
-   * 布局放行的行数 —— 必须来自 `computeChatLayout().hintRows`，不能自己另算。
+   * 布局放行的行数 —— 来自 `computeChatLayout().hintRows`，不另算。
    * 差一行输入框就整体位移一行，硬件光标（IME 候选框）跟着偏。
    */
   maxRows: number;
@@ -426,11 +426,11 @@ const MENU_HINT_MIN = 4;
 /**
  * 把一项拆成「标签 + 可选的说明」，**按列宽预算**：
  *
- *   · 标签优先占满自己的宽度 —— 说明是次要信息，绝不能把命令名挤成一截；
- *   · 说明只能吃剩下的宽度（不够就裁，裁到连三个字都放不下就不显示）；
- *   · 只有标签自己就超宽时才裁标签。
+ *   · 标签优先占满自己的宽度 —— 说明是次要信息，命令名不因说明长而被挤成一截；
+ *   · 说明用剩下的宽度（不够就裁，裁到连三个字都放不下就不显示）；
+ *   · 标签自己就超宽时才裁标签。
  *
- * 不能用「标签与说明两个并列 flex 子节点」交给 Ink 分配：它会按内容比例分宽度，
+ * 不把「标签与说明」做成两个并列 flex 子节点交给 Ink 分配：它会按内容比例分宽度，
  * 说明一长就把命令名挤成 `/confi`（真机反馈）。
  */
 function menuRow(item: MenuItem, columns: number): { label: string; hint?: string } {
@@ -497,7 +497,7 @@ export function BottomMenu({ items, selected, maxRows, columns, topLine }: Botto
 /**
  * 待发送附件提示行（`Ctrl+V` 粘贴的图片）。
  *
- * **恒为一行**：`computeChatLayout` 按 `attachmentLines: 1` 算高度，内容超宽一律
+ * **恒为一行**：`computeChatLayout` 按 `attachmentLines: 1` 算高度，内容超宽由
  * `truncate` 兜底 —— 折成两行会把输入框顶出屏幕（同一类教训：状态栏 / 通知栏）。
  */
 export function PastedImagesBar({ count }: { count: number }) {
@@ -519,15 +519,15 @@ export function PastedImagesBar({ count }: { count: number }) {
  */
 export const INBOX_MAX_ROWS = 3;
 
-/** 一行里给来源名留多少字符（超了截断；来源名是内部名，不该把 preview 挤没） */
+/** 一行里给来源名留多少字符（超了截断；来源名是内部名，preview 不被它挤没） */
 const INBOX_SOURCE_MAX = 12;
 
 /**
  * 排队区这一刻占几行（0 ～ `INBOX_MAX_ROWS`）：0 条时整块不渲染、不占行。
  *
- * 三处必须同源：渲染（`InboxArea` 画几行）、布局（`computeChatLayout` 的 `inboxLines`）、
+ * 三处同源：渲染（`InboxArea` 画几行）、布局（`computeChatLayout` 的 `inboxLines`）、
  * IME 光标（`computeInputCursorPosition` 的 `inboxCount`）。差一行，输入框整体位移、
- * 输入法候选框跟着偏 —— 这是本仓有前科的一类 bug（通知栏、附件行、阶段行都吃过）。
+ * 输入法候选框跟着偏 —— 这是本仓多次出现的一类 bug（通知栏、附件行、阶段行都出过）。
  */
 export function inboxAreaLines(count: number): number {
   if (count <= 0) return 0;
@@ -547,7 +547,7 @@ export function inboxPrefix(source: AgentNS.MessageSource): string {
 }
 
 /**
- * 排队区 —— 还压在队里、没被取走的那几句（`session.state.inbox`），住在阶段行**之后**、
+ * 排队区 —— 还在队列里、没被取走的那几句（`session.state.inbox`），住在阶段行**之后**、
  * 分割线**之上**。
  *
  * 为什么不放进输入框那个 `Box`：那里的行数与 IME 光标定位是耦合的（`computeInputCursorPosition`
@@ -558,7 +558,7 @@ export function inboxPrefix(source: AgentNS.MessageSource): string {
  *   · 最多 `INBOX_MAX_ROWS` 行；0 条时整块不渲染、不占行；
  *   · 每条一行：`优先级 前缀 preview`，`truncate`（折行会把输入框顶出屏幕）；
  *   · 优先级是 core 那两个协议用词（`high` / `low`），原样上屏、不进翻译表 —— 它说的是「为什么这一条
- *     还没被取走」（`high` 在内循环的工具边界就取、`low` 要等手上这一批跑完），不是给终端用户看的
+ *     还没被取走」（`high` 在内循环的工具边界就取、`low` 要等当前这一轮跑完），不是给终端用户看的
  *     产品词；
  *   · InboxEntry 数 > `INBOX_MAX_ROWS` 时，最后一行说「还有 N 条」（N = 没显示出来的条数）。
  */

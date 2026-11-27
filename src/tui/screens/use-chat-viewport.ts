@@ -4,7 +4,7 @@
 // 是为了让「滚动」只有这一个地方能改 —— 混在会话屏里时，任何一个新键位都可能又写一遍。
 //
 // 关键点：所有动作都走 `scrollTo()` → `clampViewTop()`，因此
-//   · 越界方向被自然吃掉，不会出现「滚过头回不来」；
+//   · 越界值由钳制吸收，不会出现「滚过头回不来」的视口；
 //   · 回到底部时 `clampViewTop()` 返回 `null`，视口**自动**恢复「跟随最新内容」，
 //     不需要各处手写「滚到底就清空滚动状态」。
 import { useCallback, useRef, useState, type RefObject } from "react";
@@ -20,7 +20,7 @@ export interface ChatViewport {
    * —— 用 ref 传递可避免两个方向互相等待。
    */
   layoutRef: RefObject<ChatLayout | null>;
-  /** 翻页：一页 = 视口高度 - 1 行（留一行上下文，不至于跳得没头没尾） */
+  /** 翻页：一页 = 视口高度 - 1 行（留一行重叠的上下文） */
   scrollByPage: (dir: -1 | 1) => void;
   /** 按行滚动 */
   scrollByLine: (dir: -1 | 1) => void;

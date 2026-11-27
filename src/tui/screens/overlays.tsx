@@ -39,7 +39,7 @@ export function PickerOverlay({
 }) {
   useInput((input, key) => {
     // Ctrl+C 与 Esc 同义：选择器阶段也属于「命令执行中」（交接 / 迁移要在这里先选执行者），
-    // 只认 Esc 会让习惯 Ctrl+C 的人在这段等待里按不动、以为卡死了。
+    // 只认 Esc 时，习惯 Ctrl+C 的人在这段等待里按键无响应，会以为界面已经停止响应。
     // 注：两个主输入处理器的 `isActive` 都带 `!pickerState`，此刻它们都失活，没人兼管。
     if (key.escape || (key.ctrl && input === "c")) onPick(null);
   });
@@ -186,7 +186,7 @@ export function FormOverlay({
             bold={line.focused === true}
             wrap="wrap"
           >
-            {/* 空行要写一个空格：Ink 里空的 `<Text>` 高度是 0，那一行会被吃掉 */}
+            {/* 空行要写一个空格：Ink 里空的 `<Text>` 高度是 0，那一行会缺失 */}
             {line.text === "" ? " " : line.text}
             {/* 必填那个星号单独上色：它说的是「不填交不上去」，不是排版装饰 */}
             {line.star === true ? <Text color={theme.error}> *</Text> : null}

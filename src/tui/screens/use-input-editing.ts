@@ -43,7 +43,7 @@ export interface InputEditingDeps {
   /**
    * 历史数据源（`↑` / `↓` 翻的就是它）：按发送顺序返回草稿，**最后一条最新**。
    *
-   * 由外部注入（`userDrafts(session.messages)`）而不是 hook 自己攒：消息才是真相源，
+   * 由外部注入（`userDrafts(session.messages)`）而不是 hook 自己保管：消息才是真相源，
    * 自带图片；内部再存一份 `string[]` 就只能存文本，`↑` 回到带图消息时图会静默丢失。
    */
   historySource: () => readonly HistoryEntry[];
@@ -83,7 +83,7 @@ export interface InputEditing {
   /**
    * Ctrl+Y：取回 kill ring 里**最近**删掉的那一段。
    *
-   * 环里更早的那几段没有键位去取了：循环取回曾经是 `Alt+Y`，而 Alt 系在本产品里一概不当
+   * 环里更早的那几段没有键位去取了：循环取回曾经是 `Alt+Y`，而 Alt 系在本产品里不作为
    * 快捷键（`tui/screens/common-keys.ts` 的文件头）。环本身留着 —— 它也是 `Ctrl+W/U/K`
    * 之间「刚刚删了什么」的唯一记录。
    */
@@ -177,8 +177,8 @@ export function useInputEditing({
   /**
    * 用一段文本替换 `[start, end)`，光标落到插入文本末尾。
    *
-   * 走 `applyEdit`（而不是 `setInput`）是必须的：`@` 补全会把半截路径整段替换掉，
-   * 补错了要能 `Ctrl+_` 退回原样。
+   * 走 `applyEdit`（而不是 `setInput`）：`@` 补全会把半截路径整段替换掉，
+   * 补错了要能 `Ctrl+_` 退回原样，而只有 `applyEdit` 会记撤销快照。
    */
   const replaceRange = (start: number, end: number, text: string) => {
     const { chars } = clampCursor();

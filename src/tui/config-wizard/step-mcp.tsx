@@ -11,7 +11,7 @@
 //   · 增 / 改 / 删 / 启停 / 改作用域：都在这几屏里，每次改一条。
 //
 // 作用域只有两个（`user` / `workspace`）：契约里另有三个只读层（项目 `.mcp.json` 与两个
-// `.agents/mcp.json`），宿主对它们的写口一律 `unsupported` —— 界面因此不给，也不假装能进。
+// `.agents/mcp.json`），宿主对它们的写口都是 `unsupported` —— 界面因此不给，也不假装能进。
 import { ReactNode } from "react";
 import { SelectItem } from "../components.js";
 import { SWITCH_SCOPE, NEW_MCP_SERVER } from "./types.js";

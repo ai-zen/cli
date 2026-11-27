@@ -43,7 +43,7 @@ export function ListStep<T>({
     ...(subtitle ? textRows(subtitle, columns, theme.dim) : []),
     ...(warning ? textRows(`✖ ${warning}`, columns, theme.error) : []),
   ];
-  // 每项严格占一行（吸底布局才能精确留白）；装不下时列表**自己滚动**，不截断候选
+  // 每项严格占一行（吸底布局才能精确留白）；装不下时列表内部滚动，不截断候选
   const maxItems = Math.max(1, usableFrameRows(rows) - (headerRows.length + 3));
   const visibleCount = Math.min(items.length, maxItems);
   const contentLines = headerRows.length + 1 + Math.max(visibleCount, 1) + 1;

@@ -62,8 +62,8 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
   /**
    * 改 AgentDefinition**定义**（提示词 / 函数说明 / 参数 schema）之前那一次确认（PRD 1.6 / 4.2）。
    *
-   * 文案说人话、说影响面（正在看的那段回答会断），不是字段名 —— 人关心的是「我正在看的那个
-   * 会不会没」，不是「哪个字段被改了」。
+   * 文案写影响面（正在看的那段回答会断），不写字段名 —— 用户关心的是「我正在看的那个会不会
+   * 消失」，不是「哪个字段被改了」。
    */
   const definitionConfirm = {
     title: t("wiz.agentWrite.confirmTitle"),
@@ -208,7 +208,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
   //   · 提示词：`messages` 是**整串**替换，所以补丁给整串（首条 system 换 content）；
   //   · 函数说明 / 参数 schema：`function` 是**整份**替换，所以补丁给整个对象
   //     （只发改的那一项会把兄弟字段冲掉）。
-  // 空的提示词 / 空的说明是合法写入（清空是用户的正当操作）；参数 schema 非空且必须是
+  // 空的提示词 / 空的说明是合法写入（清空是用户的正当操作）；参数 schema 非空且为
   // JSON 对象，非法时当场拦下、一次写都不发。
   if (activeStep.kind === "agent-text") {
     const { agentId, field } = activeStep;
@@ -232,7 +232,7 @@ export function renderAgentsStep(ctx: WizardContext): ReactNode {
             label: t("field.prompt"),
           })}
           subtitle={t("wiz.agent.editorSubtitle")}
-          // 只认首条 system 的纯文本（分段内容表达不了，见 `agentPromptText`）
+          // 取首条 system 的纯文本（分段内容表达不了，见 `agentPromptText`）
           text={agentPromptText(agent.messages)}
           notice={notice}
           confirm={definitionConfirm}

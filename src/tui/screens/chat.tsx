@@ -106,10 +106,10 @@ export interface ChatDeps {
    */
   connection: HostConnection;
   /**
-   * 会话注册表：**屏幕只借会话，不管它的生死**（PRD D4）。
+   * 会话注册表：**屏幕只借用会话，不负责它的创建与关闭**（PRD D4）。
    *
    * 从前这两件事都在屏幕里（挂载时建、卸载时 `dispose()`），于是换一段会话（`/new`、`/load`）
-   * 就等于把旧那一段的订阅摘掉 —— 而它可能还在跑。现在建与关都归注册表（进程收摊时统一关），
+   * 就等于把旧那一段的订阅摘掉 —— 而它可能还在跑。现在建与关都归注册表（进程退出时统一关），
    * 屏幕只 `enter`（接成听众）与 `detach`（摘听众）。
    */
   sessions: SessionHub;
@@ -122,7 +122,7 @@ export interface ChatDeps {
    * 日志转成通知的那一格（根造的，与 `logger` 同一份日志）：
    *
    * 它是**进程级的**，通知栏却是**这一屏的**（每次重挂载一个新 `NoticeChannel`）。所以屏幕
-   * 挂上来时把自己的栏位注册成它的入口，走了就注销 —— 晚绑定、启动期攒的那几条、去重、封顶
+   * 挂上来时把自己的栏位注册成它的入口，走了就注销 —— 晚绑定、启动期累积的那几条、去重、封顶
    * 都在 `log-notices.ts` 里，这里只做接线。
    */
   logNotices: LogNotices;
@@ -190,7 +190,7 @@ export interface ChatScreenProps {
    * 启动后**自动作为首条消息发送**的内容（shell 钩子 `ai --tui --new "$@"`）。
    *
    * 与 `initialInput` 的区别：那个是**预填到输入框**、等用户确认；这个是直接发出去。
-   * 它一律当**普通消息**发送，不经过斜杠命令解析——钩子带来的可能是 `/opt/bin/foo`
+   * 它按**普通消息**发送，不经过斜杠命令解析——钩子带来的可能是 `/opt/bin/foo`
    * 这种以 `/` 开头的命令，否则会被当成 CLI 命令而报「未知命令」。
    */
   initialPrompt?: string;
@@ -224,7 +224,7 @@ export function resolveSubmitText(input: string, hints: CommandHint[], menuIndex
 /**
  * 忙碌期那一行 spinner 的文案。
  *
- * 手上这一批在动时由**契约事实**推出来（`phaseLine`：忙闲 + 那条消息的 status / 思考 / 正文 /
+ * 有回答正在生成时，文案由**契约事实**推出来（`phaseLine`：忙闲 + 那条消息的 status / 思考 / 正文 /
  * 工具调用）；但 `/update`、`/migrate` 这类**阻塞输入的命令**执行时根本没有「在忙」的那一格，
  * `phaseLine` 会回 `null` —— 与生成毫无关系。命令期间改显命令名，至少能看出「在跑哪条命令」，
  * 具体进度由命令自己 push 通知（查版本 / 开始安装 …）。
@@ -240,7 +240,7 @@ export function Chat(props: ChatScreenProps) {
    * 依赖：`connection` 与 `sessions` 由组装根注入（**没有兜底**），剪贴板两项缺省走真实实现。
    *
    * 为什么它们没有兜底：见 `ChatDepsInput` 的注释 —— 组件里再造一条连接、或自己管一段会话的
-   * 生死，是「一个进程两条连接」「切会话丢订阅」这两个病唯一还没堵住的入口。
+   * 创建与关闭，是「一个进程两条连接」「切会话丢订阅」这两个问题唯一还没堵住的入口。
    */
   const deps: ChatDeps = {
     readClipboardImage,
@@ -268,10 +268,10 @@ export function Chat(props: ChatScreenProps) {
    * 「正在交接」（PRD 4.5 / 1.3）：这一段在写交接文档，记忆还没换完。
    *
    * 判据是会话层现读的那一格（`session.changed` 的 `handoff_started` 置、`memory_replaced` 收；
-   * 重连时由 `session.state` 的 `handoff` 读回来）—— 屏幕不自己攒这个状态，因为「什么时候开始、
+   * 重连时由 `session.state` 的 `handoff` 读回来）—— 屏幕不自己保存这个状态，因为「什么时候开始、
    * 什么时候收口」只有宿主知道。
    *
-   * 交接期间界面要**拦住人**：不给发、只留中断（= 放弃交接、回滚到交接前）。宿主那边照收不误
+   * 交接期间界面要**拦住输入**：不给发、只留中断（= 放弃交接、回滚到交接前）。宿主那边照收不误
    * （PRD 4.5 只关输出开关、不关输入开关），所以**拦在客户端这一侧**，否则用户会以为话已经受理了。
    */
   const handoffSince = session?.handoffSince ?? null;
@@ -298,8 +298,8 @@ export function Chat(props: ChatScreenProps) {
   /**
    * 速率的**刷新计数**。
    *
-   * 速率是采样值（`session.rateSample` 每读一次都可能不一样），它挂在状态栏那一块上，而状态栏
-   * 只在重渲染时才会重新读一遍。所以这里留一个空计数：生成中每 250ms 加一，纯粹为催一帧。
+   * 速率是采样值（`session.rateSample` 每读一次都可能不一样），它由状态栏那一块读取，而状态栏
+   * 只在重渲染时才会重新读一遍。所以这里留一个空计数：生成中每 250ms 加一，只为触发一次重渲染。
    * 数字本身**不在这里存** —— 存一份就会与采样器分叉（它有自己的时间窗）。
    */
   const [, bumpRate] = useState(0);
@@ -372,7 +372,7 @@ export function Chat(props: ChatScreenProps) {
   const ctrlDAtRef = useRef(0);
 
   /**
-   * 通知通道：notice / error 走独立栏位，绝不进会话转录（messages）。
+   * 通知通道：notice / error 走独立栏位，不进会话转录（messages）。
    */
   const noticeChannelRef = useRef<NoticeChannel | null>(null);
   if (noticeChannelRef.current == null) noticeChannelRef.current = new NoticeChannel();
@@ -393,7 +393,7 @@ export function Chat(props: ChatScreenProps) {
    * 自动就有，不必为新特性再传一个回调。
    *
    * `origin: "log"` 是这条链的记号：它跟着「发送那一刻清空」走（`clearNoticesOnSend`），
-   * 与业务提示（宿主转来的、CLI 自己说的那句话）同批退场 —— 两档都在用户开口时清掉。
+   * 与业务提示（宿主转来的、CLI 自己说的那句话）在同一次发送里一起清 —— 两档都以用户开口为终点。
    */
   useEffect(() => {
     deps.logNotices.setSink((level, message) => noticeChannel.push(message, level, "log"));
@@ -422,7 +422,7 @@ export function Chat(props: ChatScreenProps) {
     workspaceId: session?.workspaceId ?? props.workspaceId ?? "",
     notify: (text, tone) => noticeChannel.push(text, tone),
     hasSession: () => sessionRef.current != null,
-    // 向导改完某些配置后要重挂载（同一进程、新 Ink 实例）。会话 id 必须带**此刻**的：
+    // 向导改完某些配置后要重挂载（同一进程、新 Ink 实例）。会话 id 取**此刻**的：
     // 宿主手上的那个是首次挂载时的，`/new` 会让它过期。
     restart: () =>
       exit({
@@ -580,7 +580,7 @@ export function Chat(props: ChatScreenProps) {
   ]);
 
   // 速率刷新：状态栏那一块只在重渲染时重新读采样器，所以在动的时候每 250ms 催一帧。
-  // 手上没活时也读一次 —— 那一下拿到的是这一批的平均值。
+  // 手上没活时也读一次 —— 那一次拿到的是最近一段采样的平均值。
   useEffect(() => {
     bumpRate((n) => n + 1);
     if (activity !== "working") return;
@@ -677,7 +677,7 @@ export function Chat(props: ChatScreenProps) {
    * 菜单**想吃**的行数：候选条数 + 「扫描中…」占位。
    *
    * 实际能拿多少由布局决定（`computeChatLayout` 按输入框上方的剩余空间放行，
-   * 不设固定上限）—— 这里交上去的是「想要多少」，渲染与 IME 光标一律读回
+   * 不设固定上限）—— 这里交上去的是「想要多少」，渲染与 IME 光标都读回
    * `layout.hintRows`，三处同源。
    */
   const menuWant = slash ? hints.length : fileMatches.length + (scanningFiles ? 1 : 0);
@@ -706,9 +706,9 @@ export function Chat(props: ChatScreenProps) {
   /**
    * 每次「重新唤起 `@`」都问一次本工作区的文件清单。
    *
-   * 为什么问会话而不是自己扫盘：`@` 补全给出的路径必须对**跑会话的那台机器**成立。
-   * 会话跑在宿主里，屏幕这边扫本机磁盘列出的是客户端机器的文件 —— 模型拿到那些路径一律
-   * not found。`listWorkspaceFiles()` 问的就是宿主（`workspace.files`），屏幕只负责过滤与插入。
+   * 为什么问会话而不是自己扫盘：`@` 补全给出的路径要对**跑会话的那台机器**成立。
+   * 会话跑在宿主里，屏幕这边扫本机磁盘列出的是客户端机器的文件 —— 模型拿到那些路径都
+   * 是 not found。`listWorkspaceFiles()` 问的就是宿主（`workspace.files`），屏幕只负责过滤与插入。
    *
    * 为什么这里不再叠一层缓存：宿主那边每次都是**现走一遍目录**（一次 `workspace.files` 就是一
    * 次真扫，没有 TTL、没有缓存可对齐）。屏幕再存一份就是两份真相——屏幕那份过期时，用户看到的
@@ -719,8 +719,8 @@ export function Chat(props: ChatScreenProps) {
    * 宿主这一版是 `workspace.files` 一次列完，回的清单已经是有定论的那一份，这一圈通常一问就落
    * 到 `ready` / `unavailable` 上。循环留着是因为 `WorkspaceFiles.state` 里还有 `scanning` 那一
    * 档（旧契约「先回扫着、回头再问」）：真回到那一档时保持 `fileIndex === null`（屏幕继续挂
-   * 「扫描中…」），过一会儿重问。上限 20 × 500ms ≈ 10s；真超了就当空清单（绝不把输入框卡在
-   * 「扫描中」）。
+   * 「扫描中…」），过一会儿重问。上限是 20 次 × 500ms ≈ 10s；真超了就当空清单，输入框因此
+   * 不会停在「扫描中」。
    */
   useEffect(() => {
     if (mention == null) return;
@@ -734,7 +734,7 @@ export function Chat(props: ChatScreenProps) {
       for (let attempt = 0; attempt < 20; attempt += 1) {
         const listed = await session.listWorkspaceFiles().catch(() => null);
         if (!alive) return;
-        // 问不到（宿主没这条方法 / 连接断了）：按空清单处理，绝不让补全卡住输入框
+        // 问不到（宿主没这条方法 / 连接断了）：按空清单处理，补全不会因此卡住输入框
         if (listed === null) {
           setFileIndex([]);
           return;
@@ -826,15 +826,15 @@ export function Chat(props: ChatScreenProps) {
    *
    * ## 为什么两档一起清
    *
-   * `log` 档（日志上浮的）本来就是「刚才那阵发生了什么」，发送即过期；`app` 档（宿主说的、
-   * CLI 自己说的）以前留着等用户处理，代价是它们顶着输入框陪下一轮对话 —— 而用户一开口，就
-   * 已经开始讲新的一件事了。所以发送 = 这一批通知的生命周期结束。
+   * `log` 档（日志上浮的）记的是「刚才那阵发生了什么」，发送之后即过期；`app` 档（宿主说的、
+   * CLI 自己说的）以前留着等用户处理，代价是它们占着输入框上方进入下一轮对话 —— 而用户一开口，
+   * 已经在讲新的一件事了。所以一次发送就是一整批通知的生命周期终点。
    *
    * ## 为什么连宿主那一份也清
    *
-   * 不清的话，下次重连补看（`flushPendingNotices`）会把同一批再上屏一遍 —— 用户明的已经
-   * “翻篇”了的东西又来一次。清的只是**这一段会话**：不带 `sessionId` 的清全部是另一档
-   * （`Ctrl+G`，要明说，PRD 那条规矩），这里绝不顺手做。
+   * 不清的话，下次重连补看（`flushPendingNotices`）会把同一批再渲染一遍 —— 用户认为已经
+   * 过去的内容会再出现一次。清的只是**这一段会话**：不带 `sessionId` 的清全部是另一档
+   * （`Ctrl+G`，那一档要先问一次，PRD 那条约定），这里不涉及。
    *
    * 清不掉不报：这一刻用户要成的是「把这句话发出去」，拿清通知的失败挡在他面前说不通；
    * 要报失败的是 `Ctrl+X` 那条路（它本身就是「清」这个动作）。
@@ -852,9 +852,9 @@ export function Chat(props: ChatScreenProps) {
     /**
      * 交接期间**不发**（PRD 4.5 / 1.3）。
      *
-     * 与下面那条「忙也照发」不冲突，两件事的判据不同：忙是「手上有活」，宿主活着就收（PRD 4.2）；
-     * **交接是「记忆马上要被换掉」**，这时收下的话要等换完才被取走，而且用户看不见任何受理迹象
-     * —— 让他以为发出去了，比直接告诉他「现在不行」坏得多。
+     * 与下面那条「忙也照发」不冲突，两件事的判据不同：忙是「手上有活」，宿主存活就收（PRD 4.2）；
+     * **交接是「记忆马上要被换掉」**，这时收下的话要等换完才被取走，而且用户看不到任何受理迹象
+     * —— 用户以为已经发出去了，比直接告诉他「现在不行」坏得多。
      *
      * `clearDraft()` 在这条之后（没走到），所以草稿留住：交接结束接着发就行。
      */
@@ -865,8 +865,8 @@ export function Chat(props: ChatScreenProps) {
     /**
      * 这一屏是否由**本次提交**接管那两样本地的东西（乐观回显、阻塞命令的阶段行）。
      *
-     * 手上已经有活时提交照发 —— 客户端**不加**「运行中禁止发送」的分支：宿主那边忙不是拒绝的
-     * 理由（活着就收下入队，PRD 4.2）。但乐观回显是**这一句**的，不该在别人的活还在跑时被
+     * 手上已经有活时提交照发 —— 客户端**不**做「运行中不发送」的分支：宿主那边忙不是拒绝的
+     * 理由（它在就收下入队，PRD 4.2）。但乐观回显是**这一句**的，不应在别人的活还在跑时被
      * 我们收掉；阻塞命令名同理。
      */
     const ownsWorking = !working;
@@ -878,7 +878,7 @@ export function Chat(props: ChatScreenProps) {
      * 发送那一刻清空通知（本地队列 + 宿主这一段），按下就清，不等发送结果。
      *
      * 时机：恰好在这一句**被受理**之后、命令 / 消息分流之前 —— 那时草稿已经清掉、光标已经
-     * 回到底部，通知栏再留着上一批话就是纯噪声。（清什么、为什么连宿主那份也清，见
+     * 回到底部，通知栏再留着上一次的话就是纯噪声。（清什么、为什么连宿主那份也清，见
      * `clearNoticesOnSend`。）
      */
     clearNoticesOnSend();
@@ -894,7 +894,7 @@ export function Chat(props: ChatScreenProps) {
       try {
         await runCommand(name, trimmed, {
           session: sessionRef.current!,
-          // 命令层的配置 / AgentDefinition / 模型 / 宿主域读写（`/model`、`/agent`、`/think` …）一律说契约方法：
+          // 命令层的配置 / AgentDefinition / 模型 / 宿主域读写（`/model`、`/agent`、`/think` …）都走契约方法：
           // 屏幕只负责把这一条连接递下去，不替它判断本地还是远程
           call: boundCall(deps.connection),
           // 会话域 / 工作区域直连的那一面（口径③）：`/ws`、`/model` 要的就是它
@@ -963,23 +963,23 @@ export function Chat(props: ChatScreenProps) {
     const session = sessionRef.current!;
     try {
       /**
-       * **「按发送」是一个复合动作：复活 → 开开关 → 投递**（PLAN §5.1）。三步里只有两步在屏幕这边：
+       * **「按发送」是一个复合动作：唤醒 → 开开关 → 投递**（PLAN §5.1）。三步里只有两步在屏幕这边：
        *
-       *   1. 复活（`!alive` → `agent.wake`）：**归会话层的 `send()`**（PRD 4.1「客户端点发送时
+       *   1. 唤醒（`!alive` → `agent.wake`）：**归会话层的 `send()`**（PRD 4.1「客户端点发送时
        *      先判这段是死是活，死的就调接口复活、再投递」）。放在会话层而不是这一屏：所有发话
-       *      入口（这一屏、将来任何前端）共用它，屏幕这边再叫一次 `start()` 就是在醒了之后再
-       *      白叫一次（两次往返做同一件事）；用户杀掉一段或宿主重启之后还能不能发进去，也不该
-       *      看哪一个前端在发；
+       *      入口（这一屏、将来任何前端）共用它，屏幕这边再调一次 `start()` 就是在唤醒之后再
+       *      重复调用一次（两次往返做同一件事）；用户停掉一段或宿主重启之后还能不能发进去，也不应
+       *      取决于哪一个前端在发；
        *   2. `outputPaused` → `resume()`：「用户点发送就是继续」（PRD 4.4）—— 开关关着时投进去
        *      只会排队、用户等的是一个回答；
        *   3. `send()`：投递。
        *
-       * 这三件是两个正交接口的三种用法（复活 / 动开关 / 入队），所以**没有一步替另一步做事**。
+       * 这三件是两个正交接口的三种用法（唤醒 / 动开关 / 入队），所以**没有一步替另一步做事**。
        * 判据是**当时读到的**那一格，读什么做什么 —— 不做「反正调一下也无害」的预调：`resume` 在
-       * 交接期间会被宿主拒（`handoff_in_progress`），白调一次就是让一次正常发送多失败一次。
+       * 交接期间会被宿主拒（`handoff_in_progress`），多调一次就多一次正常发送失败。
        *
        * 哪一步没成就说清哪一步、后面那步**不做**（发出去半句比没发更糟），也不重试、不回退 ——
-       * 用户按一下再说一次就是重试。开开关失败这一句在屏幕这边说（它能做、没做成），复活与投递
+       * 用户按一下再说一次就是重试。开开关失败这一句在屏幕这边说（它能做、没做成），唤醒与投递
        * 失败那句由会话层自己报（它报的才是宿主原话）。
        */
       if (session.outputPaused === true) {
@@ -995,7 +995,7 @@ export function Chat(props: ChatScreenProps) {
           return;
         }
       }
-      // 最后一步就是投（死的先叫起来也是它自己那一手）：`send` 受理即回，`waitForReply` 才是
+      // 最后一步是投递（唤醒已停止的会话同样在 `send()` 内部完成）：`send` 受理即回，`waitForReply` 才是
       // 「这一句有了下文」。事件可能比 `send` 的回执先到，所以这两句不能合成一句。
       await session.send(trimmed, images, [...restored]);
       await session.waitForReply();
@@ -1012,8 +1012,8 @@ export function Chat(props: ChatScreenProps) {
   /**
    * subagent 那一栏的**签名**：谁、在哪一格（`working` / `idle` / `ended`）。
    *
-   * 它同时是「要不要重取这个 subagent 的消息」的判据 —— 名册上的一次变化（它散场了、又开始
-   * 动了）就该重新问一次；只按 id 记住会很安静地停在一份旧会话上。
+   * 它同时是「要不要重取这个 subagent 的消息」的判据 —— 名册上的一次变化（它结束了、又开始
+   * 动了）就该重新问一次；只按 id 记住会一直停在一份旧会话上。
    */
   const subAgentSignature = subAgentViews
     .map((item) => `${item.toolCallId}:${item.state}`)
@@ -1021,7 +1021,7 @@ export function Chat(props: ChatScreenProps) {
   /**
    * 名册每一行此刻的状态（名册那一格 + 它自己消息上的结局）。
    *
-   * 栏目圆点与「结束了说一句」读的都必须是这一份 —— 两处各算一次的话，完全可能出现圆点是红的
+   * 栏目圆点与「结束了说一句」读的都是这一份 —— 两处各算一次的话，完全可能出现圆点是红的
    * 而通知说「已完成」。
    */
   const subAgentStates = subAgentViews.map((item) => ({
@@ -1032,7 +1032,7 @@ export function Chat(props: ChatScreenProps) {
    * 上面那份的**签名**：谁、在哪一格。
    *
    * 名册每次渲染都是新数组（会话层现拼的），按数组进依赖会让下面那条 effect 每帧都跑一遍；
-   * 而「有结局了」本身就是一个会重复抵达的事实，必须靠这份签名收成一次。
+   * 而「有结局了」本身就是一个会重复抵达的事实，靠这份签名收成一次。
    */
   const subAgentStateSignature = subAgentStates
     .map(({ fact, status }) => `${fact.toolCallId}:${status}`)
@@ -1145,9 +1145,9 @@ export function Chat(props: ChatScreenProps) {
    *
    * 栏位空的时候连提示那一行都不画（`noticeBarContent`），所以「队列空了」这件事本身
    * 就是屏幕上看得见的回执 —— 再 push 一句「已清空本会话的通知」，等于把刚清掉的栏位又
-   * 撑起一行：用户按一次冒一条，栏位永远不是空的，那条通知唯一的功能就是让「清空」白做一次。
+   * 多占一行：用户按一次多一条，栏位始终不为空，而那条通知唯一的作用是抵消刚刚那次清空。
    *
-   * 失败必须说：按下的就是「清」这个动作，而它只影响「下次重连要不要再播一遍」，闷掉
+   * 失败要报：按下的就是「清」这个动作，而它只影响「下次重连要不要再播一遍」，不报
    * 会让用户以为清干净了。
    *
    * 整个库那一档（清全部）是另一个键、另一条路：见下面的 `clearAllNotices`。
@@ -1174,13 +1174,13 @@ export function Chat(props: ChatScreenProps) {
    *
    * 契约里 `notice.deleteAll` 不给 `sessionId` 就是清**整个宿主库**：全局通知（不属于任何一段会话，
    * 哪儿都看得见）与别的会话还没上屏的通知都会一起没。`prd/08-client.md` 的通知那一节写着
-   * 「清全部要明说，不能顺手全清」—— 所以问题里点名那两件事，别给人事后才发现别处也没了的
-   * 机会；选了「否」一个方法都不调。
+   * 「清全部要明说，不能静默全清」—— 所以那一问里点名这两类会一起没的通知，用户不会在
+   * 事后才发现别处也少了东西；选了「否」时一个方法都不调。
    *
    * ## 顺序：先数、再问、最后清
    *
    * 条数从**清之前**那次 `notice.list`（不带 `sessionId` = 整个库）数出来 —— 清完就问不出来了，
-   * 而「清掉了什么」这句话里必须有数。列不出来就停在这里（什么都不清）。
+   * 而「清掉了什么」这句话里要带上这个数。列不出来就停在这里（什么都不清）。
    *
    * 本地队列也一起清：那些句子在宿主那边已经没了，留着它们等于挂着一批不存在的通知；清完再
    * push 那一句总结，屏幕上说的就是刚发生的事。
@@ -1322,13 +1322,13 @@ export function Chat(props: ChatScreenProps) {
   // 输入处理
   useInput(
     (char, key) => {
-      // 按键诊断（AIZ_DEBUG_KEYS=1）：必须在任何 return 之前记录，否则被吞掉的键不会留痕
+      // 按键诊断（AIZ_DEBUG_KEYS=1）：放在任何 return 之前，否则被消费的键不会留痕
       keyDebug(char, key);
       /**
-       * 粘贴优先于一切按键语义：`CSI 200~ … CSI 201~` 之间是**一段文本**，里面的 `\r` 不是回车、
+       * 粘贴优先于其它按键语义：`CSI 200~ … CSI 201~` 之间是**一段文本**，里面的 `\r` 不是回车、
        * `\t` 不是 Tab、`/` 不是命令 —— 整段一次插进草稿（见 `tui/paste.ts`）。
        *
-       * 必须排在所有分支之前：排在后面的话，多行粘贴的第一行会被当成回车发出去。
+       * 这一段排在其他分支之前：排到后面的话，多行粘贴的第一行会被当成回车发出去。
        */
       const paste = pasteRef.current!.feed(char);
       if (paste.kind === "pending") return;
@@ -1436,7 +1436,7 @@ export function Chat(props: ChatScreenProps) {
       }
       // 按词删除：Ctrl+Backspace 删前一个词、Ctrl+Delete 删后一个词（⌘ 一并收：macOS 的
       // ⌘⌫ 有的终端会带 super 位）。
-      // 必须在下面「单字符 Backspace/Delete」之前判定，否则带修饰键的删除只掉一个字符。
+      // 判定放在下面「单字符 Backspace/Delete」之前，否则带修饰键的删除只掉一个字符。
       if (key.backspace && (key.ctrl || key.super)) {
         deleteWordBeforeCursor();
         return;
@@ -1525,10 +1525,10 @@ export function Chat(props: ChatScreenProps) {
         }
         // 在动时 Esc = 中断在途（Claude Code 语义）。
         //
-        // **这一档必须压在「开关关 → 继续」之上**：开关关着而手上还有活是一个**正常组合** ——
+        // **这一档压在「开关关 → 继续」之前**：开关关着而手上还有活是一个**正常组合** ——
         // 暂停（`pause`）与中断都只是把输出开关关上，已经取在手上的那批照常跑完（PRD 4.4
         // 「暂停只是关输出开关」）。那时用户按 Esc 想的是「立刻停」，不是「继续」：中断才是
-        // 把手上的活掐断的那个动作，把它让给 resume 等于「想停一下反而给它开开关」。
+        // 中断才是结束在途任务的那个动作，把它让给 resume 等于「想停一下反而给它开开关」。
         if (working) {
           sessionRef.current?.abort();
           return;
@@ -1679,8 +1679,8 @@ export function Chat(props: ChatScreenProps) {
   /**
    * 空会话：会话区顶部展示品牌区（logo + 标语 + 版本）。
    *
-   * 判据里必须带 `showPending` —— 用户刚敲下第一条消息、乐观回显已经上屏，
-   * 这时欢迎块要立刻让位，不能等消息真正写进 messages。
+   * 判据里带 `showPending` —— 用户刚敲下第一条消息、乐观回显已经上屏，
+   * 这时欢迎块要立刻让位，不等消息真正写进 messages。
    */
   const showWelcome = !activeSub && !showPending && messages.length === 0;
   if (showWelcome) transcript.unshift(...welcomeLines({ columns: cols }));
@@ -1710,7 +1710,7 @@ export function Chat(props: ChatScreenProps) {
   /**
    * 通知栏：正文行 + 「全部清空」那一行提示（高度同源，见 `noticeBarContent`）。
    *
-   * 高度必须用它的 `height` 而不是 `lines.length` —— 提示占的那一行也要算进布局与硬件光标，
+   * 高度取它的 `height` 而不是 `lines.length` —— 提示占的那一行也要算进布局与硬件光标，
    * 否则输入框会整体偏一行。
    */
   const noticeBar = noticeBarContent(notices, cols);
@@ -1731,10 +1731,10 @@ export function Chat(props: ChatScreenProps) {
    * 名册是宿主的事实，而宿主的清空点在 core 外循环的**下一批开头** —— 于是这一段答完之后，
    * 那条栏目会连同几个绿点一直挂着，直到用户下次说话。客户端手里已经有「这一段闲下来了」
    * 这个事实（`activity === "idle"`），配上名册里还有没有在动 / 还挂着的项，就能按 PRD 的
-   * 字面收起来（`ended` 是名册给的「已经散场」那一格）。
+   * 字面收起来（`ended` 是名册给的「已结束」那一格）。
    *
    * 收的只是**显示**：名册一个字不动，`subAgentMessages` 照样取得到。用户正停在某个子栏时
-   * 不收 —— 那会把他正看着的东西抽走，还断了他切回主栏的路。
+   * 不收 —— 那会把他正看着的东西抽走，也断了他切回主栏的路。
    */
   const subAgentsSettled =
     activeSub === null && activity === "idle" && subAgents.every((item) => item.state === "ended");
@@ -1799,7 +1799,7 @@ export function Chat(props: ChatScreenProps) {
    * 排队区：还压在队里、没被取走的那几句（`session.state.inbox` 现读），住在阶段行**之后**、
    * 分割线**之上**。
    *
-   * 行数走 `inboxAreaLines()`（0～3）—— 与 `phaseLines` 同一条路进 `computeChatLayout`，
+   * 行数走 `inboxAreaLines()`（0 ～ `INBOX_MAX_ROWS`）—— 与 `phaseLines` 同一条路进 `computeChatLayout`，
    * 并同步给 IME 光标的 `inboxCount`：三处同一个数，输入框与候选框就不会错位一行。
    * 放上面而不是塞进输入框那个 `Box`：那里的行数与光标定位是耦合的。
    */
@@ -1917,7 +1917,7 @@ export function Chat(props: ChatScreenProps) {
         <Box flexDirection="column">
           {agentTabs.length > 0 ? <AgentTabs tabs={agentTabs} activeId={activeTabId} /> : null}
           <NoticeBar lines={noticeBar.lines} hint={noticeBar.hint} />
-          {/* 附件提示行：必须在 NoticeBar 之后、菜单之前（与 computeInputCursorPosition 的顺序一致） */}
+          {/* 附件提示行：在 NoticeBar 之后、菜单之前（与 computeInputCursorPosition 的顺序一致） */}
           {attachmentLines > 0 ? <PastedImagesBar count={attachmentCount} /> : null}
           {/* 斜杠命令 / `@` 文件补全共用一套底部锚定菜单：行数取布局放行的 `layout.hintRows`，
               与上面 `computeChatLayout` 的 `hintCount`、下面 IME 光标的 `hintCount` 同源 */}

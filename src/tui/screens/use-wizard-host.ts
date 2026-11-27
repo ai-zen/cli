@@ -109,8 +109,8 @@ export function useWizardHost({
   /**
    * 读齐那三份快照（配置 + 档位表 / AgentDefinition / MCP 清单）。
    *
-   * **串行**不并行：三条请求并发时任何一条炸，报出来的都是同一个 catch，「哪一份读不出来」就
-   * 没影了。三份都必须有 —— 向导屏是一个整体（菜单上同时印端点、模型、MCP 两层、AgentDefinition 与默认项），
+   * **串行**不并行：三条请求并发时任何一条抛错，报出来的都是同一个 catch，「哪一份读不出来」就
+   * 没影了。三份全拿到才画得出整屏 —— 向导屏是一个整体（菜单上同时印端点、模型、MCP 两层、AgentDefinition 与默认项），
    * 少一份就只能渲染半块屏。
    *
    * `config.get` 一次给配置**和**档位表：它们是两个文件，但界面要同时看见（模型上那一格
@@ -154,7 +154,7 @@ export function useWizardHost({
    * 把那几份快照上屏、把步骤机推到 `step`，并返回一个「它关闭时才兑现」的 Promise。
    *
    * 两条入口（`openWizard` / `openKeyEditor`）共用这一处：它们差的是「读齐快照之后定哪一步」，
-   * 而「整屏接管 + 谁在等它关闭」必须只有一份 —— 两份就会出现一条路兑现、另一条把 Promise 永远挂着。
+   * 而「整屏接管 + 谁在等它关闭」因此只在这一处 —— 两份就会出现一条路兑现、另一条把 Promise 永远挂着。
    */
   const takeover = (
     step: WizardStep,
