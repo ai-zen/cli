@@ -11,7 +11,8 @@
  * ## 推的依据只有这几样（全在契约里）
  *
  *   1. 忙闲那一格（`SessionState.status`）：`idle` 就没在动，没什么可说的；
- *   2. 最后一条消息的 `role` 与 `status`：AgentDefinition 那条还在 `pending` / `writing` 就是「还没开口」；
+ *   2. 最后一条消息的 `role` 与 `status`：AgentDefinition 那条还在 `pending` / `writing`，
+ *      就是还没有开始输出；
  *   3. 那条 AgentDefinition 消息的 `reasoning_content` / `content` / `tool_calls` / `finish_reason`：
  *      思考在前、正文在后、工具调用在中间（core 的一条消息内部顺序恒定）。
  *
@@ -26,8 +27,8 @@
  * 每一帧多占一行宽度。
  *
  * 于是阶段行只回答「这一任此刻在干什么」：手上没活就不说，有活就说连接 / 思考 / 工具 / 输出。
- * 队里的话还没被取走时，这一行说的是**上一批**的状态（它确实还在跑），排队区说的是**还压着的那几句**
- * —— 两者并读没有歧义。
+ * 队列里的话还没有被取走时，这一行说的是**上一轮**的状态（那一轮确实还在跑），排队区说的是
+ * **仍在队列里的那几句** —— 两者并读没有歧义。
  *
  * 文案仍然是客户端的事（`i18n`）：事实来自宿主，句子来自这里，与命令表同一条规矩。
  */
@@ -56,7 +57,8 @@ export interface PhaseFacts {
  *
  * 与 PRD 3.9 的几句话一一对得上（连上了 / 在想 / 调工具 / 等工具回来 / 在输出），另加
  * 一句更细的「等待首字」（请求已发出、一条字都还没回来 —— 旧版把这两件事压在同一句里，屏上
- * 分不开「话还在队里」与「话已送到、服务端还没吐字」）。它们只是**这一帧的读数**，不是被记住的一格。
+ * 分不开「话还在队里」与「话已送到、服务端还没有输出」）。它们只是**这一帧的读数**，
+ * 不是被记住的一格。
  */
 export function phaseLine(facts: PhaseFacts): string | null {
   // 交接优先，而且**不看忙闲**：交接期间这一段可能在写文档（忙），也可能在等它们收口（闲），
@@ -66,18 +68,18 @@ export function phaseLine(facts: PhaseFacts): string | null {
   const messages = facts.messages;
   const last = messages[messages.length - 1];
 
-  // 手上已经有活（忙），但这一批的消息还没落下来：还在装配 / 还没取到件
+  // 状态是忙，但消息还没有到达：这一段仍在装配，或者还没有取到消息
   if (!last) return t("phase.connecting");
 
   if (last.role === AgentNS.Role.Tool) {
-    // 一条工具结果回来了：剩下的还在跑（并行时把名字都念出来）
+    // 一条工具结果已经回来：其余工具仍在运行（并行时把各自的名字都列出来）
     const names = outstandingToolNames(messages);
     return names.length === 0
       ? t("phase.toolWaiting")
       : t("phase.toolWaitingWith", { name: names.join(t("common.listSeparator")) });
   }
 
-  // 用户那句刚落、AgentDefinition 那条还没冒出来
+  // 用户那句刚落、AgentDefinition 那条还没出现
   if (last.role !== AgentNS.Role.Assistant) return t("phase.connecting");
 
   const calls = last.tool_calls ?? [];
@@ -120,7 +122,7 @@ function toolNamesOf(calls: readonly AgentNS.ToolCall[]): string[] {
 }
 
 /**
- * 最后那批工具调用里**还没有结果**的那几个的名字。
+ * 最近一次工具调用里**还没有结果**的那几个的名字。
  *
  * 判据只有一处：最后一条带 `tool_calls` 的 AgentDefinition 消息之后，哪些 `role: tool` 消息已经把结果带回来了
  * （按 `tool_call_id` 对）。这是在读消息本身，不是另记一份「在跑的工具」—— 那份清单没有第二个

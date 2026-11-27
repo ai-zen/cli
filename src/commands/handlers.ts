@@ -23,10 +23,10 @@
  * 会话域（发话、撤回、换模型、交接、重载）走 {@link ChatSessionLike} —— 它负责把
  * 本机那份现场跟宿主对齐；配置 / AgentDefinition / 宿主域只读或只写一次，走 {@link ChatCommandHost.call}
  * 直接说契约方法（`config.*` / `agent.*` / `model.*` / `host.*`）。命令层**不**吃盘、不持有
- * 第二份配置：界面说「改好了」与宿主真正用的那份必须是同一份。
+ * 第二份配置：界面说「改好了」与宿主真正用的那份是同一份。
  *
  * 「换会话」（`/new` 开新的、`/sessions` 选中别的）不在这一对里：会话归**进程**所有
- * （PRD D4），命令层只能说「换成哪一段」，生死由注册表管着。
+ * （PRD D4），命令层只表达「换成哪一段」，会话的存活由注册表管着。
  *
  * ## 为什么它在 `src/commands/` 而不在 `tui/screens/`
  *
@@ -91,7 +91,7 @@ import { type SelectItem, type WizardEntryStep } from "./types.js";
 /**
  * 宿主（屏幕）提供给命令层的能力 —— **只留命令层真正用得上的那些**。
  *
- * 类型面里不许出现 `react`：那不只是「少一个 import」，而是这条边界唯一的硬判据 ——
+ * 类型面里没有 `react`：那不只是「少一个 import」，而是这条边界唯一的硬判据 ——
  * 一旦命令层能伸手拿到 setter，它就能把「弹个选择器」写成「改一块渲染状态」，而那条代码
  * 在无头宿主（测试 / 将来的脚本模式）里根本跑不起来。
  */
@@ -101,14 +101,14 @@ export interface ChatCommandHost {
    * 这次连的是哪台宿主（是不是本机 + 记忆键）。
    *
    * `/ws` 靠它回答两件事：新建时能不能默认当前目录（只有本机），以及「上次进入的是哪个」该
-   * 记在哪一格（两台宿主不许串味）。判据来自连接层，命令层不自己推。
+   * 记在哪一格（两台宿主的记忆不混在一起）。判据来自连接层，命令层不自己推。
    */
   workspaceHost: WorkspaceHost;
   /**
    * 日志出口（根造、组装根递进来）。
    *
    * 命令层只有两处会用到它：`/ws` 把「上次进入的那个」记进本机记忆、`/lang` 写入偏好 —— 两者
-   * 都是**缓存**，写不进去不该拦住命令，但也不许一声不吭。
+   * 都是**缓存**，写不进去不该拦住命令，但也不静默丢弃。
    */
   logger: LogSink;
   /**
@@ -135,7 +135,7 @@ export interface ChatCommandHost {
    *
    * 曾经这里有一个 `rows`（终端行数换算出来的候选条数），代价是每条命令各自 `slice(0, rows)` ——
    * 超出屏幕的那部分**直接消失**（`/model` 那种不进这个截断的，会把整帧顶高、状态栏挤出屏幕）。
-   * 滚动归渲染层之后，命令层只管「有哪些候选、按什么顺序」，一个候选都不许丢。
+   * 滚动归渲染层之后，命令层只管「有哪些候选、按什么顺序」，每个候选都完整交出。
    */
 
   /** 结束这一屏并把去向交给上层（`restart` 重挂载 / `load` 换一段会话） */
@@ -216,8 +216,8 @@ export interface ChatCommandHost {
   /**
    * 触发一次界面重渲染（`/lang` 切换语言后用）。
    *
-   * `t()` 是模块级函数，语言一变，已渲染的文案不会自己更新 —— 必须让 React
-   * 重新执行一遍渲染函数才能取到新语言。这里只递增一个计数，不携带任何状态。
+   * `t()` 是模块级函数，语言一变，已渲染的文案不会自己更新 —— 取到新语言要 React
+   * 重新执行一遍渲染函数。这里只递增一个计数，不携带任何状态。
    */
   refreshLocale: () => void;
 }
@@ -230,7 +230,7 @@ export interface ChatCommandHost {
  * 而 `any` 会让「少传一个 sessionId」变成运行时才发现的接错会话。
  */
 export interface CommandExitValue {
-  /** 重挂载这一屏（`/back` 之后消息变短，显示起点必须归零） */
+  /** 重挂载这一屏（`/back` 之后消息变短，显示起点随之归零） */
   restart?: boolean;
   /** 换成另一段会话（`/load`） */
   load?: { sessionId?: string };
@@ -429,7 +429,7 @@ export interface AfterGone {
   gone: readonly string[];
   /**
    * 在哪儿找下一段：同一项目里（`/delete`、别处删掉了这一屏那段），还是这整台宿主上
-   * （`/ws delete` —— 那个项目整个没了，只能在别的项目里找）。
+   * （`/ws delete` —— 那个项目整个没了，所以在别的项目里找）。
    */
   scope: { workspaceId: string } | "anywhere";
   /** 上屏的那一句：已经没了这件事本身（「已删掉这一段会话…」/「这一段会话已经被删掉了」） */
@@ -455,8 +455,8 @@ export interface AfterGone {
  *   1. 找下一段：同一项目里最近的那一段（`session.list` —— 顺序是宿主排好的：置顶优先 +
  *      最后活动时刻倒序，这里只取第一条）；`/ws delete` 那一路整个项目都没了，所以在别的项目里找
  *      （{@link listSessionsEverywhere}，那是客户端编排的一趟，宿主没有「全库列会话」这条口）；
- *   2. 有就去那儿：`exit({ load })`，两句一起带到新屏（旧屏的通知栏跟着卸载，说的话只能在
- *      新屏上说）；
+ *   2. 有就去那儿：`exit({ load })`，两句一起带到新屏（旧屏的通知栏跟着卸载，这两句没有别的
+ *      去处）；
  *   3. 没有就说明白：`connect` 回连接屏、`stay` 留在这一屏，两档都点到 `/new`。
  *
  * **不替用户开新会话**：开一段是 `/new` 那一条命令的事，不是删东西的副作用。
@@ -502,7 +502,7 @@ export async function moveAfterGone(host: GoneHost, after: AfterGone): Promise<v
  *
  * 宿主这一版的 `session.list` 只按工作区列（入参 `workspaceId` 必填），所以跨项目那一趟是
  * 客户端编排的（{@link listSessionsEverywhere}）：不必先 `/ws` 换过去再 `/load`，旧版那种
- * 「一把列全」在这一条上补回来。
+ * 「一次列全」在这一条上补回来。
  *
  * 跨工作区之后每一条得说清自己属于哪个项目，否则同名会话分不开：会话行上有 `workspaceId`，
  * 直接印在 hint 上（显示名字要另一次 `workspace.list`，换来的只是一个更好看的标签；id 也是
@@ -539,7 +539,7 @@ const cmdLoad: CommandHandler = async ({ session, api, push, args, exit, pick })
  * 列表里的一行：宿主那一份会话行，加上**本进程对它说得出的那一点活值**。
  *
  * 会话行本身（名字、id、模型、两个时刻、置顶、属于哪个项目）从 `session.list` 来 —— 那是宿主
- * 的事实。活值（忙闲 / 死活 / 在忙什么 / 排队条数）只有**这一进程订阅着**的那几段说得出来
+ * 的事实。活值（忙闲 / 存活 / 在忙什么 / 排队条数）只有**这一进程订阅着**的那几段说得出来
  * （注册表的 `LiveSession`），所以这一格是 `null` 或那一份，没有第三种。
  */
 interface SessionListRow {
@@ -559,19 +559,19 @@ interface SessionListRow {
  * 10-observation 明写不为取数的便利加接口），所以跨项目那一趟由客户端编排
  * （{@link sessionsWithWorkspace}），合并之后自己按宿主那条规矩重排一次。
  *
- * 不筛「活着的」那几段：死掉的那一段也是用户自己的会话，它也在这张表里、也能切过去（切过去
- * 只是看，要发话才会重新叫起来）。从前这条命令只列活着的，因为它读的是旧方法的 `alive` 字段。
+ * 不筛「活着的」那几段：没有 agent 的那一段也是用户自己的会话，它也在这张表里、也能切过去
+ * （切过去只是看，要发话才会重新唤醒）。从前这条命令只列活着的，因为它读的是旧方法的 `alive` 字段。
  *
  * ## 每一行印什么
  *
- * 全是**给得出来的事实**：置顶标记、忙闲/死活（只有本进程订阅着的那几段，见下）、id（短）、
+ * 全是**给得出来的事实**：置顶标记、忙闲 / 存活（只有本进程订阅着的那几段，见下）、id（短）、
  * 模型 id、更新时刻、属于哪个项目（跨项目时）。
  *
  * **状态那一格只说本进程说得出的**：本进程挂着的那几段有忙闲、在忙什么与排队条数
- * （`liveSessions`，那份带订阅）；别的会话在这一边没有订阅 —— 那一格就**什么都不说**，绝不把
+ * （`liveSessions`，那份带订阅）；别的会话在这一边没有订阅 —— 那一格就**什么都不说**，不把
  * 「不知道」写成「处理中」（与 `server-client/mirror.ts` 那条口径同源）。
  *
- * 选中只表达「换成哪一段」（`exit({ load })`）：这一层不碰任何会话的生死，也不往正在跑的那段
+ * 选中只表达「换成哪一段」（`exit({ load })`）：这一层不改任何会话的存活状态，也不往正在跑的那段
  * 里插话 —— 切过去只影响「接下来这屏看什么」（PRD D4）。
  */
 const cmdSessions: CommandHandler = async ({
@@ -600,7 +600,7 @@ const cmdSessions: CommandHandler = async ({
       }));
 
   if (listed.length === 0) {
-    // 一条都没有：给一句能照着做的话（不是「没有数据」那种只能干看着的句子）
+    // 一条都没有：给一句能照着做的话（不是「没有数据」那种没有下一步的句子）
     push(t(allWorkspaces ? "cmd.sessions.noneAll" : "cmd.sessions.none"));
     return;
   }
@@ -618,7 +618,7 @@ const cmdSessions: CommandHandler = async ({
   // 全量交给选择器（顺序是上面那一条算的，不在这里重排）：候选比屏幕高时它自己滚动
   const choice = await pick(t("cmd.sessions.title"), items);
   if (choice == null) {
-    // Esc / 覆盖层被关掉：一条会话的生死都不动，这一屏也不换
+    // Esc / 覆盖层被关掉：任何会话的存活状态都不动，这一屏也不换
     push(t("cmd.sessions.cancelled"));
     return;
   }
@@ -632,7 +632,7 @@ const cmdSessions: CommandHandler = async ({
 /**
  * 列表里那一行：**说得出的都说，说不出的不猜**。
  *
- * 几件事各说各的（PRD 4.4 的四件事不压成一格）：置顶、忙闲/死活（只有本进程订阅着的那一段
+ * 几件事各说各的（PRD 4.4 的四件事不压成一格）：置顶、忙闲 / 存活（只有本进程订阅着的那一段
  * 才有这一格：「在忙什么」也说得出，没有 agent 的直说「没有 agent」）、id（短）、模型、
  * 更新时刻、属于哪个项目（跨项目时）。
  *
@@ -657,10 +657,10 @@ function sessionHint(row: SessionListRow): string {
 }
 
 /**
- * 状态那一格（**只有本进程订阅着的那一段才走这里**）：忙闲 / 死活、「在忙什么」、排队条数。
+ * 状态那一格（**只有本进程订阅着的那一段才走这里**）：忙闲 / 存活、「在忙什么」、排队条数。
  *
- * 读数还没到（`status === null`）时忙闲那一位**不占格**：不知道就不说，别拿「空闲」顶上。
- * 没有 agent 的那一段直说「没有 agent」（它要发话才会起来）。
+ * 读数还没到（`status === null`）时忙闲那一位**不占格**：不知道就不说，不拿「空闲」充当读数。
+ * 没有 agent 的那一段直说「没有 agent」（它要发话才会被唤醒）。
  */
 function activityHint(live: LiveSession): string[] {
   const parts: string[] = [];
@@ -850,7 +850,7 @@ async function cmdWsDelete(
  * | `/ws new <绝对路径>` | 登记宿主上的那个目录（远端就靠这一条） |
  * | `/ws delete <项目名或 ID>` | 删掉那个项目（连带它名下的会话，见 {@link cmdWsDelete}） |
  *
- * 名称一律不传：宿主会按目录名起一个可改的名字（PRD D9），客户端不替它编。
+ * 名称不由客户端传：宿主会按目录名起一个可改的名字（PRD D9），客户端不替它编。
  */
 const cmdWs: CommandHandler = async ({
   session,
@@ -967,7 +967,7 @@ const cmdPin: CommandHandler = async ({ session, api, push, args }) => {
  *
  * 撤哪一条按**消息 id** 认：消息列表在撤回那一刻可能已经变了（另一台设备插了一条），
  * 数下标会撤错。撤完宿主把内容回填给输入框（`restoredInput`），这里把它交给重挂载 ——
- * 消息变短了，转录的显示起点必须跟着归零，否则 `slice(transcriptFrom)` 恒为空、屏幕一片空白。
+ * 消息变短了，转录的显示起点跟着归零，否则 `slice(transcriptFrom)` 恒为空、屏幕一片空白。
  *
  * 两件事实要带到新屏上去（`exit.notice`）：**删掉了几条**、**那句话已经回到输入框**。
  * 旧实现只有「删完重挂载」——用户看到的只是消息忽然变短，删了几条、话去哪儿了都靠猜。
@@ -1003,7 +1003,7 @@ const cmdBack: CommandHandler = async ({ session, push, exit, pick }) => {
     initialInput: textOf(restored.content),
     // 带图的那条：Asset 跟着回填一起交回输入框（顺序即原消息里的，去不去重由会话层说了算）
     initialAssetIds: restored.assetIds ?? [],
-    // 旧屏的通知栏跟着卸载了：这两件事实只能带到新屏上说（见 `CommandExitValue.notice`）
+    // 旧屏的通知栏跟着卸载了：这两件事实随重挂载带到新屏上说（见 `CommandExitValue.notice`）
     notice: t("cmd.back.done", { n: removed }),
   });
 };
@@ -1055,7 +1055,7 @@ const cmdTitle: CommandHandler = async ({ session, api, push }) => {
  *
  * 为什么要有它：面板的形状是照 MCP elicitation 的 `requestedSchema` 抄的，而那种协议只有在真碰上
  * 一台会 elicitation 的服务器时才看得见。改一改间距、改一改输入框，总不能每次去接一台服务器。
- * 这条命令拿的是**同一个面板、同一套按键**，只是表是这里写死的。
+ * 这条命令拿的是**同一个面板、同一套按键**，只是表是这里固定的。
  *
  * 表里刻意把这七种情况都放进去：
  *
@@ -1154,7 +1154,7 @@ const cmdClear: CommandHandler = async ({ clearTranscript }) => {
  * `/free` —— 清空排队区（`agent.clearInbox`）：跑中排着的话、交接期间别人投进来的话。
  *
  * 清了 N 条就说一句「清掉 N 条」；**0 条什么都不说** —— 本来就没排队，这一下没有可报的事实
- * （口碑从前 `/clear` 那半搬过来）。失败不在本函数里 `catch`：它没有「另一半已经生效」要护，
+ * （口径从前 `/clear` 那半搬过来）。失败不在本函数里 `catch`：它没有「另一半已经生效」要护，
  * 交给 `runCommand` 那个唯一出口说清是哪条命令、宿主原话是什么。
  */
 const cmdFree: CommandHandler = async ({ session, push }) => {
@@ -1332,7 +1332,7 @@ const cmdModel: CommandHandler = async ({ session, api, push, args, pick, ensure
   /**
    * 供应商还没配密钥 → 先让它配，配不成就不切。
    *
-   * 不加这一道的话，切是“成功”的（写会话行不会报错），要等到发请求才炸 —— 用户看到的是
+   * 不加这一道的话，切是“成功”的（写会话行不会报错），要等到发请求才失败 —— 用户看到的是
    * 「切过去了」，然后第一句话报一个 401。所以判据（端口有没有密钥）在读模型表那一瞬就问，
    * 而修复入口就是首启引导 / `/key` 用的那同一屏（`ensureKey`）。
    *
@@ -1424,7 +1424,7 @@ const THINK_CLEAR = "__clear__";
  *     以后的会话、这一段重建之后的 agent 都回到模型的默认参数。
  * AgentDefinition 级没有「再上一层」可跟，所以它不叫「跟随」而直说「清掉」。
  *
- * ## 标题必须说清作用级别
+ * ## 标题说清作用级别
  *
  * 两档用**同一个选择器**，InboxEntry 也几乎一样（都是一串档位 + 一条「不再写这一层」）—— 标题于是成了
  * 唯一说得出「改的是哪一层」的地方。不说的后果：`/think` 与 `/think -a` 弹出来一模一样，用户
@@ -1439,7 +1439,7 @@ const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEff
   /**
    * AgentDefinition 级要的两样事实：定义本身（`agentDefinition.get`）与档位表（`config.get` 的 `presets`）。
    *
-   * 定义上存的是**展开后的参数**（`modelParams`），所以「现在是哪一档」只能拿表反查
+   * 定义上存的是**展开后的参数**（`modelParams`），所以「现在是哪一档」要靠表反查
    * （`reasoningEffort.agentThinkingOf`）。会话级不用这两趟：会话行上的档位由宿主展开，
    * 会话层的派生视图已经拼好了（`session.thinking`）。
    */
@@ -1560,7 +1560,7 @@ const cmdThink: CommandHandler = async ({ session, api, push, args, pick, setEff
 /**
  * `/agent` —— 选「以后的会话用哪个 AgentDefinition」。
  *
- * AgentDefinition 在会话创建时定死（PRD L7：契约里没有 `session.setAgent`），所以这一条写的只能是
+ * AgentDefinition 在会话创建时确定（PRD L7：契约里没有 `session.setAgent`），所以这一条写的是
  * 默认 AgentDefinition（`config.defaults.update` 的 `defaultAgent`）。
  *
  * 「这个 AgentDefinition 现在能不能用」这一格**没有**了：旧契约的 `AgentView.available` /
@@ -1701,7 +1701,7 @@ const cmdLang: CommandHandler = async ({ push, args, refreshLocale, api, logger 
     return;
   }
   const target = picked ?? (getLocale() === "zh" ? "en" : "zh");
-  // 回执是改完之后的整份配置：本机偏好落的是它回来的那一格，不拿这里打算写的那一格顶上
+  // 回执是改完之后的整份配置：本机偏好落的是它回来的那一格，不拿这里打算写的那一格代替
   const { config } = await api.config.update.mutate({ language: target });
   const applied = normalizeLocale(config.language);
   // 回执里没有语言这一格 = 没有事实可落，界面保持原样（也不说“已切换”）
@@ -1738,8 +1738,8 @@ const HOST_PACKAGE = "@ai-zen/agents-host";
  * ## 确认为什么落在交之前（PRD 3.8「逐步骤显示进度；装完确认再重启」）
  *
  * 上一版（客户端自己预下 `npx -y <pkg>@<版本> version`）看得见「装完」那一刻，确认就摆在那之后。
- * 现在装包与拉起都归启动方式（上表第 ③ 段，客户端看不见那一刻），所以确认只能落在调
- * `host.upgrade` 之前，而且只许问此刻真知道的事 —— 那一句要说清三件：
+ * 现在装包与拉起都归启动方式（上表第 ③ 段，客户端看不见那一刻），所以确认落在调
+ * `host.upgrade` 之前，而且只问此刻真知道的事 —— 那一句要说清三件：
  *
  *   ① 目标是哪一版（与正在跑的哪一版对比）；
  *   ② 宿主会先验这一版拿得到再退出，装包与拉起由启动方式做；
@@ -1758,7 +1758,7 @@ const HOST_PACKAGE = "@ai-zen/agents-host";
  * 启动方式的事（连接层下一波补）；客户端连试运行都不做了 —— 「这一版拿得到吗」由宿主那两条
  * 判据当场答（`not_available` 就是拿不到），客户端自己预下一遍只是把同一个问题问两次。
  *
- * ## 宿主不在了，所以不傻等
+ * ## 宿主不在了，所以不等重连
  *
  * 回执是 `{ version, restarting: true }`：那之后宿主自己收尾、以升级专用的退出码退出，由启动
  * 方式按 pin 重新拉起。这条连接一定会断，留在这一屏只会看到一串重连失败 —— 于是回连接屏，
@@ -1768,7 +1768,7 @@ const HOST_PACKAGE = "@ai-zen/agents-host";
  *
  * 查不到 registry、宿主回 `not_available`（这一版 registry 上没有），都是「把原话说上去，然后
  * 停」：不重试，也不退回构建时的范围假装成功 —— 那会让用户以为升了，实际跑的还是旧代码。
- * 宿主拒绝时它**还在跑**（它把「这一版不存在」挡在了弄死服务之前），所以这一屏照旧连着，
+ * 宿主拒绝时它**还在跑**（它把「这一版不存在」挡在了终止服务之前），所以这一屏照旧连着，
  * 不回连接屏。
  */
 const cmdUpgrade: CommandHandler = async ({ api, push, exit, runNpm, pick }) => {
@@ -1874,7 +1874,7 @@ const cmdHandoff: CommandHandler = async ({ session, push, args }) => {
     return;
   }
   try {
-    // 只写文档那一档：`kind` 说清“不要换手”；没指定执行者时，宿主会先出那道三选题
+    // 只写文档那一档：`kind` 说清这一档不换手；没指定执行者时，宿主会先出那道三选题
     await session.handoff(
       handoff.mode === undefined ? { kind: "document" } : { kind: "document", mode: handoff.mode },
     );
@@ -1916,7 +1916,7 @@ const cmdMigrate: CommandHandler = async ({ session, push, args }) => {
  * `/help` —— 命令清单，说明就是命令表里的 `cmd.*.desc`。
  *
  * 句子在客户端的原因：命令是客户端概念，宿主只有方法名，它不知道 `/back` `/pin` 是
- * 什么（更没有"侧栏"这种客户端才有的位置），所以这句说明只能由客户端说。硬让宿主去说，
+ * 什么（更没有"侧栏"这种客户端才有的位置），所以这句说明由客户端说。硬让宿主去说，
  * 斜杠菜单与 `/help` 就会各有一套措辞，改一个字还要等宿主发版。一句话只有一个出处：命令表。
  *
  * 顺带的好处：`/help` 不再需要一次网络往返，宿主连不上也能看（它就是"不知道该怎么办"
@@ -1937,10 +1937,10 @@ const cmdExit: CommandHandler = async ({ doExit }) => {
 /**
  * `/delete` —— 删掉**当前这一段会话**（`session.delete`，硬删）。
  *
- * ## 为什么必须先把代价摆出来
+ * ## 为什么先摆代价
  *
  * PRD 1.2 把「用户删掉这段会话」列在「能让一段会话死的三条路」里，4.1 要求「删前警告并把代价
- * 说清」：删了就是硬删，消息与 Asset 一起没，那个消息数本来就是「你这段会话攒下来的全部」。
+ * 说清」：删了就是硬删，消息与 Asset 一起没，那个消息数本来就是这一段会话积累的全部消息。
  * 所以先问一次（两档，与 `/shutdown` 同一个交互形状），问的那一句里两个数一个不少：
  *
  *   · 消息条数 = `session.open` 那份快照里 `messages` 的长度；
@@ -1955,10 +1955,10 @@ const cmdExit: CommandHandler = async ({ doExit }) => {
  * 自己算的那一份 —— 两个数可能不一样（Asset 是按引用归零才算删掉的）。
  *
  * 删成功之后先做一件事：把这一段从**本进程的会话登记**里摘掉（`dropSession`，连带它那份订阅
- * 解掉）。不摘的话，后续「切回去」会指向一段已经不存在的东西，而它的订阅也留在那儿白推。
+ * 解掉）。不摘的话，后续「切回去」会指向一段已经不存在的东西，而它的订阅也还在那里继续接收事件。
  * **先摘登记、再换屏**：反过来的话，换屏那一刻旧那一段还在被人投事件。
  *
- * 然后必须换到另一段去，否则这一屏就停在一段已经不存在的会话上（下一次发话必然失败）。换到
+ * 然后要换到另一段去，否则这一屏就停在一段已经不存在的会话上（下一次发话必然失败）。换到
  * 哪一段、没地方可换时说什么，全在 {@link moveAfterGone} 里（与 `/ws delete`、以及「别处删掉
  * 了这一屏那一段」那条事件共用一套）：这里只说「删掉的是什么」。
  *
@@ -2037,26 +2037,26 @@ const cmdDelete: CommandHandler = async ({
  * ## 它杀的是什么
  *
  * PRD 1.2「死的路只有三条：用户按杀死、用户删掉这段会话、进程退出」，其中**只有按杀死**会
- * 让用户没注意到的东西（没消费的 InboxEntry）悄悄消失；4.1「中断不是杀死」那张表把这三件事说死了：
- * 杀死之后没有 agent 了、在途请求被掐断、没消费的 InboxEntry 作废（库里也删）、记忆照旧在。
+ * 让用户没注意到的东西（没消费的 InboxEntry）悄悄消失；4.1「中断不是杀死」那张表逐条写明：
+ * 杀死之后没有 agent 了、在途请求被中断、没消费的 InboxEntry 作废（库里也删）、记忆照旧在。
  *
  * 所以杀完**不换屏、不摘登记、不删历史**：那一段会话还在（`session.list` 里还在，打开还能看），
- * 只是这一段现在没有 agent 了 —— 下一次发话会重新叫起来（`session.ts` 的 `send`）。
+ * 只是这一段现在没有 agent 了 —— 下一次发话会重新唤醒（`session.ts` 的 `send`）。
  *
  * ## 认哪一段
  *
  * 不带参数 = 当前这一段；带参数 = 认 id（前缀也算）或名字。都认不出来就**指路**（`/sessions`
- * 里列着现有的那些），不猜「最近的那一段」：这是个不可撤销的动作，猜错一次就是把别人的会话
- * 收了。前缀或名字对上好几段时也不做第二道判断 —— 把对得上的那几个 id 列出来，让人写长一点。
+ * 里列着现有的那些），不猜「最近的那一段」：这是个不可撤销的动作，猜错一次就是终止了别人的
+ * 会话。前缀或名字对上好几段时也不做第二道判断 —— 把对得上的那几个 id 列出来，让人写长一点。
  *
  * ## 代价先说清
  *
  * 排队区里还有几条没被取走的话会作废（数量从**镜像**的排队区来：本进程挂着的那几段现读
  * `inboxPending`；没挂着的那一段现问一次 `session.open`，那份快照里也带着排队区）。
- * 代价那句同时说清另外两件事：历史与这段会话本身保留；下一次发话会重新叫起来。一次确认
+ * 代价那句同时说清另外两件事：历史与这段会话本身保留；下一次发话会重新唤醒。一次确认
  * （两档，与 `/delete`、`/shutdown` 同一个交互形状）。
  *
- * ## 已经死了的那一段
+ * ## 已经没有 Agent 的那一段
  *
  * 宿主那边的 `agent.kill` 对没有 Agent 的一段是**空操作**（运行时里没有这一条登记就没有可收的
  * 东西）：队列里那几条一行也不会被作废（作废是内核 `kill()` 报的那条事实带来的）。所以那时
@@ -2077,7 +2077,7 @@ const cmdKill: CommandHandler = async ({ session, api, liveSessions, push, args,
     target = matched.session;
   }
 
-  // ② 代价：这一段的死活与排队条数（镜像里那两格，现读）
+  // ② 代价：这一段的存活与排队条数（镜像里那两格，现读）
   const facts = await killFacts({ session, api, liveSessions }, target.id);
   if (facts.alive === false) {
     // 早没有 Agent 了：`agent.kill` 是空操作，什么都不会被作废（见本命令的注释）
@@ -2106,7 +2106,7 @@ const cmdKill: CommandHandler = async ({ session, api, liveSessions, push, args,
   push(t("cmd.kill.done", { name: target.name }));
 };
 
-/** `/kill` 认人时手边那几格：候选只要 id 与名字，代价只要死活与排队条数 */
+/** `/kill` 认人时手边那几格：候选只要 id 与名字，代价只要存活与排队条数 */
 type KillCtx = Pick<ChatCommandHost, "session" | "api" | "liveSessions">;
 
 /** 一段会话的 id 与名字（`/kill` 认人只用这两格） */
@@ -2136,8 +2136,8 @@ async function killCandidates(ctx: KillCtx): Promise<KillCandidate[]> {
 /**
  * 从候选里认出一段：**id 完全对得上 > id 前缀 > 名字**，各只认唯一的那一个。
  *
- * 对得上好几段时**不猜**（那是拿一个不可撤销的动作赌一把）：把它们那几个短 id 列出来，让人
- * 写长一点。一个都对不上就指路到 `/sessions` —— 那里列着现有的那些。
+ * 对得上好几段时**不猜**（这个动作不可撤销，猜错会终止另一段会话）：把它们那几个短 id 列出来，
+ * 让人写长一点。一个都对不上就指路到 `/sessions` —— 那里列着现有的那些。
  */
 function matchSession(
   candidates: readonly KillCandidate[],
@@ -2163,9 +2163,9 @@ function matchSession(
   return { problem: t("cmd.kill.unknown", { arg: typed }) };
 }
 
-/** 这一段此刻的死活与排队条数（`/kill` 的那两句代价都从这两格来） */
+/** 这一段此刻的存活与排队条数（`/kill` 的那两句代价都从这两格来） */
 interface KillFacts {
-  /** `null` = 还没读到（不当成「死」） */
+  /** `null` = 还没读到（不当成「没有 agent」） */
   alive: boolean | null;
   pending: number;
 }
@@ -2175,8 +2175,8 @@ interface KillFacts {
  *
  *   · 当前这一段：直接读会话层（`alive` / `inboxPending` 都是镜像里的现读值）；
  *   · 本进程挂着但不是当前这一段：注册表那一行里也是它的活值；
- *   · 本进程根本没挂着（别的终端开的）：这一边没有订阅，只能现问一次 `session.open` ——
- *     那份快照里的 `live` 与 `inbox` 就是它的死活与排队区，拿到了不存，只用于这一次确认。
+ *   · 本进程根本没挂着（别的终端开的）：这一边没有订阅，于是现问一次 `session.open` ——
+ *     那份快照里的 `live` 与 `inbox` 就是它的存活与排队区，拿到了不存，只用于这一次确认。
  */
 async function killFacts(ctx: KillCtx, sessionId: string): Promise<KillFacts> {
   if (sessionId === ctx.session.sessionId) {
@@ -2191,11 +2191,11 @@ async function killFacts(ctx: KillCtx, sessionId: string): Promise<KillFacts> {
 /**
  * `/shutdown` —— 关掉宿主（`host.shutdown`）。
  *
- * ## 为什么必须问一句
+ * ## 为什么先问一句
  *
  * 一台机器一个宿主，可能多台客户端共用（桌面端从不 kill 宿主）。所以这一下会踢掉别人的
- * 连接，而按下去的人可能只想着「我这个窗口不用了」—— 确认框上把这件事说清，别让人事后
- * 才发现在另一台终端里聊到一半的会话断了。确认只在客户端做：关哪个宿主由这条连接决定，
+ * 连接，而按下去的人可能只想着「我这个窗口不用了」—— 确认框上把这件事说清，免得有人在
+ * 另一台终端里聊到一半的会话被断开之后才知道。确认只在客户端做：关哪个宿主由这条连接决定，
  * 宿主不为此再接一个 `confirm` 参数（那只是把同一件事在两处各判一遍）。
  *
  * ## 回执只有一格：受理
@@ -2206,7 +2206,7 @@ async function killFacts(ctx: KillCtx, sessionId: string): Promise<KillFacts> {
  *
  * ## 关掉之后 CLI 去哪
  *
- * 那条连接一定会断，傻等重连没有意义（宿主已经不在）。所以这一屏到此为止：把结论交给
+ * 那条连接一定会断，等重连没有意义（宿主已经不在）。所以这一屏到此为止：把结论交给
  * 上层（`backToConnect`），由它摆回连接屏并说明「宿主已关闭」—— 用户可以重新拉起一台，
  * 也可以改连别处，而不是被直接退出程序。
  */
@@ -2291,8 +2291,9 @@ export async function runCommand(name: string, raw: string, host: ChatCommandHos
    * 「忙时不能执行」的统一一道门（判据见 `CommandMeta.needsIdle`）。
    *
    * 拦在这里而不是每条命令自己写：`/back` `/model` `/think` `/handoff` `/migrate` 的**理由**
-   * 各不一样（宿主会拒 / 一批内部换家），但**判据**是同一个 —— 这一段此刻在不在跑。写成一张表
-   * 加一道门，新增命令只改表；散在五处则迟早有一条忘写，而忘写的后果是用户走完选择器才吃一个错。
+   * 各不一样（宿主会拒 / 在运行中换模型与思考档），但**判据**是同一个 —— 这一段此刻在不在跑。
+   * 写成一张表加一道门，新增命令只改表；散在五处则迟早有一条忘写，而忘写的后果是用户走完
+   * 选择器才拿到一个错。
    *
    * `status === null`（读数还没回来）按**不忙**处理：不拿「还没读到」当「在忙」拦人。
    */

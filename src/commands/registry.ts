@@ -15,7 +15,7 @@
  * ## 为什么不叫 `tui/commands`
  *
  * 「有哪些命令」不是渲染事实 —— `stdio` 与将来的任何前端都该有同一份清单，而
- * `tui/` 是叶子（除它自己以外，全仓不许 import 它）。它住在 `src/commands/` 之后，
+ * `tui/` 是叶子（全仓除它自己以外没有文件 import 它）。它住在 `src/commands/` 之后，
  * 命令层就不必为了一个常量表把 Ink 拖进依赖图（门禁见 `scripts/check-imports.mjs`）。
  *
  * 本模块为纯数据与纯函数，不依赖 React / Ink 等 UI 依赖，可直接单测。
@@ -33,7 +33,7 @@ export interface CommandMeta {
    * 一句话说明的 i18n key。
    *
    * 这里存 **key 而不是文案**：本模块是纯数据，加载时机靠前（甚至早于语言初始化），
-   * 存成文案就定死了「加载那一刻的语言」。渲染时由 `getCommandHints()` 用 `t()` 现取。
+   * 存成文案就固定在「加载那一刻的语言」上。渲染时由 `getCommandHints()` 用 `t()` 现取。
    */
   descriptionKey: string;
   /**
@@ -50,10 +50,10 @@ export interface CommandMeta {
    * 判据在 `handlers.ts` 的 `runCommand` 入口统一查一次，提示也由那里给 —— 命令自己不必各写一遍。
    *
    * 为什么它们是「禁用」而不是「问一句」：这几条一旦落在运行中的这一段上，要么宿主立刻拒
-   * （`session.revert` 的 `busy`、`handoff.start` 的 `conflict`），要么就是**一批内部换家**
-   * （`session.updateModel` / `updateThinkingLevel` 宿主不拦，下一轮请求立刻换模型与思考参数，
-   * 工具调用格式与参数都可能对不上）。前者让用户白走一遍选择器/确认才吃一个错，后者是实打实的
-   * 错位 —— 两种都该在按下去那一刻就说清。
+   * （`session.revert` 的 `busy`、`handoff.start` 的 `conflict`），要么就是**在同一轮运行里换掉
+   * 模型或思考档**（`session.updateModel` / `updateThinkingLevel` 宿主不拦，下一轮请求立刻换模型
+   * 与思考参数，工具调用格式与参数都可能对不上）。前者是用户先走完一遍选择器 / 确认才拿到一个
+   * 错，后者是实打实的错位 —— 两种都该在按下去那一刻就说清。
    *
    * 会话的**新建与切换**（`/new` `/load` `/sessions` `/ws`）不在此列：它们不动运行中的那一段。
    */
@@ -90,7 +90,7 @@ export interface CommandMeta {
  * `back`）：键名和命令名不一致时，下一个人改文案得先猜哪一份字典说的是哪条命令。
  *
  * `clear` 与 `free` 是**拆出来的两条**：`/clear` 只清屏、`/free` 只清排队区（一条命令一件事），
- * 从前「`/clear` 顺手清队列」那一半的说明与提示文案也跟着搬到 `cmd.free.*` 上。
+ * 从前 `/clear` 连清队列一起做，那一半的说明与提示文案也跟着搬到 `cmd.free.*` 上。
  */
 const REGISTRY_ENTRIES = [
   { name: "new", descriptionKey: "cmd.new.desc" },
@@ -136,21 +136,21 @@ const REGISTRY_ENTRIES = [
    *
    * 是调试入口（面板的形状只有真碰上会 elicitation 的服务器才看得见），所以不调模型、也不改
    * 任何状态：
-   * 它只是把同一张面板拿一张写死的表打开一次。
+   * 它只是用一张固定的表把同一张面板打开一次。
    */
   { name: "form", descriptionKey: "cmd.form.desc" },
   { name: "editor", descriptionKey: "cmd.editor.desc" },
   /**
    * `/clear` **只清屏**（屏幕起点后移，上下文一个字不动）：一条命令一件事。
    *
-   * 从前它顺手清排队区，于是「清了屏」与「清了队列」在按下去那一刻分不开 —— 想只清屏也做不到。
+   * 从前它一并清掉排队区，于是「清了屏」与「清了队列」在按下去那一刻分不开 —— 想只清屏也做不到。
    * 现在排队区归紧跟着的 `/free`（`agent.clearInbox`），两条命令各说一件事。
    */
   { name: "clear", descriptionKey: "cmd.clear.desc" },
   /** `/free` 只清排队区（`agent.clearInbox`）：跑中排着的话、交接期间别人投进来的话 */
   { name: "free", descriptionKey: "cmd.free.desc" },
   { name: "config", descriptionKey: "cmd.config.desc" },
-  // 换模型 / 换思考档写的是会话行：下一轮请求立刻换家（宿主不拦），一批内部换模型最容易出事
+  // 换模型 / 换思考档写的是会话行：下一轮请求立刻用新值（宿主不拦），在运行中换模型最容易出事
   { name: "model", descriptionKey: "cmd.model.desc", needsIdle: true },
   { name: "think", aliases: ["effort"], descriptionKey: "cmd.think.desc", needsIdle: true },
   { name: "agent", descriptionKey: "cmd.agent.desc" },
@@ -244,7 +244,7 @@ export function commandNeedsIdle(name: string): boolean {
  * 把原始斜杠输入切成「命令名 + 参数」。
  *
  * 两种返回形状共用同一个切分规则（`/migrate  self ` → `migrate` + `["self"]`）：
- * 命令名由 {@link parseCommandInput} 取，参数由 {@link parseCommandArgs} 取。两者必须走
+ * 命令名由 {@link parseCommandInput} 取，参数由 {@link parseCommandArgs} 取。两者走
  * 同一个切分器，否则「命令名到哪结束」会有两份互不相干的实现。
  */
 function splitCommandInput(text: string): string[] {
@@ -255,7 +255,7 @@ function splitCommandInput(text: string): string[] {
  * 从原始输入里取命令参数（首个 token 之后的全部 token）。
  *
  * 与 {@link parseCommandInput} 共用 {@link splitCommandInput}，保证「命令名边界」与
- * 「参数边界」用的是同一把尺子。
+ * 「参数边界」用的是同一套切分规则。
  */
 export function parseCommandArgs(text: string): string[] {
   return splitCommandInput(text).slice(1);

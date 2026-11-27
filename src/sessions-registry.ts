@@ -3,7 +3,7 @@
  *
  * ## 为什么需要这一层
  *
- * 从前一段会话的生死挂在会话屏上：屏幕挂载时建、卸载时 `dispose()`。而换会话（`/new`、
+ * 从前一段会话的创建与释放挂在会话屏上：屏幕挂载时建、卸载时 `dispose()`。而换会话（`/new`、
  * `/load`）是「卸载旧屏 + 挂新屏」，于是每换一次，旧那一段会话的订阅就被摘掉 —— 宿主那边
  * 它还在跑（`RunRegistry` 独立于连接，PRD D4），客户端这边却再也收不到它的任何事件。
  * 「切过去不影响原来那段」在服务端早就成立，缺的只是客户端别丢订阅。
@@ -16,7 +16,7 @@
  * 1. **索引读的是活值**：这一层存的是一个数组，查的时候读 `session.sessionId` 这个**此刻**的值
  *    —— 会话 id 一旦定下来就不再变（交接是原地换记忆，PRD 4.5），所以这一格不会漂；存数组仍然
  *    是更省事的那一种（顺序即打开顺序，列表天然有顺序）。
- * 2. **后台会话的通知不抢当前屏**：通知按会话归位 —— 当前没有屏幕听那一段时先攒在它自己那一格
+ * 2. **后台会话的通知不抢当前屏**：通知按会话归位 —— 当前没有屏幕看那一段时先暂存在它自己那一格
  *    （`channel.notices`），等它被切过来（`enter`）再一次性交给那一屏。通知栏是**这一段会话**
  *    的栏位，后台那段的句子不应该冒到别人屏幕上。
  */
@@ -37,7 +37,7 @@ import type {
   SessionActivity,
 } from "./session/types.js";
 
-/** 后台会话攒通知的上限（再多也只留最近的这些：一位用户真看到一屏就够判断了） */
+/** 后台会话暂存通知的上限（再多也只留最近的这些：一位用户真看到一屏就够判断了） */
 const MAX_BACKGROUND_NOTICES = 20;
 
 /** 「宿主问过来一道题怎么作答」那一手（屏幕给的） */
@@ -50,18 +50,18 @@ type QuestionHandler = NonNullable<ChatSessionOptions["onQuestion"]>;
  * `openTargetSession`），而作答只有屏幕做得了（它要弹选择器）。所以会话拿到的是一个转发器，
  * 读的是**它自己这一格**：屏幕 `enter` 时把自己的那一个写进来，屏幕走了就置回 `null`。
  *
- * 为什么必须按会话分而不是共用一个：后台那段会话推的题会被答到当前那一屏的选择器上 ——
+ * 为什么按会话分而不是共用一个：后台那段会话推的题会被答到当前那一屏的选择器上 ——
  * 用户以为眼前这段被问了话，答完的字符串却回给了后台那段。屏幕与题对不上，比没人答更糟。
  */
 interface QuestionSlot {
   handler: QuestionHandler | null;
 }
 
-/** 一条攒下来的通知（与 `ChatSessionNotifier.onNotice` 同形） */
+/** 一条暂存下来的通知（与 `ChatSessionNotifier.onNotice` 同形） */
 interface QueuedNotice {
   text: string;
   tone: NoticeTone;
-  /** 来源（`app` / `log`）：攒的这几条里可能有日志上浮来的，交出去时不能把它弄丢 */
+  /** 来源（`app` / `log`）：暂存的这几条里可能有日志上浮来的，交出去时不能把它丢掉 */
   origin?: NoticeOrigin;
 }
 
@@ -70,7 +70,7 @@ interface QueuedNotice {
  *
  * `channel` 与 `session` 分开是因为**顺序**：会话在**开的过程中**就会推东西（打开时会补看
  * 宿主上还挂着的通知，PRD 通知是「有状态的槽位」），而那时 `session` 这个字段还没被赋值。
- * 把「谁在听」与「攒了什么」放进一个先立得住的小对象里，notifier 就能在会话到手之前成形。
+ * 把「谁在看」与「暂存了什么」放进一个先立得住的小对象里，notifier 就能在会话到手之前成形。
  */
 interface Entry {
   session: ChatSessionLike;
@@ -83,14 +83,14 @@ interface Entry {
 interface Channel {
   /** 此刻正在听这一段的屏幕；`null` = 没人看（后台跑着） */
   sink: ChatSessionNotifier | null;
-  /** 没人看的时候攒下的通知，切过来时一次性交给那一屏 */
+  /** 没人看的时候暂存的通知，切过来时一次性交给那一屏 */
   notices: QueuedNotice[];
 }
 
 /**
- * 把一句话交给「听这一段的那一屏」；没人听就攒进它自己那一格（切过来时再交出去）。
+ * 把一句话交给「看这一段的那一屏」；没人看就暂存进它自己那一格（切过来时再交出去）。
  *
- * 攒的不是「宿主那份通知」而是那句话本身：宿主那边显示即消费，错过这一下就再也补不回来。
+ * 暂存的不是「宿主那份通知」而是那句话本身：宿主那边显示即消费，错过这一下就再也补不回来。
  */
 function announce(channel: Channel, text: string, tone: NoticeTone, origin?: NoticeOrigin): void {
   if (channel.sink) {
@@ -104,12 +104,12 @@ function announce(channel: Channel, text: string, tone: NoticeTone, origin?: Not
 /**
  * 活跃会话列表里的一行 —— **本进程挂着的那些**（另一半来自宿主的 `session.list`）。
  *
- * 只放命令层真正要显示的那几样事实：哪一段、叫什么、忙闲与死活、在忙什么（那一句话）、
+ * 只放命令层真正要显示的那几样事实：哪一段、叫什么、忙闲与存活、在忙什么（那一句话）、
  * 还有几句排队没送出去、这段是几点开的。任何一条都是读会话的**活值**，不存副本。
  *
- * 「这一批从几点起跑」这一格确实没有：新契约不报「这一批从几点开始」（没有运行边界，就没有
- * 起点可报）。列表上留着的是**会话自己的**时刻（`SessionView.createdAt`，排序也用它）——
- * 那是契约里真有的东西，不许因为「起跑时刻」没了就连它一起删。
+ * 「这一轮从几点开始」这一格确实没有：新契约不报这一项（没有运行边界，就没有起点可报）。
+ * 列表上留着的是**会话自己的**时刻（`SessionView.createdAt`，排序也用它）—— 那是契约里真有
+ * 的东西，不因为「运行起点」这一项消失就一起删掉。
  */
 export interface LiveSession {
   sessionId: string;
@@ -117,7 +117,7 @@ export interface LiveSession {
   name: string;
   /** 忙闲那一格（`working` / `idle`）；`null` = 还没读到 */
   status: SessionActivity | null;
-  /** 死活那一格：这一段此刻有没有 agent */
+  /** 存活那一格：这一段此刻有没有 agent */
   alive: boolean | null;
   /**
    * 在忙时「在忙什么」那一句话（`session-phase.ts` 从忙闲 + 消息现推）；手上没活为空。
@@ -135,8 +135,8 @@ export interface LiveSession {
   /**
    * 这段会话是什么时候开的（`SessionView.createdAt`，ISO 8601）。
    *
-   * 列表里那一行「{time} 起」就从它算 —— 契约不报「这一批从几点起跑」，但会话自己的起点是
-   * 真有的（宿主也按它排列表），不能因为前面那个没了就把它一起删了。
+   * 列表里那一行「{time} 起」就从它算 —— 契约不报「这一轮从几点开始」，但会话自己的起点是
+   * 真有的（宿主也按它排列表），不因为前面那个没了就把它一起删掉。
    */
   createdAt: string;
 }
@@ -147,9 +147,9 @@ export interface LiveSession {
  * 刻意只留这几件事：借一段会话（`enter`）、还回去（`detach`）、开一段新的（`newSegment`）、
  * 看清单（`list`）、从登记里摘掉一段（`drop`）、以及「这一次删除是我自己叫的」（
  * `expectOwnRemoval`）。注册表还有 `open`（启动期先把会话开好）与 `disposeAll`（进程收摊），
- * 但那两只归组装根（`tui/index.tsx`）调 —— 屏幕拿不到它们，「屏幕顺手把会话开好 / 关掉」这条
- * 路才不会在某个 effect 里长出来。`drop` 是唯一一条「由屏幕那一侧发起、真的把一段会话从登记
- * 里拿走」的口子，它只该由 `/delete` / `/ws delete`（宿主已经把那些硬删了）调。
+ * 但那两个归组装根（`tui/index.tsx`）调 —— 屏幕拿不到它们，于是「屏幕自己把会话开好 / 关掉」
+ * 这条路径不会在某个 effect 里出现。`drop` 是唯一一条「由屏幕那一侧发起、真的把一段会话从登
+ * 记里拿走」的路径，调用它的是 `/delete` 与 `/ws delete`（宿主已经把那些硬删了）。
  */
 export interface SessionHub {
   /** 挂到「这一段」上：本进程已经挂着就取现成的，没有就开一段；顺带把这一屏接成它的听众 */
@@ -172,7 +172,7 @@ export interface SessionHub {
    * `/delete` 成功之后：把这一段从本进程的登记里摘掉（连同它的订阅）。
    *
    * 宿主已经把那段硬删了，而注册表里还挂着它时会做两件错事：后续「切回去」指向一段已经不
-   * 存在的东西；那一段的订阅与镜像也白白留着。所以摘干净 —— 先摘登记（此后不再往那一段投任何
+   * 存在的东西；那一段的订阅与镜像也一直留着。所以摘干净 —— 先摘登记（此后不再往那一段投任何
    * 东西），再换屏（见 `commands/handlers.ts` 的 `cmdDelete`）。
    *
    * 不在登记里（别的客户端删的、或已经摘过一次）：空操作，不报错。
@@ -189,8 +189,8 @@ export interface SessionHub {
    * 为什么要提前报名而不是删完再说：宿主在 mutation 里就把事件推到这条流上，它到得比那次调用
    * 的回执**早**。等回执写进 messages 再报名，屏幕已经被那一下惊动过一次了。
    *
-   * 回一个「收尾完了」：发起的那条命令在它自己的收尾之后调它（失败也要调 —— 一条永不到来的
-   * 事件否则会让这一段以后被别处删掉时也不出声）。
+   * 回一个「收尾完了」：发起的那条命令在它自己的收尾之后调它（失败也要调 —— 否则那一条事件
+   * 不会到来，这一段以后被别处删掉时就不出声了）。
    */
   expectOwnRemoval(): () => void;
 }
@@ -254,8 +254,8 @@ export class SessionRegistry implements SessionHub {
    * 屏幕挂上来时走 `enter`，按 id 取现成的这一段（同一个 `sessionId` 只开一次）—— 于是
    * 「启动期开会话问模型」与「屏幕开会话」不会变成两次 `connection.open`、两套镜像订阅。
    *
-   * 这里**不写作答者**：没有屏幕可问，这一段的那一格就留着 `null`（题进通知栏等人来），
-   * 谁的那一屏挂上来由 `enter` 写。
+   * 这里**不写作答者**：没有屏幕可问，这一段的那一格就留着 `null`（题进通知栏，等屏幕挂上来
+   * 再显示），哪一屏挂上来由 `enter` 写。
    *
    * 不放进 {@link SessionHub}：屏幕没有「先把会话开好」这个动作，它只有「借一段来看」。
    */
@@ -270,12 +270,13 @@ export class SessionRegistry implements SessionHub {
     sink: ChatSessionNotifier,
   ): Promise<ChatSessionLike> {
     // 作答那一手要等拿到 entry 才写得进去 —— 这时才知道是哪一段，而它只属于这一段。
-    // 会话在开的过程中推的题因此仍然没人答（slot 还是 `null`）：题干进通知栏攒着，屏幕到了再看见。
+    // 会话在开的过程中推的题因此仍然没有人作答（slot 还是 `null`）：题进通知栏暂存，
+    // 屏幕挂上来之后才显示。
     const entry = await this.openEntry(options);
     if (options.onQuestion) entry.questionSlot.handler = options.onQuestion;
     entry.channel.sink = sink;
     this.current = entry;
-    // 后台攒下的通知现在才有人看：切过来才显示，绝不抢当时那一屏
+    // 后台暂存的通知现在才有人看：切过来才显示，不抢当时那一屏
     for (const notice of entry.channel.notices.splice(0)) {
       sink.onNotice(notice.text, notice.tone, notice.origin);
     }
@@ -288,7 +289,8 @@ export class SessionRegistry implements SessionHub {
     for (const entry of this.entries) {
       if (entry.channel.sink !== sink) continue;
       entry.channel.sink = null;
-      // 作答那一手跟着听众一起摘：那一屏已经不在了，别再往它身上塞题（题会进通知栏等人来）
+      // 作答那一手跟着听众一起摘：那一屏已经不在了，往它身上投题没有去处
+      // （题会进通知栏等屏幕挂上来）
       entry.questionSlot.handler = null;
     }
   }
@@ -304,7 +306,7 @@ export class SessionRegistry implements SessionHub {
     );
     /**
      * 建一段新会话 —— `session.create` 只写库：不唤醒 Agent，也不投递任何东西。于是这一段开出来
-     * 是死的，第一次发话时会话层会先叫起来再投。
+     * 时没有 Agent，第一次发话时会话层会先唤醒再投递。
      */
     const { session } = await this.connection.api.session.create.mutate({
       // 「下一个新会话落在哪」认 `currentWorkspaceId`（`/ws` 选过就是新的那个，PRD D30）
@@ -437,7 +439,7 @@ export class SessionRegistry implements SessionHub {
    * 取「这一段」的会话：本进程挂着就现成的，否则开一段。
    *
    * 只有点名了 `sessionId` 才能去重：没点名（首屏的「接着上次」）之前，谁也不知道会落到
-   * 哪一段上 —— 那时只能开，开出来之后它就带名字了。
+   * 哪一段上 —— 那时没有可去重的键，于是先开一段，开出来之后它就带名字了。
    */
   private async openEntry(options: Omit<ChatSessionOptions, "connection">): Promise<Entry> {
     const sessionId = options.sessionId;
