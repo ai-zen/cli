@@ -361,14 +361,14 @@ describe("表单：摊成一行行", () => {
     };
     // 只有一个字段的表打开就是编辑层，光标在那儿
     const lines = formLines(schema, initialEditing(schema), TEXTS).map(lineText);
-    expect(lines[0]).toBe("▸ 名字：▏");
+    expect(lines[0]).toBe("⌄ 名字：▏");
   });
 
   it("进编辑之后枚举才展开：单选 `(o)`、多选 `[x]`，同一个形状只差一对括号", () => {
     const atMode = editing("mode", PICKS);
     const lines = formLines(PICKS, atMode, TEXTS).map(lineText);
 
-    expect(lines[0]).toBe("▸ 单选");
+    expect(lines[0]).toBe("⌄ 单选");
     expect(lines[1]).toBe("     (o) 甲");
     expect(lines[2]).toBe("     ( ) 乙");
     expect(lines[3]).toBe("     ( ) 丙");
@@ -445,7 +445,7 @@ describe("表单：单项表", () => {
   it("打开就在编辑层、不画动作行（回车就是交卷）", () => {
     const lines = formLines(ONE_CHOICE, initialEditing(ONE_CHOICE), TEXTS).map(lineText);
 
-    expect(lines).toEqual(["▸ 方式 *", "     (o) 自己", "     ( ) 独立", "     ( ) 不"]);
+    expect(lines).toEqual(["⌄ 方式 *", "     (o) 自己", "     ( ) 独立", "     ( ) 不"]);
     expect(schemaRows(ONE_CHOICE)).toBe(4);
   });
 

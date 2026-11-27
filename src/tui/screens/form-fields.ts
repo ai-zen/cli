@@ -551,8 +551,9 @@ export function formLines(
     const isFocus = index === editing.focus;
     const inEditing = isFocus && editing.mode === "editing";
     if (isFocus) focusAt = lines.length;
-    // 编辑层用 `▸`：与浏览层的 `❯` 分开，一眼看得出「按了回车之后我在哪一层」
-    const marker = isFocus ? (inEditing ? "▸" : "❯") : " ";
+    // 收起的字段用右尖括号 `❯`，展开的用下尖括号 `⌄`：同一个家族的配对，一眼看得出
+    // 「候选开没开」。不用 `▸` —— 那是「小三角」，与 `❯` 不成对，看着像换了一种东西。
+    const marker = isFocus ? (inEditing ? "⌄" : "❯") : " ";
     const label = labelOf(name, field);
     const options = enumValues(field);
 
