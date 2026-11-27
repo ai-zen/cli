@@ -77,6 +77,7 @@ export const en: Record<string, string> = {
   "ui.select": "Select",
   "ui.form.switch": "field",
   "ui.form.choose": "option",
+  "ui.form.actions": "actions",
   "ui.form.accept": "agree",
   "ui.form.decline": "decline",
   "ui.form.cancel": "cancel",

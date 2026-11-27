@@ -66,6 +66,8 @@ export interface FormEditing {
 export type FormKey =
   | { kind: "next" }
   | { kind: "prev" }
+  /** Tab / Shift+Tab：在浏览层与上下箭头同义，在展开的候选里则是「离开这一格、去按钮那一行」 */
+  | { kind: "tab"; delta: -1 | 1 }
   | { kind: "step"; delta: -1 | 1 }
   | { kind: "space" }
   | { kind: "text"; input: string }
@@ -120,8 +122,27 @@ export function initialEditing(schema: FormSchemaView): FormEditing {
         break;
     }
   }
-  // 初始状态落在浏览层、第一格 —— 一张表只有一种形状，字段几个都一样
-  return { values, mode: "browsing", focus: 0, cursors: {} };
+  // 一格枚举的表打开就把候选展开：整张表就这一个问题，还让人先按一次回车才看见候选，是白按一下
+  return {
+    values,
+    mode: singleEnumOf(schema) === undefined ? "browsing" : "editing",
+    focus: 0,
+    cursors: {},
+  };
+}
+
+/**
+ * 这张表是不是「一格枚举」：只有一个字段，而且那个字段是单选或多选枚举。
+ *
+ * 这种表打开即展开候选、回车直接交卷 —— 候选那几行已经把「选哪个」说完了，没有第二层要收。
+ * 字段多于一个的表里，回车在枚举上是「展开 / 收起」，交卷归动作行。
+ */
+function singleEnumOf(schema: FormSchemaView): { name: string; field: FormFieldView } | undefined {
+  const names = fieldNames(schema);
+  if (names.length !== 1) return undefined;
+  const name = names[0]!;
+  const field = schema.properties[name]!;
+  return enumValues(field) === undefined ? undefined : { name, field };
 }
 
 /** 按一下键，得到新的编辑状态 */
@@ -155,9 +176,9 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
 
     switch (key.kind) {
       case "next":
-        return move(1);
       case "prev":
-        return move(-1);
+      case "tab":
+        return move(key.kind === "prev" || (key.kind === "tab" && key.delta < 0) ? -1 : 1);
       // 文本/数字在浏览层就能直接改：光标就在那一格上，没有「先进编辑」这一步。
       // 枚举是字符串但不收字 —— 它的值只能从候选里选（`enumValues` 有值就不算能打字）
       case "text":
@@ -208,7 +229,19 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
 
   switch (key.kind) {
     case "enter":
+      // 一格枚举：候选已经展开在眼前，回车就是「选这一个，交卷」
+      if (singleEnumOf(schema) !== undefined) return { kind: "accept" };
       return { kind: "state", editing: { ...cleared, mode: "browsing" } };
+    case "tab":
+      // 展开的候选把 ↑ ↓ 占住了，于是「去按钮那一行」归 Tab：向前落「同意」、向后落「取消」
+      return {
+        kind: "state",
+        editing: {
+          ...cleared,
+          mode: "browsing",
+          focus: key.delta > 0 ? acceptAt : cancelAt,
+        },
+      };
     case "next":
       // 编辑枚举时上下箭头动的是候选（用户在这里按 ↓ 想知道的是「下一项是什么」）
       return { kind: "state", editing: advance(cleared, name, field, 1) };
@@ -471,6 +504,11 @@ export function fieldRows(): number {
  * 自己滚动（见 `formLines` 的 `maxRows`）。
  */
 export function schemaRows(schema: FormSchemaView): number {
+  const single = singleEnumOf(schema);
+  // 一格枚举打开就展开候选，那一屏要多占几行（布局按这个数预留）
+  if (single !== undefined) {
+    return 1 + (enumValues(single.field)?.length ?? 0) + ACTION_ROWS + 1;
+  }
   return fieldNames(schema).length + ACTION_ROWS + 1;
 }
 

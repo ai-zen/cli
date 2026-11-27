@@ -222,7 +222,13 @@ function hintsOf(schema: FormSchemaView, editing: FormEditing): [string, string]
   if (toggles) out.push(["Space", t("ui.form.toggle")]);
 
   if (expanded) {
-    out.push(["Enter", t("ui.form.commit")], ["Esc", t("ui.form.back")]);
+    // 一格枚举：候选已经展开、回车直接交卷；其余情况回车只是收起候选
+    const single = names.length === 1;
+    out.push(
+      ["Enter", single ? t("ui.form.accept") : t("ui.form.commit")],
+      ["Tab", t("ui.form.actions")],
+      ["Esc", t("ui.form.back")],
+    );
     return out;
   }
 
@@ -280,7 +286,7 @@ function translateKey(
     meta?: boolean;
   },
 ): FormKey | undefined {
-  if (key.tab) return key.shift ? { kind: "prev" } : { kind: "next" };
+  if (key.tab) return { kind: "tab", delta: key.shift ? -1 : 1 };
   if (key.downArrow) return { kind: "next" };
   if (key.upArrow) return { kind: "prev" };
   if (key.leftArrow) return { kind: "step", delta: -1 };

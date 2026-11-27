@@ -450,7 +450,7 @@ describe("表单：摊成一行行", () => {
   });
 });
 
-describe("表单：只有一格的表也走同一条路", () => {
+describe("表单：只有一格的枚举（打开即展开、回车交卷）", () => {
   /** 一道只有三个候选的单选题（交接那道就是这个形状） */
   const ONE_CHOICE: FormSchemaView = {
     type: "object",
@@ -465,32 +465,57 @@ describe("表单：只有一格的表也走同一条路", () => {
     required: ["mode"],
   };
 
-  it("打开在浏览层第一格，动作行照画（三态一个不少）", () => {
-    const lines = formLines(ONE_CHOICE, initialEditing(ONE_CHOICE), TEXTS).map(lineText);
+  it("打开就是展开的候选，动作行照画（三态一个不少）", () => {
+    const start = initialEditing(ONE_CHOICE);
+    expect(start.mode).toBe("editing");
 
-    expect(lines).toEqual(["+ 方式 *：自己", "", " 同意 ", " 拒绝 ", " 取消 "]);
-    expect(schemaRows(ONE_CHOICE)).toBe(5);
+    const lines = formLines(ONE_CHOICE, start, TEXTS).map(lineText);
+    expect(lines).toEqual([
+      "+ 方式 *",
+      "     (o) 自己",
+      "     ( ) 独立",
+      "     ( ) 不",
+      "",
+      " 同意 ",
+      " 拒绝 ",
+      " 取消 ",
+    ]);
+    expect(schemaRows(ONE_CHOICE)).toBe(lines.length);
   });
 
-  it("回车在枚举上是展开；走到 [同意] 才交卷，Esc 直接关掉", () => {
+  it("回车直接交卷：候选已经在眼前，不必再收起一次", () => {
     const start = initialEditing(ONE_CHOICE);
-    expect(press(start, [enter], ONE_CHOICE).mode).toBe("editing");
-    expect(stepOf(start, escape, ONE_CHOICE)).toEqual({ kind: "cancel" });
+    expect(stepOf(start, enter, ONE_CHOICE)).toEqual({ kind: "accept" });
 
-    // 一格 + 三个动作：第 1、2、3 次 ↓ 分别落在同意、拒绝、取消上
-    const atSubmit = press(start, [next], ONE_CHOICE);
-    expect(stepOf(atSubmit, enter, ONE_CHOICE)).toEqual({ kind: "accept" });
-    expect(stepOf(press(atSubmit, [next], ONE_CHOICE), enter, ONE_CHOICE)).toEqual({
-      kind: "decline",
-    });
+    // ↓ 换候选之后的回车，交的仍是这一档
+    const second = press(start, [next], ONE_CHOICE);
+    expect(second.values.mode).toBe("summary");
+    expect(stepOf(second, enter, ONE_CHOICE)).toEqual({ kind: "accept" });
   });
 
-  it("↑ ↓ 在「字段 + 三个动作」之间走（不再是换候选）", () => {
+  it("Tab 从候选跳到按钮行（向前落同意、向后落取消），Esc 收起", () => {
     const start = initialEditing(ONE_CHOICE);
-    expect(press(start, [next], ONE_CHOICE).focus).toBe(1);
-    expect(press(start, [prev], ONE_CHOICE).focus).toBe(3);
-    // 值一直没动过：换焦点不该顺带改答案
-    expect(press(start, [next], ONE_CHOICE).values.mode).toBe("self");
+
+    const toAccept = press(start, [{ kind: "tab", delta: 1 }], ONE_CHOICE);
+    expect(toAccept.mode).toBe("browsing");
+    expect(toAccept.focus).toBe(1);
+    expect(stepOf(toAccept, enter, ONE_CHOICE)).toEqual({ kind: "accept" });
+
+    const toCancel = press(start, [{ kind: "tab", delta: -1 }], ONE_CHOICE);
+    expect(toCancel.focus).toBe(3);
+
+    // 从按钮行再按 Tab 回到候选（往返不丢值）
+    const back = press(toAccept, [{ kind: "tab", delta: 1 }], ONE_CHOICE);
+    expect(back.mode).toBe("browsing");
+    expect(back.values.mode).toBe("self");
+  });
+
+  it("↑ ↓ 只换候选，不动焦点线", () => {
+    const start = initialEditing(ONE_CHOICE);
+    const second = press(start, [next], ONE_CHOICE);
+    expect(second.focus).toBe(0);
+    expect(second.values.mode).toBe("summary");
+    expect(press(start, [prev], ONE_CHOICE).values.mode).toBe("no");
   });
 
   it("单项是布尔时：浏览器层回车与空格都是切换", () => {
