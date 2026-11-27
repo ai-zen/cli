@@ -215,6 +215,18 @@ describe("FormOverlay", () => {
     form.unmount();
   });
 
+  it("动作按钮之前留一个空行（Ink 里空的 `<Text>` 高度是 0，得写一个空格）", async () => {
+    const form = await mountedForm();
+    await until(() => form.frame().includes("[提交]"), "提交按钮画出来");
+
+    const rows = form.frame().split("\n");
+    const submitAt = rows.findIndex((row) => row.includes("[提交]"));
+    // 上一行去掉边框与两侧空白之后应当是空的
+    const above = (rows[submitAt - 1] ?? "").replace(/^[│\s]+|[│\s]+$/g, "");
+    expect(above).toBe("");
+    form.unmount();
+  });
+
   it("布尔回车/空格都能直接切（不用展开）", async () => {
     const form = await mountedForm();
 

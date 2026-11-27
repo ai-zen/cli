@@ -177,7 +177,8 @@ export function FormOverlay({
             bold={line.focused === true}
             wrap="wrap"
           >
-            {line.text}
+            {/* 空行要写一个空格：Ink 里空的 `<Text>` 高度是 0，那一行会被吃掉 */}
+            {line.text === "" ? " " : line.text}
             {/* 必填那个星号单独上色：它说的是「不填交不上去」，不是排版装饰 */}
             {line.star === true ? <Text color={theme.error}> *</Text> : null}
             {line.rest ?? ""}
