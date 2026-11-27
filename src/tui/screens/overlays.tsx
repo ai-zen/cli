@@ -8,6 +8,7 @@ import type { FormAnswerView, FormSchemaView } from "../../session/types.js";
 import {
   answerOf,
   applyFormKey,
+  fieldNames,
   formLines,
   initialEditing,
   type FormEditing,
@@ -183,25 +184,39 @@ export function FormOverlay({
       </Box>
       <Box marginTop={1}>
         {/* 两层的按键不是同一套，提示也跟着换 —— 一条固定提示总有一半是错的 */}
-        <KeyHints
-          hints={
-            editing.mode === "browsing"
-              ? [
-                  ["↑ ↓", t("ui.form.switch")],
-                  ["Enter", t("ui.form.edit")],
-                  ["Esc", t("ui.cancel")],
-                ]
-              : [
-                  ["↑ ↓", t("ui.form.choose")],
-                  ["Space", t("ui.form.toggle")],
-                  ["Enter", t("ui.form.commit")],
-                  ["Esc", t("ui.form.back")],
-                ]
-          }
-        />
+        <KeyHints hints={hintsOf(schema, editing.mode)} />
       </Box>
     </Box>
   );
+}
+
+/**
+ * 提示那一行：按「现在是哪一层」给。
+ *
+ * 单项表是另一套 —— 它没有浏览层、也没有动作按钮，回车直接交卷。
+ */
+function hintsOf(schema: FormSchemaView, mode: FormEditing["mode"]): [string, string][] {
+  if (fieldNames(schema).length === 1) {
+    return [
+      ["↑ ↓", t("ui.form.choose")],
+      ["Space", t("ui.form.toggle")],
+      ["Enter", t("ui.form.submit")],
+      ["Esc", t("ui.cancel")],
+    ];
+  }
+  if (mode === "browsing") {
+    return [
+      ["↑ ↓", t("ui.form.switch")],
+      ["Enter", t("ui.form.edit")],
+      ["Esc", t("ui.cancel")],
+    ];
+  }
+  return [
+    ["↑ ↓", t("ui.form.choose")],
+    ["Space", t("ui.form.toggle")],
+    ["Enter", t("ui.form.commit")],
+    ["Esc", t("ui.form.back")],
+  ];
 }
 
 /**

@@ -215,12 +215,12 @@ describe("表单：编辑层", () => {
     };
     expect(initialEditing(single).mode).toBe("editing");
 
-    // 布尔例外：它的编辑就是按一下回车切过去
+    // 布尔也一样：单项表里回车是交卷，切换归空格
     const onlyBool: FormSchemaView = {
       type: "object",
       properties: { flag: { type: "boolean", title: "开关" } },
     };
-    expect(initialEditing(onlyBool).mode).toBe("browsing");
+    expect(initialEditing(onlyBool).mode).toBe("editing");
   });
 
   it("回车退出编辑层（不提交）：值留着，焦点还在这一格", () => {
@@ -400,5 +400,51 @@ describe("表单：摊成一行行", () => {
   it("校验失败那句排在最后（不参与滚动窗口的居中）", () => {
     const lines = formLines(PICKS, { ...initialEditing(PICKS), error: "单选：必填" }, TEXTS);
     expect(lines.at(-1)).toEqual({ text: "单选：必填", tone: "error" });
+  });
+});
+
+describe("表单：单项表", () => {
+  /** 一道只有三个候选的单选题（交接那道就是这个形状） */
+  const ONE_CHOICE: FormSchemaView = {
+    type: "object",
+    properties: {
+      mode: {
+        type: "string",
+        title: "方式",
+        enum: ["self", "summary", "no"],
+        enumNames: ["自己", "独立", "不"],
+      },
+    },
+    required: ["mode"],
+  };
+
+  it("打开就在编辑层、不画动作行（回车就是交卷）", () => {
+    const lines = formLines(ONE_CHOICE, initialEditing(ONE_CHOICE), TEXTS).map(lineText);
+
+    expect(lines).toEqual(["▸ 方式 *", "     (o) 自己", "     ( ) 独立", "     ( ) 不"]);
+    expect(schemaRows(ONE_CHOICE)).toBe(4);
+  });
+
+  it("回车就是提交，Esc 就是关掉（没有浏览层那一跳）", () => {
+    const editing = initialEditing(ONE_CHOICE);
+    expect(stepOf(editing, enter, ONE_CHOICE)).toEqual({ kind: "submit" });
+    expect(stepOf(editing, escape, ONE_CHOICE)).toEqual({ kind: "cancel" });
+  });
+
+  it("↑ ↓ 直接换候选（不必先「进格」）", () => {
+    const editing = initialEditing(ONE_CHOICE);
+    expect(press(editing, [next], ONE_CHOICE).values.mode).toBe("summary");
+    expect(press(editing, [prev], ONE_CHOICE).values.mode).toBe("no");
+  });
+
+  it("单项是布尔时：回车交卷、空格切换", () => {
+    const only: FormSchemaView = {
+      type: "object",
+      properties: { flag: { type: "boolean", title: "开关" } },
+    };
+    const editing = initialEditing(only);
+    // 回车不再「切过去」—— 单项表里它只有一个意思：交卷
+    expect(stepOf(editing, enter, only)).toEqual({ kind: "submit" });
+    expect(press(editing, [{ kind: "space" }], only).values.flag).toBe(true);
   });
 });

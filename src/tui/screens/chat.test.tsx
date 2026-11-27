@@ -1592,24 +1592,18 @@ describe("问题对象（到交接线时宿主提问）", () => {
     await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
     await flush(40);
     expect(lastFrame() ?? "").toContain("上下文已用 92%，要交接吗？");
-    expect(lastFrame() ?? "").toContain("[提交]");
+    // 单项表不画动作按钮：回车就是交卷
+    expect(lastFrame() ?? "").not.toContain("[提交]");
 
     // ↓ 换到第二项（编辑层里上下箭头动的是候选）
     stdin.write("\u001b[B");
     await flush(40);
     await waitFor(() => (lastFrame() ?? "").includes("(o) 独立摘要"));
 
-    // ↑ 回到第一项，再回车退回浏览层（不提交）
+    // ↑ 回到第一项，回车直接交卷（不必再找提交按钮）
     stdin.write("\u001b[A");
     await flush(40);
     await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
-    stdin.write("\r");
-    await flush(40);
-
-    // 最后一步：↓ 落到提交项，回车交卷
-    stdin.write("\u001b[B");
-    await flush(40);
-    await waitFor(() => (lastFrame() ?? "").includes("❯ [提交]"));
     stdin.write("\r");
     await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "self" } });
     unmount();
@@ -1622,10 +1616,7 @@ describe("问题对象（到交接线时宿主提问）", () => {
     const answering = created.options.onQuestion(handoffQuestion());
     await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
     await flush(40);
-    // 第一下 Esc：只退一层（回到浏览层，题还挂着）；第二下才关掉
-    stdin.write("\u001b");
-    await flush(60);
-    expect(lastFrame() ?? "").not.toContain("(o) 原 agent 自交接");
+    // 单项表没有浏览层：一下 Esc 就是关掉
     stdin.write("\u001b");
     await flush(60);
     await expect(answering).resolves.toEqual({ action: "cancel" });
@@ -1639,17 +1630,12 @@ describe("问题对象（到交接线时宿主提问）", () => {
     const answering = created.options.onQuestion(handoffQuestion());
     await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
     await flush(40);
-    // 打开就是编辑层：往下走两格到「不交接」，回车退回浏览层，再落到提交项交卷
+    // 打开就是编辑层：往下走两格到「不交接」，回车直接交卷
     stdin.write("\u001b[B");
     await flush(30);
     stdin.write("\u001b[B");
     await flush(40);
     await waitFor(() => (lastFrame() ?? "").includes("(o) 不交接"));
-    stdin.write("\r");
-    await flush(40);
-    stdin.write("\u001b[B");
-    await flush(40);
-    await waitFor(() => (lastFrame() ?? "").includes("❯ [提交]"));
     stdin.write("\r");
     await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "decline" } });
 

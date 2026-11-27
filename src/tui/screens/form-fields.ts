@@ -107,11 +107,10 @@ export function initialEditing(schema: FormSchemaView): FormEditing {
         break;
     }
   }
-  // 只有一个字段的表直接进编辑层：整张表就这一格，让人先按一次回车才肯收字是白按一下。
-  // 布尔除外 —— 它的「编辑」就是按一下回车切过去，没有第二个状态可进。
-  const only = Object.values(schema.properties);
-  const mode = only.length === 1 && only[0]!.type !== "boolean" ? "editing" : "browsing";
-  return { values, mode, focus: 0, cursors: {} };
+  // 只有一个字段的表直接站在编辑层：整张表就这一格，让人先按一次回车才肯收字是白按一下。
+  // 布尔也一样 —— 单项表里回车是「交卷」，切换归空格（见 `applyFormKey`）。
+  const single = fieldNames(schema).length === 1;
+  return { values, mode: single ? "editing" : "browsing", focus: 0, cursors: {} };
 }
 
 /** 按一下键，得到新的编辑状态 */
@@ -129,6 +128,34 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
     kind: "state",
     editing: { ...cleared, focus: (cleared.focus + delta + slots) % slots },
   });
+
+  if (fieldNames(schema).length === 1) {
+    // 单项表没有「浏览层」这一层：动作按钮也不画，于是回车与 Esc 各归各的去处。
+    // 列在这里先判，是因为下面那套「两格动作 + 环绕」在单项表上全都不成立。
+    const name = names[0]!;
+    const field = schema.properties[name]!;
+    switch (key.kind) {
+      case "enter":
+        return { kind: "submit" };
+      case "escape":
+        return { kind: "cancel" };
+      case "space":
+        return { kind: "state", editing: toggle(cleared, name, field) };
+      case "next":
+      case "prev":
+        // 候选只有一个字段可走：↑ ↓ 就在这里换候选（不必先进哪一层）
+        return {
+          kind: "state",
+          editing: advance(cleared, name, field, key.kind === "next" ? 1 : -1),
+        };
+      case "step":
+        return { kind: "state", editing: step(cleared, name, field, key.delta) };
+      case "backspace":
+        return { kind: "state", editing: backspace(cleared, name, field) };
+      case "text":
+        return { kind: "state", editing: type(cleared, name, field, key.input) };
+    }
+  }
 
   if (key.kind === "escape") {
     // 编辑里退一层（值留着）；浏览里就是关掉整张表
@@ -426,9 +453,19 @@ export function fieldRows(): number {
   return 1;
 }
 
-/** 整张表占几行：每个字段一行 + 空行 + 提交 + 取消 */
+/**
+ * 整张表占几行。
+ *
+ * 多项表：每个字段一行 + 空行 + 提交 + 取消。
+ * 单项表：只有那一格（枚举连候选一起算）—— 它没有动作行，回车就是交卷。
+ */
 export function schemaRows(schema: FormSchemaView): number {
-  return fieldNames(schema).length + ACTION_ROWS + 1;
+  const names = fieldNames(schema);
+  if (names.length === 1) {
+    const field = schema.properties[names[0]!]!;
+    return 1 + (enumValues(field)?.length ?? 0);
+  }
+  return names.length + ACTION_ROWS + 1;
 }
 
 /** 动作行的个数（提交、取消），以及它们前面的那一空行 */
@@ -520,6 +557,12 @@ export function formLines(
       const pointer = field.type === "array" && at === cursor ? "❯" : " ";
       lines.push({ text: `   ${pointer} ${mark} ${labels[at] ?? option}`, focused: true });
     }
+  }
+
+  // 单项表不画动作：回车就是交卷、Esc 就是关掉，画两个按不到的按钮只是噪声
+  if (names.length === 1) {
+    if (editing.error !== undefined) lines.push({ text: editing.error, tone: "error" });
+    return clip(lines, focusAt, maxRows);
   }
 
   // 动作之前空一行：它们是「对整张表做的事」，与上面那几格不是同一类
