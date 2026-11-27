@@ -156,7 +156,7 @@ export interface ChatCommandHost {
    * 现在只有调试命令 `/form` 用它：拿它把每一种字段摆上屏看一遍。将来命令层要问「一句话带几个
    * 字段」的东西（例如批量重命名），也走这一个口，不再另做一种面板。
    */
-  askForm: (title: string, schema: FormSchemaView) => Promise<FormAnswerView>;
+  askForm: (title: string, schema: FormSchemaView) => Promise<FormAnswerView | null>;
   /**
    * 跑一次 npm（`/upgrade` 查发布标签走它：`npm view <pkg> dist-tags`）。
    *
@@ -1075,7 +1075,7 @@ const cmdForm: CommandHandler = async ({ askForm, push }) => {
   };
 
   const answer = await askForm(t("cmd.form.title"), schema);
-  if (answer.action !== "accept") {
+  if (answer === null || answer.action !== "accept") {
     // 拒绝与关掉在这一条上没有区别：都只是「没填」
     push(t("cmd.form.skipped"));
     return;

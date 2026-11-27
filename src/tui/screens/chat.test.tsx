@@ -1563,6 +1563,8 @@ describe("问题对象（到交接线时宿主提问）", () => {
       required: ["mode"],
     },
     blocking: true,
+    // 交接那道题只开 accept：「不交接」是枚举里的一项，不再另给拒绝/取消
+    actions: ["accept"] as const,
     // 时间一律 epoch 毫秒（宿主的口径）
     createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
   });
@@ -1587,25 +1589,25 @@ describe("问题对象（到交接线时宿主提问）", () => {
     unmount();
   });
 
-  it("Tab 出候选、走到「拒绝」：交回 decline", async () => {
+  it("只开 accept：面板上没有拒绝与取消，Tab 落下唯一那一格「同意」", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
 
     const answering = created.options.onQuestion(handoffQuestion());
     await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
     await flush(40);
+    expect(lastFrame() ?? "").toContain("同意");
+    expect(lastFrame() ?? "").not.toContain("拒绝");
+    expect(lastFrame() ?? "").not.toContain("取消");
 
-    // Tab 落下「同意」，再 ↓ 一格到「拒绝」
     stdin.write("\t");
     await flush(40);
-    stdin.write("\u001b[B");
-    await flush(40);
     stdin.write("\r");
-    await expect(answering).resolves.toEqual({ action: "decline" });
+    await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "self" } });
     unmount();
   });
 
-  it("Esc 放弃作答 → 交回 cancel（不替用户选一个）", async () => {
+  it("Esc 关掉：没开 cancel，交回 null（题还挂着、题干进通知栏）", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
 
@@ -1617,7 +1619,7 @@ describe("问题对象（到交接线时宿主提问）", () => {
     await flush(40);
     stdin.write("\u001b");
     await flush(60);
-    await expect(answering).resolves.toEqual({ action: "cancel" });
+    await expect(answering).resolves.toBeNull();
     unmount();
   });
 

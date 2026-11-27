@@ -398,9 +398,19 @@ export interface QuestionView {
   /** 题干（宿主已按当前语言渲染好的那句） */
   message: string;
   requestedSchema: FormSchemaView;
+  /**
+   * 这道题允许交哪几态；缺省三态齐全。
+   *
+   * 出题方决定它：交接那句问的是「用哪种方式」，「不交接」本身就是枚举里的一项，再给拒绝/取消
+   * 两个按钮是三个入口说同一件事。面板只画开着的动作，没开 `cancel` 时关掉面板等于「没答」。
+   */
+  actions?: readonly FormActionView[];
   blocking: boolean;
   createdAt: number;
 }
+
+/** 作答的三态（与宿主的 `FormAction` 同名同义） */
+export type FormActionView = "accept" | "decline" | "cancel";
 
 /** 表单里一格（与 `@ai-zen/agents-host` 的 `FormField` 同形，这里只列面板用得到的那几格） */
 export type FormFieldView =

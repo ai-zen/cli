@@ -118,9 +118,9 @@ describe("PickerOverlay", () => {
  * 这里只钉「面板这一层」的三件事：字能敲进去并提交成内容、Esc 交 cancel、校验没过不关面板
  * 且焦点跳到那一格。
  */
-function mountForm() {
-  const answers: { action: string; content?: Record<string, unknown> }[] = [];
-  let cancelled = 0;
+function mountForm(actions?: ("accept" | "decline" | "cancel")[]) {
+  // `null` = 没答（题目没开 cancel 又被关掉）
+  const answers: ({ action: string; content?: Record<string, unknown> } | null)[] = [];
   const { stdin, lastFrame, unmount } = render(
     <FormOverlay
       title="填一下"
@@ -134,12 +134,10 @@ function mountForm() {
         required: ["name"],
       }}
       onAnswer={(answer) => answers.push(answer)}
-      onCancel={() => {
-        cancelled += 1;
-      }}
+      {...(actions === undefined ? {} : { actions })}
     />,
   );
-  return { answers, cancelled: () => cancelled, stdin, frame: () => lastFrame() ?? "", unmount };
+  return { answers, stdin, frame: () => lastFrame() ?? "", unmount };
 }
 
 async function mountedForm() {
@@ -207,8 +205,23 @@ describe("FormOverlay", () => {
     const form = await mountedForm();
 
     await key(form, "\u001b");
-    await until(() => form.cancelled() === 1, "取消了一次");
-    expect(form.answers).toEqual([]);
+    await until(() => form.answers.length === 1, "交了一次");
+    expect(form.answers[0]).toEqual({ action: "cancel" });
+    form.unmount();
+  });
+
+  it("题目没开 cancel 时 Esc 交 null（没答，不替用户编一态）", async () => {
+    const form = mountForm(["accept"]);
+    await until(() => form.frame().includes("填一下"), "表单浮层画出来");
+    await settle();
+
+    // 只开 accept：动作行只有「同意」一个
+    expect(form.frame()).toContain("同意");
+    expect(form.frame()).not.toContain("拒绝");
+
+    await key(form, "\u001b");
+    await until(() => form.answers.length === 1, "交了一次");
+    expect(form.answers[0]).toBeNull();
     form.unmount();
   });
 
@@ -278,7 +291,6 @@ describe("FormOverlay：提示行", () => {
           },
         }}
         onAnswer={() => {}}
-        onCancel={() => {}}
       />,
     );
     return { stdin, frame: () => lastFrame() ?? "", unmount };

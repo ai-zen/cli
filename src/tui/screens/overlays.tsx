@@ -7,6 +7,7 @@ import { t } from "../../i18n/index.js";
 import type { FormAnswerView, FormSchemaView } from "../../session/types.js";
 import {
   answerOf,
+  type FormAction,
   applyFormKey,
   fieldNames,
   formLines,
@@ -95,8 +96,8 @@ export function FormOverlay({
   title,
   schema,
   maxRows,
+  actions,
   onAnswer,
-  onCancel,
 }: {
   title: string;
   schema: FormSchemaView;
@@ -106,9 +107,15 @@ export function FormOverlay({
    * 候选多的那几种字段会顶穿屏幕，所以给窗就只画窗口里那一段，窗口跟着焦点走。
    */
   maxRows?: number;
-  /** 用户作答：三态 —— `accept` 带内容、`decline` 明确拒绝、`cancel` 关掉没作答 */
-  onAnswer: (answer: FormAnswerView) => void;
-  onCancel: () => void;
+  /**
+   * 这道题允许交哪几态（出题方给的）；不给就是三态齐全。面板只画开着的动作。
+   */
+  actions?: readonly FormAction[];
+  /**
+   * 用户作答：`accept` 带内容、`decline` 明确拒绝、`cancel` 关掉没作答；
+   * `null` 是「没答」（这道题没开 `cancel`，又被关掉 —— 题还挂着，没人替它编一个答案）。
+   */
+  onAnswer: (answer: FormAnswerView | null) => void;
 }) {
   const [editing, setEditing] = useState<FormEditing>(() => initialEditing(schema));
 
@@ -120,7 +127,7 @@ export function FormOverlay({
    */
   const step = (key: FormKey) => {
     setEditing((current) => {
-      const result = applyFormKey(current, schema, key);
+      const result = applyFormKey(current, schema, key, actions);
       if (result.kind === "state") return result.editing;
       if (result.kind === "decline") {
         onAnswer({ action: "decline" });
@@ -133,7 +140,8 @@ export function FormOverlay({
         else return { ...current, mode: "browsing", focus: answer.focus, error: answer.reason };
         return current;
       }
-      onCancel();
+      // 关掉整块面板：这道题开了 `cancel` 就交它，没开就是「没答」—— 不替用户编一态
+      onAnswer(actions?.includes("cancel") === false ? null : { action: "cancel" });
       return current;
     });
   };
@@ -159,6 +167,7 @@ export function FormOverlay({
       cancel: t("ui.form.cancel"),
     },
     maxRows,
+    actions,
   );
 
   return (
@@ -192,7 +201,7 @@ export function FormOverlay({
       </Box>
       <Box marginTop={1}>
         {/* 两层的按键不是同一套，提示也跟着换 —— 一条固定提示总有一半是错的 */}
-        <KeyHints hints={hintsOf(schema, editing)} />
+        <KeyHints hints={hintsOf(schema, editing, actions)} />
       </Box>
     </Box>
   );
@@ -204,7 +213,11 @@ export function FormOverlay({
  * 一条固定的提示总有一半是错的：文本里没有「空格勾选」，也没「换选项」；收起着的枚举上回车是
  * 「展开」而不是「完成」。所以先看焦点落在哪一格、那一格是什么类型、有没有展开。
  */
-function hintsOf(schema: FormSchemaView, editing: FormEditing): [string, string][] {
+function hintsOf(
+  schema: FormSchemaView,
+  editing: FormEditing,
+  actions?: readonly FormAction[],
+): [string, string][] {
   const names = fieldNames(schema);
   const focused =
     editing.focus < names.length ? schema.properties[names[editing.focus]!] : undefined;
@@ -232,10 +245,11 @@ function hintsOf(schema: FormSchemaView, editing: FormEditing): [string, string]
     return out;
   }
 
-  // 收起状态：↑ ↓ 换格，回车按焦点说话（三个动作各一句话）
+  // 收起状态：↑ ↓ 换格，回车按焦点说话（动作那几格各一句话；没画的动作占不到格）
+  const shown = actions ?? (["accept", "decline", "cancel"] as const);
   const onAccept = editing.focus === names.length;
-  const onDecline = editing.focus === names.length + 1;
-  const onCancel = editing.focus === names.length + 2;
+  const onDecline = shown[editing.focus - names.length] === "decline";
+  const onCancel = shown[editing.focus - names.length] === "cancel";
   const enter: [string, string] = [
     "Enter",
     onAccept

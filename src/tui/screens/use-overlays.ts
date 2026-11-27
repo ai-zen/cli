@@ -9,6 +9,7 @@
 //   · 已经是 `null` 时重复 resolve 是安全空操作（Esc 连按不会抛错）。
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
 import type { FormAnswerView, FormSchemaView } from "../../session/types.js";
+import type { FormAction } from "./form-fields.js";
 import type { SelectItem } from "../components.js";
 
 /** 选择器请求：`items` 上屏，用户选中 / 取消后由 `resolve` 兑现（取消为 `null`） */
@@ -27,7 +28,10 @@ export interface PickerState {
 export interface FormState {
   title: string;
   schema: FormSchemaView;
-  resolve: (answer: FormAnswerView) => void;
+  /** 这道题允许交哪几态（出题方给的；不给就是三态齐全） */
+  actions?: readonly FormAction[];
+  /** `null` = 没答（题还挂着），不是「用户说了不」 */
+  resolve: (answer: FormAnswerView | null) => void;
 }
 
 export interface ChatOverlays {
@@ -40,7 +44,7 @@ export interface ChatOverlays {
   /** 会话层推表单用（`chooseQuestionAnswer` 的入参类型） */
   setFormState: Dispatch<SetStateAction<FormState | null>>;
   /** 表单作答：兑现 Promise 并关掉面板（没有表单时为空操作） */
-  resolveForm: (answer: FormAnswerView) => void;
+  resolveForm: (answer: FormAnswerView | null) => void;
 }
 
 export function useChatOverlays(): ChatOverlays {
@@ -57,7 +61,7 @@ export function useChatOverlays(): ChatOverlays {
   }, []);
 
   // 同一条理由（同一个竞态在选择器上踩过一次）
-  const resolveForm = useCallback((answer: FormAnswerView) => {
+  const resolveForm = useCallback((answer: FormAnswerView | null) => {
     setFormState((fs) => {
       fs?.resolve(answer);
       return null;

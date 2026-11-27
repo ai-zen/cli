@@ -145,18 +145,38 @@ function singleEnumOf(schema: FormSchemaView): { name: string; field: FormFieldV
   return enumValues(field) === undefined ? undefined : { name, field };
 }
 
+/** 一道题默认允许的三态（出题方没说话就是它） */
+export const ALL_ACTIONS = ["accept", "decline", "cancel"] as const;
+
+export type FormAction = (typeof ALL_ACTIONS)[number];
+
+/**
+ * 这道题允许交哪几态，按固定顺序（同意 → 拒绝 → 取消）。
+ *
+ * 顺序固定，是因为焦点线由它决定：出题方给 `["accept"]` 就只有一格「同意」，给三态就是原来那三行。
+ */
+function actionsOf(actions: readonly FormAction[] | undefined): FormAction[] {
+  const allowed = actions ?? ALL_ACTIONS;
+  return ALL_ACTIONS.filter((action) => allowed.includes(action));
+}
+
 /** 按一下键，得到新的编辑状态 */
-export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: FormKey): FormStep {
+export function applyFormKey(
+  editing: FormEditing,
+  schema: FormSchemaView,
+  key: FormKey,
+  actions?: readonly FormAction[],
+): FormStep {
   const names = fieldNames(schema);
-  // 三个动作与字段共用那条焦点线：accept 的下标是字段个数，拒绝、取消紧随其后
-  const acceptAt = names.length;
-  const declineAt = acceptAt + 1;
-  const cancelAt = declineAt + 1;
+  // 动作与字段共用那条焦点线：第一个动作的下标是字段个数，其余按顺序跟上
+  const shown = actionsOf(actions);
+  const firstActionAt = names.length;
+  const lastActionAt = names.length + Math.max(shown.length - 1, 0);
   // 改任何一种输入都清掉上一次的错误：那句是「上一版草稿」的结论
   const cleared: FormEditing =
     editing.error === undefined ? editing : { ...editing, error: undefined };
 
-  const slots = cancelAt + 1;
+  const slots = names.length + shown.length;
   const move = (delta: 1 | -1): FormStep => ({
     kind: "state",
     editing: { ...cleared, focus: (cleared.focus + delta + slots) % slots },
@@ -191,10 +211,15 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
           editing: backspace(cleared, focusedName!, focusedField!),
         };
       case "enter": {
-        // 三个动作各有去处
-        if (cleared.focus === acceptAt) return { kind: "accept" };
-        if (cleared.focus === declineAt) return { kind: "decline" };
-        if (cleared.focus === cancelAt) return { kind: "cancel" };
+        // 落在动作行上：下标减掉字段个数就是第几个动作
+        if (cleared.focus >= firstActionAt && cleared.focus <= lastActionAt) {
+          const action = shown[cleared.focus - firstActionAt]!;
+          return action === "accept"
+            ? { kind: "accept" }
+            : action === "decline"
+              ? { kind: "decline" }
+              : { kind: "cancel" };
+        }
 
         if (focusedField === undefined || focusedName === undefined) {
           return { kind: "state", editing: cleared };
@@ -239,7 +264,7 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
         editing: {
           ...cleared,
           mode: "browsing",
-          focus: key.delta > 0 ? acceptAt : cancelAt,
+          focus: key.delta > 0 ? firstActionAt : lastActionAt,
         },
       };
     case "next":
@@ -503,17 +528,15 @@ export function fieldRows(): number {
  * 每个字段一行 + 空行 + 三个动作（同意/拒绝/取消）。只有枚举展开时会多出候选，那部分由覆盖层
  * 自己滚动（见 `formLines` 的 `maxRows`）。
  */
-export function schemaRows(schema: FormSchemaView): number {
+export function schemaRows(schema: FormSchemaView, actions?: readonly FormAction[]): number {
+  const actionRows = actionsOf(actions).length;
   const single = singleEnumOf(schema);
   // 一格枚举打开就展开候选，那一屏要多占几行（布局按这个数预留）
   if (single !== undefined) {
-    return 1 + (enumValues(single.field)?.length ?? 0) + ACTION_ROWS + 1;
+    return 1 + (enumValues(single.field)?.length ?? 0) + actionRows + 1;
   }
-  return fieldNames(schema).length + ACTION_ROWS + 1;
+  return fieldNames(schema).length + actionRows + 1;
 }
-
-/** 动作行的个数（同意、拒绝、取消），以及它们前面的那一空行 */
-const ACTION_ROWS = 3;
 
 /** 面板上要印的那几句话（文案由调用方给：`formLines` 是纯函数，不碰 i18n） */
 export interface FormTexts {
@@ -536,8 +559,9 @@ export interface FormTexts {
  * 进了编辑、而且那格是枚举时，才在它下面列一列候选：单选 `(o) 名字`，多选 `[x] 名字`。
  * 两种枚举同一个形状，只差一对括号。
  *
- * 最后是三个动作：同意、拒绝、取消。它们和字段共用同一条焦点线（下标从字段个数起）；
- * 方括号只画在焦点那一格上，其余用空格占同样的位 —— 选中与没选中占一样宽，换焦点时整行不跳。
+ * 最后是动作行（同意 / 拒绝 / 取消，具体几行由出题方给，见 `FormRequest.actions`）。它们和字段共用
+ * 同一条焦点线（下标从字段个数起）；方括号只画在焦点那一格上，其余用空格占同样的位 —— 选中与
+ * 没选中占一样宽，换焦点时整行不跳。
  *
  * 放不下就滚动
  *
@@ -549,9 +573,10 @@ export function formLines(
   editing: FormEditing,
   texts: FormTexts,
   maxRows?: number,
+  actions?: readonly FormAction[],
 ): FormLine[] {
   const names = fieldNames(schema);
-  const acceptAt = names.length;
+  const firstActionAt = names.length;
   const lines: FormLine[] = [];
   /** 焦点那一块的第一行在 `lines` 里的下标（滚动要对准它） */
   let focusAt = 0;
@@ -613,16 +638,23 @@ export function formLines(
   // 动作之前空一行：它们是「对整张表做的事」，与上面那几格不是同一类
   lines.push({ text: "" });
 
-  const actions = [texts.accept, texts.decline, texts.cancel] as const;
-  for (const [offset, label] of actions.entries()) {
-    const index = acceptAt + offset;
+  // 只画这道题开着的动作：交接那种题只有「同意」，多画一个拒绝只是让人多点一下
+  const labels: Record<FormAction, string> = {
+    accept: texts.accept,
+    decline: texts.decline,
+    cancel: texts.cancel,
+  };
+  const shown = actionsOf(actions);
+  for (const [offset, action] of shown.entries()) {
+    const label = labels[action];
+    const index = firstActionAt + offset;
     const isFocus = editing.mode === "browsing" && editing.focus === index;
     if (isFocus) focusAt = lines.length;
     // 方括号只说「现在是这一格」：没选中的用空格占同样的位，换焦点时整行不跳
     lines.push({
       text: isFocus ? `[${label}]` : ` ${label} `,
       focused: isFocus,
-      tone: offset === 0 ? "accept" : offset === 1 ? "decline" : "cancel",
+      tone: action,
     });
   }
 
