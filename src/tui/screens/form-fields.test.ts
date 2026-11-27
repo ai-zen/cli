@@ -199,8 +199,28 @@ describe("表单：编辑层", () => {
     expect(press(picked, [{ kind: "space" }]).values.tags).toEqual([]);
   });
 
-  it("布尔：空格取反", () => {
-    expect(press(editing("flag"), [{ kind: "space" }]).values.flag).toBe(true);
+  it("布尔：浏览层回车直接切换（它没有可编辑的第二层）", () => {
+    const atFlag = focusOn("flag");
+    const on = press(atFlag, [enter]);
+    // 还在浏览层：布尔没有第二个状态可进
+    expect(on.mode).toBe("browsing");
+    expect(on.values.flag).toBe(true);
+    expect(press(on, [enter]).values.flag).toBe(false);
+  });
+
+  it("只有一个字段的表：打开就进编辑层（先按一次回车才肯收字是白按一下）", () => {
+    const single: FormSchemaView = {
+      type: "object",
+      properties: { name: { type: "string", title: "名字" } },
+    };
+    expect(initialEditing(single).mode).toBe("editing");
+
+    // 布尔例外：它的编辑就是按一下回车切过去
+    const onlyBool: FormSchemaView = {
+      type: "object",
+      properties: { flag: { type: "boolean", title: "开关" } },
+    };
+    expect(initialEditing(onlyBool).mode).toBe("browsing");
   });
 
   it("回车退出编辑层（不提交）：值留着，焦点还在这一格", () => {
@@ -315,7 +335,8 @@ describe("表单：摊成一行行", () => {
       type: "object",
       properties: { name: { type: "string", title: "名字" } },
     };
-    const lines = formLines(schema, editing("name", schema), TEXTS).map(lineText);
+    // 只有一个字段的表打开就是编辑层，光标在那儿
+    const lines = formLines(schema, initialEditing(schema), TEXTS).map(lineText);
     expect(lines[0]).toBe("▸ 名字：▏");
   });
 

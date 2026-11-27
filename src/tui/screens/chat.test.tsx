@@ -1588,30 +1588,18 @@ describe("问题对象（到交接线时宿主提问）", () => {
     await flush();
 
     const answering = created.options.onQuestion(handoffQuestion());
-    // 等面板画出来、按键监听就位（监听在 mount 后的 effect 里装，抢在它之前敲字会丢）
-    await waitFor(() => (lastFrame() ?? "").includes("原 agent 自交接"));
-    await flush(40);
-    // 浏览层：一格一行，右边写着当前值；最后一行是提交项
-    expect(lastFrame() ?? "").toContain("上下文已用 92%，要交接吗？");
-    expect(lastFrame() ?? "").toContain("❯");
-    expect(lastFrame() ?? "").toContain("原 agent 自交接");
-    expect(lastFrame() ?? "").toContain("提交");
-
-    // 回车进这一格：候选才展开成 `(o)` / `( )`
-    stdin.write("\r");
-    await flush(40);
+    // 只有一项的表打开就是编辑层：候选已经展开
     await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
+    await flush(40);
+    expect(lastFrame() ?? "").toContain("上下文已用 92%，要交接吗？");
+    expect(lastFrame() ?? "").toContain("[提交]");
 
     // ↓ 换到第二项（编辑层里上下箭头动的是候选）
     stdin.write("\u001b[B");
     await flush(40);
     await waitFor(() => (lastFrame() ?? "").includes("(o) 独立摘要"));
 
-    // 回车退回浏览层（不提交），再 ↑ 回到第一项
-    stdin.write("\r");
-    await flush(40);
-    stdin.write("\r");
-    await flush(40);
+    // ↑ 回到第一项，再回车退回浏览层（不提交）
     stdin.write("\u001b[A");
     await flush(40);
     await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
@@ -1632,10 +1620,14 @@ describe("问题对象（到交接线时宿主提问）", () => {
     await flush();
 
     const answering = created.options.onQuestion(handoffQuestion());
-    await waitFor(() => (lastFrame() ?? "").includes("原 agent 自交接"));
+    await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
     await flush(40);
-    stdin.write("\u001b"); // lone ESC 需 ~20ms（ink 的序列判定）
-    await flush(40);
+    // 第一下 Esc：只退一层（回到浏览层，题还挂着）；第二下才关掉
+    stdin.write("\u001b");
+    await flush(60);
+    expect(lastFrame() ?? "").not.toContain("(o) 原 agent 自交接");
+    stdin.write("\u001b");
+    await flush(60);
     await expect(answering).resolves.toEqual({ action: "cancel" });
     unmount();
   });
@@ -1645,11 +1637,9 @@ describe("问题对象（到交接线时宿主提问）", () => {
     await flush();
 
     const answering = created.options.onQuestion(handoffQuestion());
-    await waitFor(() => (lastFrame() ?? "").includes("原 agent 自交接"));
+    await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
     await flush(40);
-    // 进这一格编辑，往下走两格到「不交接」，退回浏览层，再落到提交项交卷
-    stdin.write("\r");
-    await flush(40);
+    // 打开就是编辑层：往下走两格到「不交接」，回车退回浏览层，再落到提交项交卷
     stdin.write("\u001b[B");
     await flush(30);
     stdin.write("\u001b[B");

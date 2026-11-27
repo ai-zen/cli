@@ -107,7 +107,11 @@ export function initialEditing(schema: FormSchemaView): FormEditing {
         break;
     }
   }
-  return { values, mode: "browsing", focus: 0, cursors: {} };
+  // 只有一个字段的表直接进编辑层：整张表就这一格，让人先按一次回车才肯收字是白按一下。
+  // 布尔除外 —— 它的「编辑」就是按一下回车切过去，没有第二个状态可进。
+  const only = Object.values(schema.properties);
+  const mode = only.length === 1 && only[0]!.type !== "boolean" ? "editing" : "browsing";
+  return { values, mode, focus: 0, cursors: {} };
 }
 
 /** 按一下键，得到新的编辑状态 */
@@ -139,11 +143,18 @@ export function applyFormKey(editing: FormEditing, schema: FormSchemaView, key: 
         return move(1);
       case "prev":
         return move(-1);
-      case "enter":
-        // 两个动作各有去处；落在字段上进编辑（校验由面板做，见 `FormStep` 的注释）
+      case "enter": {
+        // 两个动作各有去处
         if (cleared.focus === submitAt) return { kind: "submit" };
         if (cleared.focus === cancelAt) return { kind: "cancel" };
+
+        // 布尔没有可编辑的东西：它的「进这一格」就是按一下切过去，切完还留在浏览层
+        const field = schema.properties[names[cleared.focus]!];
+        if (field !== undefined && field.type === "boolean") {
+          return { kind: "state", editing: toggle(cleared, names[cleared.focus]!, field) };
+        }
         return { kind: "state", editing: { ...cleared, mode: "editing" } };
+      }
       default:
         // 浏览层不认字：字要在编辑层里敲（否则「按着说话」会顺手改掉某一格）
         return { kind: "state", editing: cleared };

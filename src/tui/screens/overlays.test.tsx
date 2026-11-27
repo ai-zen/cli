@@ -216,7 +216,7 @@ describe("FormOverlay", () => {
     form.unmount();
   });
 
-  it("布尔与多选：进格之后空格切勾选，多选还能上下移项光标", async () => {
+  it("布尔回车直接切；多选要进格、上下移项光标再空格勾", async () => {
     const form = await mountedForm();
 
     form.stdin.write("\r"); // 名字：进格
@@ -226,11 +226,9 @@ describe("FormOverlay", () => {
     await key(form, "\r"); // 退回
 
     await key(form, "\u001b[B"); // ↓ 到开关
-    await key(form, "\r"); // 进格
-    form.stdin.write(" ");
-    await settle();
+    // 布尔不需要先进编辑层：回车直接切
+    await key(form, "\r");
     await until(() => form.frame().includes("[x]"), "布尔被勾上");
-    await key(form, "\r"); // 退回
 
     await key(form, "\u001b[B"); // ↓ 到标签
     await key(form, "\r"); // 进格
