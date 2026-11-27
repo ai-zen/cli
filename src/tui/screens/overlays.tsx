@@ -7,6 +7,7 @@ import { t } from "../../i18n/index.js";
 import type { FormAnswerView, FormSchemaView } from "../../session/types.js";
 import {
   answerOf,
+  buttonsOf,
   type FormAction,
   applyFormKey,
   fieldNames,
@@ -96,7 +97,7 @@ export function FormOverlay({
   title,
   schema,
   maxRows,
-  actions,
+  buttons,
   onAnswer,
 }: {
   title: string;
@@ -108,14 +109,11 @@ export function FormOverlay({
    */
   maxRows?: number;
   /**
-   * 这道题允许交哪几态（出题方给的）；不给就是三态齐全。面板只画开着的动作。
+   * 面板上画哪几个按钮（出题方给的）；不给就是三个都画。
    */
-  actions?: readonly FormAction[];
-  /**
-   * 用户作答：`accept` 带内容、`decline` 明确拒绝、`cancel` 关掉没作答；
-   * `null` 是「没答」（这道题没开 `cancel`，又被关掉 —— 题还挂着，没人替它编一个答案）。
-   */
-  onAnswer: (answer: FormAnswerView | null) => void;
+  buttons?: readonly FormAction[];
+  /** 用户作答：`accept` 带内容、`decline` 明确拒绝、`cancel` 关掉没作答 */
+  onAnswer: (answer: FormAnswerView) => void;
 }) {
   const [editing, setEditing] = useState<FormEditing>(() => initialEditing(schema));
 
@@ -127,7 +125,7 @@ export function FormOverlay({
    */
   const step = (key: FormKey) => {
     setEditing((current) => {
-      const result = applyFormKey(current, schema, key, actions);
+      const result = applyFormKey(current, schema, key, buttons);
       if (result.kind === "state") return result.editing;
       if (result.kind === "decline") {
         onAnswer({ action: "decline" });
@@ -140,8 +138,8 @@ export function FormOverlay({
         else return { ...current, mode: "browsing", focus: answer.focus, error: answer.reason };
         return current;
       }
-      // 关掉整块面板：这道题开了 `cancel` 就交它，没开就是「没答」—— 不替用户编一态
-      onAnswer(actions?.includes("cancel") === false ? null : { action: "cancel" });
+      // 关掉整块面板：交 cancel
+      onAnswer({ action: "cancel" });
       return current;
     });
   };
@@ -167,7 +165,7 @@ export function FormOverlay({
       cancel: t("ui.form.cancel"),
     },
     maxRows,
-    actions,
+    buttons,
   );
 
   return (
@@ -186,13 +184,21 @@ export function FormOverlay({
           <Text
             // 行是摊平算出来的，没有稳定 id：位置就是它的身份（内容一变整块重算）
             key={index}
-            color={lineColor(line)}
-            // 焦点不再占一个字符：靠颜色与加粗说（`❯` 那一格去掉了）
-            bold={line.focused === true}
+            color={line.segments === undefined ? lineColor(line) : undefined}
+            // 焦点不再占一个字符：靠颜色与加粗说（`❯` 那一格去掉了）。
+            // 多段那一行（按钮）的加粗归选中那一段，整行不加粗
+            bold={line.segments === undefined ? line.focused === true : undefined}
             wrap="wrap"
           >
             {/* 空行要写一个空格：Ink 里空的 `<Text>` 高度是 0，那一行会缺失 */}
-            {line.text === "" ? " " : line.text}
+            {line.segments === undefined ? (line.text === "" ? " " : line.text) : null}
+            {/* 按钮那一行由多段拼成，每段自带颜色（同意蓝、拒绝红、取消默认）——
+                取消那一段不给颜色，而父级也不给，否则会从父级继承成强调色 */}
+            {line.segments?.map((segment, at) => (
+              <Text key={at} color={toneColor(segment.tone)} bold={segment.focused === true}>
+                {segment.text}
+              </Text>
+            ))}
             {/* 必填那个星号单独上色：它说的是「不填交不上去」，不是排版装饰 */}
             {line.star === true ? <Text color={theme.error}> *</Text> : null}
             {line.rest ?? ""}
@@ -201,7 +207,7 @@ export function FormOverlay({
       </Box>
       <Box marginTop={1}>
         {/* 两层的按键不是同一套，提示也跟着换 —— 一条固定提示总有一半是错的 */}
-        <KeyHints hints={hintsOf(schema, editing, actions)} />
+        <KeyHints hints={hintsOf(schema, editing, buttons)} />
       </Box>
     </Box>
   );
@@ -216,7 +222,7 @@ export function FormOverlay({
 function hintsOf(
   schema: FormSchemaView,
   editing: FormEditing,
-  actions?: readonly FormAction[],
+  buttons?: readonly FormAction[],
 ): [string, string][] {
   const names = fieldNames(schema);
   const focused =
@@ -239,17 +245,20 @@ function hintsOf(
     const single = names.length === 1;
     out.push(
       ["Enter", single ? t("ui.form.accept") : t("ui.form.commit")],
-      ["Tab", t("ui.form.actions")],
       ["Esc", t("ui.form.back")],
     );
     return out;
   }
 
-  // 收起状态：↑ ↓ 换格，回车按焦点说话（动作那几格各一句话；没画的动作占不到格）
-  const shown = actions ?? (["accept", "decline", "cancel"] as const);
-  const onAccept = editing.focus === names.length;
-  const onDecline = shown[editing.focus - names.length] === "decline";
-  const onCancel = shown[editing.focus - names.length] === "cancel";
+  // 收起状态：↑ ↓ 换格，回车按焦点说话。落在按钮行上时，说的是行内选中那一段 ——
+  // 一行三个按钮，光标停在「拒绝」上而提示写「回车 同意」是更坏的一种错
+  const shown = buttonsOf(buttons);
+  const onRow = shown.length > 0 && editing.focus === names.length;
+  const cursor = Math.min(Math.max(editing.buttonCursor, 0), Math.max(shown.length - 1, 0));
+  const chosen = onRow ? shown[cursor] : undefined;
+  const onAccept = chosen === "accept";
+  const onDecline = chosen === "decline";
+  const onCancel = chosen === "cancel";
   const enter: [string, string] = [
     "Enter",
     onAccept
@@ -264,20 +273,30 @@ function hintsOf(
               ? t("ui.form.toggle")
               : t("ui.form.next"),
   ];
+  // 行内换段是 ← →：只有真站在按钮行上才提这一句
+  if (onRow) out.push(["← →", t("ui.form.choose")]);
   return [["↑ ↓", t("ui.form.switch")], ...out, enter, ["Esc", t("ui.form.cancel")]];
 }
 
 /**
  * 一行的颜色。
  *
- * 三个动作是固定的：同意蓝、拒绝黄、取消红 —— 它们说的是「会发生什么」，与焦点无关；焦点只靠
- * 强调色与加粗。其余行：焦点用强调色，校验失败那句用错误色。
+ * 动作那三段的颜色是固定的：同意蓝、拒绝红、取消用默认色（它说的只是「关掉」，不应该抢眼）；
+ * 它们还说「会发生什么」，所以与焦点无关 —— 焦点只靠方括号与加粗。
  */
 function lineColor(line: FormLine): string | undefined {
-  if (line.tone === "accept") return theme.accent;
-  if (line.tone === "decline") return theme.warn;
-  if (line.tone === "cancel" || line.tone === "error") return theme.error;
+  if (line.tone === "accept" || line.tone === "decline" || line.tone === "cancel") {
+    return toneColor(line.tone);
+  }
+  if (line.tone === "error") return theme.error;
   return line.focused === true ? theme.accent : undefined;
+}
+
+/** 三态各自的颜色：同意蓝、拒绝红、取消不染色 */
+function toneColor(tone: "accept" | "decline" | "cancel"): string | undefined {
+  if (tone === "accept") return theme.accent;
+  if (tone === "decline") return theme.error;
+  return undefined;
 }
 
 /**
@@ -300,7 +319,7 @@ function translateKey(
     meta?: boolean;
   },
 ): FormKey | undefined {
-  if (key.tab) return { kind: "tab", delta: key.shift ? -1 : 1 };
+  if (key.tab) return key.shift ? { kind: "prev" } : { kind: "next" };
   if (key.downArrow) return { kind: "next" };
   if (key.upArrow) return { kind: "prev" };
   if (key.leftArrow) return { kind: "step", delta: -1 };

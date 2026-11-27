@@ -28,10 +28,9 @@ export interface PickerState {
 export interface FormState {
   title: string;
   schema: FormSchemaView;
-  /** 这道题允许交哪几态（出题方给的；不给就是三态齐全） */
-  actions?: readonly FormAction[];
-  /** `null` = 没答（题还挂着），不是「用户说了不」 */
-  resolve: (answer: FormAnswerView | null) => void;
+  /** 面板上画哪几个按钮（出题方给的）；不给就是三个都画 */
+  buttons?: readonly FormAction[];
+  resolve: (answer: FormAnswerView) => void;
 }
 
 export interface ChatOverlays {
@@ -44,7 +43,7 @@ export interface ChatOverlays {
   /** 会话层推表单用（`chooseQuestionAnswer` 的入参类型） */
   setFormState: Dispatch<SetStateAction<FormState | null>>;
   /** 表单作答：兑现 Promise 并关掉面板（没有表单时为空操作） */
-  resolveForm: (answer: FormAnswerView | null) => void;
+  resolveForm: (answer: FormAnswerView) => void;
 }
 
 export function useChatOverlays(): ChatOverlays {
@@ -61,7 +60,7 @@ export function useChatOverlays(): ChatOverlays {
   }, []);
 
   // 同一条理由（同一个竞态在选择器上踩过一次）
-  const resolveForm = useCallback((answer: FormAnswerView | null) => {
+  const resolveForm = useCallback((answer: FormAnswerView) => {
     setFormState((fs) => {
       fs?.resolve(answer);
       return null;

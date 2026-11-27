@@ -926,9 +926,7 @@ export function Chat(props: ChatScreenProps) {
             new Promise<string | null>((resolve) => setPickerState({ title, items, resolve })),
           // 表单那个口（`/form` 用它）：与宿主发来的那张表走同一个面板、同一套三态
           askForm: (title, schema) =>
-            new Promise<FormAnswerView | null>((resolve) =>
-              setFormState({ title, schema, resolve }),
-            ),
+            new Promise<FormAnswerView>((resolve) => setFormState({ title, schema, resolve })),
           // `/new` 与 `/sessions` 都要「换会话」这件事，而会话归进程所有：
           // 屏幕只把注册表的两个口子转下去，自己不决定开与关
           newSession: () => deps.sessions.newSegment(),
@@ -1822,7 +1820,9 @@ export function Chat(props: ChatScreenProps) {
     // 表单：文本/数字/布尔各一行，两种枚举是「标签 + 每个候选一行」；另常驻预留一行给校验
     // 失败那句 —— 错误一冒出来就顶高一行，底下的状态栏会被推出屏幕。
     // 超过窗高的那一段由覆盖层自己滚动（见 `formLines` 的 `maxRows`），所以这里夹在容量上。
-    formRows: formState ? Math.min(schemaRows(formState.schema) + 1, formRowsMax) : 0,
+    formRows: formState
+      ? Math.min(schemaRows(formState.schema, formState.buttons) + 1, formRowsMax)
+      : 0,
     viewTop,
     statusBarLines: statusRows.length,
     // 空会话的品牌块落在会话区垂直中部（贴顶太空、贴底太挤）
@@ -1909,7 +1909,7 @@ export function Chat(props: ChatScreenProps) {
           title={formState.title}
           schema={formState.schema}
           maxRows={formRowsMax}
-          actions={formState.actions}
+          buttons={formState.buttons}
           onAnswer={resolveForm}
         />
       ) : (

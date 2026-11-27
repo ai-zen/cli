@@ -1542,6 +1542,11 @@ describe("问题对象（到交接线时宿主提问）", () => {
     created.options = null;
   });
 
+  /** 某一帧里有没有「这一行就是个按钮」——按钮行独自占一行（`│  同意  │`），提示行里的不算 */
+  function hasButtonRow(frame: string, label: string): boolean {
+    return frame.split("\n").some((row) => new RegExp(`[│|]\\s*\\[?${label}\\]?\\s*[│|]`).test(row));
+  }
+
   /**
    * 宿主问过来的那道交接题：一张表，一个单选枚举字段（宿主那一侧就是这么出题的）。
    *
@@ -1563,22 +1568,23 @@ describe("问题对象（到交接线时宿主提问）", () => {
       required: ["mode"],
     },
     blocking: true,
-    // 交接那道题只开 accept：「不交接」是枚举里的一项，不再另给拒绝/取消
-    actions: ["accept"] as const,
+    // 一格枚举：回车选一项就走、Esc 关掉，面板上不画按钮
+    buttons: [],
     // 时间一律 epoch 毫秒（宿主的口径）
     createdAt: Date.parse("2026-01-01T00:00:00.000Z"),
   });
 
-  it("一格枚举：打开就是展开的候选，回车直接交卷，Tab 才去按钮行", async () => {
+  it("一格枚举：打开就是展开的候选，回车直接交卷，一个按钮都不画", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
 
     const answering = created.options.onQuestion(handoffQuestion());
     await waitFor(() => (lastFrame() ?? "").includes("上下文已用 92%，要交接吗？"));
     await flush(40);
-    // 整张表就这一个问题：打开即展开候选
+    // 整张表就这一个问题：打开即展开候选，且没有任何按钮行（提示行里会出现「同意」二字）
     await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
-    expect(lastFrame() ?? "").toContain(" 同意 ");
+    expect(hasButtonRow(lastFrame() ?? "", "同意")).toBe(false);
+    expect(hasButtonRow(lastFrame() ?? "", "拒绝")).toBe(false);
 
     // ↓ 换候选，回车直接交卷（不必再收起一次）
     stdin.write("\u001b[B");
@@ -1589,37 +1595,16 @@ describe("问题对象（到交接线时宿主提问）", () => {
     unmount();
   });
 
-  it("只开 accept：面板上没有拒绝与取消，Tab 落下唯一那一格「同意」", async () => {
+  it("Esc 一下就是取消（不再先收起候选）", async () => {
     const { stdin, lastFrame, unmount } = mount();
     await flush();
 
     const answering = created.options.onQuestion(handoffQuestion());
     await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
-    await flush(40);
-    expect(lastFrame() ?? "").toContain("同意");
-    expect(lastFrame() ?? "").not.toContain("拒绝");
-    expect(lastFrame() ?? "").not.toContain("取消");
-
-    stdin.write("\t");
-    await flush(40);
-    stdin.write("\r");
-    await expect(answering).resolves.toEqual({ action: "accept", content: { mode: "self" } });
-    unmount();
-  });
-
-  it("Esc 关掉：没开 cancel，交回 null（题还挂着、题干进通知栏）", async () => {
-    const { stdin, lastFrame, unmount } = mount();
-    await flush();
-
-    const answering = created.options.onQuestion(handoffQuestion());
-    await waitFor(() => (lastFrame() ?? "").includes("(o) 原 agent 自交接"));
-    await flush(40);
-    // 展开状态下一下 Esc 是收起候选，再一下才关掉整张表
-    stdin.write("\u001b");
     await flush(40);
     stdin.write("\u001b");
     await flush(60);
-    await expect(answering).resolves.toBeNull();
+    await expect(answering).resolves.toEqual({ action: "cancel" });
     unmount();
   });
 

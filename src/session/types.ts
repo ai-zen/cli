@@ -398,13 +398,8 @@ export interface QuestionView {
   /** 题干（宿主已按当前语言渲染好的那句） */
   message: string;
   requestedSchema: FormSchemaView;
-  /**
-   * 这道题允许交哪几态；缺省三态齐全。
-   *
-   * 出题方决定它：交接那句问的是「用哪种方式」，「不交接」本身就是枚举里的一项，再给拒绝/取消
-   * 两个按钮是三个入口说同一件事。面板只画开着的动作，没开 `cancel` 时关掉面板等于「没答」。
-   */
-  actions?: readonly FormActionView[];
+  /** 面板上画哪几个按钮；不给就是三个都画（纯呈现，不改变这道题接受哪些答复） */
+  buttons?: readonly FormActionView[];
   blocking: boolean;
   createdAt: number;
 }

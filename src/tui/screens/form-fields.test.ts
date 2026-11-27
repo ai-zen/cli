@@ -107,24 +107,20 @@ describe("表单：浏览层", () => {
     expect(editing.mode).toBe("browsing");
   });
 
-  it("上下箭头在「字段 + 同意 + 拒绝 + 取消」之间环绕：末尾是取消", () => {
+  it("上下箭头在「字段 + 按钮那一行」之间环绕", () => {
     const names = fieldNames(SCHEMA);
-    const toSubmit = names.reduce<FormEditing>(
+    const toButtons = names.reduce<FormEditing>(
       (current) => press(current, [next]),
       initialEditing(SCHEMA),
     );
-    expect(toSubmit.focus).toBe(names.length);
+    expect(toButtons.focus).toBe(names.length);
 
-    // 同意 → 拒绝 → 取消 → 回到第一格
-    const toDecline = press(toSubmit, [next]);
-    expect(toDecline.focus).toBe(names.length + 1);
-    const toCancel = press(toDecline, [next]);
-    expect(toCancel.focus).toBe(names.length + 2);
-    expect(press(toCancel, [next]).focus).toBe(0);
-    expect(press(initialEditing(SCHEMA), [prev]).focus).toBe(names.length + 2);
+    // 按钮是一行：再按一下就回到第一格
+    expect(press(toButtons, [next]).focus).toBe(0);
+    expect(press(initialEditing(SCHEMA), [prev]).focus).toBe(names.length);
   });
 
-  it("回车按焦点说话：文本跳下一格、枚举展开、动作行才执行", () => {
+  it("回车按焦点说话：文本跳下一格、枚举展开、按钮行里执行选中的那一段", () => {
     const names = fieldNames(SCHEMA);
 
     // 文本：回车 = 下一格（没有「先进编辑」这一步）
@@ -139,10 +135,13 @@ describe("表单：浏览层", () => {
       (current) => press(current, [next]),
       initialEditing(SCHEMA),
     );
+    // 落在这行时行内选中的是「同意」（← → 换段）
     expect(stepOf(onSubmit, enter)).toEqual({ kind: "accept" });
-    // 三个动作各一个去处：同意 / 拒绝 / 取消
-    expect(stepOf(press(onSubmit, [next]), enter)).toEqual({ kind: "decline" });
-    expect(stepOf(press(press(onSubmit, [next]), [next]), enter)).toEqual({ kind: "cancel" });
+    const atDecline = press(onSubmit, [{ kind: "step", delta: 1 }]);
+    expect(atDecline.buttonCursor).toBe(1);
+    expect(stepOf(atDecline, enter)).toEqual({ kind: "decline" });
+    const atCancel = press(atDecline, [{ kind: "step", delta: 1 }]);
+    expect(stepOf(atCancel, enter)).toEqual({ kind: "cancel" });
   });
 
   it("浏览层的文本格直接收字（那一格在焦点上就是活的），枚举上敲字什么都不发生", () => {
@@ -339,11 +338,10 @@ describe("表单：摊成一行行", () => {
       "+ 单选：甲",
       "+ 多选：（空）",
       "- 备注：（空）",
-      // 动作之前那一行是空的：它们是对整张表做的事，与上面那几格不是同一类
+      // 按钮之前那一行是空的：它们是对整张表做的事，与上面那几格不是同一类
       "",
-      " 同意 ",
-      " 拒绝 ",
-      " 取消 ",
+      // 三个按钮在同一行上
+      " 同意  拒绝  取消 ",
     ]);
   });
 
@@ -394,41 +392,34 @@ describe("表单：摊成一行行", () => {
     expect(multi).toContain("     [ ] y");
   });
 
-  it("动作被选中时带标记：三个动作各一行，颜色由 `tone` 说", () => {
-    const atSubmit = fieldNames(PICKS).reduce<FormEditing>(
+  it("按钮在同一行：行内选中的那段带方括号，颜色按段各自说", () => {
+    const atButtons = fieldNames(PICKS).reduce<FormEditing>(
       (current) => press(current, [next], PICKS),
       initialEditing(PICKS),
     );
-    const actions = formLines(PICKS, atSubmit, TEXTS).slice(-3);
-    // 方括号只画在焦点那一格；其余用空格占同样的位（换焦点时整行不跳）
-    expect(actions[0]).toMatchObject({ text: "[同意]", focused: true, tone: "accept" });
-    expect(actions[1]).toMatchObject({ text: " 拒绝 ", focused: false, tone: "decline" });
-    expect(actions[2]).toMatchObject({ text: " 取消 ", focused: false, tone: "cancel" });
-    expect(actions.map((line) => lineText(line).length)).toEqual([4, 4, 4]);
+    const row = formLines(PICKS, atButtons, TEXTS).at(-1)!;
+    // 焦点在这行上、行内选中的是「同意」
+    expect(row.focused).toBe(true);
+    // 整行不给颜色：三段的颜色由各自说（取消那一段没有颜色，整行若有色它会继承过去）
+    expect(row.tone).toBeUndefined();
+    expect(lineText(row)).toBe("[同意] 拒绝  取消 ");
+    expect(row.segments?.map((segment) => segment.tone)).toEqual(["accept", "decline", "cancel"]);
 
-    // 焦点走到「拒绝」上，颜色不变（颜色说的是会发生什么，焦点只改加粗）
-    const atDecline = press(atSubmit, [next], PICKS);
-    expect(formLines(PICKS, atDecline, TEXTS).at(-2)).toMatchObject({
-      text: "[拒绝]",
-      focused: true,
-      tone: "decline",
-    });
+    // ← → 换行内那一段，方括号跟着走
+    const atDecline = press(atButtons, [{ kind: "step", delta: 1 }], PICKS);
+    expect(lineText(formLines(PICKS, atDecline, TEXTS).at(-1)!)).toBe(" 同意 [拒绝] 取消 ");
 
-    const atCancel = press(atDecline, [next], PICKS);
-    expect(formLines(PICKS, atCancel, TEXTS).at(-1)).toMatchObject({
-      text: "[取消]",
-      focused: true,
-      tone: "cancel",
-    });
+    const atCancel = press(atDecline, [{ kind: "step", delta: 1 }], PICKS);
+    expect(lineText(formLines(PICKS, atCancel, TEXTS).at(-1)!)).toBe(" 同意  拒绝 [取消]");
   });
 
-  it("行数：字段数 + 空行 + 三个动作", () => {
-    expect(schemaRows(PICKS)).toBe(fieldNames(PICKS).length + 4);
+  it("行数：字段数 + 空行 + 按钮那一行", () => {
+    expect(schemaRows(PICKS)).toBe(fieldNames(PICKS).length + 2);
     expect(formLines(PICKS, initialEditing(PICKS), TEXTS)).toHaveLength(schemaRows(PICKS));
   });
 
   it("放不下就滚动：窗口跟着焦点走，被截掉的那一头各说一句", () => {
-    // 编辑 tags（三个候选）：字段 3 + 候选 3 + 空行 1 + 动作 3 = 10 行，窗只给 4 行
+    // 编辑 tags（三个候选）：字段 3 + 候选 3 + 空行 1 + 按钮行 1 = 8 行，窗只给 4 行
     const lines = formLines(PICKS, editing("tags", PICKS), TEXTS, 4);
 
     expect(lines).toHaveLength(4);
@@ -465,22 +456,14 @@ describe("表单：只有一格的枚举（打开即展开、回车交卷）", (
     required: ["mode"],
   };
 
-  it("打开就是展开的候选，动作行照画（三态一个不少）", () => {
+  it("打开就是展开的候选；按钮表为空时一行按钮都不画", () => {
     const start = initialEditing(ONE_CHOICE);
     expect(start.mode).toBe("editing");
 
-    const lines = formLines(ONE_CHOICE, start, TEXTS).map(lineText);
-    expect(lines).toEqual([
-      "+ 方式 *",
-      "     (o) 自己",
-      "     ( ) 独立",
-      "     ( ) 不",
-      "",
-      " 同意 ",
-      " 拒绝 ",
-      " 取消 ",
-    ]);
-    expect(schemaRows(ONE_CHOICE)).toBe(lines.length);
+    // 宿主给 `buttons: []`（交接那道题就是这么出的）：只剩候选
+    const lines = formLines(ONE_CHOICE, start, TEXTS, undefined, []).map(lineText);
+    expect(lines).toEqual(["+ 方式 *", "     (o) 自己", "     ( ) 独立", "     ( ) 不"]);
+    expect(schemaRows(ONE_CHOICE, [])).toBe(lines.length);
   });
 
   it("回车直接交卷：候选已经在眼前，不必再收起一次", () => {
@@ -493,21 +476,8 @@ describe("表单：只有一格的枚举（打开即展开、回车交卷）", (
     expect(stepOf(second, enter, ONE_CHOICE)).toEqual({ kind: "accept" });
   });
 
-  it("Tab 从候选跳到按钮行（向前落同意、向后落取消），Esc 收起", () => {
-    const start = initialEditing(ONE_CHOICE);
-
-    const toAccept = press(start, [{ kind: "tab", delta: 1 }], ONE_CHOICE);
-    expect(toAccept.mode).toBe("browsing");
-    expect(toAccept.focus).toBe(1);
-    expect(stepOf(toAccept, enter, ONE_CHOICE)).toEqual({ kind: "accept" });
-
-    const toCancel = press(start, [{ kind: "tab", delta: -1 }], ONE_CHOICE);
-    expect(toCancel.focus).toBe(3);
-
-    // 从按钮行再按 Tab 回到候选（往返不丢值）
-    const back = press(toAccept, [{ kind: "tab", delta: 1 }], ONE_CHOICE);
-    expect(back.mode).toBe("browsing");
-    expect(back.values.mode).toBe("self");
+  it("Esc 一下就说取消（不再先收起候选）", () => {
+    expect(stepOf(initialEditing(ONE_CHOICE), escape, ONE_CHOICE)).toEqual({ kind: "cancel" });
   });
 
   it("↑ ↓ 只换候选，不动焦点线", () => {

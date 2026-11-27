@@ -58,6 +58,12 @@ export interface FormEditing {
    * 得有一个位置。按字段存而不是只存全局一个：来回换字段时位置不该丢。
    */
   readonly cursors: Readonly<Record<string, number>>;
+  /**
+   * 按钮那一行里选中的是第几个（只有焦点落在按钮行上时才有意义）。
+   *
+   * 按钮现在是同一行上的三段，所以行与段是两层：↑ ↓ 进出这一行，← → 在行内选。
+   */
+  readonly buttonCursor: number;
   /** 提交时校验没过的那一句；一改输入就清掉 */
   readonly error?: string;
 }
@@ -66,8 +72,6 @@ export interface FormEditing {
 export type FormKey =
   | { kind: "next" }
   | { kind: "prev" }
-  /** Tab / Shift+Tab：在浏览层与上下箭头同义，在展开的候选里则是「离开这一格、去按钮那一行」 */
-  | { kind: "tab"; delta: -1 | 1 }
   | { kind: "step"; delta: -1 | 1 }
   | { kind: "space" }
   | { kind: "text"; input: string }
@@ -128,6 +132,7 @@ export function initialEditing(schema: FormSchemaView): FormEditing {
     mode: singleEnumOf(schema) === undefined ? "browsing" : "editing",
     focus: 0,
     cursors: {},
+    buttonCursor: 0,
   };
 }
 
@@ -151,13 +156,13 @@ export const ALL_ACTIONS = ["accept", "decline", "cancel"] as const;
 export type FormAction = (typeof ALL_ACTIONS)[number];
 
 /**
- * 这道题允许交哪几态，按固定顺序（同意 → 拒绝 → 取消）。
+ * 面板上要画的那几行按钮，按固定顺序（同意 → 拒绝 → 取消）。
  *
- * 顺序固定，是因为焦点线由它决定：出题方给 `["accept"]` 就只有一格「同意」，给三态就是原来那三行。
+ * 出题方说不画就是空数组（一格枚举那种题：回车交卷、Esc 取消，按钮只是噪声）；不给就是三行都画。
  */
-function actionsOf(actions: readonly FormAction[] | undefined): FormAction[] {
-  const allowed = actions ?? ALL_ACTIONS;
-  return ALL_ACTIONS.filter((action) => allowed.includes(action));
+export function buttonsOf(buttons: readonly FormAction[] | undefined): FormAction[] {
+  if (buttons === undefined) return [...ALL_ACTIONS];
+  return ALL_ACTIONS.filter((action) => buttons.includes(action));
 }
 
 /** 按一下键，得到新的编辑状态 */
@@ -165,25 +170,30 @@ export function applyFormKey(
   editing: FormEditing,
   schema: FormSchemaView,
   key: FormKey,
-  actions?: readonly FormAction[],
+  buttons?: readonly FormAction[],
 ): FormStep {
   const names = fieldNames(schema);
-  // 动作与字段共用那条焦点线：第一个动作的下标是字段个数，其余按顺序跟上
-  const shown = actionsOf(actions);
-  const firstActionAt = names.length;
-  const lastActionAt = names.length + Math.max(shown.length - 1, 0);
+  // 焦点线：各个字段 + 按钮那一行（按钮是同一行上的三段，行内再用 ← → 选）
+  const shown = buttonsOf(buttons);
+  const actionRow = names.length;
+  const hasActions = shown.length > 0;
   // 改任何一种输入都清掉上一次的错误：那句是「上一版草稿」的结论
   const cleared: FormEditing =
     editing.error === undefined ? editing : { ...editing, error: undefined };
 
-  const slots = names.length + shown.length;
+  const slots = names.length + (hasActions ? 1 : 0);
   const move = (delta: 1 | -1): FormStep => ({
     kind: "state",
     editing: { ...cleared, focus: (cleared.focus + delta + slots) % slots },
   });
+  /** 按钮行里此刻选中的那一段（越界夹回表内） */
+  const chosenAt = Math.min(Math.max(cleared.buttonCursor, 0), Math.max(shown.length - 1, 0));
+  const chosen = shown[chosenAt];
 
   if (key.kind === "escape") {
-    // 编辑里退一层（值留着）；浏览里就是关掉整张表
+    // 一格表：一下 Esc 就是关掉（整张表就一个问题，先收起一次候选是白按一下）
+    if (names.length === 1) return { kind: "cancel" };
+    // 多字段的表：编辑里退一层（值留着），浏览里才是关掉整张表
     return cleared.mode === "editing"
       ? { kind: "state", editing: { ...cleared, mode: "browsing" } }
       : { kind: "cancel" };
@@ -197,8 +207,19 @@ export function applyFormKey(
     switch (key.kind) {
       case "next":
       case "prev":
-      case "tab":
-        return move(key.kind === "prev" || (key.kind === "tab" && key.delta < 0) ? -1 : 1);
+        return move(key.kind === "prev" ? -1 : 1);
+      // ← →：在按钮行上就是「行内选哪一段」
+      case "step":
+        if (cleared.focus !== actionRow || !hasActions) {
+          return { kind: "state", editing: cleared };
+        }
+        return {
+          kind: "state",
+          editing: {
+            ...cleared,
+            buttonCursor: (chosenAt + key.delta + shown.length) % shown.length,
+          },
+        };
       // 文本/数字在浏览层就能直接改：光标就在那一格上，没有「先进编辑」这一步。
       // 枚举是字符串但不收字 —— 它的值只能从候选里选（`enumValues` 有值就不算能打字）
       case "text":
@@ -211,12 +232,11 @@ export function applyFormKey(
           editing: backspace(cleared, focusedName!, focusedField!),
         };
       case "enter": {
-        // 落在动作行上：下标减掉字段个数就是第几个动作
-        if (cleared.focus >= firstActionAt && cleared.focus <= lastActionAt) {
-          const action = shown[cleared.focus - firstActionAt]!;
-          return action === "accept"
+        // 落在按钮那一行：执行行内选中的那一段
+        if (hasActions && cleared.focus === actionRow) {
+          return chosen === "accept"
             ? { kind: "accept" }
-            : action === "decline"
+            : chosen === "decline"
               ? { kind: "decline" }
               : { kind: "cancel" };
         }
@@ -257,16 +277,6 @@ export function applyFormKey(
       // 一格枚举：候选已经展开在眼前，回车就是「选这一个，交卷」
       if (singleEnumOf(schema) !== undefined) return { kind: "accept" };
       return { kind: "state", editing: { ...cleared, mode: "browsing" } };
-    case "tab":
-      // 展开的候选把 ↑ ↓ 占住了，于是「去按钮那一行」归 Tab：向前落「同意」、向后落「取消」
-      return {
-        kind: "state",
-        editing: {
-          ...cleared,
-          mode: "browsing",
-          focus: key.delta > 0 ? firstActionAt : lastActionAt,
-        },
-      };
     case "next":
       // 编辑枚举时上下箭头动的是候选（用户在这里按 ↓ 想知道的是「下一项是什么」）
       return { kind: "state", editing: advance(cleared, name, field, 1) };
@@ -505,11 +515,25 @@ export interface FormLine {
   readonly focused?: boolean;
   /** 动作行与错误行的固定颜色（焦点只改标记，不改颜色） */
   readonly tone?: "accept" | "decline" | "cancel" | "error";
+  /**
+   * 由多段拼成的一行（按钮行）：每段自带文案与颜色。
+   *
+   * 三个按钮在同一行上，颜色却各不相同（同意蓝、拒绝红、取消默认），所以颜色不能再由 `tone`
+   * 统一给 —— 那一个字段只能描述整行的色。
+   */
+  readonly segments?: readonly {
+    readonly text: string;
+    readonly tone: "accept" | "decline" | "cancel";
+    /** 行内选中的那一段（方括号与加粗只给它） */
+    readonly focused?: boolean;
+  }[];
 }
 
 /** 一行拍平之后的文字（用例与日志读它；上色是渲染那一层的事） */
 export function lineText(line: FormLine): string {
-  return `${line.text}${line.star === true ? " *" : ""}${line.rest ?? ""}`;
+  const body =
+    line.segments === undefined ? line.text : line.segments.map((segment) => segment.text).join("");
+  return `${body}${line.star === true ? " *" : ""}${line.rest ?? ""}`;
 }
 
 /**
@@ -525,17 +549,19 @@ export function fieldRows(): number {
 /**
  * 整张表占几行。
  *
- * 每个字段一行 + 空行 + 三个动作（同意/拒绝/取消）。只有枚举展开时会多出候选，那部分由覆盖层
- * 自己滚动（见 `formLines` 的 `maxRows`）。
+ * 每个字段一行 + 按钮那几行（画几个由出题方给，见 `FormRequest.buttons`；不画就连前面那行空行
+ * 也省了）。只有枚举展开时会多出候选，那部分由覆盖层自己滚动（见 `formLines` 的 `maxRows`）。
  */
-export function schemaRows(schema: FormSchemaView, actions?: readonly FormAction[]): number {
-  const actionRows = actionsOf(actions).length;
+export function schemaRows(schema: FormSchemaView, buttons?: readonly FormAction[]): number {
+  const shown = buttonsOf(buttons);
+  // 按钮行前面那一空行只在真的画按钮时占一行；按钮本身是同一行，只占一行
+  const actionRows = shown.length === 0 ? 0 : 2;
   const single = singleEnumOf(schema);
   // 一格枚举打开就展开候选，那一屏要多占几行（布局按这个数预留）
   if (single !== undefined) {
-    return 1 + (enumValues(single.field)?.length ?? 0) + actionRows + 1;
+    return 1 + (enumValues(single.field)?.length ?? 0) + actionRows;
   }
-  return fieldNames(schema).length + actionRows + 1;
+  return fieldNames(schema).length + actionRows;
 }
 
 /** 面板上要印的那几句话（文案由调用方给：`formLines` 是纯函数，不碰 i18n） */
@@ -559,7 +585,7 @@ export interface FormTexts {
  * 进了编辑、而且那格是枚举时，才在它下面列一列候选：单选 `(o) 名字`，多选 `[x] 名字`。
  * 两种枚举同一个形状，只差一对括号。
  *
- * 最后是动作行（同意 / 拒绝 / 取消，具体几行由出题方给，见 `FormRequest.actions`）。它们和字段共用
+ * 最后是动作行（同意 / 拒绝 / 取消，具体几行由出题方给，见 `FormRequest.buttons`）。它们和字段共用
  * 同一条焦点线（下标从字段个数起）；方括号只画在焦点那一格上，其余用空格占同样的位 —— 选中与
  * 没选中占一样宽，换焦点时整行不跳。
  *
@@ -573,10 +599,10 @@ export function formLines(
   editing: FormEditing,
   texts: FormTexts,
   maxRows?: number,
-  actions?: readonly FormAction[],
+  buttons?: readonly FormAction[],
 ): FormLine[] {
   const names = fieldNames(schema);
-  const firstActionAt = names.length;
+  const actionRow = names.length;
   const lines: FormLine[] = [];
   /** 焦点那一块的第一行在 `lines` 里的下标（滚动要对准它） */
   let focusAt = 0;
@@ -635,28 +661,34 @@ export function formLines(
     }
   }
 
-  // 动作之前空一行：它们是「对整张表做的事」，与上面那几格不是同一类
+  // 按钮之前空一行：它们是对整张表做的事，与上面那几格不是同一类。
+  // 一个按钮都不画时（连这一行空行也不要）
+  const shown = buttonsOf(buttons);
+  if (shown.length === 0) {
+    if (editing.error !== undefined) lines.push({ text: editing.error, tone: "error" });
+    return clip(lines, focusAt, maxRows);
+  }
+
   lines.push({ text: "" });
 
-  // 只画这道题开着的动作：交接那种题只有「同意」，多画一个拒绝只是让人多点一下
   const labels: Record<FormAction, string> = {
     accept: texts.accept,
     decline: texts.decline,
     cancel: texts.cancel,
   };
-  const shown = actionsOf(actions);
-  for (const [offset, action] of shown.entries()) {
-    const label = labels[action];
-    const index = firstActionAt + offset;
-    const isFocus = editing.mode === "browsing" && editing.focus === index;
-    if (isFocus) focusAt = lines.length;
-    // 方括号只说「现在是这一格」：没选中的用空格占同样的位，换焦点时整行不跳
-    lines.push({
-      text: isFocus ? `[${label}]` : ` ${label} `,
-      focused: isFocus,
+  // 按钮在同一行上：焦点落在这行时，行内选中的那一段带方括号，← → 换段
+  const onRow = editing.mode === "browsing" && editing.focus === actionRow;
+  if (onRow) focusAt = lines.length;
+  const cursor = Math.min(Math.max(editing.buttonCursor, 0), shown.length - 1);
+  lines.push({
+    text: "",
+    focused: onRow,
+    segments: shown.map((action, at) => ({
+      text: onRow && at === cursor ? `[${labels[action]}]` : ` ${labels[action]} `,
       tone: action,
-    });
-  }
+      focused: onRow && at === cursor,
+    })),
+  });
 
   if (editing.error !== undefined) lines.push({ text: editing.error, tone: "error" });
   return clip(lines, focusAt, maxRows);

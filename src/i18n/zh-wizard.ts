@@ -79,7 +79,6 @@ export const zh: Record<string, string> = {
   "ui.select": "选择",
   "ui.form.switch": "换字段",
   "ui.form.choose": "选项",
-  "ui.form.actions": "到按钮",
   "ui.form.accept": "同意",
   "ui.form.decline": "拒绝",
   "ui.form.cancel": "取消",

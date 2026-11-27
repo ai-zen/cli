@@ -118,9 +118,8 @@ describe("PickerOverlay", () => {
  * 这里只钉「面板这一层」的三件事：字能敲进去并提交成内容、Esc 交 cancel、校验没过不关面板
  * 且焦点跳到那一格。
  */
-function mountForm(actions?: ("accept" | "decline" | "cancel")[]) {
-  // `null` = 没答（题目没开 cancel 又被关掉）
-  const answers: ({ action: string; content?: Record<string, unknown> } | null)[] = [];
+function mountForm(buttons?: ("accept" | "decline" | "cancel")[]) {
+  const answers: { action: string; content?: Record<string, unknown> }[] = [];
   const { stdin, lastFrame, unmount } = render(
     <FormOverlay
       title="填一下"
@@ -134,7 +133,7 @@ function mountForm(actions?: ("accept" | "decline" | "cancel")[]) {
         required: ["name"],
       }}
       onAnswer={(answer) => answers.push(answer)}
-      {...(actions === undefined ? {} : { actions })}
+      {...(buttons === undefined ? {} : { buttons })}
     />,
   );
   return { answers, stdin, frame: () => lastFrame() ?? "", unmount };
@@ -210,45 +209,46 @@ describe("FormOverlay", () => {
     form.unmount();
   });
 
-  it("题目没开 cancel 时 Esc 交 null（没答，不替用户编一态）", async () => {
-    const form = mountForm(["accept"]);
+  it("出题方给空按钮表：一行按钮都不画，Esc 直接交 cancel", async () => {
+    const form = mountForm([]);
     await until(() => form.frame().includes("填一下"), "表单浮层画出来");
     await settle();
 
-    // 只开 accept：动作行只有「同意」一个
-    expect(form.frame()).toContain("同意");
-    expect(form.frame()).not.toContain("拒绝");
+    // 空按钮表：连「同意」那一行也不该有（提示行里的「同意」是键说明，不算按钮行）
+    expect(form.frame()).not.toContain("[同意]");
 
     await key(form, "\u001b");
     await until(() => form.answers.length === 1, "交了一次");
-    expect(form.answers[0]).toBeNull();
+    expect(form.answers[0]).toEqual({ action: "cancel" });
     form.unmount();
   });
 
-  it("三个动作各一行：同意 / 拒绝 / 取消，前面留一个空行", async () => {
+  it("三个按钮在同一行，前面留一个空行", async () => {
     const form = await mountedForm();
-    await until(() => form.frame().includes("同意"), "三个动作画出来");
+    await until(() => form.frame().includes("同意"), "三个按钮画出来");
 
     const rows = form.frame().split("\n");
-    const acceptAt = rows.findIndex((row) => row.includes("同意"));
-    expect(rows[acceptAt + 1]).toContain("拒绝");
-    expect(rows[acceptAt + 2]).toContain("取消");
+    const buttonAt = rows.findIndex((row) => row.includes("同意"));
+    // 同一行：同意、拒绝、取消都在这一行上
+    expect(rows[buttonAt]).toContain("拒绝");
+    expect(rows[buttonAt]).toContain("取消");
     // 都没聚焦：整行不带方括号
-    expect(rows[acceptAt]).not.toContain("[同意]");
+    expect(rows[buttonAt]).not.toContain("[同意]");
 
     // 上一行去掉边框与两侧空白之后应当是空的
     // （Ink 里空的 `<Text>` 高度是 0，那一行得写一个空格才画得出来）
-    const above = (rows[acceptAt - 1] ?? "").replace(/^[│\s]+|[│\s]+$/g, "");
+    const above = (rows[buttonAt - 1] ?? "").replace(/^[│\s]+|[│\s]+$/g, "");
     expect(above).toBe("");
     form.unmount();
   });
 
-  it("[拒绝] 上回车：交 decline（带不动内容）", async () => {
+  it("按钮行上用 ← → 选到「拒绝」，回车交 decline", async () => {
     const form = await mountedForm();
-    await until(() => form.frame().includes("拒绝"), "拒绝按钮画出来");
+    await until(() => form.frame().includes("拒绝"), "按钮行画出来");
 
-    // ↓ 越过三个字段（名字、开关、标签），再 ↓ 一次越过「同意」落在「拒绝」上
-    for (let step = 0; step < 4; step += 1) await key(form, "\u001b[B");
+    // ↓ 越过三个字段落在按钮行上，→ 选到「拒绝」
+    for (let step = 0; step < 3; step += 1) await key(form, "\u001b[B");
+    await key(form, "\u001b[C");
     await key(form, "\r");
 
     await until(() => form.answers.length === 1, "交了一次");
@@ -329,6 +329,22 @@ describe("FormOverlay：提示行", () => {
 
     await key(form, "\u001b[B"); // ↓ 到开关
     await until(() => form.frame().includes("Space"), "布尔上的提示里有空格");
+    form.unmount();
+  });
+
+  it("落在按钮行上：回车说的是行内选中那一段，← → 换段时跟着换", async () => {
+    const form = mountThree();
+    await until(() => form.frame().includes("提示"), "面板画出来");
+    await settle();
+
+    // ↓ 越过三个字段落在按钮行上：行内默认选中的是「同意」
+    for (let step = 0; step < 3; step += 1) await key(form, "\u001b[B");
+    await until(() => form.frame().includes("Enter 同意"), "提示说的是选中的那一段");
+    // 站稳在按钮行上才提「行内换段」这一句
+    expect(form.frame()).toContain("← →");
+
+    await key(form, "\u001b[C"); // → 选到「拒绝」
+    await until(() => form.frame().includes("Enter 拒绝"), "提示跟着选中的段换");
     form.unmount();
   });
 });

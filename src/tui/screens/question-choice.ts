@@ -23,7 +23,7 @@ export function chooseQuestionAnswer(
     setFormState({
       title: question.message,
       schema: question.requestedSchema,
-      ...(question.actions === undefined ? {} : { actions: question.actions }),
+      ...(question.buttons === undefined ? {} : { buttons: question.buttons }),
       resolve: (answer) => resolve(answer),
     });
   });
